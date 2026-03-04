@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-InterFitAI Backend API Testing Script
-Tests all high priority backend endpoints according to test_result.md
+Backend Testing for InterFitAI - Claude Sonnet 4.6 Migration Testing
+Testing all AI-powered endpoints that were migrated from OpenAI GPT-4o to Claude Sonnet 4.6
 """
 
 import requests

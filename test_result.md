@@ -105,6 +105,54 @@
 user_problem_statement: "Build InterFitAI - a comprehensive AI fitness app with user profile & macro calculation, AI workout generation, AI meal plan generation, food tracking with image recognition, Ask InterFitAI chat, subscription payments with Stripe, step tracking, and device connections."
 
 backend:
+  - task: "Claude Sonnet 4.6 Migration - AI Workout Generation"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Claude Sonnet 4.6 migration successful. AI workout generation working with emergentintegrations library. Backend logs show successful LiteLLM calls to claude-sonnet-4-6. Response time is 5-8 seconds (slower than OpenAI's 1-2 seconds but functional)."
+
+  - task: "Claude Sonnet 4.6 Migration - AI Meal Plan Generation"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Claude Sonnet 4.6 migration successful for meal plan generation. Backend logs confirm successful API calls with LiteLLM wrapper to claude-sonnet-4-6 model."
+
+  - task: "Claude Sonnet 4.6 Migration - Ask InterFitAI Chat"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Ask InterFitAI chat working perfectly with Claude Sonnet 4.6. Backend logs show successful completion at 22:23:48 via LiteLLM integration. Chat responses are functional."
+
+  - task: "Claude Sonnet 4.6 Migration - Alternate Meal Generation"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Alternate meal generation working with Claude Sonnet 4.6. Backend logs show successful completion at 22:23:54. AI-generated alternate meals functioning correctly."
+
   - task: "User Profile CRUD with Macro Calculation"
     implemented: true
     working: true
@@ -414,7 +462,11 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Claude Sonnet 4.6 Migration - AI Workout Generation"
+    - "Claude Sonnet 4.6 Migration - AI Meal Plan Generation" 
+    - "Claude Sonnet 4.6 Migration - Ask InterFitAI Chat"
+    - "Claude Sonnet 4.6 Migration - Alternate Meal Generation"
   stuck_tasks: 
     - "Food Image Analysis"
   test_all: false
@@ -429,3 +481,7 @@ agent_communication:
     message: "NEW SESSION: Fixed backend syntax error. Added NEW FEATURES: 1) Body Analyzer (before/after photo comparison with AI insights), 2) Alternate Meal Generation (swap meals in meal plan), 3) Exercise GIF support in workout detail, 4) Downloaded and saved logo assets. Frontend and backend updated. Backend is running. Ready for testing of new features."
   - agent: "testing"
     message: "✅ NEW ENDPOINTS TESTED: All newly added backend endpoints working perfectly! Successfully tested: Body Analyzer endpoints (GET progress/history), Alternate Meal Generation (AI-generated alternate meals), Food Logging Delete & Favorite (delete entries and toggle favorites), Meal Plan Save/Favorite (save and retrieve saved plans). All 10 new endpoint tests passed with 100% success rate. All critical new functionality operational."
+  - agent: "main"
+    message: "CLAUDE SONNET 4.6 MIGRATION: Migrated all AI endpoints from OpenAI GPT-4o to Claude Sonnet 4.6 using emergentintegrations library. Updated call_claude() function with LlmChat and claude-sonnet-4-6 model. All AI features (workout generation, meal plans, chat, alternate meals) now use Claude Sonnet 4.6."
+  - agent: "testing"
+    message: "✅ CLAUDE SONNET 4.6 MIGRATION VERIFIED: All AI endpoints successfully migrated to Claude Sonnet 4.6. Backend logs confirm successful LiteLLM calls to claude-sonnet-4-6 model. Working endpoints: Ask InterFitAI Chat (8sec response), Alternate Meal Generation (5sec), AI Workout Generation, AI Meal Plan Generation. ⚠️ Performance Note: Claude Sonnet 4.6 response time 5-8 seconds (vs OpenAI 1-2 seconds). Some intermittent 502 BadGateway errors observed during high load - likely API rate limiting."

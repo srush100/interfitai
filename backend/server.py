@@ -9,10 +9,10 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, date
-import openai
 import stripe
 import base64
 import json
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -22,8 +22,8 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'interfitai')]
 
-# OpenAI configuration
-openai.api_key = os.environ.get('OPENAI_API_KEY', '')
+# Emergent LLM Key for Claude Sonnet 4.6
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 
 # Stripe configuration
 stripe.api_key = os.environ.get('STRIPE_API_KEY', '')
@@ -40,6 +40,28 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ==================== CLAUDE SONNET 4.6 HELPER ====================
+
+async def call_claude(system_message: str, user_message: str, session_id: str = None, image_base64: str = None) -> str:
+    """Helper function to call Claude Sonnet 4.6 via emergentintegrations"""
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=session_id,
+        system_message=system_message
+    ).with_model("anthropic", "claude-sonnet-4-6")
+    
+    if image_base64:
+        image_content = ImageContent(image_base64=image_base64)
+        message = UserMessage(text=user_message, file_contents=[image_content])
+    else:
+        message = UserMessage(text=user_message)
+    
+    response = await chat.send_message(message)
+    return response
 
 # ==================== MODELS ====================
 
@@ -467,17 +489,10 @@ Requirements:
 - Make it progressive and appropriate for intermediate fitness level"""
 
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert personal trainer and fitness program designer. Always respond with valid JSON only, no additional text."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=4000
-        )
+        system_message = "You are an expert personal trainer and fitness program designer. Always respond with valid JSON only, no additional text."
         
-        content = response.choices[0].message.content
+        content = await call_claude(system_message, prompt)
+        
         # Clean the response - remove markdown code blocks if present
         if content.startswith("```"):
             content = content.split("```")[1]
@@ -611,17 +626,10 @@ Requirements:
 - If cuisine preference specified, align 70% of meals to that cuisine"""
 
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert nutritionist and meal planning specialist. Create accurate, macro-aligned meal plans. Always respond with valid JSON only, no additional text."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=6000
-        )
+        system_message = "You are an expert nutritionist and meal planning specialist. Create accurate, macro-aligned meal plans. Always respond with valid JSON only, no additional text."
         
-        content = response.choices[0].message.content
+        content = await call_claude(system_message, prompt)
+        
         if content.startswith("```"):
             content = content.split("```")[1]
             if content.startswith("json"):
@@ -714,17 +722,10 @@ Respond with valid JSON only:
 {{"id": "unique_id", "name": "Meal Name", "meal_type": "{current_meal.get('meal_type')}", "ingredients": ["ingredient 1", "ingredient 2"], "instructions": "How to prepare", "calories": {current_meal.get('calories', 400)}, "protein": {current_meal.get('protein', 30)}, "carbs": {current_meal.get('carbs', 40)}, "fats": {current_meal.get('fats', 15)}, "prep_time_minutes": 15}}"""
 
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a nutritionist. Generate a healthy alternate meal with similar macros. Respond with valid JSON only."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.8,
-            max_tokens=500
-        )
+        system_message = "You are a nutritionist. Generate a healthy alternate meal with similar macros. Respond with valid JSON only."
         
-        content = response.choices[0].message.content
+        content = await call_claude(system_message, prompt)
+        
         if content.startswith("```"):
             content = content.split("```")[1]
             if content.startswith("json"):
@@ -791,42 +792,24 @@ async def toggle_food_log_favorite(log_id: str):
 
 @api_router.post("/food/analyze", response_model=FoodEntry)
 async def analyze_food_image(request: FoodImageAnalyzeRequest):
-    """Analyze food image using OpenAI Vision to identify food and estimate nutrition"""
+    """Analyze food image using Claude Sonnet 4.6 Vision to identify food and estimate nutrition"""
     try:
         # Validate base64 image
         if not request.image_base64 or len(request.image_base64) < 100:
             raise HTTPException(status_code=400, detail="Invalid image data")
         
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are a nutrition expert. Analyze the food image and provide accurate nutritional information.
+        system_message = """You are a nutrition expert. Analyze the food image and provide accurate nutritional information.
 Respond with ONLY valid JSON, no other text. Use this exact format:
 {"food_name": "Name", "serving_size": "1 serving", "calories": 300, "protein": 25.0, "carbs": 30.0, "fats": 10.0, "fiber": 5.0, "sugar": 8.0, "sodium": 400.0}"""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Analyze this food image and provide nutritional information in JSON format only:"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{request.image_base64}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=500
-        )
         
-        content = response.choices[0].message.content
+        user_message = "Analyze this food image and provide nutritional information in JSON format only:"
+        
+        content = await call_claude(system_message, user_message, image_base64=request.image_base64)
+        
         logger.info(f"Food analysis raw response length: {len(content) if content else 0}")
         
         if not content or len(content.strip()) == 0:
-            raise HTTPException(status_code=500, detail="OpenAI returned empty response. Please try again with a clearer food image.")
+            raise HTTPException(status_code=500, detail="AI returned empty response. Please try again with a clearer food image.")
         
         # Clean markdown code blocks if present
         if content.startswith("```"):
@@ -880,9 +863,6 @@ Respond with ONLY valid JSON, no other text. Use this exact format:
         
     except HTTPException:
         raise
-    except openai.BadRequestError as e:
-        logger.error(f"OpenAI BadRequestError: {e}")
-        raise HTTPException(status_code=400, detail="Invalid image format. Please use a valid JPEG or PNG image.")
     except Exception as e:
         logger.error(f"Food analysis error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to analyze food: {str(e)}")
@@ -1105,10 +1085,8 @@ async def chat_with_ai(request: ChatRequest):
     history = await db.chat_history.find({"user_id": request.user_id}).sort("created_at", -1).limit(10).to_list(10)
     history.reverse()
     
-    messages = [
-        {
-            "role": "system",
-            "content": f"""You are InterFitAI, an expert AI fitness and nutrition coach. You help users with:
+    try:
+        system_message = f"""You are InterFitAI, an expert AI fitness and nutrition coach. You help users with:
 - Workout advice and exercise form
 - Nutrition guidance and meal suggestions
 - Weight management strategies
@@ -1119,25 +1097,14 @@ async def chat_with_ai(request: ChatRequest):
 {"User context: " + f"Goal: {profile.get('goal', 'general fitness')}, Weight: {profile.get('weight', 'unknown')}kg, Activity level: {profile.get('activity_level', 'moderate')}" if profile else ""}
 
 Be helpful, encouraging, and provide evidence-based advice. Keep responses concise but informative."""
-        }
-    ]
-    
-    # Add chat history
-    for msg in history:
-        messages.append({"role": msg["role"], "content": msg["content"]})
-    
-    # Add current message
-    messages.append({"role": "user", "content": request.message})
-    
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=1000
-        )
         
-        ai_response = response.choices[0].message.content
+        # Build conversation context
+        conversation = ""
+        for msg in history:
+            conversation += f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}\n\n"
+        conversation += f"User: {request.message}"
+        
+        ai_response = await call_claude(system_message, conversation, session_id=f"chat-{request.user_id}")
         
         # Save user message
         user_msg = ChatMessage(user_id=request.user_id, role="user", content=request.message)
@@ -1495,12 +1462,7 @@ async def get_progress_photos(user_id: str):
 async def analyze_body_progress(request: BodyAnalysisRequest):
     """AI-powered body transformation analysis comparing before/after photos"""
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are a professional fitness coach and body composition expert. 
+        system_message = """You are a professional fitness coach and body composition expert. 
 Analyze the before and after progress photos provided. Give constructive, encouraging, and detailed feedback.
 Focus on visible improvements in:
 1. Muscle definition and tone
@@ -1518,26 +1480,22 @@ Respond with valid JSON only:
     "motivation_message": "Encouraging message",
     "estimated_progress_score": 8
 }"""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"Please analyze these before and after progress photos taken over {request.time_period}. Provide detailed feedback on the visible transformation."},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{request.before_image_base64}"}
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{request.after_image_base64}"}
-                        }
-                    ]
-                }
-            ],
-            max_tokens=1000
-        )
         
-        content = response.choices[0].message.content
+        user_message = f"Please analyze these before and after progress photos taken over {request.time_period}. The first image is BEFORE and the second is AFTER. Provide detailed feedback on the visible transformation."
+        
+        # Create a combined image message with both images
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=str(uuid.uuid4()),
+            system_message=system_message
+        ).with_model("anthropic", "claude-sonnet-4-6")
+        
+        # Send both images
+        before_image = ImageContent(image_base64=request.before_image_base64)
+        after_image = ImageContent(image_base64=request.after_image_base64)
+        message = UserMessage(text=user_message, file_contents=[before_image, after_image])
+        
+        content = await chat.send_message(message)
         
         # Clean markdown code blocks if present
         if content.startswith("```"):
