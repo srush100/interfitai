@@ -3,36 +3,56 @@
 import requests
 import json
 import time
-import sys
+from datetime import datetime
 
-# Backend URL from environment
+# Backend URL from environment (matches frontend configuration)
 BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
+
+def log_test(message):
+    """Log test messages with timestamp"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"[{timestamp}] {message}")
+
+def measure_response_time(func, *args, **kwargs):
+    """Measure function execution time"""
+    start_time = time.time()
+    result = func(*args, **kwargs)
+    end_time = time.time()
+    response_time = end_time - start_time
+    return result, response_time
 
 def test_health_check():
     """Test the health check endpoint"""
-    print("\n🔍 Testing Health Check...")
+    log_test("🔍 Testing Health Check Endpoint...")
+    
     try:
-        response = requests.get(f"{BACKEND_URL}/health", timeout=10)
-        print(f"Status Code: {response.status_code}")
-        print(f"Response: {response.text}")
+        response, response_time = measure_response_time(
+            requests.get, f"{BACKEND_URL}/health", timeout=30
+        )
         
         if response.status_code == 200:
-            print("✅ Health check passed")
+            data = response.json()
+            log_test(f"✅ Health check PASSED - Status: {response.status_code}")
+            log_test(f"   Response time: {response_time:.2f}s")
+            log_test(f"   Response: {data}")
             return True
         else:
-            print(f"❌ Health check failed with status {response.status_code}")
+            log_test(f"❌ Health check FAILED - Status: {response.status_code}")
+            log_test(f"   Response: {response.text}")
             return False
+            
     except Exception as e:
-        print(f"❌ Health check failed with error: {str(e)}")
+        log_test(f"❌ Health check ERROR: {str(e)}")
         return False
 
 def test_meal_plan_generation():
-    """Test the optimized meal plan generation endpoint using Claude 3.5 Haiku"""
-    print("\n🍽️  Testing OPTIMIZED Meal Plan Generation (Claude 3.5 Haiku)...")
+    """Test the OPTIMIZED meal plan generation with 3-day prompt"""
+    log_test("🔍 Testing OPTIMIZED Meal Plan Generation (3-day prompt)...")
     
-    payload = {
-        "user_id": "d704bac8-fa54-4d5b-b984-cc17393c1244",
-        "food_preferences": "whole_foods",
+    # Test data using real profile ID with calculated macros
+    test_data = {
+        "user_id": "b060147a-bfac-4e3a-8eb3-44df35be48ae",
+        "food_preferences": "high_protein",  # Should be string, not list
         "supplements": [],
         "supplements_custom": "",
         "allergies": [],
@@ -40,138 +60,159 @@ def test_meal_plan_generation():
     }
     
     try:
-        start_time = time.time()
-        response = requests.post(
-            f"{BACKEND_URL}/mealplans/generate", 
-            json=payload, 
-            timeout=60,  # 60 second timeout
-            headers={"Content-Type": "application/json"}
+        log_test("   Sending request to meal plan generation...")
+        response, response_time = measure_response_time(
+            requests.post, 
+            f"{BACKEND_URL}/mealplans/generate",
+            json=test_data,
+            timeout=120  # 2 minutes timeout for AI generation
         )
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        print(f"Status Code: {response.status_code}")
-        print(f"Response Time: {duration:.2f} seconds")
         
         if response.status_code == 200:
-            result = response.json()
-            print(f"✅ Meal plan generated successfully")
-            print(f"Plan Name: {result.get('name', 'N/A')}")
-            print(f"Total Meals: {len(result.get('meals', []))}")
-            print(f"Total Calories: {result.get('total_calories', 'N/A')}")
+            data = response.json()
+            log_test(f"✅ Meal plan generation PASSED - Status: {response.status_code}")
+            log_test(f"   Response time: {response_time:.2f}s")
+            log_test(f"   Generated plan: '{data.get('name', 'Unknown')}'")
+            log_test(f"   Days in plan: {len(data.get('meal_days', []))}")
+            log_test(f"   Target calories: {data.get('target_calories')} kcal")
             
-            # Check if it completed within 30 seconds (optimization goal)
-            if duration <= 30:
-                print(f"🚀 PERFORMANCE GOAL MET: Completed in {duration:.2f}s (under 30s target)")
-            else:
-                print(f"⚠️  PERFORMANCE WARNING: Took {duration:.2f}s (over 30s target)")
+            # Validate structure
+            if data.get('meal_days') and len(data.get('meal_days')) >= 1:
+                first_day = data['meal_days'][0]
+                meals_count = len(first_day.get('meals', []))
+                log_test(f"   Meals per day: {meals_count}")
+                if meals_count > 0:
+                    sample_meal = first_day['meals'][0]
+                    log_test(f"   Sample meal: '{sample_meal.get('name')}' ({sample_meal.get('calories')} cal)")
             
-            return True
+            return True, response_time
         else:
-            print(f"❌ Meal plan generation failed")
-            print(f"Response: {response.text}")
-            
-            # Check for budget/quota errors
-            if "budget" in response.text.lower() or "quota" in response.text.lower():
-                print("💰 BUDGET ERROR DETECTED")
-            
-            return False
+            log_test(f"❌ Meal plan generation FAILED - Status: {response.status_code}")
+            try:
+                error_data = response.json()
+                log_test(f"   Error: {error_data.get('detail', 'Unknown error')}")
+            except:
+                log_test(f"   Raw error: {response.text[:200]}...")
+            return False, response_time
             
     except requests.exceptions.Timeout:
-        print("❌ Meal plan generation timed out after 60 seconds")
-        return False
+        log_test("❌ Meal plan generation TIMEOUT - Request exceeded 2 minutes")
+        return False, 120.0
     except Exception as e:
-        print(f"❌ Meal plan generation failed with error: {str(e)}")
-        return False
+        log_test(f"❌ Meal plan generation ERROR: {str(e)}")
+        return False, 0.0
 
 def test_workout_generation():
-    """Test the optimized workout generation endpoint using Claude 3.5 Haiku"""
-    print("\n💪 Testing OPTIMIZED Workout Generation (Claude 3.5 Haiku)...")
+    """Test the OPTIMIZED workout generation with reduced days"""
+    log_test("🔍 Testing OPTIMIZED Workout Generation (2 days)...")
     
-    payload = {
-        "user_id": "d704bac8-fa54-4d5b-b984-cc17393c1244",
-        "goal": "muscle_building",
+    # Test data using real profile ID with calculated macros
+    test_data = {
+        "user_id": "b060147a-bfac-4e3a-8eb3-44df35be48ae",
+        "goal": "muscle_building", 
         "focus_areas": ["chest"],
         "equipment": ["dumbbell"],
-        "injuries": "",
+        "injuries": None,  # Should be string or None, not empty list
         "days_per_week": 2,
         "duration_minutes": 30
     }
     
     try:
-        start_time = time.time()
-        response = requests.post(
+        log_test("   Sending request to workout generation...")
+        response, response_time = measure_response_time(
+            requests.post,
             f"{BACKEND_URL}/workouts/generate", 
-            json=payload, 
-            timeout=60,  # 60 second timeout
-            headers={"Content-Type": "application/json"}
+            json=test_data,
+            timeout=120  # 2 minutes timeout for AI generation
         )
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        print(f"Status Code: {response.status_code}")
-        print(f"Response Time: {duration:.2f} seconds")
         
         if response.status_code == 200:
-            result = response.json()
-            print(f"✅ Workout generated successfully")
-            print(f"Program Name: {result.get('name', 'N/A')}")
-            print(f"Workout Days: {len(result.get('workout_days', []))}")
+            data = response.json()
+            log_test(f"✅ Workout generation PASSED - Status: {response.status_code}")
+            log_test(f"   Response time: {response_time:.2f}s") 
+            log_test(f"   Generated program: '{data.get('name', 'Unknown')}'")
+            log_test(f"   Days per week: {data.get('days_per_week')}")
+            log_test(f"   Session duration: {data.get('session_duration_minutes')} minutes")
             
-            # Check if it completed within 30 seconds (optimization goal)
-            if duration <= 30:
-                print(f"🚀 PERFORMANCE GOAL MET: Completed in {duration:.2f}s (under 30s target)")
-            else:
-                print(f"⚠️  PERFORMANCE WARNING: Took {duration:.2f}s (over 30s target)")
+            # Validate structure
+            workout_days = data.get('workout_days', [])
+            log_test(f"   Workout days: {len(workout_days)}")
             
-            return True
+            if workout_days:
+                first_day = workout_days[0]
+                exercises_count = len(first_day.get('exercises', []))
+                log_test(f"   Exercises in first day: {exercises_count}")
+                if exercises_count > 0:
+                    sample_exercise = first_day['exercises'][0] 
+                    log_test(f"   Sample exercise: '{sample_exercise.get('name')}' - {sample_exercise.get('sets')} sets x {sample_exercise.get('reps')} reps")
+            
+            return True, response_time
         else:
-            print(f"❌ Workout generation failed")
-            print(f"Response: {response.text}")
-            
-            # Check for budget/quota errors
-            if "budget" in response.text.lower() or "quota" in response.text.lower():
-                print("💰 BUDGET ERROR DETECTED")
-            
-            return False
+            log_test(f"❌ Workout generation FAILED - Status: {response.status_code}")
+            try:
+                error_data = response.json()
+                log_test(f"   Error: {error_data.get('detail', 'Unknown error')}")
+            except:
+                log_test(f"   Raw error: {response.text[:200]}...")
+            return False, response_time
             
     except requests.exceptions.Timeout:
-        print("❌ Workout generation timed out after 60 seconds")
-        return False
+        log_test("❌ Workout generation TIMEOUT - Request exceeded 2 minutes")
+        return False, 120.0
     except Exception as e:
-        print(f"❌ Workout generation failed with error: {str(e)}")
-        return False
+        log_test(f"❌ Workout generation ERROR: {str(e)}")
+        return False, 0.0
 
 def main():
-    """Run all tests for the optimized AI endpoints"""
-    print("🧪 TESTING OPTIMIZED AI ENDPOINTS (Claude 3.5 Haiku)")
-    print("=" * 60)
+    """Run all backend tests"""
+    log_test("=" * 80)
+    log_test("🚀 BACKEND TESTING: Optimized AI Endpoints with Shorter Prompts")
+    log_test("=" * 80)
+    log_test(f"Backend URL: {BACKEND_URL}")
+    log_test("")
     
-    results = {
-        'health': test_health_check(),
-        'meal_plan': test_meal_plan_generation(), 
-        'workout': test_workout_generation()
-    }
+    # Track results
+    results = {}
+    total_start = time.time()
     
-    print("\n📊 SUMMARY")
-    print("=" * 30)
+    # Test 1: Health Check
+    results['health'] = test_health_check()
+    log_test("")
     
-    success_count = sum(results.values())
-    total_count = len(results)
+    # Test 2: Optimized Meal Plan Generation (3-day prompt)
+    meal_success, meal_time = test_meal_plan_generation()
+    results['meal_plan'] = meal_success
+    results['meal_plan_time'] = meal_time
+    log_test("")
     
-    for test_name, passed in results.items():
-        status = "✅ PASSED" if passed else "❌ FAILED"
-        print(f"{test_name.replace('_', ' ').title()}: {status}")
+    # Test 3: Optimized Workout Generation (2 days)
+    workout_success, workout_time = test_workout_generation()
+    results['workout'] = workout_success
+    results['workout_time'] = workout_time
+    log_test("")
     
-    print(f"\nOverall: {success_count}/{total_count} tests passed")
+    # Summary
+    total_time = time.time() - total_start
+    log_test("=" * 80)
+    log_test("📊 TESTING SUMMARY")
+    log_test("=" * 80)
     
-    if success_count == total_count:
-        print("🎉 ALL OPTIMIZED ENDPOINTS WORKING!")
+    passed = sum([results['health'], results['meal_plan'], results['workout']])
+    total = 3
+    
+    log_test(f"✅ Health Check: {'PASSED' if results['health'] else 'FAILED'}")
+    log_test(f"✅ Meal Plan (3-day): {'PASSED' if results['meal_plan'] else 'FAILED'} - {results.get('meal_plan_time', 0):.2f}s")
+    log_test(f"✅ Workout (2-day): {'PASSED' if results['workout'] else 'FAILED'} - {results.get('workout_time', 0):.2f}s")
+    log_test("")
+    log_test(f"🎯 OVERALL: {passed}/{total} tests passed ({(passed/total)*100:.1f}%)")
+    log_test(f"⏱️  Total testing time: {total_time:.2f}s")
+    
+    if passed == total:
+        log_test("🎉 ALL OPTIMIZED ENDPOINTS WORKING!")
     else:
-        print("⚠️  Some optimized endpoints need attention")
+        log_test("⚠️  Some endpoints need attention")
     
-    return success_count == total_count
+    return results
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    main()

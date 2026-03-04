@@ -46,14 +46,14 @@ logger = logging.getLogger(__name__)
 async def call_claude(system_message: str, user_message: str, session_id: str = None, image_base64: str = None, use_fast_model: bool = False) -> str:
     """Helper function to call Claude via emergentintegrations
     
-    Args:
-        use_fast_model: If True, uses claude-3-5-haiku (faster, cheaper). Default uses claude-sonnet-4-6.
+    Uses claude-sonnet-4-6 for all requests. The use_fast_model parameter is kept for future
+    compatibility but currently uses the same model.
     """
     if session_id is None:
         session_id = str(uuid.uuid4())
     
-    # Use faster model for large text generation, full model for vision/complex tasks
-    model = "claude-3-5-haiku-20241022" if use_fast_model else "claude-sonnet-4-6"
+    # Using claude-sonnet-4-6 for all requests (haiku models not available)
+    model = "claude-sonnet-4-6"
     
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
