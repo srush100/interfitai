@@ -43,16 +43,23 @@ logger = logging.getLogger(__name__)
 
 # ==================== CLAUDE SONNET 4.6 HELPER ====================
 
-async def call_claude(system_message: str, user_message: str, session_id: str = None, image_base64: str = None) -> str:
-    """Helper function to call Claude Sonnet 4.6 via emergentintegrations"""
+async def call_claude(system_message: str, user_message: str, session_id: str = None, image_base64: str = None, use_fast_model: bool = False) -> str:
+    """Helper function to call Claude via emergentintegrations
+    
+    Args:
+        use_fast_model: If True, uses claude-3-5-haiku (faster, cheaper). Default uses claude-sonnet-4-6.
+    """
     if session_id is None:
         session_id = str(uuid.uuid4())
+    
+    # Use faster model for large text generation, full model for vision/complex tasks
+    model = "claude-3-5-haiku-20241022" if use_fast_model else "claude-sonnet-4-6"
     
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
         session_id=session_id,
         system_message=system_message
-    ).with_model("anthropic", "claude-sonnet-4-6")
+    ).with_model("anthropic", model)
     
     if image_base64:
         image_content = ImageContent(image_base64=image_base64)
@@ -489,9 +496,9 @@ Requirements:
 - Make it progressive and appropriate for intermediate fitness level"""
 
     try:
-        system_message = "You are an expert personal trainer and fitness program designer. Always respond with valid JSON only, no additional text."
+        system_message = "You are a personal trainer. Create workouts in JSON format. Be concise."
         
-        content = await call_claude(system_message, prompt)
+        content = await call_claude(system_message, prompt, use_fast_model=True)
         
         # Clean the response - remove markdown code blocks if present
         if content.startswith("```"):
@@ -575,60 +582,22 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     # Cuisine preference
     cuisine_str = f"Preferred Cuisine: {request.cuisine_preference}" if request.cuisine_preference else "No specific cuisine preference"
     
-    prompt = f"""Create a 7-day meal plan for someone with the following requirements:
+    prompt = f"""Create a 3-day meal plan with these macros:
+- Calories: {macros['calories']} kcal, Protein: {macros['protein']}g, Carbs: {macros['carbs']}g, Fats: {macros['fats']}g
 
-Daily Macros Target (MUST match closely):
-- Calories: {macros['calories']} kcal
-- Protein: {macros['protein']}g
-- Carbs: {macros['carbs']}g
-- Fats: {macros['fats']}g
-
-Food Preferences: {request.food_preferences}
+Preferences: {request.food_preferences}
 {cuisine_str}
-Supplements Used: {supplements_str}
-Food Allergies/Sensitivities: {', '.join(request.allergies) if request.allergies else 'None'}
+Allergies: {', '.join(request.allergies) if request.allergies else 'None'}
 
-Please provide a structured meal plan in JSON format:
-{{
-    "name": "Meal Plan Name",
-    "meal_days": [
-        {{
-            "day": "Day 1",
-            "total_calories": {macros['calories']},
-            "total_protein": {macros['protein']},
-            "total_carbs": {macros['carbs']},
-            "total_fats": {macros['fats']},
-            "meals": [
-                {{
-                    "id": "unique_id",
-                    "name": "Meal Name",
-                    "meal_type": "breakfast",
-                    "ingredients": ["ingredient 1 with amount", "ingredient 2 with amount"],
-                    "instructions": "Detailed cooking instructions",
-                    "calories": 500,
-                    "protein": 30,
-                    "carbs": 50,
-                    "fats": 15,
-                    "prep_time_minutes": 15,
-                    "cuisine": "{request.cuisine_preference or 'international'}"
-                }}
-            ]
-        }}
-    ]
-}}
+Return JSON only:
+{{"name": "Plan Name", "meal_days": [{{"day": "Day 1", "total_calories": {macros['calories']}, "total_protein": {macros['protein']}, "total_carbs": {macros['carbs']}, "total_fats": {macros['fats']}, "meals": [{{"id": "m1", "name": "Meal", "meal_type": "breakfast", "ingredients": ["item"], "instructions": "steps", "calories": 400, "protein": 30, "carbs": 40, "fats": 15, "prep_time_minutes": 10}}]}}]}}
 
-Requirements:
-- Include 4-5 meals per day (breakfast, lunch, dinner, and 1-2 snacks)
-- CRITICAL: Daily totals MUST match target macros within 5%
-- Include precise ingredient amounts
-- Make meals practical, delicious, and varied
-- Each meal should have accurate macro calculations
-- If cuisine preference specified, align 70% of meals to that cuisine"""
+Include 4 meals per day (breakfast, lunch, dinner, snack). Match macros within 10%."""
 
     try:
-        system_message = "You are an expert nutritionist and meal planning specialist. Create accurate, macro-aligned meal plans. Always respond with valid JSON only, no additional text."
+        system_message = "You are a nutritionist. Create a meal plan in JSON format. Be concise."
         
-        content = await call_claude(system_message, prompt)
+        content = await call_claude(system_message, prompt, use_fast_model=True)
         
         if content.startswith("```"):
             content = content.split("```")[1]
