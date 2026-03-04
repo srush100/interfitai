@@ -17,13 +17,18 @@ import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 
 const GOALS = [
-  { id: 'build_muscle', label: 'Build Muscle', icon: 'barbell' },
-  { id: 'lose_fat', label: 'Lose Fat', icon: 'flame' },
-  { id: 'general_fitness', label: 'General Fitness', icon: 'fitness' },
+  { id: 'build_muscle', label: 'Build Muscle', icon: 'barbell', desc: 'Hypertrophy focused' },
+  { id: 'lose_fat', label: 'Lose Fat', icon: 'flame', desc: 'Fat burning workouts' },
+  { id: 'general_fitness', label: 'General Fitness', icon: 'fitness', desc: 'Overall health' },
+  { id: 'strength', label: 'Build Strength', icon: 'trophy', desc: 'Power & strength' },
 ];
 
 const FOCUS_AREAS = [
   { id: 'full_body', label: 'Full Body' },
+  { id: 'upper_body', label: 'Upper Body' },
+  { id: 'lower_body', label: 'Lower Body' },
+  { id: 'push', label: 'Push' },
+  { id: 'pull', label: 'Pull' },
   { id: 'back', label: 'Back' },
   { id: 'chest', label: 'Chest' },
   { id: 'legs', label: 'Legs' },
@@ -41,6 +46,14 @@ const EQUIPMENT = [
   { id: 'kettlebells', label: 'Kettlebells' },
   { id: 'machines', label: 'Machines' },
   { id: 'cables', label: 'Cables' },
+  { id: 'resistance_bands', label: 'Bands' },
+];
+
+const DURATIONS = [
+  { id: 30, label: '30 min', desc: 'Quick & efficient' },
+  { id: 45, label: '45 min', desc: 'Balanced workout' },
+  { id: 60, label: '60 min', desc: 'Full session' },
+  { id: 90, label: '90 min', desc: 'Extended training' },
 ];
 
 const DAYS_OPTIONS = [2, 3, 4, 5, 6];
@@ -56,6 +69,7 @@ export default function WorkoutQuestionnaire() {
     equipment: ['full_gym'] as string[],
     injuries: '',
     days_per_week: 4,
+    duration_minutes: 60,
   });
 
   const toggleSelection = (field: 'focus_areas' | 'equipment', value: string) => {
@@ -84,6 +98,7 @@ export default function WorkoutQuestionnaire() {
         equipment: formData.equipment,
         injuries: formData.injuries || null,
         days_per_week: formData.days_per_week,
+        duration_minutes: formData.duration_minutes,
       });
 
       router.replace(`/workout-detail?id=${response.data.id}`);
@@ -105,14 +120,19 @@ export default function WorkoutQuestionnaire() {
           style={[styles.goalCard, formData.goal === goal.id && styles.goalCardActive]}
           onPress={() => setFormData({ ...formData, goal: goal.id })}
         >
-          <Ionicons
-            name={goal.icon as any}
-            size={28}
-            color={formData.goal === goal.id ? colors.primary : colors.textSecondary}
-          />
-          <Text style={[styles.goalText, formData.goal === goal.id && styles.goalTextActive]}>
-            {goal.label}
-          </Text>
+          <View style={[styles.goalIcon, formData.goal === goal.id && styles.goalIconActive]}>
+            <Ionicons
+              name={goal.icon as any}
+              size={24}
+              color={formData.goal === goal.id ? colors.primary : colors.textSecondary}
+            />
+          </View>
+          <View style={styles.goalContent}>
+            <Text style={[styles.goalText, formData.goal === goal.id && styles.goalTextActive]}>
+              {goal.label}
+            </Text>
+            <Text style={styles.goalDesc}>{goal.desc}</Text>
+          </View>
           {formData.goal === goal.id && (
             <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
           )}
@@ -123,7 +143,7 @@ export default function WorkoutQuestionnaire() {
 
   const renderStep2 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Choose Focus Areas</Text>
+      <Text style={styles.stepTitle}>Focus Areas</Text>
       <Text style={styles.stepSubtitle}>Select one or more muscle groups</Text>
       
       <View style={styles.chipContainer}>
@@ -144,7 +164,7 @@ export default function WorkoutQuestionnaire() {
 
   const renderStep3 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Choose Equipment</Text>
+      <Text style={styles.stepTitle}>Equipment Available</Text>
       <Text style={styles.stepSubtitle}>What equipment do you have access to?</Text>
       
       <View style={styles.chipContainer}>
@@ -165,19 +185,25 @@ export default function WorkoutQuestionnaire() {
 
   const renderStep4 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Do You Have Injuries?</Text>
-      <Text style={styles.stepSubtitle}>Let us know so we can adjust your program</Text>
+      <Text style={styles.stepTitle}>Workout Duration</Text>
+      <Text style={styles.stepSubtitle}>How long do you want each workout to be?</Text>
       
-      <TextInput
-        style={styles.textInput}
-        placeholder="e.g., Lower back pain, knee issues, or 'None'"
-        placeholderTextColor={colors.textMuted}
-        value={formData.injuries}
-        onChangeText={(text) => setFormData({ ...formData, injuries: text })}
-        multiline
-      />
+      <View style={styles.durationGrid}>
+        {DURATIONS.map((dur) => (
+          <TouchableOpacity
+            key={dur.id}
+            style={[styles.durationCard, formData.duration_minutes === dur.id && styles.durationCardActive]}
+            onPress={() => setFormData({ ...formData, duration_minutes: dur.id })}
+          >
+            <Text style={[styles.durationValue, formData.duration_minutes === dur.id && styles.durationValueActive]}>
+              {dur.label}
+            </Text>
+            <Text style={styles.durationDesc}>{dur.desc}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-      <Text style={[styles.stepTitle, { marginTop: 32 }]}>Days Per Week</Text>
+      <Text style={[styles.stepTitle, { marginTop: 28 }]}>Days Per Week</Text>
       <Text style={styles.stepSubtitle}>How many days can you train?</Text>
       
       <View style={styles.daysContainer}>
@@ -196,6 +222,48 @@ export default function WorkoutQuestionnaire() {
     </View>
   );
 
+  const renderStep5 = () => (
+    <View style={styles.stepContent}>
+      <Text style={styles.stepTitle}>Any Injuries?</Text>
+      <Text style={styles.stepSubtitle}>We'll adjust exercises to avoid aggravating injuries</Text>
+      
+      <TextInput
+        style={styles.textInput}
+        placeholder="e.g., Lower back pain, knee issues, shoulder injury, or 'None'"
+        placeholderTextColor={colors.textMuted}
+        value={formData.injuries}
+        onChangeText={(text) => setFormData({ ...formData, injuries: text })}
+        multiline
+      />
+
+      {/* Summary */}
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>Your Workout Program</Text>
+        <View style={styles.summaryRow}>
+          <Ionicons name="flag" size={18} color={colors.primary} />
+          <Text style={styles.summaryText}>
+            {GOALS.find(g => g.id === formData.goal)?.label}
+          </Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Ionicons name="time" size={18} color={colors.primary} />
+          <Text style={styles.summaryText}>
+            {formData.duration_minutes} min workouts, {formData.days_per_week}x per week
+          </Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Ionicons name="body" size={18} color={colors.primary} />
+          <Text style={styles.summaryText}>
+            {formData.focus_areas.slice(0, 3).join(', ')}
+            {formData.focus_areas.length > 3 && ` +${formData.focus_areas.length - 3} more`}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const totalSteps = 5;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
@@ -209,7 +277,7 @@ export default function WorkoutQuestionnaire() {
 
       {/* Progress */}
       <View style={styles.progressContainer}>
-        {[1, 2, 3, 4].map((s) => (
+        {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
           <View key={s} style={[styles.progressDot, s <= step && styles.progressDotActive]} />
         ))}
       </View>
@@ -219,6 +287,7 @@ export default function WorkoutQuestionnaire() {
         {step === 2 && renderStep2()}
         {step === 3 && renderStep3()}
         {step === 4 && renderStep4()}
+        {step === 5 && renderStep5()}
       </ScrollView>
 
       {/* Navigation */}
@@ -230,17 +299,17 @@ export default function WorkoutQuestionnaire() {
         )}
         <TouchableOpacity
           style={[styles.navNextBtn, loading && styles.btnDisabled]}
-          onPress={step < 4 ? () => setStep(step + 1) : handleGenerate}
+          onPress={step < totalSteps ? () => setStep(step + 1) : handleGenerate}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color={colors.background} />
+            <ActivityIndicator size="small" color={colors.textOnPrimary} />
           ) : (
             <>
               <Text style={styles.navNextText}>
-                {step < 4 ? 'Continue' : 'Generate Workout'}
+                {step < totalSteps ? 'Continue' : 'Generate Program'}
               </Text>
-              <Ionicons name="arrow-forward" size={20} color={colors.background} />
+              <Ionicons name={step < totalSteps ? "arrow-forward" : "sparkles"} size={20} color={colors.textOnPrimary} />
             </>
           )}
         </TouchableOpacity>
@@ -285,7 +354,7 @@ const styles = StyleSheet.create({
   },
   progressDotActive: {
     backgroundColor: colors.primary,
-    width: 24,
+    width: 20,
   },
   scrollContent: {
     padding: 20,
@@ -309,25 +378,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    padding: 18,
+    padding: 16,
     borderRadius: 14,
     marginBottom: 12,
     borderWidth: 2,
     borderColor: colors.border,
-    gap: 14,
   },
   goalCardActive: {
     borderColor: colors.primary,
     backgroundColor: colors.primary + '10',
   },
-  goalText: {
+  goalIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  goalIconActive: {
+    backgroundColor: colors.primary + '25',
+  },
+  goalContent: {
     flex: 1,
-    fontSize: 17,
+    marginLeft: 14,
+  },
+  goalText: {
+    fontSize: 16,
     fontWeight: '600',
     color: colors.text,
   },
   goalTextActive: {
     color: colors.primary,
+  },
+  goalDesc: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   chipContainer: {
     flexDirection: 'row',
@@ -347,27 +434,47 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   chipText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
     color: colors.textSecondary,
   },
   chipTextActive: {
     color: colors.primary,
   },
-  textInput: {
+  durationGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  durationCard: {
+    width: '47%',
     backgroundColor: colors.surface,
-    borderRadius: 12,
     padding: 16,
-    fontSize: 16,
-    color: colors.text,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: 2,
     borderColor: colors.border,
-    minHeight: 80,
-    textAlignVertical: 'top',
+    alignItems: 'center',
+  },
+  durationCardActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '10',
+  },
+  durationValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  durationValueActive: {
+    color: colors.primary,
+  },
+  durationDesc: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
   },
   daysContainer: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   dayBtn: {
     flex: 1,
@@ -389,6 +496,42 @@ const styles = StyleSheet.create({
   },
   dayBtnTextActive: {
     color: colors.primary,
+  },
+  textInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  summaryCard: {
+    backgroundColor: colors.surface,
+    padding: 20,
+    borderRadius: 16,
+    marginTop: 28,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  summaryText: {
+    fontSize: 14,
+    color: colors.text,
+    flex: 1,
   },
   navContainer: {
     flexDirection: 'row',
@@ -416,7 +559,7 @@ const styles = StyleSheet.create({
   navNextText: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.background,
+    color: colors.textOnPrimary,
   },
   btnDisabled: {
     opacity: 0.7,

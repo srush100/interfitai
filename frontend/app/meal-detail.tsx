@@ -6,11 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../src/theme/colors';
+import { useUserStore } from '../src/store/userStore';
 import api from '../src/services/api';
 
 interface Meal {
@@ -51,10 +53,12 @@ interface MealPlan {
 export default function MealDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
+  const { profile } = useUserStore();
   const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(0);
   const [expandedMeal, setExpandedMeal] = useState<string | null>(null);
+  const [generatingAlternate, setGeneratingAlternate] = useState<string | null>(null);
 
   useEffect(() => {
     loadMealPlan();
@@ -68,6 +72,38 @@ export default function MealDetail() {
       console.log('Error loading meal plan:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateAlternateMeal = async (dayIndex: number, mealIndex: number) => {
+    if (!profile?.id || !mealPlan) return;
+    
+    const mealKey = `${dayIndex}-${mealIndex}`;
+    setGeneratingAlternate(mealKey);
+    
+    try {
+      const response = await api.post('/mealplan/alternate', {
+        user_id: profile.id,
+        meal_plan_id: mealPlan.id,
+        day_index: dayIndex,
+        meal_index: mealIndex,
+      });
+      
+      const newMeal = response.data.alternate_meal;
+      
+      // Update the meal plan with the new meal
+      const updatedPlan = { ...mealPlan };
+      updatedPlan.meal_days[dayIndex].meals[mealIndex] = {
+        ...newMeal,
+        meal_type: mealPlan.meal_days[dayIndex].meals[mealIndex].meal_type,
+      };
+      setMealPlan(updatedPlan);
+      
+      Alert.alert('Success', `Replaced with ${newMeal.name}`);
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to generate alternate meal');
+    } finally {
+      setGeneratingAlternate(null);
     }
   };
 
@@ -228,6 +264,21 @@ export default function MealDetail() {
                     Prep time: {meal.prep_time_minutes} min
                   </Text>
                 </View>
+
+                <TouchableOpacity
+                  style={styles.swapBtn}
+                  onPress={() => generateAlternateMeal(selectedDay, mealIdx)}
+                  disabled={generatingAlternate === `${selectedDay}-${mealIdx}`}
+                >
+                  {generatingAlternate === `${selectedDay}-${mealIdx}` ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <>
+                      <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
+                      <Text style={styles.swapBtnText}>Generate Alternate</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               </View>
             )}
           </TouchableOpacity>
@@ -413,5 +464,20 @@ const styles = StyleSheet.create({
   prepTimeText: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  swapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+    paddingVertical: 12,
+    backgroundColor: colors.primary + '20',
+    borderRadius: 10,
+  },
+  swapBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
   },
 });

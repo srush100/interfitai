@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -21,6 +22,7 @@ interface Exercise {
   instructions: string;
   muscle_groups: string[];
   equipment: string;
+  gif_url?: string;
 }
 
 interface WorkoutDay {
@@ -190,6 +192,15 @@ export default function WorkoutDetail() {
 
                 {expandedExercise === `${expandedDay}-${exIdx}` && (
                   <View style={styles.exerciseDetails}>
+                    {exercise.gif_url && (
+                      <View style={styles.gifContainer}>
+                        <Image
+                          source={{ uri: exercise.gif_url }}
+                          style={styles.exerciseGif}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    )}
                     <View style={styles.detailSection}>
                       <Text style={styles.detailLabel}>Instructions</Text>
                       <Text style={styles.detailText}>{exercise.instructions}</Text>
@@ -395,6 +406,17 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  gifContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  exerciseGif: {
+    width: '100%',
+    height: 200,
   },
   detailSection: {
     marginBottom: 16,

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -17,19 +18,23 @@ import api from '../src/services/api';
 
 const FOOD_PREFERENCES = [
   { id: 'whole_foods', label: 'Whole Foods', desc: 'Natural, unprocessed foods' },
+  { id: 'high_protein', label: 'High Protein', desc: 'Protein-focused meals' },
   { id: 'vegan', label: 'Vegan', desc: 'Plant-based only' },
   { id: 'vegetarian', label: 'Vegetarian', desc: 'No meat, fish allowed' },
   { id: 'keto', label: 'Keto', desc: 'Low carb, high fat' },
+  { id: 'paleo', label: 'Paleo', desc: 'Ancestral eating' },
   { id: 'none', label: 'No Preference', desc: 'Flexible eating' },
 ];
 
 const SUPPLEMENTS = [
   { id: 'whey_protein', label: 'Whey Protein' },
+  { id: 'casein', label: 'Casein' },
   { id: 'creatine', label: 'Creatine' },
   { id: 'pre_workout', label: 'Pre-Workout' },
   { id: 'bcaa', label: 'BCAAs' },
   { id: 'multivitamin', label: 'Multivitamin' },
   { id: 'omega3', label: 'Omega-3' },
+  { id: 'vitamin_d', label: 'Vitamin D' },
   { id: 'none', label: 'No Supplements' },
 ];
 
@@ -40,7 +45,22 @@ const ALLERGIES = [
   { id: 'eggs', label: 'Eggs' },
   { id: 'soy', label: 'Soy' },
   { id: 'shellfish', label: 'Shellfish' },
+  { id: 'lactose', label: 'Lactose' },
   { id: 'none', label: 'No Allergies' },
+];
+
+const CUISINES = [
+  { id: 'japanese', label: 'Japanese', emoji: '🍱' },
+  { id: 'thai', label: 'Thai', emoji: '🍜' },
+  { id: 'brazilian', label: 'Brazilian', emoji: '🥩' },
+  { id: 'italian', label: 'Italian', emoji: '🍝' },
+  { id: 'mexican', label: 'Mexican', emoji: '🌮' },
+  { id: 'indian', label: 'Indian', emoji: '🍛' },
+  { id: 'mediterranean', label: 'Mediterranean', emoji: '🥗' },
+  { id: 'korean', label: 'Korean', emoji: '🥘' },
+  { id: 'american', label: 'American', emoji: '🍔' },
+  { id: 'chinese', label: 'Chinese', emoji: '🥡' },
+  { id: 'none', label: 'No Preference', emoji: '🌍' },
 ];
 
 export default function MealQuestionnaire() {
@@ -51,7 +71,9 @@ export default function MealQuestionnaire() {
   const [formData, setFormData] = useState({
     food_preferences: 'whole_foods',
     supplements: [] as string[],
+    supplements_custom: '',
     allergies: [] as string[],
+    cuisine_preference: '',
   });
 
   const toggleSelection = (field: 'supplements' | 'allergies', value: string) => {
@@ -85,7 +107,9 @@ export default function MealQuestionnaire() {
         user_id: profile.id,
         food_preferences: formData.food_preferences,
         supplements: formData.supplements.filter((s) => s !== 'none'),
+        supplements_custom: formData.supplements_custom || null,
         allergies: formData.allergies.filter((a) => a !== 'none'),
+        cuisine_preference: formData.cuisine_preference || null,
       });
 
       router.replace(`/meal-detail?id=${response.data.id}`);
@@ -101,27 +125,60 @@ export default function MealQuestionnaire() {
       <Text style={styles.stepTitle}>Food Preferences</Text>
       <Text style={styles.stepSubtitle}>What type of eating style do you prefer?</Text>
       
-      {FOOD_PREFERENCES.map((pref) => (
-        <TouchableOpacity
-          key={pref.id}
-          style={[styles.optionCard, formData.food_preferences === pref.id && styles.optionCardActive]}
-          onPress={() => setFormData({ ...formData, food_preferences: pref.id })}
-        >
-          <View style={styles.optionContent}>
-            <Text style={[styles.optionTitle, formData.food_preferences === pref.id && styles.optionTitleActive]}>
-              {pref.label}
-            </Text>
-            <Text style={styles.optionDesc}>{pref.desc}</Text>
-          </View>
-          {formData.food_preferences === pref.id && (
-            <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-          )}
-        </TouchableOpacity>
-      ))}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {FOOD_PREFERENCES.map((pref) => (
+          <TouchableOpacity
+            key={pref.id}
+            style={[styles.optionCard, formData.food_preferences === pref.id && styles.optionCardActive]}
+            onPress={() => setFormData({ ...formData, food_preferences: pref.id })}
+          >
+            <View style={styles.optionContent}>
+              <Text style={[styles.optionTitle, formData.food_preferences === pref.id && styles.optionTitleActive]}>
+                {pref.label}
+              </Text>
+              <Text style={styles.optionDesc}>{pref.desc}</Text>
+            </View>
+            {formData.food_preferences === pref.id && (
+              <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
     </View>
   );
 
   const renderStep2 = () => (
+    <View style={styles.stepContent}>
+      <Text style={styles.stepTitle}>Preferred Cuisine</Text>
+      <Text style={styles.stepSubtitle}>Select your favorite cuisine style (optional)</Text>
+      
+      <View style={styles.cuisineGrid}>
+        {CUISINES.map((cuisine) => (
+          <TouchableOpacity
+            key={cuisine.id}
+            style={[
+              styles.cuisineCard,
+              formData.cuisine_preference === cuisine.id && styles.cuisineCardActive,
+            ]}
+            onPress={() => setFormData({ 
+              ...formData, 
+              cuisine_preference: formData.cuisine_preference === cuisine.id ? '' : cuisine.id 
+            })}
+          >
+            <Text style={styles.cuisineEmoji}>{cuisine.emoji}</Text>
+            <Text style={[
+              styles.cuisineLabel, 
+              formData.cuisine_preference === cuisine.id && styles.cuisineLabelActive
+            ]}>
+              {cuisine.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderStep3 = () => (
     <View style={styles.stepContent}>
       <Text style={styles.stepTitle}>Supplements</Text>
       <Text style={styles.stepSubtitle}>Do you use any supplements?</Text>
@@ -142,13 +199,25 @@ export default function MealQuestionnaire() {
           </TouchableOpacity>
         ))}
       </View>
+
+      <View style={styles.customInputSection}>
+        <Text style={styles.customInputLabel}>Other supplements (optional)</Text>
+        <TextInput
+          style={styles.customInput}
+          placeholder="e.g., Ashwagandha, Zinc, Magnesium..."
+          placeholderTextColor={colors.textMuted}
+          value={formData.supplements_custom}
+          onChangeText={(text) => setFormData({ ...formData, supplements_custom: text })}
+          multiline
+        />
+      </View>
     </View>
   );
 
-  const renderStep3 = () => (
+  const renderStep4 = () => (
     <View style={styles.stepContent}>
       <Text style={styles.stepTitle}>Food Allergies</Text>
-      <Text style={styles.stepSubtitle}>Do you have any food allergies or sensitivities?</Text>
+      <Text style={styles.stepSubtitle}>Any food allergies or sensitivities?</Text>
       
       <View style={styles.chipContainer}>
         {ALLERGIES.map((allergy) => (
@@ -169,28 +238,38 @@ export default function MealQuestionnaire() {
 
       {/* Summary */}
       <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Your Meal Plan Will Include:</Text>
+        <Text style={styles.summaryTitle}>Your Personalized Meal Plan</Text>
         <View style={styles.summaryRow}>
-          <Ionicons name="flame" size={18} color={colors.primary} />
+          <Ionicons name="flame" size={18} color={colors.calories} />
           <Text style={styles.summaryText}>
             {profile?.calculated_macros?.calories || 2000} daily calories
           </Text>
         </View>
         <View style={styles.summaryRow}>
-          <Ionicons name="barbell" size={18} color="#FF6B6B" />
+          <Ionicons name="barbell" size={18} color={colors.protein} />
           <Text style={styles.summaryText}>
-            {profile?.calculated_macros?.protein || 150}g protein
+            {profile?.calculated_macros?.protein || 150}g protein target
           </Text>
         </View>
         <View style={styles.summaryRow}>
-          <Ionicons name="leaf" size={18} color="#4ECDC4" />
+          <Ionicons name="leaf" size={18} color={colors.carbs} />
           <Text style={styles.summaryText}>
             {formData.food_preferences.replace(/_/g, ' ')} diet
           </Text>
         </View>
+        {formData.cuisine_preference && (
+          <View style={styles.summaryRow}>
+            <Ionicons name="restaurant" size={18} color={colors.primary} />
+            <Text style={styles.summaryText}>
+              {formData.cuisine_preference} cuisine focus
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
+
+  const totalSteps = 4;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -205,7 +284,7 @@ export default function MealQuestionnaire() {
 
       {/* Progress */}
       <View style={styles.progressContainer}>
-        {[1, 2, 3].map((s) => (
+        {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
           <View key={s} style={[styles.progressDot, s <= step && styles.progressDotActive]} />
         ))}
       </View>
@@ -214,6 +293,7 @@ export default function MealQuestionnaire() {
         {step === 1 && renderStep1()}
         {step === 2 && renderStep2()}
         {step === 3 && renderStep3()}
+        {step === 4 && renderStep4()}
       </ScrollView>
 
       {/* Navigation */}
@@ -225,17 +305,17 @@ export default function MealQuestionnaire() {
         )}
         <TouchableOpacity
           style={[styles.navNextBtn, loading && styles.btnDisabled]}
-          onPress={step < 3 ? () => setStep(step + 1) : handleGenerate}
+          onPress={step < totalSteps ? () => setStep(step + 1) : handleGenerate}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color={colors.background} />
+            <ActivityIndicator size="small" color={colors.textOnPrimary} />
           ) : (
             <>
               <Text style={styles.navNextText}>
-                {step < 3 ? 'Continue' : 'Generate Meal Plan'}
+                {step < totalSteps ? 'Continue' : 'Generate Plan'}
               </Text>
-              <Ionicons name="arrow-forward" size={20} color={colors.background} />
+              <Ionicons name={step < totalSteps ? "arrow-forward" : "sparkles"} size={20} color={colors.textOnPrimary} />
             </>
           )}
         </TouchableOpacity>
@@ -280,7 +360,7 @@ const styles = StyleSheet.create({
   },
   progressDotActive: {
     backgroundColor: colors.primary,
-    width: 24,
+    width: 20,
   },
   scrollContent: {
     padding: 20,
@@ -304,9 +384,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    padding: 18,
+    padding: 16,
     borderRadius: 14,
-    marginBottom: 12,
+    marginBottom: 10,
     borderWidth: 2,
     borderColor: colors.border,
   },
@@ -318,7 +398,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   optionTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
     color: colors.text,
   },
@@ -330,15 +410,49 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
+  cuisineGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  cuisineCard: {
+    width: '31%',
+    backgroundColor: colors.surface,
+    padding: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.border,
+    marginBottom: 10,
+  },
+  cuisineCardActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '15',
+  },
+  cuisineEmoji: {
+    fontSize: 28,
+    marginBottom: 6,
+  },
+  cuisineLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  cuisineLabelActive: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
   chipContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
   chip: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -348,18 +462,38 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   chipText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
     color: colors.textSecondary,
   },
   chipTextActive: {
     color: colors.primary,
   },
+  customInputSection: {
+    marginTop: 24,
+  },
+  customInputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 10,
+  },
+  customInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
   summaryCard: {
     backgroundColor: colors.surface,
     padding: 20,
-    borderRadius: 14,
-    marginTop: 32,
+    borderRadius: 16,
+    marginTop: 28,
     borderWidth: 1,
     borderColor: colors.primary + '30',
   },
@@ -376,8 +510,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   summaryText: {
-    fontSize: 15,
+    fontSize: 14,
     color: colors.text,
+    flex: 1,
+    textTransform: 'capitalize',
   },
   navContainer: {
     flexDirection: 'row',
@@ -405,7 +541,7 @@ const styles = StyleSheet.create({
   navNextText: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.background,
+    color: colors.textOnPrimary,
   },
   btnDisabled: {
     opacity: 0.7,

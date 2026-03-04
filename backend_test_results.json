@@ -1,89 +1,76 @@
 {
   "summary": {
-    "total": 12,
-    "passed": 11,
-    "failed": 1,
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
     "errors": 0,
-    "success_rate": 91.66666666666666
+    "success_rate": 100.0
   },
   "results": {
     "passed": [
       {
         "test": "Health Check",
         "success": true,
-        "message": "API is healthy - {'status': 'healthy', 'timestamp': '2026-03-04T04:04:18.994826'}",
-        "timestamp": "2026-03-04T04:04:19.013692"
+        "message": "API is healthy - {'status': 'healthy', 'timestamp': '2026-03-04T05:03:54.886596'}",
+        "timestamp": "2026-03-04T05:03:54.903216"
       },
       {
-        "test": "Profile Creation",
+        "test": "Body Progress Photos",
         "success": true,
-        "message": "Profile created with macros: 2949.0 cal, 221.0g protein",
-        "timestamp": "2026-03-04T04:04:19.179204"
+        "message": "Retrieved 0 progress photos for user",
+        "timestamp": "2026-03-04T05:03:55.052423"
       },
       {
-        "test": "Profile Retrieval",
+        "test": "Body Analysis History",
         "success": true,
-        "message": "Successfully retrieved profile for user 068e306a-4f6e-4695-9e3b-040f40827fe7",
-        "timestamp": "2026-03-04T04:04:19.281815"
+        "message": "Retrieved 0 analysis history entries for user",
+        "timestamp": "2026-03-04T05:03:55.205052"
       },
       {
-        "test": "Profile Update",
+        "test": "Body Analyzer POST",
         "success": true,
-        "message": "Profile updated and macros recalculated: 2226.0 calories",
-        "timestamp": "2026-03-04T04:04:19.411917"
+        "message": "SKIPPED - Requires real before/after images which testing agent cannot provide",
+        "timestamp": "2026-03-04T05:03:55.205074"
       },
       {
-        "test": "AI Workout Generation",
+        "test": "Alternate Meal Generation",
         "success": true,
-        "message": "Generated workout '4-Day Muscle Building Program' with 4 days and 5 exercises on day 1",
-        "timestamp": "2026-03-04T04:04:42.860014"
+        "message": "Generated alternate meal: Quinoa Breakfast Bowl with Greek Yogurt and Mixed Fruits (520 cal)",
+        "timestamp": "2026-03-04T05:03:58.987109"
       },
       {
-        "test": "AI Meal Plan Generation",
+        "test": "Food Log Creation",
         "success": true,
-        "message": "Generated meal plan 'Whole Foods Balanced Meal Plan' with 2 days and 5 meals on day 1",
-        "timestamp": "2026-03-04T04:04:55.034973"
+        "message": "Created food log entry: Grilled Chicken Breast",
+        "timestamp": "2026-03-04T05:03:59.091646"
       },
       {
-        "test": "Ask InterFitAI Chat",
+        "test": "Food Log Favorite Toggle",
         "success": true,
-        "message": "AI responded: 'For a workout, especially with your goal of weight loss and moderate activity level, it's important ...'",
-        "timestamp": "2026-03-04T04:04:59.219395"
+        "message": "Toggled favorite status: True",
+        "timestamp": "2026-03-04T05:03:59.204636"
       },
       {
-        "test": "Food Search",
+        "test": "Food Log Delete",
         "success": true,
-        "message": "Found 1 foods for 'chicken' query",
-        "timestamp": "2026-03-04T04:04:59.339203"
+        "message": "Successfully deleted food log entry",
+        "timestamp": "2026-03-04T05:03:59.305513"
       },
       {
-        "test": "Food Logging",
+        "test": "Meal Plan Save",
         "success": true,
-        "message": "Successfully logged and retrieved food: Chicken Breast (100g)",
-        "timestamp": "2026-03-04T04:04:59.592852"
+        "message": "Successfully saved meal plan",
+        "timestamp": "2026-03-04T05:03:59.595533"
       },
       {
-        "test": "Step Tracking",
+        "test": "Meal Plan Saved Retrieval",
         "success": true,
-        "message": "Successfully logged and retrieved 8500 steps",
-        "timestamp": "2026-03-04T04:04:59.858645"
-      },
-      {
-        "test": "Stripe Subscription Checkout",
-        "success": true,
-        "message": "Successfully created checkout session: cs_live_a1xaNDozG3dZzsoHZd7Sdv7OhngqUys5k78wRue3wQWRiJmBbXtohJIux2",
-        "timestamp": "2026-03-04T04:05:01.188955"
+        "message": "Retrieved 1 saved meal plans",
+        "timestamp": "2026-03-04T05:03:59.707892"
       }
     ],
-    "failed": [
-      {
-        "test": "Food Image Analysis",
-        "success": false,
-        "message": "Failed to analyze food image: 500 - {\"detail\":\"Failed to analyze food: Error code: 400 - {'error': {'message': 'You uploaded an unsupported image. Please make sure your image is valid.', 'type': 'invalid_request_error', 'param': None, 'code': 'image_parse_error'}}\"}",
-        "timestamp": "2026-03-04T04:05:00.035692"
-      }
-    ],
+    "failed": [],
     "errors": []
   },
-  "test_timestamp": "2026-03-04T04:05:01.189816"
+  "test_timestamp": "2026-03-04T05:03:59.709999"
 }

@@ -78,6 +78,13 @@ export default function HomeScreen() {
       onPress: () => router.push('/food-log'),
     },
     {
+      icon: 'body',
+      title: 'Body Analyzer',
+      subtitle: 'Track progress',
+      color: '#9B59B6',
+      onPress: () => router.push('/body-analyzer'),
+    },
+    {
       icon: 'chatbubble-ellipses',
       title: 'Ask InterFitAI',
       subtitle: 'Get answers',

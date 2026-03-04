@@ -25,9 +25,9 @@ const ACTIVITY_LEVELS = [
 ];
 
 const GOALS = [
-  { id: 'weight_loss', label: 'Lose Weight', icon: 'trending-down' },
-  { id: 'maintenance', label: 'Maintain', icon: 'fitness' },
-  { id: 'muscle_building', label: 'Build Muscle', icon: 'barbell' },
+  { id: 'weight_loss', label: 'Lose Weight', icon: 'trending-down', desc: 'Caloric deficit for fat loss' },
+  { id: 'maintenance', label: 'Maintain', icon: 'fitness', desc: 'Stay at current weight' },
+  { id: 'muscle_building', label: 'Build Muscle', icon: 'barbell', desc: 'Caloric surplus for gains' },
 ];
 
 const GENDERS = [
@@ -40,6 +40,7 @@ export default function Onboarding() {
   const router = useRouter();
   const { createProfile, isLoading } = useUserStore();
   const [step, setStep] = useState(1);
+  const [useMetric, setUseMetric] = useState(true); // Toggle for metric/imperial
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -50,6 +51,21 @@ export default function Onboarding() {
     activity_level: 'moderate',
     goal: 'muscle_building',
   });
+
+  // Convert imperial to metric
+  const convertToMetric = () => {
+    let weightKg = parseFloat(formData.weight);
+    let heightCm = parseFloat(formData.height);
+    
+    if (!useMetric) {
+      // Convert lbs to kg
+      weightKg = parseFloat(formData.weight) * 0.453592;
+      // Convert inches to cm
+      heightCm = parseFloat(formData.height) * 2.54;
+    }
+    
+    return { weightKg, heightCm };
+  };
 
   const handleNext = () => {
     if (step < 4) {
@@ -71,12 +87,14 @@ export default function Onboarding() {
       return;
     }
 
+    const { weightKg, heightCm } = convertToMetric();
+
     try {
       await createProfile({
-        name: formData.name,
+        name: formData.name || 'Champion',
         email: formData.email,
-        weight: parseFloat(formData.weight),
-        height: parseFloat(formData.height),
+        weight: Math.round(weightKg * 10) / 10,
+        height: Math.round(heightCm * 10) / 10,
         age: parseInt(formData.age),
         gender: formData.gender,
         activity_level: formData.activity_level,
@@ -90,8 +108,11 @@ export default function Onboarding() {
 
   const renderStep1 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Welcome to InterFitAI</Text>
-      <Text style={styles.stepSubtitle}>Let's personalize your fitness journey</Text>
+      <View style={styles.logoContainer}>
+        <Text style={styles.logoText}>INTERFIT</Text>
+        <Text style={styles.logoAI}>AI</Text>
+      </View>
+      <Text style={styles.stepSubtitle}>Your AI-Powered Fitness Journey Starts Here</Text>
       
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Your Name</Text>
@@ -122,14 +143,34 @@ export default function Onboarding() {
   const renderStep2 = () => (
     <View style={styles.stepContainer}>
       <Text style={styles.stepTitle}>Your Body Stats</Text>
-      <Text style={styles.stepSubtitle}>We'll use this to calculate your macros</Text>
+      <Text style={styles.stepSubtitle}>We'll calculate your personalized macros using the Mifflin-St Jeor equation</Text>
+      
+      {/* Unit Toggle */}
+      <View style={styles.unitToggle}>
+        <TouchableOpacity
+          style={[styles.unitBtn, useMetric && styles.unitBtnActive]}
+          onPress={() => setUseMetric(true)}
+        >
+          <Text style={[styles.unitBtnText, useMetric && styles.unitBtnTextActive]}>
+            Metric (kg/cm)
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.unitBtn, !useMetric && styles.unitBtnActive]}
+          onPress={() => setUseMetric(false)}
+        >
+          <Text style={[styles.unitBtnText, !useMetric && styles.unitBtnTextActive]}>
+            Imperial (lbs/in)
+          </Text>
+        </TouchableOpacity>
+      </View>
       
       <View style={styles.row}>
         <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-          <Text style={styles.label}>Weight (kg)</Text>
+          <Text style={styles.label}>Weight ({useMetric ? 'kg' : 'lbs'})</Text>
           <TextInput
             style={styles.input}
-            placeholder="70"
+            placeholder={useMetric ? '70' : '154'}
             placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
             value={formData.weight}
@@ -137,10 +178,10 @@ export default function Onboarding() {
           />
         </View>
         <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-          <Text style={styles.label}>Height (cm)</Text>
+          <Text style={styles.label}>Height ({useMetric ? 'cm' : 'inches'})</Text>
           <TextInput
             style={styles.input}
-            placeholder="175"
+            placeholder={useMetric ? '175' : '69'}
             placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
             value={formData.height}
@@ -236,19 +277,27 @@ export default function Onboarding() {
           ]}
           onPress={() => setFormData({ ...formData, goal: goal.id })}
         >
-          <Ionicons
-            name={goal.icon as any}
-            size={32}
-            color={formData.goal === goal.id ? colors.primary : colors.textSecondary}
-          />
-          <Text
-            style={[
-              styles.goalText,
-              formData.goal === goal.id && styles.goalTextActive,
-            ]}
-          >
-            {goal.label}
-          </Text>
+          <View style={[styles.goalIcon, formData.goal === goal.id && styles.goalIconActive]}>
+            <Ionicons
+              name={goal.icon as any}
+              size={28}
+              color={formData.goal === goal.id ? colors.primary : colors.textSecondary}
+            />
+          </View>
+          <View style={styles.goalContent}>
+            <Text
+              style={[
+                styles.goalText,
+                formData.goal === goal.id && styles.goalTextActive,
+              ]}
+            >
+              {goal.label}
+            </Text>
+            <Text style={styles.goalDesc}>{goal.desc}</Text>
+          </View>
+          {formData.goal === goal.id && (
+            <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+          )}
         </TouchableOpacity>
       ))}
     </View>
@@ -296,9 +345,9 @@ export default function Onboarding() {
             disabled={isLoading}
           >
             <Text style={styles.nextBtnText}>
-              {step === 4 ? 'Get Started' : 'Continue'}
+              {step === 4 ? 'Calculate My Macros' : 'Continue'}
             </Text>
-            <Ionicons name="arrow-forward" size={20} color={colors.background} />
+            <Ionicons name="arrow-forward" size={20} color={colors.textOnPrimary} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -337,6 +386,24 @@ const styles = StyleSheet.create({
   stepContainer: {
     flex: 1,
   },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  logoText: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: 3,
+  },
+  logoAI: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: 3,
+  },
   stepTitle: {
     fontSize: 28,
     fontWeight: '700',
@@ -344,9 +411,35 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   stepSubtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: colors.textSecondary,
-    marginBottom: 32,
+    marginBottom: 28,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  unitToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 24,
+  },
+  unitBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  unitBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  unitBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  unitBtnTextActive: {
+    color: colors.textOnPrimary,
   },
   inputGroup: {
     marginBottom: 20,
@@ -371,11 +464,11 @@ const styles = StyleSheet.create({
   },
   genderContainer: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   genderBtn: {
     flex: 1,
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
     backgroundColor: colors.surface,
     alignItems: 'center',
@@ -387,7 +480,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   genderText: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.textSecondary,
   },
   genderTextActive: {
@@ -400,7 +493,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surface,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: colors.border,
@@ -426,24 +519,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    padding: 20,
+    padding: 18,
     borderRadius: 16,
     marginBottom: 12,
     borderWidth: 2,
     borderColor: colors.border,
-    gap: 16,
   },
   goalCardActive: {
     borderColor: colors.primary,
     backgroundColor: colors.primary + '10',
   },
+  goalIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  goalIconActive: {
+    backgroundColor: colors.primary + '20',
+  },
+  goalContent: {
+    flex: 1,
+    marginLeft: 14,
+  },
   goalText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
     color: colors.text,
   },
   goalTextActive: {
     color: colors.primary,
+  },
+  goalDesc: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   navContainer: {
     flexDirection: 'row',
@@ -471,7 +583,7 @@ const styles = StyleSheet.create({
   nextBtnText: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.background,
+    color: colors.textOnPrimary,
   },
   btnDisabled: {
     opacity: 0.5,
