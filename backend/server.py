@@ -1,0 +1,1122 @@
+from fastapi import FastAPI, APIRouter, HTTPException, Request
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
+import logging
+from pathlib import Path
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+import uuid
+from datetime import datetime, date
+import openai
+import stripe
+import base64
+import json
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+# MongoDB connection
+mongo_url = os.environ['MONGO_URL']
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ.get('DB_NAME', 'interfitai')]
+
+# OpenAI configuration
+openai.api_key = os.environ.get('OPENAI_API_KEY', '')
+
+# Stripe configuration
+stripe.api_key = os.environ.get('STRIPE_API_KEY', '')
+
+# Create the main app
+app = FastAPI(title="InterFitAI API", version="1.0.0")
+
+# Create a router with the /api prefix
+api_router = APIRouter(prefix="/api")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# ==================== MODELS ====================
+
+# User Profile Models
+class UserProfile(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ""
+    email: str = ""
+    weight: float = 0  # in kg
+    height: float = 0  # in cm
+    age: int = 0
+    gender: str = "male"  # male, female, other
+    activity_level: str = "moderate"  # sedentary, light, moderate, active, very_active
+    goal: str = "maintenance"  # weight_loss, maintenance, muscle_building
+    calculated_macros: Optional[Dict[str, float]] = None
+    subscription_status: str = "free"  # free, monthly, quarterly, yearly
+    subscription_end_date: Optional[str] = None
+    reminders_enabled: bool = True
+    motivation_enabled: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class UserProfileCreate(BaseModel):
+    name: str = ""
+    email: str = ""
+    weight: float
+    height: float
+    age: int
+    gender: str = "male"
+    activity_level: str = "moderate"
+    goal: str = "maintenance"
+
+class UserProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    weight: Optional[float] = None
+    height: Optional[float] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    activity_level: Optional[str] = None
+    goal: Optional[str] = None
+    reminders_enabled: Optional[bool] = None
+    motivation_enabled: Optional[bool] = None
+
+# Workout Models
+class Exercise(BaseModel):
+    name: str
+    sets: int
+    reps: str
+    rest_seconds: int
+    instructions: str
+    muscle_groups: List[str]
+    equipment: str
+
+class WorkoutDay(BaseModel):
+    day: str
+    focus: str
+    exercises: List[Exercise]
+    duration_minutes: int
+    notes: str
+
+class WorkoutProgram(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    name: str
+    goal: str
+    focus_areas: List[str]
+    equipment: List[str]
+    injuries: Optional[str] = None
+    duration_weeks: int = 4
+    days_per_week: int = 4
+    workout_days: List[WorkoutDay]
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class WorkoutGenerateRequest(BaseModel):
+    user_id: str
+    goal: str  # build_muscle, lose_fat, general_fitness
+    focus_areas: List[str]  # full_body, back, chest, legs, glutes, arms
+    equipment: List[str]  # full_gym, barbells, dumbbells, bodyweight, kettlebells, machines
+    injuries: Optional[str] = None  # lower_back, knees, shoulders, none
+    days_per_week: int = 4
+
+# Meal Plan Models
+class Meal(BaseModel):
+    name: str
+    meal_type: str  # breakfast, lunch, dinner, snack
+    ingredients: List[str]
+    instructions: str
+    calories: int
+    protein: float
+    carbs: float
+    fats: float
+    prep_time_minutes: int
+
+class MealDay(BaseModel):
+    day: str
+    meals: List[Meal]
+    total_calories: int
+    total_protein: float
+    total_carbs: float
+    total_fats: float
+
+class MealPlan(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    name: str
+    food_preferences: str
+    supplements: List[str]
+    allergies: List[str]
+    target_calories: int
+    target_protein: float
+    target_carbs: float
+    target_fats: float
+    meal_days: List[MealDay]
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class MealPlanGenerateRequest(BaseModel):
+    user_id: str
+    food_preferences: str = "whole_foods"  # whole_foods, vegan, none
+    supplements: List[str] = []  # whey_protein, creatine, none
+    allergies: List[str] = []  # gluten, nuts, dairy, none
+
+# Food Logging Models
+class FoodEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    food_name: str
+    serving_size: str
+    calories: int
+    protein: float
+    carbs: float
+    fats: float
+    fiber: float = 0
+    sugar: float = 0
+    sodium: float = 0
+    meal_type: str  # breakfast, lunch, dinner, snack
+    logged_date: str  # YYYY-MM-DD format
+    image_base64: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class FoodLogRequest(BaseModel):
+    user_id: str
+    food_name: str
+    serving_size: str
+    calories: int
+    protein: float
+    carbs: float
+    fats: float
+    fiber: float = 0
+    sugar: float = 0
+    sodium: float = 0
+    meal_type: str
+    logged_date: str
+    image_base64: Optional[str] = None
+
+class FoodImageAnalyzeRequest(BaseModel):
+    user_id: str
+    image_base64: str
+    meal_type: str = "snack"
+
+# Chat Models
+class ChatMessage(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    role: str  # user, assistant
+    content: str
+    saved: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ChatRequest(BaseModel):
+    user_id: str
+    message: str
+
+# Step Tracking Models
+class StepEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    steps: int
+    distance_km: float
+    calories_burned: int
+    date: str  # YYYY-MM-DD format
+    source: str = "device"  # device, manual, apple_health, garmin, fitbit, google_fit
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class StepGoal(BaseModel):
+    user_id: str
+    daily_steps_goal: int = 10000
+    daily_distance_goal_km: float = 8.0
+
+# Subscription Models
+class SubscriptionPlan(BaseModel):
+    id: str
+    name: str
+    price: float
+    duration_months: int
+    features: List[str]
+
+class PaymentRequest(BaseModel):
+    user_id: str
+    plan_id: str  # monthly, quarterly, yearly
+    origin_url: str
+
+# Device Connection Models
+class DeviceConnection(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    device_type: str  # apple_health, garmin, fitbit, google_fit
+    connected: bool = False
+    last_sync: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# ==================== HELPER FUNCTIONS ====================
+
+def calculate_macros(weight: float, height: float, age: int, gender: str, activity_level: str, goal: str) -> Dict[str, float]:
+    """Calculate personalized macros using Mifflin-St Jeor equation"""
+    # Calculate BMR
+    if gender == "male":
+        bmr = 10 * weight + 6.25 * height - 5 * age + 5
+    else:
+        bmr = 10 * weight + 6.25 * height - 5 * age - 161
+    
+    # Activity multipliers
+    activity_multipliers = {
+        "sedentary": 1.2,
+        "light": 1.375,
+        "moderate": 1.55,
+        "active": 1.725,
+        "very_active": 1.9
+    }
+    
+    tdee = bmr * activity_multipliers.get(activity_level, 1.55)
+    
+    # Adjust for goal
+    if goal == "weight_loss":
+        calories = tdee - 500
+        protein_ratio = 0.30
+        carb_ratio = 0.40
+        fat_ratio = 0.30
+    elif goal == "muscle_building":
+        calories = tdee + 300
+        protein_ratio = 0.30
+        carb_ratio = 0.45
+        fat_ratio = 0.25
+    else:  # maintenance
+        calories = tdee
+        protein_ratio = 0.25
+        carb_ratio = 0.45
+        fat_ratio = 0.30
+    
+    return {
+        "calories": round(calories),
+        "protein": round((calories * protein_ratio) / 4),  # 4 cal per gram protein
+        "carbs": round((calories * carb_ratio) / 4),  # 4 cal per gram carbs
+        "fats": round((calories * fat_ratio) / 9),  # 9 cal per gram fat
+        "bmr": round(bmr),
+        "tdee": round(tdee)
+    }
+
+# ==================== USER PROFILE ENDPOINTS ====================
+
+@api_router.post("/profile", response_model=UserProfile)
+async def create_profile(profile_data: UserProfileCreate):
+    """Create or update user profile with calculated macros"""
+    macros = calculate_macros(
+        profile_data.weight, profile_data.height, profile_data.age,
+        profile_data.gender, profile_data.activity_level, profile_data.goal
+    )
+    
+    profile = UserProfile(
+        **profile_data.model_dump(),
+        calculated_macros=macros
+    )
+    
+    await db.profiles.insert_one(profile.model_dump())
+    return profile
+
+@api_router.get("/profile/{user_id}", response_model=UserProfile)
+async def get_profile(user_id: str):
+    """Get user profile by ID"""
+    profile = await db.profiles.find_one({"id": user_id})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return UserProfile(**profile)
+
+@api_router.put("/profile/{user_id}", response_model=UserProfile)
+async def update_profile(user_id: str, update_data: UserProfileUpdate):
+    """Update user profile and recalculate macros if needed"""
+    profile = await db.profiles.find_one({"id": user_id})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
+    
+    # Check if we need to recalculate macros
+    macro_fields = ["weight", "height", "age", "gender", "activity_level", "goal"]
+    need_recalc = any(field in update_dict for field in macro_fields)
+    
+    if need_recalc:
+        merged = {**profile, **update_dict}
+        macros = calculate_macros(
+            merged["weight"], merged["height"], merged["age"],
+            merged["gender"], merged["activity_level"], merged["goal"]
+        )
+        update_dict["calculated_macros"] = macros
+    
+    update_dict["updated_at"] = datetime.utcnow()
+    
+    await db.profiles.update_one({"id": user_id}, {"$set": update_dict})
+    updated_profile = await db.profiles.find_one({"id": user_id})
+    return UserProfile(**updated_profile)
+
+@api_router.get("/profiles", response_model=List[UserProfile])
+async def list_profiles():
+    """List all profiles (for testing)"""
+    profiles = await db.profiles.find().to_list(100)
+    return [UserProfile(**p) for p in profiles]
+
+# ==================== WORKOUT ENDPOINTS ====================
+
+@api_router.post("/workouts/generate", response_model=WorkoutProgram)
+async def generate_workout(request: WorkoutGenerateRequest):
+    """Generate AI-powered workout program"""
+    # Get user profile for personalization
+    profile = await db.profiles.find_one({"id": request.user_id})
+    
+    prompt = f"""Create a detailed {request.days_per_week}-day per week workout program for someone with the following goals and constraints:
+
+Goal: {request.goal.replace('_', ' ')}
+Focus Areas: {', '.join(request.focus_areas)}
+Available Equipment: {', '.join(request.equipment)}
+Injuries/Limitations: {request.injuries or 'None'}
+
+Please provide a structured workout program in JSON format with the following structure:
+{{
+    "name": "Program Name",
+    "workout_days": [
+        {{
+            "day": "Day 1 - Focus Area",
+            "focus": "Primary muscle group",
+            "duration_minutes": 60,
+            "notes": "Tips for this day",
+            "exercises": [
+                {{
+                    "name": "Exercise Name",
+                    "sets": 4,
+                    "reps": "8-12",
+                    "rest_seconds": 90,
+                    "instructions": "Step-by-step instructions on how to perform the exercise correctly",
+                    "muscle_groups": ["primary", "secondary"],
+                    "equipment": "equipment needed"
+                }}
+            ]
+        }}
+    ]
+}}
+
+Make it progressive and appropriate for intermediate fitness level. Include 5-7 exercises per day with detailed instructions for each exercise. Focus on compound movements and proper form cues."""
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert personal trainer and fitness program designer. Always respond with valid JSON only, no additional text."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=4000
+        )
+        
+        content = response.choices[0].message.content
+        # Clean the response - remove markdown code blocks if present
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+        content = content.strip()
+        
+        workout_data = json.loads(content)
+        
+        program = WorkoutProgram(
+            user_id=request.user_id,
+            name=workout_data.get("name", f"{request.goal.replace('_', ' ').title()} Program"),
+            goal=request.goal,
+            focus_areas=request.focus_areas,
+            equipment=request.equipment,
+            injuries=request.injuries,
+            days_per_week=request.days_per_week,
+            workout_days=[WorkoutDay(**day) for day in workout_data.get("workout_days", [])]
+        )
+        
+        await db.workouts.insert_one(program.model_dump())
+        return program
+        
+    except Exception as e:
+        logger.error(f"Workout generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate workout: {str(e)}")
+
+@api_router.get("/workouts/{user_id}", response_model=List[WorkoutProgram])
+async def get_user_workouts(user_id: str):
+    """Get all workout programs for a user"""
+    workouts = await db.workouts.find({"user_id": user_id}).sort("created_at", -1).to_list(50)
+    return [WorkoutProgram(**w) for w in workouts]
+
+@api_router.get("/workout/{workout_id}", response_model=WorkoutProgram)
+async def get_workout(workout_id: str):
+    """Get a specific workout program"""
+    workout = await db.workouts.find_one({"id": workout_id})
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    return WorkoutProgram(**workout)
+
+@api_router.delete("/workout/{workout_id}")
+async def delete_workout(workout_id: str):
+    """Delete a workout program"""
+    result = await db.workouts.delete_one({"id": workout_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    return {"message": "Workout deleted successfully"}
+
+# ==================== MEAL PLAN ENDPOINTS ====================
+
+@api_router.post("/mealplans/generate", response_model=MealPlan)
+async def generate_meal_plan(request: MealPlanGenerateRequest):
+    """Generate AI-powered meal plan based on user's macros"""
+    profile = await db.profiles.find_one({"id": request.user_id})
+    if not profile or not profile.get("calculated_macros"):
+        raise HTTPException(status_code=404, detail="User profile with macros not found. Please set up your profile first.")
+    
+    macros = profile["calculated_macros"]
+    
+    prompt = f"""Create a 7-day meal plan for someone with the following requirements:
+
+Daily Macros Target:
+- Calories: {macros['calories']} kcal
+- Protein: {macros['protein']}g
+- Carbs: {macros['carbs']}g
+- Fats: {macros['fats']}g
+
+Food Preferences: {request.food_preferences}
+Supplements Used: {', '.join(request.supplements) if request.supplements else 'None'}
+Food Allergies/Sensitivities: {', '.join(request.allergies) if request.allergies else 'None'}
+
+Please provide a structured meal plan in JSON format:
+{{
+    "name": "Meal Plan Name",
+    "meal_days": [
+        {{
+            "day": "Day 1",
+            "total_calories": 2000,
+            "total_protein": 150,
+            "total_carbs": 200,
+            "total_fats": 70,
+            "meals": [
+                {{
+                    "name": "Meal Name",
+                    "meal_type": "breakfast",
+                    "ingredients": ["ingredient 1", "ingredient 2"],
+                    "instructions": "How to prepare",
+                    "calories": 500,
+                    "protein": 30,
+                    "carbs": 50,
+                    "fats": 15,
+                    "prep_time_minutes": 15
+                }}
+            ]
+        }}
+    ]
+}}
+
+Include 4-5 meals per day (breakfast, lunch, dinner, and 1-2 snacks). Make meals practical, tasty, and varied throughout the week. Ensure daily totals closely match the target macros."""
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert nutritionist and meal planning specialist. Always respond with valid JSON only, no additional text."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=6000
+        )
+        
+        content = response.choices[0].message.content
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+        content = content.strip()
+        
+        meal_data = json.loads(content)
+        
+        meal_plan = MealPlan(
+            user_id=request.user_id,
+            name=meal_data.get("name", "Custom Meal Plan"),
+            food_preferences=request.food_preferences,
+            supplements=request.supplements,
+            allergies=request.allergies,
+            target_calories=macros['calories'],
+            target_protein=macros['protein'],
+            target_carbs=macros['carbs'],
+            target_fats=macros['fats'],
+            meal_days=[MealDay(**day) for day in meal_data.get("meal_days", [])]
+        )
+        
+        await db.mealplans.insert_one(meal_plan.model_dump())
+        return meal_plan
+        
+    except Exception as e:
+        logger.error(f"Meal plan generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate meal plan: {str(e)}")
+
+@api_router.get("/mealplans/{user_id}", response_model=List[MealPlan])
+async def get_user_meal_plans(user_id: str):
+    """Get all meal plans for a user"""
+    plans = await db.mealplans.find({"user_id": user_id}).sort("created_at", -1).to_list(50)
+    return [MealPlan(**p) for p in plans]
+
+@api_router.get("/mealplan/{plan_id}", response_model=MealPlan)
+async def get_meal_plan(plan_id: str):
+    """Get a specific meal plan"""
+    plan = await db.mealplans.find_one({"id": plan_id})
+    if not plan:
+        raise HTTPException(status_code=404, detail="Meal plan not found")
+    return MealPlan(**plan)
+
+@api_router.delete("/mealplan/{plan_id}")
+async def delete_meal_plan(plan_id: str):
+    """Delete a meal plan"""
+    result = await db.mealplans.delete_one({"id": plan_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Meal plan not found")
+    return {"message": "Meal plan deleted successfully"}
+
+# ==================== FOOD LOGGING ENDPOINTS ====================
+
+@api_router.post("/food/analyze", response_model=FoodEntry)
+async def analyze_food_image(request: FoodImageAnalyzeRequest):
+    """Analyze food image using OpenAI Vision to identify food and estimate nutrition"""
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are a nutrition expert. Analyze the food image and provide accurate nutritional information. 
+                    Respond with valid JSON only in this format:
+                    {
+                        "food_name": "Name of the food/dish",
+                        "serving_size": "Estimated serving size (e.g., '1 cup', '200g')",
+                        "calories": 300,
+                        "protein": 25.0,
+                        "carbs": 30.0,
+                        "fats": 10.0,
+                        "fiber": 5.0,
+                        "sugar": 8.0,
+                        "sodium": 400.0
+                    }"""
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Analyze this food image and provide nutritional information:"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{request.image_base64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=500
+        )
+        
+        content = response.choices[0].message.content
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+        content = content.strip()
+        
+        food_data = json.loads(content)
+        
+        food_entry = FoodEntry(
+            user_id=request.user_id,
+            food_name=food_data.get("food_name", "Unknown Food"),
+            serving_size=food_data.get("serving_size", "1 serving"),
+            calories=food_data.get("calories", 0),
+            protein=food_data.get("protein", 0),
+            carbs=food_data.get("carbs", 0),
+            fats=food_data.get("fats", 0),
+            fiber=food_data.get("fiber", 0),
+            sugar=food_data.get("sugar", 0),
+            sodium=food_data.get("sodium", 0),
+            meal_type=request.meal_type,
+            logged_date=datetime.now().strftime("%Y-%m-%d"),
+            image_base64=request.image_base64[:100] + "..."  # Store truncated for reference
+        )
+        
+        await db.food_logs.insert_one(food_entry.model_dump())
+        return food_entry
+        
+    except Exception as e:
+        logger.error(f"Food analysis error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to analyze food: {str(e)}")
+
+@api_router.post("/food/log", response_model=FoodEntry)
+async def log_food(request: FoodLogRequest):
+    """Manually log food entry"""
+    food_entry = FoodEntry(**request.model_dump())
+    await db.food_logs.insert_one(food_entry.model_dump())
+    return food_entry
+
+@api_router.get("/food/logs/{user_id}")
+async def get_food_logs(user_id: str, date: Optional[str] = None):
+    """Get food logs for a user, optionally filtered by date"""
+    query = {"user_id": user_id}
+    if date:
+        query["logged_date"] = date
+    
+    logs = await db.food_logs.find(query).sort("created_at", -1).to_list(100)
+    return [FoodEntry(**log) for log in logs]
+
+@api_router.get("/food/daily-summary/{user_id}/{date}")
+async def get_daily_summary(user_id: str, date: str):
+    """Get daily nutrition summary for a user"""
+    logs = await db.food_logs.find({"user_id": user_id, "logged_date": date}).to_list(100)
+    
+    total = {
+        "calories": 0,
+        "protein": 0.0,
+        "carbs": 0.0,
+        "fats": 0.0,
+        "fiber": 0.0,
+        "sugar": 0.0,
+        "sodium": 0.0
+    }
+    
+    for log in logs:
+        total["calories"] += log.get("calories", 0)
+        total["protein"] += log.get("protein", 0)
+        total["carbs"] += log.get("carbs", 0)
+        total["fats"] += log.get("fats", 0)
+        total["fiber"] += log.get("fiber", 0)
+        total["sugar"] += log.get("sugar", 0)
+        total["sodium"] += log.get("sodium", 0)
+    
+    # Get user's target macros
+    profile = await db.profiles.find_one({"id": user_id})
+    target = profile.get("calculated_macros", {}) if profile else {}
+    
+    return {
+        "date": date,
+        "consumed": total,
+        "target": target,
+        "entries_count": len(logs)
+    }
+
+@api_router.delete("/food/log/{log_id}")
+async def delete_food_log(log_id: str):
+    """Delete a food log entry"""
+    result = await db.food_logs.delete_one({"id": log_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Food log not found")
+    return {"message": "Food log deleted successfully"}
+
+@api_router.get("/food/search")
+async def search_foods(query: str):
+    """Search common foods database (simplified version)"""
+    # Common foods database (in production, this would be a comprehensive database)
+    common_foods = [
+        {"name": "Chicken Breast (100g)", "calories": 165, "protein": 31, "carbs": 0, "fats": 3.6},
+        {"name": "Brown Rice (1 cup cooked)", "calories": 216, "protein": 5, "carbs": 45, "fats": 1.8},
+        {"name": "Broccoli (1 cup)", "calories": 55, "protein": 3.7, "carbs": 11, "fats": 0.6},
+        {"name": "Salmon (100g)", "calories": 208, "protein": 20, "carbs": 0, "fats": 13},
+        {"name": "Eggs (1 large)", "calories": 72, "protein": 6, "carbs": 0.4, "fats": 5},
+        {"name": "Greek Yogurt (1 cup)", "calories": 100, "protein": 17, "carbs": 6, "fats": 0.7},
+        {"name": "Banana (1 medium)", "calories": 105, "protein": 1.3, "carbs": 27, "fats": 0.4},
+        {"name": "Oatmeal (1 cup cooked)", "calories": 158, "protein": 6, "carbs": 27, "fats": 3.2},
+        {"name": "Sweet Potato (1 medium)", "calories": 103, "protein": 2.3, "carbs": 24, "fats": 0.1},
+        {"name": "Almonds (1 oz)", "calories": 164, "protein": 6, "carbs": 6, "fats": 14},
+        {"name": "Avocado (1 whole)", "calories": 322, "protein": 4, "carbs": 17, "fats": 29},
+        {"name": "Quinoa (1 cup cooked)", "calories": 222, "protein": 8, "carbs": 39, "fats": 3.5},
+        {"name": "Spinach (1 cup raw)", "calories": 7, "protein": 0.9, "carbs": 1.1, "fats": 0.1},
+        {"name": "Beef Steak (100g)", "calories": 271, "protein": 26, "carbs": 0, "fats": 18},
+        {"name": "Tuna (100g canned)", "calories": 116, "protein": 26, "carbs": 0, "fats": 0.8},
+        {"name": "Apple (1 medium)", "calories": 95, "protein": 0.5, "carbs": 25, "fats": 0.3},
+        {"name": "Whey Protein Shake", "calories": 120, "protein": 24, "carbs": 3, "fats": 1},
+        {"name": "White Rice (1 cup cooked)", "calories": 206, "protein": 4.3, "carbs": 45, "fats": 0.4},
+        {"name": "Cottage Cheese (1 cup)", "calories": 206, "protein": 28, "carbs": 6, "fats": 9},
+        {"name": "Turkey Breast (100g)", "calories": 135, "protein": 30, "carbs": 0, "fats": 0.7},
+    ]
+    
+    query_lower = query.lower()
+    results = [food for food in common_foods if query_lower in food["name"].lower()]
+    return results[:10]
+
+# ==================== ASK INTERFITAI CHAT ENDPOINTS ====================
+
+@api_router.post("/chat", response_model=ChatMessage)
+async def chat_with_ai(request: ChatRequest):
+    """Chat with InterFitAI for fitness and health questions"""
+    # Get user context for personalized responses
+    profile = await db.profiles.find_one({"id": request.user_id})
+    
+    # Get recent chat history
+    history = await db.chat_history.find({"user_id": request.user_id}).sort("created_at", -1).limit(10).to_list(10)
+    history.reverse()
+    
+    messages = [
+        {
+            "role": "system",
+            "content": f"""You are InterFitAI, an expert AI fitness and nutrition coach. You help users with:
+- Workout advice and exercise form
+- Nutrition guidance and meal suggestions
+- Weight management strategies
+- Supplement recommendations
+- Recovery and injury prevention
+- Mental fitness and motivation
+
+{"User context: " + f"Goal: {profile.get('goal', 'general fitness')}, Weight: {profile.get('weight', 'unknown')}kg, Activity level: {profile.get('activity_level', 'moderate')}" if profile else ""}
+
+Be helpful, encouraging, and provide evidence-based advice. Keep responses concise but informative."""
+        }
+    ]
+    
+    # Add chat history
+    for msg in history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    
+    # Add current message
+    messages.append({"role": "user", "content": request.message})
+    
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1000
+        )
+        
+        ai_response = response.choices[0].message.content
+        
+        # Save user message
+        user_msg = ChatMessage(user_id=request.user_id, role="user", content=request.message)
+        await db.chat_history.insert_one(user_msg.model_dump())
+        
+        # Save AI response
+        ai_msg = ChatMessage(user_id=request.user_id, role="assistant", content=ai_response)
+        await db.chat_history.insert_one(ai_msg.model_dump())
+        
+        return ai_msg
+        
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+@api_router.get("/chat/history/{user_id}")
+async def get_chat_history(user_id: str, limit: int = 50):
+    """Get chat history for a user"""
+    history = await db.chat_history.find({"user_id": user_id}).sort("created_at", -1).limit(limit).to_list(limit)
+    history.reverse()
+    return [ChatMessage(**msg) for msg in history]
+
+@api_router.post("/chat/save/{message_id}")
+async def save_chat_message(message_id: str):
+    """Save/bookmark a chat message"""
+    result = await db.chat_history.update_one({"id": message_id}, {"$set": {"saved": True}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return {"message": "Message saved successfully"}
+
+@api_router.get("/chat/saved/{user_id}")
+async def get_saved_messages(user_id: str):
+    """Get saved/bookmarked messages for a user"""
+    messages = await db.chat_history.find({"user_id": user_id, "saved": True}).sort("created_at", -1).to_list(100)
+    return [ChatMessage(**msg) for msg in messages]
+
+@api_router.delete("/chat/history/{user_id}")
+async def clear_chat_history(user_id: str):
+    """Clear chat history for a user (except saved messages)"""
+    await db.chat_history.delete_many({"user_id": user_id, "saved": False})
+    return {"message": "Chat history cleared"}
+
+# ==================== STEP TRACKING ENDPOINTS ====================
+
+@api_router.post("/steps/log", response_model=StepEntry)
+async def log_steps(user_id: str, steps: int, distance_km: float = 0, source: str = "device"):
+    """Log steps for today"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    # Calculate calories burned (rough estimate: 0.04 calories per step)
+    calories_burned = int(steps * 0.04)
+    
+    # Check if entry exists for today
+    existing = await db.steps.find_one({"user_id": user_id, "date": today})
+    
+    if existing:
+        # Update existing entry
+        new_steps = existing["steps"] + steps
+        new_distance = existing["distance_km"] + distance_km
+        new_calories = int(new_steps * 0.04)
+        
+        await db.steps.update_one(
+            {"id": existing["id"]},
+            {"$set": {"steps": new_steps, "distance_km": new_distance, "calories_burned": new_calories}}
+        )
+        updated = await db.steps.find_one({"id": existing["id"]})
+        return StepEntry(**updated)
+    else:
+        # Create new entry
+        entry = StepEntry(
+            user_id=user_id,
+            steps=steps,
+            distance_km=distance_km,
+            calories_burned=calories_burned,
+            date=today,
+            source=source
+        )
+        await db.steps.insert_one(entry.model_dump())
+        return entry
+
+@api_router.get("/steps/{user_id}")
+async def get_steps(user_id: str, date: Optional[str] = None):
+    """Get steps for a user, optionally filtered by date"""
+    if date:
+        entry = await db.steps.find_one({"user_id": user_id, "date": date})
+        if entry:
+            return StepEntry(**entry)
+        return {"steps": 0, "distance_km": 0, "calories_burned": 0, "date": date}
+    
+    entries = await db.steps.find({"user_id": user_id}).sort("date", -1).limit(30).to_list(30)
+    return [StepEntry(**e) for e in entries]
+
+@api_router.get("/steps/goal/{user_id}")
+async def get_step_goal(user_id: str):
+    """Get step goal for a user"""
+    goal = await db.step_goals.find_one({"user_id": user_id})
+    if goal:
+        return StepGoal(**goal)
+    return StepGoal(user_id=user_id)
+
+@api_router.post("/steps/goal")
+async def set_step_goal(goal: StepGoal):
+    """Set step goal for a user"""
+    await db.step_goals.update_one(
+        {"user_id": goal.user_id},
+        {"$set": goal.model_dump()},
+        upsert=True
+    )
+    return goal
+
+# ==================== DEVICE CONNECTION ENDPOINTS ====================
+
+@api_router.get("/devices/{user_id}")
+async def get_connected_devices(user_id: str):
+    """Get all device connections for a user"""
+    devices = await db.device_connections.find({"user_id": user_id}).to_list(10)
+    return [DeviceConnection(**d) for d in devices]
+
+@api_router.post("/devices/connect")
+async def connect_device(user_id: str, device_type: str):
+    """Connect a fitness device (placeholder for actual device OAuth)"""
+    # In production, this would initiate OAuth flow with the device provider
+    connection = DeviceConnection(
+        user_id=user_id,
+        device_type=device_type,
+        connected=True,
+        last_sync=datetime.utcnow()
+    )
+    
+    await db.device_connections.update_one(
+        {"user_id": user_id, "device_type": device_type},
+        {"$set": connection.model_dump()},
+        upsert=True
+    )
+    
+    return {"message": f"{device_type} connected successfully", "connection": connection}
+
+@api_router.delete("/devices/disconnect")
+async def disconnect_device(user_id: str, device_type: str):
+    """Disconnect a fitness device"""
+    await db.device_connections.delete_one({"user_id": user_id, "device_type": device_type})
+    return {"message": f"{device_type} disconnected"}
+
+# ==================== SUBSCRIPTION ENDPOINTS ====================
+
+SUBSCRIPTION_PLANS = {
+    "monthly": {"name": "Monthly", "price": 9.99, "duration_months": 1, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking"]},
+    "quarterly": {"name": "Quarterly", "price": 24.99, "duration_months": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Priority Support"]},
+    "yearly": {"name": "Yearly", "price": 79.99, "duration_months": 12, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Priority Support", "Exclusive Content"]}
+}
+
+@api_router.get("/subscription/plans")
+async def get_subscription_plans():
+    """Get available subscription plans"""
+    return SUBSCRIPTION_PLANS
+
+@api_router.post("/subscription/checkout")
+async def create_checkout_session(request: PaymentRequest):
+    """Create Stripe checkout session for subscription"""
+    if request.plan_id not in SUBSCRIPTION_PLANS:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    
+    plan = SUBSCRIPTION_PLANS[request.plan_id]
+    
+    try:
+        success_url = f"{request.origin_url}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{request.origin_url}/subscription"
+        
+        session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'usd',
+                    'product_data': {
+                        'name': f'InterFitAI {plan["name"]} Subscription',
+                        'description': f'{plan["duration_months"]} month(s) access to all premium features'
+                    },
+                    'unit_amount': int(plan["price"] * 100),  # Convert to cents
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                'user_id': request.user_id,
+                'plan_id': request.plan_id,
+                'duration_months': str(plan["duration_months"])
+            }
+        )
+        
+        # Create payment transaction record
+        await db.payment_transactions.insert_one({
+            "id": str(uuid.uuid4()),
+            "session_id": session.id,
+            "user_id": request.user_id,
+            "plan_id": request.plan_id,
+            "amount": plan["price"],
+            "currency": "usd",
+            "payment_status": "pending",
+            "created_at": datetime.utcnow()
+        })
+        
+        return {"url": session.url, "session_id": session.id}
+        
+    except Exception as e:
+        logger.error(f"Stripe checkout error: {e}")
+        raise HTTPException(status_code=500, detail=f"Payment initialization failed: {str(e)}")
+
+@api_router.get("/subscription/status/{session_id}")
+async def get_payment_status(session_id: str):
+    """Check payment status and update user subscription"""
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+        
+        transaction = await db.payment_transactions.find_one({"session_id": session_id})
+        
+        if session.payment_status == 'paid' and transaction and transaction.get("payment_status") != "completed":
+            # Update transaction
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {"payment_status": "completed", "completed_at": datetime.utcnow()}}
+            )
+            
+            # Update user subscription
+            user_id = session.metadata.get('user_id')
+            plan_id = session.metadata.get('plan_id')
+            duration_months = int(session.metadata.get('duration_months', 1))
+            
+            from datetime import timedelta
+            end_date = datetime.utcnow() + timedelta(days=duration_months * 30)
+            
+            await db.profiles.update_one(
+                {"id": user_id},
+                {"$set": {
+                    "subscription_status": plan_id,
+                    "subscription_end_date": end_date.isoformat()
+                }}
+            )
+        
+        return {
+            "status": session.status,
+            "payment_status": session.payment_status,
+            "amount_total": session.amount_total / 100 if session.amount_total else 0,
+            "currency": session.currency
+        }
+        
+    except Exception as e:
+        logger.error(f"Payment status check error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to check payment status: {str(e)}")
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhooks"""
+    payload = await request.body()
+    sig_header = request.headers.get("Stripe-Signature")
+    
+    # In production, verify webhook signature
+    # For now, just process the event
+    try:
+        event = json.loads(payload)
+        
+        if event["type"] == "checkout.session.completed":
+            session = event["data"]["object"]
+            session_id = session["id"]
+            
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {"payment_status": "completed", "completed_at": datetime.utcnow()}}
+            )
+            
+        return {"status": "success"}
+        
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
+# ==================== MOTIVATION & REMINDERS ====================
+
+DAILY_MOTIVATIONS = [
+    "The only bad workout is the one that didn't happen. Get moving! 💪",
+    "Your body can stand almost anything. It's your mind that you have to convince.",
+    "Success is the sum of small efforts repeated day in and day out.",
+    "The pain you feel today will be the strength you feel tomorrow.",
+    "Don't wish for it, work for it!",
+    "Your health is an investment, not an expense.",
+    "Every rep counts. Every meal matters. Stay consistent!",
+    "The difference between try and triumph is just a little umph!",
+    "Wake up with determination. Go to bed with satisfaction.",
+    "Fitness is not about being better than someone else. It's about being better than you used to be.",
+    "Push yourself because no one else is going to do it for you.",
+    "The hard days are what make you stronger.",
+    "Your only limit is you.",
+    "Believe in yourself and all that you are.",
+    "Today's actions are tomorrow's results."
+]
+
+@api_router.get("/motivation")
+async def get_daily_motivation():
+    """Get a random daily motivation quote"""
+    import random
+    return {"motivation": random.choice(DAILY_MOTIVATIONS)}
+
+@api_router.get("/reminders/{user_id}")
+async def get_reminder_settings(user_id: str):
+    """Get reminder settings for a user"""
+    profile = await db.profiles.find_one({"id": user_id})
+    if profile:
+        return {
+            "reminders_enabled": profile.get("reminders_enabled", True),
+            "motivation_enabled": profile.get("motivation_enabled", True)
+        }
+    return {"reminders_enabled": True, "motivation_enabled": True}
+
+# ==================== HEALTH CHECK ====================
+
+@api_router.get("/")
+async def root():
+    return {"message": "InterFitAI API is running", "version": "1.0.0"}
+
+@api_router.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+# Include the router in the main app
+app.include_router(api_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()
