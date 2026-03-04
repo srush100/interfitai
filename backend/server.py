@@ -579,29 +579,23 @@ async def delete_meal_plan(plan_id: str):
 async def analyze_food_image(request: FoodImageAnalyzeRequest):
     """Analyze food image using OpenAI Vision to identify food and estimate nutrition"""
     try:
+        # Validate base64 image
+        if not request.image_base64 or len(request.image_base64) < 100:
+            raise HTTPException(status_code=400, detail="Invalid image data")
+        
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {
                     "role": "system",
-                    "content": """You are a nutrition expert. Analyze the food image and provide accurate nutritional information. 
-                    Respond with valid JSON only in this format:
-                    {
-                        "food_name": "Name of the food/dish",
-                        "serving_size": "Estimated serving size (e.g., '1 cup', '200g')",
-                        "calories": 300,
-                        "protein": 25.0,
-                        "carbs": 30.0,
-                        "fats": 10.0,
-                        "fiber": 5.0,
-                        "sugar": 8.0,
-                        "sodium": 400.0
-                    }"""
+                    "content": """You are a nutrition expert. Analyze the food image and provide accurate nutritional information.
+Respond with ONLY valid JSON, no other text. Use this exact format:
+{"food_name": "Name", "serving_size": "1 serving", "calories": 300, "protein": 25.0, "carbs": 30.0, "fats": 10.0, "fiber": 5.0, "sugar": 8.0, "sodium": 400.0}"""
                 },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Analyze this food image and provide nutritional information:"},
+                        {"type": "text", "text": "Analyze this food image and provide nutritional information in JSON format only:"},
                         {
                             "type": "image_url",
                             "image_url": {
@@ -615,25 +609,53 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         )
         
         content = response.choices[0].message.content
+        logger.info(f"Food analysis raw response length: {len(content) if content else 0}")
+        
+        if not content or len(content.strip()) == 0:
+            raise HTTPException(status_code=500, detail="OpenAI returned empty response. Please try again with a clearer food image.")
+        
+        # Clean markdown code blocks if present
         if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
+            lines = content.split("\n")
+            json_lines = []
+            in_json = False
+            for line in lines:
+                if line.startswith("```json"):
+                    in_json = True
+                    continue
+                elif line.startswith("```"):
+                    in_json = False
+                    continue
+                if in_json or not line.startswith("```"):
+                    json_lines.append(line)
+            content = "\n".join(json_lines)
+        
         content = content.strip()
         
-        food_data = json.loads(content)
+        # Try to parse JSON
+        try:
+            food_data = json.loads(content)
+        except json.JSONDecodeError as je:
+            logger.error(f"JSON parse error: {je}. Content: {content[:500]}")
+            # Try to extract JSON from response
+            import re
+            json_match = re.search(r'\{[^{}]*"food_name"[^{}]*\}', content, re.DOTALL)
+            if json_match:
+                food_data = json.loads(json_match.group())
+            else:
+                raise HTTPException(status_code=500, detail="Failed to parse food analysis. Please try with a clearer image.")
         
         food_entry = FoodEntry(
             user_id=request.user_id,
             food_name=food_data.get("food_name", "Unknown Food"),
             serving_size=food_data.get("serving_size", "1 serving"),
-            calories=food_data.get("calories", 0),
-            protein=food_data.get("protein", 0),
-            carbs=food_data.get("carbs", 0),
-            fats=food_data.get("fats", 0),
-            fiber=food_data.get("fiber", 0),
-            sugar=food_data.get("sugar", 0),
-            sodium=food_data.get("sodium", 0),
+            calories=int(food_data.get("calories", 0)),
+            protein=float(food_data.get("protein", 0)),
+            carbs=float(food_data.get("carbs", 0)),
+            fats=float(food_data.get("fats", 0)),
+            fiber=float(food_data.get("fiber", 0)),
+            sugar=float(food_data.get("sugar", 0)),
+            sodium=float(food_data.get("sodium", 0)),
             meal_type=request.meal_type,
             logged_date=datetime.now().strftime("%Y-%m-%d"),
             image_base64=request.image_base64[:100] + "..."  # Store truncated for reference
@@ -642,6 +664,11 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         await db.food_logs.insert_one(food_entry.model_dump())
         return food_entry
         
+    except HTTPException:
+        raise
+    except openai.BadRequestError as e:
+        logger.error(f"OpenAI BadRequestError: {e}")
+        raise HTTPException(status_code=400, detail="Invalid image format. Please use a valid JPEG or PNG image.")
     except Exception as e:
         logger.error(f"Food analysis error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to analyze food: {str(e)}")
