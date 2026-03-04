@@ -1,218 +1,207 @@
 #!/usr/bin/env python3
+"""
+Backend API Test Script for InterFitAI
+Tests OpenAI GPT-4o reversion from Claude Sonnet 4.6
+"""
 
 import requests
 import json
 import time
 from datetime import datetime
 
-# Backend URL from environment (matches frontend configuration)
-BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
+# Base URL from environment
+BASE_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
 
-def log_test(message):
-    """Log test messages with timestamp"""
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    print(f"[{timestamp}] {message}")
+# Test user ID for consistency
+TEST_USER_ID = "d704bac8-fa54-4d5b-b984-cc17393c1244"
 
-def measure_response_time(func, *args, **kwargs):
-    """Measure function execution time"""
-    start_time = time.time()
-    result = func(*args, **kwargs)
-    end_time = time.time()
-    response_time = end_time - start_time
-    return result, response_time
+def log_test(test_name, response_time, success, details=""):
+    """Log test results with timing"""
+    status = "✅ PASS" if success else "❌ FAIL"
+    print(f"{status} {test_name} ({response_time:.2f}s)")
+    if details:
+        print(f"    Details: {details}")
+    print()
 
 def test_health_check():
-    """Test the health check endpoint"""
-    log_test("🔍 Testing Health Check Endpoint...")
+    """Test 1: Health Check - GET /api/health"""
+    print("=" * 60)
+    print("Testing Health Check Endpoint")
+    print("=" * 60)
     
+    start_time = time.time()
     try:
-        response, response_time = measure_response_time(
-            requests.get, f"{BACKEND_URL}/health", timeout=30
-        )
+        response = requests.get(f"{BASE_URL}/health", timeout=10)
+        response_time = time.time() - start_time
         
         if response.status_code == 200:
             data = response.json()
-            log_test(f"✅ Health check PASSED - Status: {response.status_code}")
-            log_test(f"   Response time: {response_time:.2f}s")
-            log_test(f"   Response: {data}")
+            log_test("Health Check", response_time, True, f"Response: {data}")
             return True
         else:
-            log_test(f"❌ Health check FAILED - Status: {response.status_code}")
-            log_test(f"   Response: {response.text}")
+            log_test("Health Check", response_time, False, f"Status: {response.status_code}")
             return False
-            
     except Exception as e:
-        log_test(f"❌ Health check ERROR: {str(e)}")
+        response_time = time.time() - start_time
+        log_test("Health Check", response_time, False, f"Error: {str(e)}")
+        return False
+
+def test_workout_generation():
+    """Test 2: AI Workout Generation with OpenAI GPT-4o - POST /api/workouts/generate"""
+    print("=" * 60)
+    print("Testing AI Workout Generation (OpenAI GPT-4o)")
+    print("=" * 60)
+    
+    payload = {
+        "user_id": TEST_USER_ID,
+        "goal": "muscle_building",
+        "focus_areas": ["chest"],
+        "equipment": ["dumbbell"],
+        "injuries": None,
+        "days_per_week": 3,
+        "duration_minutes": 30
+    }
+    
+    start_time = time.time()
+    try:
+        response = requests.post(
+            f"{BASE_URL}/workouts/generate", 
+            json=payload, 
+            timeout=30,
+            headers={"Content-Type": "application/json"}
+        )
+        response_time = time.time() - start_time
+        
+        if response.status_code == 200:
+            data = response.json()
+            workout_name = data.get('name', 'Unknown')
+            workout_days = len(data.get('workout_days', []))
+            log_test("Workout Generation", response_time, True, 
+                    f"Generated: '{workout_name}' with {workout_days} days")
+            return True
+        else:
+            log_test("Workout Generation", response_time, False, 
+                    f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        response_time = time.time() - start_time
+        log_test("Workout Generation", response_time, False, f"Error: {str(e)}")
         return False
 
 def test_meal_plan_generation():
-    """Test the OPTIMIZED meal plan generation with 3-day prompt"""
-    log_test("🔍 Testing OPTIMIZED Meal Plan Generation (3-day prompt)...")
+    """Test 3: AI Meal Plan Generation with OpenAI GPT-4o - POST /api/mealplans/generate"""
+    print("=" * 60)
+    print("Testing AI Meal Plan Generation (OpenAI GPT-4o)")
+    print("=" * 60)
     
-    # Test data using real profile ID with calculated macros
-    test_data = {
-        "user_id": "b060147a-bfac-4e3a-8eb3-44df35be48ae",
-        "food_preferences": "high_protein",  # Should be string, not list
+    payload = {
+        "user_id": TEST_USER_ID,
+        "food_preferences": "high_protein",
         "supplements": [],
         "supplements_custom": "",
         "allergies": [],
         "cuisine_preference": ""
     }
     
+    start_time = time.time()
     try:
-        log_test("   Sending request to meal plan generation...")
-        response, response_time = measure_response_time(
-            requests.post, 
-            f"{BACKEND_URL}/mealplans/generate",
-            json=test_data,
-            timeout=120  # 2 minutes timeout for AI generation
+        response = requests.post(
+            f"{BASE_URL}/mealplans/generate",
+            json=payload,
+            timeout=30,
+            headers={"Content-Type": "application/json"}
         )
+        response_time = time.time() - start_time
         
         if response.status_code == 200:
             data = response.json()
-            log_test(f"✅ Meal plan generation PASSED - Status: {response.status_code}")
-            log_test(f"   Response time: {response_time:.2f}s")
-            log_test(f"   Generated plan: '{data.get('name', 'Unknown')}'")
-            log_test(f"   Days in plan: {len(data.get('meal_days', []))}")
-            log_test(f"   Target calories: {data.get('target_calories')} kcal")
-            
-            # Validate structure
-            if data.get('meal_days') and len(data.get('meal_days')) >= 1:
-                first_day = data['meal_days'][0]
-                meals_count = len(first_day.get('meals', []))
-                log_test(f"   Meals per day: {meals_count}")
-                if meals_count > 0:
-                    sample_meal = first_day['meals'][0]
-                    log_test(f"   Sample meal: '{sample_meal.get('name')}' ({sample_meal.get('calories')} cal)")
-            
-            return True, response_time
+            plan_name = data.get('name', 'Unknown')
+            meal_days = len(data.get('meal_days', []))
+            log_test("Meal Plan Generation", response_time, True,
+                    f"Generated: '{plan_name}' with {meal_days} days")
+            return True
         else:
-            log_test(f"❌ Meal plan generation FAILED - Status: {response.status_code}")
-            try:
-                error_data = response.json()
-                log_test(f"   Error: {error_data.get('detail', 'Unknown error')}")
-            except:
-                log_test(f"   Raw error: {response.text[:200]}...")
-            return False, response_time
-            
-    except requests.exceptions.Timeout:
-        log_test("❌ Meal plan generation TIMEOUT - Request exceeded 2 minutes")
-        return False, 120.0
+            log_test("Meal Plan Generation", response_time, False,
+                    f"Status: {response.status_code}, Response: {response.text}")
+            return False
     except Exception as e:
-        log_test(f"❌ Meal plan generation ERROR: {str(e)}")
-        return False, 0.0
+        response_time = time.time() - start_time
+        log_test("Meal Plan Generation", response_time, False, f"Error: {str(e)}")
+        return False
 
-def test_workout_generation():
-    """Test the OPTIMIZED workout generation with reduced days"""
-    log_test("🔍 Testing OPTIMIZED Workout Generation (2 days)...")
+def test_chat_endpoint():
+    """Test 4: Ask InterFitAI Chat with OpenAI GPT-4o - POST /api/chat"""
+    print("=" * 60)
+    print("Testing Ask InterFitAI Chat (OpenAI GPT-4o)")
+    print("=" * 60)
     
-    # Test data using real profile ID with calculated macros
-    test_data = {
-        "user_id": "b060147a-bfac-4e3a-8eb3-44df35be48ae",
-        "goal": "muscle_building", 
-        "focus_areas": ["chest"],
-        "equipment": ["dumbbell"],
-        "injuries": None,  # Should be string or None, not empty list
-        "days_per_week": 2,
-        "duration_minutes": 30
+    payload = {
+        "user_id": TEST_USER_ID,
+        "message": "What exercises are best for chest?"
     }
     
+    start_time = time.time()
     try:
-        log_test("   Sending request to workout generation...")
-        response, response_time = measure_response_time(
-            requests.post,
-            f"{BACKEND_URL}/workouts/generate", 
-            json=test_data,
-            timeout=120  # 2 minutes timeout for AI generation
+        response = requests.post(
+            f"{BASE_URL}/chat",
+            json=payload,
+            timeout=20,
+            headers={"Content-Type": "application/json"}
         )
+        response_time = time.time() - start_time
         
         if response.status_code == 200:
             data = response.json()
-            log_test(f"✅ Workout generation PASSED - Status: {response.status_code}")
-            log_test(f"   Response time: {response_time:.2f}s") 
-            log_test(f"   Generated program: '{data.get('name', 'Unknown')}'")
-            log_test(f"   Days per week: {data.get('days_per_week')}")
-            log_test(f"   Session duration: {data.get('session_duration_minutes')} minutes")
-            
-            # Validate structure
-            workout_days = data.get('workout_days', [])
-            log_test(f"   Workout days: {len(workout_days)}")
-            
-            if workout_days:
-                first_day = workout_days[0]
-                exercises_count = len(first_day.get('exercises', []))
-                log_test(f"   Exercises in first day: {exercises_count}")
-                if exercises_count > 0:
-                    sample_exercise = first_day['exercises'][0] 
-                    log_test(f"   Sample exercise: '{sample_exercise.get('name')}' - {sample_exercise.get('sets')} sets x {sample_exercise.get('reps')} reps")
-            
-            return True, response_time
+            ai_response = data.get('response', '')[:100] + "..." if len(data.get('response', '')) > 100 else data.get('response', '')
+            log_test("Chat Endpoint", response_time, True,
+                    f"AI Response: {ai_response}")
+            return True
         else:
-            log_test(f"❌ Workout generation FAILED - Status: {response.status_code}")
-            try:
-                error_data = response.json()
-                log_test(f"   Error: {error_data.get('detail', 'Unknown error')}")
-            except:
-                log_test(f"   Raw error: {response.text[:200]}...")
-            return False, response_time
-            
-    except requests.exceptions.Timeout:
-        log_test("❌ Workout generation TIMEOUT - Request exceeded 2 minutes")
-        return False, 120.0
+            log_test("Chat Endpoint", response_time, False,
+                    f"Status: {response.status_code}, Response: {response.text}")
+            return False
     except Exception as e:
-        log_test(f"❌ Workout generation ERROR: {str(e)}")
-        return False, 0.0
+        response_time = time.time() - start_time
+        log_test("Chat Endpoint", response_time, False, f"Error: {str(e)}")
+        return False
 
 def main():
-    """Run all backend tests"""
-    log_test("=" * 80)
-    log_test("🚀 BACKEND TESTING: Optimized AI Endpoints with Shorter Prompts")
-    log_test("=" * 80)
-    log_test(f"Backend URL: {BACKEND_URL}")
-    log_test("")
+    """Run all tests and summarize results"""
+    print("🤖 InterFitAI Backend API Testing - OpenAI GPT-4o Reversion")
+    print(f"🎯 Target URL: {BASE_URL}")
+    print(f"📅 Test Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"👤 Test User ID: {TEST_USER_ID}")
+    print()
     
-    # Track results
-    results = {}
-    total_start = time.time()
+    test_results = []
     
-    # Test 1: Health Check
-    results['health'] = test_health_check()
-    log_test("")
-    
-    # Test 2: Optimized Meal Plan Generation (3-day prompt)
-    meal_success, meal_time = test_meal_plan_generation()
-    results['meal_plan'] = meal_success
-    results['meal_plan_time'] = meal_time
-    log_test("")
-    
-    # Test 3: Optimized Workout Generation (2 days)
-    workout_success, workout_time = test_workout_generation()
-    results['workout'] = workout_success
-    results['workout_time'] = workout_time
-    log_test("")
+    # Run all tests
+    test_results.append(("Health Check", test_health_check()))
+    test_results.append(("Workout Generation", test_workout_generation()))
+    test_results.append(("Meal Plan Generation", test_meal_plan_generation()))
+    test_results.append(("Chat Endpoint", test_chat_endpoint()))
     
     # Summary
-    total_time = time.time() - total_start
-    log_test("=" * 80)
-    log_test("📊 TESTING SUMMARY")
-    log_test("=" * 80)
+    print("=" * 60)
+    print("TEST SUMMARY")
+    print("=" * 60)
     
-    passed = sum([results['health'], results['meal_plan'], results['workout']])
-    total = 3
+    passed = sum(1 for _, success in test_results if success)
+    total = len(test_results)
     
-    log_test(f"✅ Health Check: {'PASSED' if results['health'] else 'FAILED'}")
-    log_test(f"✅ Meal Plan (3-day): {'PASSED' if results['meal_plan'] else 'FAILED'} - {results.get('meal_plan_time', 0):.2f}s")
-    log_test(f"✅ Workout (2-day): {'PASSED' if results['workout'] else 'FAILED'} - {results.get('workout_time', 0):.2f}s")
-    log_test("")
-    log_test(f"🎯 OVERALL: {passed}/{total} tests passed ({(passed/total)*100:.1f}%)")
-    log_test(f"⏱️  Total testing time: {total_time:.2f}s")
+    for test_name, success in test_results:
+        status = "✅ PASS" if success else "❌ FAIL"
+        print(f"{status} {test_name}")
+    
+    print()
+    print(f"📊 Results: {passed}/{total} tests passed ({passed/total*100:.1f}%)")
     
     if passed == total:
-        log_test("🎉 ALL OPTIMIZED ENDPOINTS WORKING!")
+        print("🎉 All OpenAI GPT-4o endpoints working correctly!")
     else:
-        log_test("⚠️  Some endpoints need attention")
+        print("⚠️ Some endpoints failed - check details above")
     
-    return results
+    return passed == total
 
 if __name__ == "__main__":
     main()
