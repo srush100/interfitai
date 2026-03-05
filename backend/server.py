@@ -28,6 +28,115 @@ openai.api_key = os.environ.get('OPENAI_API_KEY', '')
 # Stripe configuration
 stripe.api_key = os.environ.get('STRIPE_API_KEY', '')
 
+# Admin emails - these users get free full access
+ADMIN_EMAILS = [
+    "sebastianrush5@gmail.com",
+    "srush@interfitai.com"
+]
+
+# Free access emails - can be granted by admin
+FREE_ACCESS_EMAILS = []
+
+# Exercise GIF Database - mapping common exercises to demonstration GIFs
+EXERCISE_GIFS = {
+    # Chest exercises
+    "bench press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Bench-Press.gif",
+    "push-up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Push-Up.gif",
+    "push up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Push-Up.gif",
+    "dumbbell press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Press.gif",
+    "dumbbell fly": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Fly.gif",
+    "incline bench press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Incline-Barbell-Bench-Press.gif",
+    "decline bench press": "https://fitnessprogramer.com/wp-content/uploads/2021/06/Decline-Barbell-Bench-Press.gif",
+    "cable crossover": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Cable-Crossover.gif",
+    "chest dip": "https://fitnessprogramer.com/wp-content/uploads/2021/06/Chest-Dip.gif",
+    # Back exercises
+    "pull-up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Pull-up.gif",
+    "pull up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Pull-up.gif",
+    "lat pulldown": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lat-Pulldown.gif",
+    "barbell row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Bent-Over-Row.gif",
+    "bent over row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Bent-Over-Row.gif",
+    "dumbbell row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Row.gif",
+    "seated cable row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Seated-Cable-Row.gif",
+    "deadlift": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Deadlift.gif",
+    "t-bar row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/T-Bar-Row.gif",
+    # Shoulder exercises
+    "shoulder press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Shoulder-Press.gif",
+    "military press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Shoulder-Press.gif",
+    "lateral raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Lateral-Raise.gif",
+    "front raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Front-Raise.gif",
+    "face pull": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Face-Pull.gif",
+    "upright row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Upright-Row.gif",
+    "arnold press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Arnold-Press.gif",
+    "rear delt fly": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Rear-Delt-Fly.gif",
+    # Arm exercises
+    "bicep curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Curl.gif",
+    "hammer curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Hammer-Curl.gif",
+    "tricep pushdown": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Pushdown.gif",
+    "tricep extension": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Triceps-Extension.gif",
+    "skull crusher": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Skull-Crusher.gif",
+    "preacher curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Preacher-Curl.gif",
+    "concentration curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Concentration-Curl.gif",
+    "dip": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Triceps-Dip.gif",
+    # Leg exercises
+    "squat": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Squat.gif",
+    "leg press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Leg-Press.gif",
+    "lunge": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Lunge.gif",
+    "leg curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Leg-Curl.gif",
+    "leg extension": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Leg-Extension.gif",
+    "calf raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Standing-Calf-Raise.gif",
+    "romanian deadlift": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Romanian-Deadlift.gif",
+    "hip thrust": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Hip-Thrust.gif",
+    "goblet squat": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Goblet-Squat.gif",
+    "bulgarian split squat": "https://fitnessprogramer.com/wp-content/uploads/2021/05/Dumbbell-Bulgarian-Split-Squat.gif",
+    # Core exercises
+    "plank": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Plank.gif",
+    "crunch": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Crunch.gif",
+    "sit-up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Sit-up.gif",
+    "russian twist": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Russian-Twist.gif",
+    "leg raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lying-Leg-Raise.gif",
+    "hanging leg raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Hanging-Leg-Raise.gif",
+    "mountain climber": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Mountain-Climber.gif",
+    "bicycle crunch": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Bicycle-Crunch.gif",
+    "ab wheel rollout": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Ab-Wheel-Rollout.gif",
+}
+
+def get_exercise_gif(exercise_name: str) -> str:
+    """Get GIF URL for an exercise by name matching"""
+    name_lower = exercise_name.lower()
+    # Direct match
+    if name_lower in EXERCISE_GIFS:
+        return EXERCISE_GIFS[name_lower]
+    # Partial match
+    for key, url in EXERCISE_GIFS.items():
+        if key in name_lower or name_lower in key:
+            return url
+    # Default placeholder
+    return "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Curl.gif"
+
+async def check_subscription_access(user_id: str) -> dict:
+    """Check if user has subscription access or is admin/free access"""
+    profile = await db.profiles.find_one({"id": user_id})
+    if not profile:
+        return {"has_access": False, "reason": "profile_not_found"}
+    
+    email = profile.get("email", "").lower()
+    
+    # Admin always has access
+    if email in [e.lower() for e in ADMIN_EMAILS]:
+        return {"has_access": True, "reason": "admin"}
+    
+    # Check free access list
+    free_access = await db.free_access.find_one({"email": email.lower()})
+    if free_access:
+        return {"has_access": True, "reason": "free_access_granted"}
+    
+    # Check subscription status
+    subscription_status = profile.get("subscription_status", "free")
+    if subscription_status in ["trial", "monthly", "quarterly", "yearly", "active"]:
+        return {"has_access": True, "reason": "subscribed"}
+    
+    return {"has_access": False, "reason": "no_subscription"}
+
 # Create the main app
 app = FastAPI(title="InterFitAI API", version="1.0.0")
 
@@ -1247,9 +1356,16 @@ async def disconnect_device(user_id: str, device_type: str):
 # ==================== SUBSCRIPTION ENDPOINTS ====================
 
 SUBSCRIPTION_PLANS = {
-    "monthly": {"name": "Monthly", "price": 9.99, "duration_months": 1, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking"]},
-    "quarterly": {"name": "Quarterly", "price": 24.99, "duration_months": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Priority Support"]},
-    "yearly": {"name": "Yearly", "price": 79.99, "duration_months": 12, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Priority Support", "Exclusive Content"]}
+    "monthly": {"name": "Monthly", "price": 9.99, "duration_months": 1, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer"]},
+    "quarterly": {"name": "Quarterly", "price": 24.99, "duration_months": 3, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support"]},
+    "yearly": {"name": "Yearly", "price": 79.99, "duration_months": 12, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support", "Exclusive Content"]}
+}
+
+# Stripe Price IDs - create these in Stripe Dashboard for recurring billing
+STRIPE_PRICE_IDS = {
+    "monthly": os.environ.get("STRIPE_PRICE_MONTHLY", ""),
+    "quarterly": os.environ.get("STRIPE_PRICE_QUARTERLY", ""),
+    "yearly": os.environ.get("STRIPE_PRICE_YEARLY", ""),
 }
 
 @api_router.get("/subscription/plans")
@@ -1257,9 +1373,23 @@ async def get_subscription_plans():
     """Get available subscription plans"""
     return SUBSCRIPTION_PLANS
 
+@api_router.get("/subscription/check/{user_id}")
+async def check_subscription_status(user_id: str):
+    """Check if user has active subscription or is admin/free access"""
+    access = await check_subscription_access(user_id)
+    profile = await db.profiles.find_one({"id": user_id})
+    
+    return {
+        "has_access": access["has_access"],
+        "reason": access["reason"],
+        "subscription_status": profile.get("subscription_status", "free") if profile else "free",
+        "trial_end_date": profile.get("trial_end_date") if profile else None,
+        "subscription_end_date": profile.get("subscription_end_date") if profile else None
+    }
+
 @api_router.post("/subscription/checkout")
 async def create_checkout_session(request: PaymentRequest):
-    """Create Stripe checkout session for subscription"""
+    """Create Stripe checkout session with 3-day free trial"""
     if request.plan_id not in SUBSCRIPTION_PLANS:
         raise HTTPException(status_code=400, detail="Invalid plan")
     
@@ -1269,20 +1399,37 @@ async def create_checkout_session(request: PaymentRequest):
         success_url = f"{request.origin_url}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{request.origin_url}/subscription"
         
+        # Get or create customer
+        profile = await db.profiles.find_one({"id": request.user_id})
+        customer_email = profile.get("email") if profile else None
+        
+        # Create checkout session with trial
         session = stripe.checkout.Session.create(
             payment_method_types=['card'],
+            customer_email=customer_email,
             line_items=[{
                 'price_data': {
                     'currency': 'usd',
                     'product_data': {
                         'name': f'InterFitAI {plan["name"]} Subscription',
-                        'description': f'{plan["duration_months"]} month(s) access to all premium features'
+                        'description': f'3-day FREE trial, then ${plan["price"]}/{"month" if plan["duration_months"] == 1 else str(plan["duration_months"]) + " months"}'
                     },
-                    'unit_amount': int(plan["price"] * 100),  # Convert to cents
+                    'unit_amount': int(plan["price"] * 100),
+                    'recurring': {
+                        'interval': 'month' if plan["duration_months"] == 1 else 'month',
+                        'interval_count': plan["duration_months"]
+                    }
                 },
                 'quantity': 1,
             }],
-            mode='payment',
+            mode='subscription',
+            subscription_data={
+                'trial_period_days': 3,  # 3-day free trial
+                'metadata': {
+                    'user_id': request.user_id,
+                    'plan_id': request.plan_id,
+                }
+            },
             success_url=success_url,
             cancel_url=cancel_url,
             metadata={
@@ -1377,6 +1524,70 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return {"status": "error", "message": str(e)}
+
+# ==================== ADMIN MANAGEMENT ====================
+
+class GrantAccessRequest(BaseModel):
+    admin_email: str
+    user_email: str
+    reason: str = "admin_granted"
+
+@api_router.post("/admin/grant-access")
+async def grant_free_access(request: GrantAccessRequest):
+    """Admin grants free access to a user"""
+    # Verify admin
+    if request.admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+        raise HTTPException(status_code=403, detail="Not authorized as admin")
+    
+    # Grant access
+    await db.free_access.update_one(
+        {"email": request.user_email.lower()},
+        {"$set": {
+            "email": request.user_email.lower(),
+            "granted_by": request.admin_email,
+            "reason": request.reason,
+            "granted_at": datetime.utcnow()
+        }},
+        upsert=True
+    )
+    
+    # Update user profile if exists
+    await db.profiles.update_one(
+        {"email": request.user_email.lower()},
+        {"$set": {"subscription_status": "free_access"}}
+    )
+    
+    return {"message": f"Free access granted to {request.user_email}"}
+
+@api_router.delete("/admin/revoke-access")
+async def revoke_free_access(admin_email: str, user_email: str):
+    """Admin revokes free access from a user"""
+    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+        raise HTTPException(status_code=403, detail="Not authorized as admin")
+    
+    await db.free_access.delete_one({"email": user_email.lower()})
+    
+    await db.profiles.update_one(
+        {"email": user_email.lower()},
+        {"$set": {"subscription_status": "free"}}
+    )
+    
+    return {"message": f"Free access revoked from {user_email}"}
+
+@api_router.get("/admin/free-access-list")
+async def get_free_access_list(admin_email: str):
+    """Get list of all users with free access"""
+    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+        raise HTTPException(status_code=403, detail="Not authorized as admin")
+    
+    users = await db.free_access.find({}).to_list(100)
+    return users
+
+@api_router.get("/admin/is-admin/{email}")
+async def check_admin_status(email: str):
+    """Check if an email is an admin"""
+    is_admin = email.lower() in [e.lower() for e in ADMIN_EMAILS]
+    return {"is_admin": is_admin, "email": email}
 
 # ==================== MOTIVATION & REMINDERS ====================
 

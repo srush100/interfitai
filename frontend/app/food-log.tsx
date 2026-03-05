@@ -41,7 +41,7 @@ interface SearchResult {
 export default function FoodLog() {
   const router = useRouter();
   const { profile } = useUserStore();
-  const [activeTab, setActiveTab] = useState<'log' | 'search' | 'snap'>('log');
+  const [activeTab, setActiveTab] = useState<'log' | 'search' | 'snap' | 'manual'>('log');
   const [todayLogs, setTodayLogs] = useState<FoodEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -50,6 +50,17 @@ export default function FoodLog() {
   const [selectedMealType, setSelectedMealType] = useState('snack');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [additionalContext, setAdditionalContext] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  
+  // Manual entry state
+  const [manualFood, setManualFood] = useState({
+    name: '',
+    calories: '',
+    protein: '',
+    carbs: '',
+    fats: '',
+  });
 
   useEffect(() => {
     loadTodayLogs();
@@ -154,16 +165,50 @@ export default function FoodLog() {
         user_id: profile.id,
         image_base64: capturedImage,
         meal_type: selectedMealType,
+        additional_context: additionalContext || undefined,
+        quantity: quantity,
       });
       
-      Alert.alert('Food Logged!', `${response.data.food_name} - ${response.data.calories} cal`);
+      Alert.alert('Food Logged!', `${quantity}x ${response.data.food_name} - ${response.data.calories * quantity} cal`);
       setCapturedImage(null);
+      setAdditionalContext('');
+      setQuantity(1);
       loadTodayLogs();
       setActiveTab('log');
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.detail || 'Failed to analyze food');
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const logManualFood = async () => {
+    if (!profile?.id || !manualFood.name || !manualFood.calories) {
+      Alert.alert('Required Fields', 'Please enter food name and calories');
+      return;
+    }
+    
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await api.post('/food/log', {
+        user_id: profile.id,
+        food_name: manualFood.name,
+        serving_size: `${quantity} serving(s)`,
+        calories: parseInt(manualFood.calories) * quantity,
+        protein: parseFloat(manualFood.protein || '0') * quantity,
+        carbs: parseFloat(manualFood.carbs || '0') * quantity,
+        fats: parseFloat(manualFood.fats || '0') * quantity,
+        meal_type: selectedMealType,
+        logged_date: today,
+      });
+      
+      Alert.alert('Success', `${manualFood.name} logged!`);
+      setManualFood({ name: '', calories: '', protein: '', carbs: '', fats: '' });
+      setQuantity(1);
+      loadTodayLogs();
+      setActiveTab('log');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to log food');
     }
   };
 
@@ -196,6 +241,27 @@ export default function FoodLog() {
   );
 
   const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+  const renderQuantitySelector = () => (
+    <View style={styles.quantityContainer}>
+      <Text style={styles.quantityLabel}>Quantity</Text>
+      <View style={styles.quantityControls}>
+        <TouchableOpacity
+          style={styles.quantityBtn}
+          onPress={() => setQuantity(Math.max(1, quantity - 1))}
+        >
+          <Ionicons name="remove" size={20} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.quantityValue}>{quantity}</Text>
+        <TouchableOpacity
+          style={styles.quantityBtn}
+          onPress={() => setQuantity(quantity + 1)}
+        >
+          <Ionicons name="add" size={20} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -741,6 +807,83 @@ const styles = StyleSheet.create({
   analyzeBtnText: {
     fontSize: 16,
     fontWeight: '600',
+    color: colors.background,
+  },
+  quantityContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  quantityLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  quantityControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  quantityBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quantityValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    minWidth: 24,
+    textAlign: 'center',
+  },
+  contextInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    fontSize: 15,
+    color: colors.text,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  manualSection: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  manualInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+    fontSize: 15,
+    color: colors.text,
+  },
+  manualLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginTop: 16,
+  },
+  manualBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: colors.primary,
+    padding: 16,
+    borderRadius: 16,
+    marginTop: 24,
+  },
+  manualBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
     color: colors.background,
   },
 });
