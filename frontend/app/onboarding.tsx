@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -109,9 +110,13 @@ export default function Onboarding() {
   const renderStep1 = () => (
     <View style={styles.stepContainer}>
       <View style={styles.logoContainer}>
-        <Text style={styles.logoText}>INTERFIT</Text>
-        <Text style={styles.logoAI}>AI</Text>
+        <Image
+          source={require('../assets/logo-yellow.webp')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
       </View>
+      <Text style={styles.brandName}>INTERFIT<Text style={styles.brandAI}>AI</Text></Text>
       <Text style={styles.stepSubtitle}>Your AI-Powered Fitness Journey Starts Here</Text>
       
       <View style={styles.inputGroup}>
@@ -387,10 +392,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  logoImage: {
+    width: 100,
+    height: 100,
+  },
+  brandName: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  brandAI: {
+    color: colors.primary,
   },
   logoText: {
     fontSize: 36,

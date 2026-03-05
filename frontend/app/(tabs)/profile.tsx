@@ -9,6 +9,7 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -25,6 +26,20 @@ const DEVICES = [
   { id: 'garmin', name: 'Garmin', icon: 'navigate' },
 ];
 
+const GOALS = [
+  { id: 'weight_loss', label: 'Lose Weight' },
+  { id: 'maintenance', label: 'Maintain' },
+  { id: 'muscle_building', label: 'Build Muscle' },
+];
+
+const ACTIVITY_LEVELS = [
+  { id: 'sedentary', label: 'Sedentary' },
+  { id: 'light', label: 'Light' },
+  { id: 'moderate', label: 'Moderate' },
+  { id: 'active', label: 'Active' },
+  { id: 'very_active', label: 'Very Active' },
+];
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { profile, updateProfile, setOnboarded } = useUserStore();
@@ -33,6 +48,8 @@ export default function ProfileScreen() {
     weight: profile?.weight?.toString() || '',
     height: profile?.height?.toString() || '',
     age: profile?.age?.toString() || '',
+    goal: profile?.goal || 'muscle_building',
+    activity_level: profile?.activity_level || 'moderate',
   });
   const [saving, setSaving] = useState(false);
   const [isPedometerAvailable, setIsPedometerAvailable] = useState(false);
@@ -102,8 +119,11 @@ export default function ProfileScreen() {
         weight: parseFloat(editData.weight),
         height: parseFloat(editData.height),
         age: parseInt(editData.age),
+        goal: editData.goal,
+        activity_level: editData.activity_level,
       });
       setEditing(false);
+      Alert.alert('Success', 'Profile and goals updated!');
     } catch (error) {
       Alert.alert('Error', 'Failed to update profile');
     } finally {
@@ -237,6 +257,39 @@ export default function ProfileScreen() {
                   />
                 </View>
               </View>
+
+              {/* Goal Selector */}
+              <Text style={styles.editLabel}>Fitness Goal</Text>
+              <View style={styles.goalSelector}>
+                {GOALS.map((goal) => (
+                  <TouchableOpacity
+                    key={goal.id}
+                    style={[styles.goalBtn, editData.goal === goal.id && styles.goalBtnActive]}
+                    onPress={() => setEditData({ ...editData, goal: goal.id })}
+                  >
+                    <Text style={[styles.goalBtnText, editData.goal === goal.id && styles.goalBtnTextActive]}>
+                      {goal.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Activity Level Selector */}
+              <Text style={styles.editLabel}>Activity Level</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activityScroll}>
+                {ACTIVITY_LEVELS.map((level) => (
+                  <TouchableOpacity
+                    key={level.id}
+                    style={[styles.activityBtn, editData.activity_level === level.id && styles.activityBtnActive]}
+                    onPress={() => setEditData({ ...editData, activity_level: level.id })}
+                  >
+                    <Text style={[styles.activityBtnText, editData.activity_level === level.id && styles.activityBtnTextActive]}>
+                      {level.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
               <TouchableOpacity
                 style={styles.saveBtn}
                 onPress={handleSaveProfile}
@@ -700,5 +753,49 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: 16,
     color: colors.error,
+  },
+  goalSelector: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  goalBtn: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceLight,
+    alignItems: 'center',
+  },
+  goalBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  goalBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  goalBtnTextActive: {
+    color: colors.background,
+  },
+  activityScroll: {
+    marginBottom: 16,
+  },
+  activityBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceLight,
+    marginRight: 8,
+  },
+  activityBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  activityBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  activityBtnTextActive: {
+    color: colors.background,
   },
 });

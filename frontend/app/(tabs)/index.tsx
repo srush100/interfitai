@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Pedometer } from 'expo-sensors';
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
@@ -33,13 +34,25 @@ export default function HomeScreen() {
       const motivationRes = await api.get('/motivation');
       setMotivation(motivationRes.data.motivation);
 
-      if (profile?.id) {
-        // Get today's steps
-        const today = new Date().toISOString().split('T')[0];
-        const stepsRes = await api.get(`/steps/${profile.id}?date=${today}`);
-        setTodaySteps(stepsRes.data.steps || 0);
+      // Get steps from device pedometer (same as profile tab)
+      try {
+        const available = await Pedometer.isAvailableAsync();
+        if (available) {
+          const end = new Date();
+          const start = new Date();
+          start.setHours(0, 0, 0, 0);
+          const result = await Pedometer.getStepCountAsync(start, end);
+          if (result) {
+            setTodaySteps(result.steps);
+          }
+        }
+      } catch (stepError) {
+        console.log('Pedometer not available:', stepError);
+      }
 
+      if (profile?.id) {
         // Get daily nutrition summary
+        const today = new Date().toISOString().split('T')[0];
         const summaryRes = await api.get(`/food/daily-summary/${profile.id}/${today}`);
         setDailySummary(summaryRes.data);
       }
@@ -113,7 +126,7 @@ export default function HomeScreen() {
         {/* Logo Header */}
         <View style={styles.logoHeader}>
           <Image
-            source={require('../../assets/logo.png')}
+            source={require('../../assets/logo-yellow.webp')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -231,8 +244,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   logo: {
-    width: 120,
-    height: 50,
+    width: 70,
+    height: 70,
   },
   welcomeSection: {
     marginBottom: 20,
