@@ -58,6 +58,12 @@ const DURATIONS = [
 
 const DAYS_OPTIONS = [2, 3, 4, 5, 6];
 
+const FITNESS_LEVELS = [
+  { id: 'beginner', label: 'Beginner', icon: 'leaf', desc: 'New to fitness or returning after a break' },
+  { id: 'intermediate', label: 'Intermediate', icon: 'trending-up', desc: '6+ months consistent training' },
+  { id: 'advanced', label: 'Advanced', icon: 'flash', desc: '2+ years serious training' },
+];
+
 export default function WorkoutQuestionnaire() {
   const router = useRouter();
   const { profile } = useUserStore();
@@ -70,6 +76,7 @@ export default function WorkoutQuestionnaire() {
     injuries: '',
     days_per_week: 4,
     duration_minutes: 60,
+    fitness_level: 'intermediate',
   });
 
   const toggleSelection = (field: 'focus_areas' | 'equipment', value: string) => {
@@ -99,6 +106,7 @@ export default function WorkoutQuestionnaire() {
         injuries: formData.injuries || null,
         days_per_week: formData.days_per_week,
         duration_minutes: formData.duration_minutes,
+        fitness_level: formData.fitness_level,
       });
 
       router.replace(`/workout-detail?id=${response.data.id}`);
@@ -219,6 +227,34 @@ export default function WorkoutQuestionnaire() {
           </TouchableOpacity>
         ))}
       </View>
+
+      <Text style={[styles.stepTitle, { marginTop: 28 }]}>Fitness Level</Text>
+      <Text style={styles.stepSubtitle}>Choose your current fitness level</Text>
+      
+      {FITNESS_LEVELS.map((level) => (
+        <TouchableOpacity
+          key={level.id}
+          style={[styles.levelCard, formData.fitness_level === level.id && styles.levelCardActive]}
+          onPress={() => setFormData({ ...formData, fitness_level: level.id })}
+        >
+          <View style={[styles.levelIcon, formData.fitness_level === level.id && styles.levelIconActive]}>
+            <Ionicons 
+              name={level.icon as any} 
+              size={22} 
+              color={formData.fitness_level === level.id ? colors.background : colors.primary} 
+            />
+          </View>
+          <View style={styles.levelContent}>
+            <Text style={[styles.levelLabel, formData.fitness_level === level.id && styles.levelLabelActive]}>
+              {level.label}
+            </Text>
+            <Text style={styles.levelDesc}>{level.desc}</Text>
+          </View>
+          {formData.fitness_level === level.id && (
+            <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+          )}
+        </TouchableOpacity>
+      ))}
     </View>
   );
 
@@ -249,6 +285,12 @@ export default function WorkoutQuestionnaire() {
           <Ionicons name="time" size={18} color={colors.primary} />
           <Text style={styles.summaryText}>
             {formData.duration_minutes} min workouts, {formData.days_per_week}x per week
+          </Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Ionicons name="fitness" size={18} color={colors.primary} />
+          <Text style={styles.summaryText}>
+            {FITNESS_LEVELS.find(l => l.id === formData.fitness_level)?.label || 'Intermediate'} Level
           </Text>
         </View>
         <View style={styles.summaryRow}>
@@ -563,5 +605,47 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     opacity: 0.7,
+  },
+  levelCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    padding: 16,
+    borderRadius: 14,
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  levelCardActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '10',
+  },
+  levelIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  levelIconActive: {
+    backgroundColor: colors.primary,
+  },
+  levelContent: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  levelLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  levelLabelActive: {
+    color: colors.primary,
+  },
+  levelDesc: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });

@@ -233,6 +233,7 @@ class WorkoutGenerateRequest(BaseModel):
     injuries: Optional[str] = None  # lower_back, knees, shoulders, none
     days_per_week: int = 4
     duration_minutes: int = 60  # Session duration
+    fitness_level: str = "intermediate"  # beginner, intermediate, advanced
 
 # Meal Plan Models
 class Meal(BaseModel):
@@ -534,6 +535,15 @@ async def generate_workout(request: WorkoutGenerateRequest):
     # Get user profile for personalization
     profile = await db.profiles.find_one({"id": request.user_id})
     session_duration = request.duration_minutes if hasattr(request, 'duration_minutes') else 60
+    fitness_level = request.fitness_level if hasattr(request, 'fitness_level') else "intermediate"
+    
+    # Define fitness level parameters
+    fitness_params = {
+        "beginner": {"sets": "2-3", "rest": "90-120", "complexity": "basic compound movements, focus on form"},
+        "intermediate": {"sets": "3-4", "rest": "60-90", "complexity": "mix of compound and isolation exercises"},
+        "advanced": {"sets": "4-5", "rest": "45-60", "complexity": "advanced techniques, supersets, drop sets"}
+    }
+    level_info = fitness_params.get(fitness_level, fitness_params["intermediate"])
     
     prompt = f"""Create a detailed {request.days_per_week}-day per week workout program for someone with the following goals and constraints:
 
@@ -542,6 +552,7 @@ Focus Areas: {', '.join(request.focus_areas)}
 Available Equipment: {', '.join(request.equipment)}
 Injuries/Limitations: {request.injuries or 'None'}
 Session Duration: {session_duration} minutes per workout
+Fitness Level: {fitness_level.upper()} - {level_info['complexity']}
 
 Please provide a structured workout program in JSON format with the following structure:
 {{
@@ -573,7 +584,7 @@ Requirements:
 - Focus on compound movements first, then isolation
 - Include proper warm-up notes
 - Provide detailed form cues for each exercise
-- Make it progressive and appropriate for intermediate fitness level"""
+- Adjust difficulty for {fitness_level.upper()} level: {level_info['sets']} sets per exercise, {level_info['rest']}s rest between sets"""
 
     try:
         response = openai.chat.completions.create(
