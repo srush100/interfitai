@@ -1581,6 +1581,10 @@ async def get_free_access_list(admin_email: str):
         raise HTTPException(status_code=403, detail="Not authorized as admin")
     
     users = await db.free_access.find({}).to_list(100)
+    # Convert ObjectId to string for JSON serialization
+    for user in users:
+        if '_id' in user:
+            user['_id'] = str(user['_id'])
     return users
 
 @api_router.get("/admin/is-admin/{email}")
