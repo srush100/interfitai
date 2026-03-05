@@ -37,229 +37,59 @@ ADMIN_EMAILS = [
 # Free access emails - can be granted by admin
 FREE_ACCESS_EMAILS = []
 
-# Exercise demonstration images - clean illustrated images (computer-generated, not human photos)
-# Source: free-exercise-db - professional fitness illustrations
-EXERCISE_IMG_BASE = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
+# Exercise demonstration - using ExerciseDB API for computer-generated animated GIFs
+EXERCISEDB_API_BASE = "https://exercisedb-api.vercel.app/api/v1"
 
-EXERCISE_GIFS = {
-    # Chest exercises
-    "bench press": f"{EXERCISE_IMG_BASE}Barbell_Bench_Press_-_Medium_Grip/0.jpg",
-    "barbell bench press": f"{EXERCISE_IMG_BASE}Barbell_Bench_Press_-_Medium_Grip/0.jpg",
-    "flat bench press": f"{EXERCISE_IMG_BASE}Barbell_Bench_Press_-_Medium_Grip/0.jpg",
-    "dumbbell bench press": f"{EXERCISE_IMG_BASE}Dumbbell_Bench_Press/0.jpg",
-    "dumbbell press": f"{EXERCISE_IMG_BASE}Dumbbell_Bench_Press/0.jpg",
-    "incline bench press": f"{EXERCISE_IMG_BASE}Barbell_Incline_Bench_Press_-_Medium_Grip/0.jpg",
-    "incline dumbbell press": f"{EXERCISE_IMG_BASE}Incline_Dumbbell_Press/0.jpg",
-    "decline bench press": f"{EXERCISE_IMG_BASE}Decline_Barbell_Bench_Press/0.jpg",
-    "push-up": f"{EXERCISE_IMG_BASE}Pushups/0.jpg",
-    "push up": f"{EXERCISE_IMG_BASE}Pushups/0.jpg",
-    "pushup": f"{EXERCISE_IMG_BASE}Pushups/0.jpg",
-    "wide push up": f"{EXERCISE_IMG_BASE}Wide-Grip_Push-Up/0.jpg",
-    "diamond push up": f"{EXERCISE_IMG_BASE}Diamond_Push-Up/0.jpg",
-    "dumbbell fly": f"{EXERCISE_IMG_BASE}Dumbbell_Flyes/0.jpg",
-    "dumbbell flye": f"{EXERCISE_IMG_BASE}Dumbbell_Flyes/0.jpg",
-    "dumbbell flyes": f"{EXERCISE_IMG_BASE}Dumbbell_Flyes/0.jpg",
-    "incline fly": f"{EXERCISE_IMG_BASE}Incline_Dumbbell_Flyes/0.jpg",
-    "cable fly": f"{EXERCISE_IMG_BASE}Cable_Crossover/0.jpg",
-    "cable crossover": f"{EXERCISE_IMG_BASE}Cable_Crossover/0.jpg",
-    "chest dip": f"{EXERCISE_IMG_BASE}Dips_-_Chest_Version/0.jpg",
-    "pec deck": f"{EXERCISE_IMG_BASE}Butterfly/0.jpg",
+# Cache for exercise GIFs to avoid repeated API calls
+exercise_gif_cache = {}
+
+async def get_exercise_gif_from_api(exercise_name: str) -> str:
+    """Fetch computer-generated animated GIF from ExerciseDB API"""
+    import httpx
     
-    # Back exercises
-    "pull-up": f"{EXERCISE_IMG_BASE}Pullups/0.jpg",
-    "pull up": f"{EXERCISE_IMG_BASE}Pullups/0.jpg",
-    "pullup": f"{EXERCISE_IMG_BASE}Pullups/0.jpg",
-    "wide grip pull up": f"{EXERCISE_IMG_BASE}Wide-Grip_Pull-Up/0.jpg",
-    "chin-up": f"{EXERCISE_IMG_BASE}Chin-Up/0.jpg",
-    "chin up": f"{EXERCISE_IMG_BASE}Chin-Up/0.jpg",
-    "lat pulldown": f"{EXERCISE_IMG_BASE}Wide-Grip_Lat_Pulldown/0.jpg",
-    "wide grip lat pulldown": f"{EXERCISE_IMG_BASE}Wide-Grip_Lat_Pulldown/0.jpg",
-    "close grip lat pulldown": f"{EXERCISE_IMG_BASE}Close-Grip_Lat_Pulldown/0.jpg",
-    "barbell row": f"{EXERCISE_IMG_BASE}Bent_Over_Barbell_Row/0.jpg",
-    "bent over row": f"{EXERCISE_IMG_BASE}Bent_Over_Barbell_Row/0.jpg",
-    "barbell bent over row": f"{EXERCISE_IMG_BASE}Bent_Over_Barbell_Row/0.jpg",
-    "dumbbell row": f"{EXERCISE_IMG_BASE}One-Arm_Dumbbell_Row/0.jpg",
-    "one arm dumbbell row": f"{EXERCISE_IMG_BASE}One-Arm_Dumbbell_Row/0.jpg",
-    "one-arm dumbbell row": f"{EXERCISE_IMG_BASE}One-Arm_Dumbbell_Row/0.jpg",
-    "single arm row": f"{EXERCISE_IMG_BASE}One-Arm_Dumbbell_Row/0.jpg",
-    "seated cable row": f"{EXERCISE_IMG_BASE}Seated_Cable_Rows/0.jpg",
-    "cable row": f"{EXERCISE_IMG_BASE}Seated_Cable_Rows/0.jpg",
-    "deadlift": f"{EXERCISE_IMG_BASE}Barbell_Deadlift/0.jpg",
-    "barbell deadlift": f"{EXERCISE_IMG_BASE}Barbell_Deadlift/0.jpg",
-    "conventional deadlift": f"{EXERCISE_IMG_BASE}Barbell_Deadlift/0.jpg",
-    "t-bar row": f"{EXERCISE_IMG_BASE}T-Bar_Row/0.jpg",
-    "t bar row": f"{EXERCISE_IMG_BASE}T-Bar_Row/0.jpg",
-    "face pull": f"{EXERCISE_IMG_BASE}Face_Pull/0.jpg",
-    "straight arm pulldown": f"{EXERCISE_IMG_BASE}Straight-Arm_Pulldown/0.jpg",
-    "hyperextension": f"{EXERCISE_IMG_BASE}Hyperextensions_Back_Extensions/0.jpg",
-    "back extension": f"{EXERCISE_IMG_BASE}Hyperextensions_Back_Extensions/0.jpg",
+    name_lower = exercise_name.lower().strip()
     
-    # Shoulder exercises
-    "shoulder press": f"{EXERCISE_IMG_BASE}Dumbbell_Shoulder_Press/0.jpg",
-    "dumbbell shoulder press": f"{EXERCISE_IMG_BASE}Dumbbell_Shoulder_Press/0.jpg",
-    "seated dumbbell press": f"{EXERCISE_IMG_BASE}Dumbbell_Shoulder_Press/0.jpg",
-    "overhead press": f"{EXERCISE_IMG_BASE}Standing_Military_Press/0.jpg",
-    "military press": f"{EXERCISE_IMG_BASE}Standing_Military_Press/0.jpg",
-    "barbell shoulder press": f"{EXERCISE_IMG_BASE}Standing_Military_Press/0.jpg",
-    "arnold press": f"{EXERCISE_IMG_BASE}Arnold_Dumbbell_Press/0.jpg",
-    "lateral raise": f"{EXERCISE_IMG_BASE}Side_Lateral_Raise/0.jpg",
-    "dumbbell lateral raise": f"{EXERCISE_IMG_BASE}Side_Lateral_Raise/0.jpg",
-    "side lateral raise": f"{EXERCISE_IMG_BASE}Side_Lateral_Raise/0.jpg",
-    "cable lateral raise": f"{EXERCISE_IMG_BASE}Cable_Lateral_Raise/0.jpg",
-    "front raise": f"{EXERCISE_IMG_BASE}Front_Dumbbell_Raise/0.jpg",
-    "dumbbell front raise": f"{EXERCISE_IMG_BASE}Front_Dumbbell_Raise/0.jpg",
-    "rear delt fly": f"{EXERCISE_IMG_BASE}Seated_Bent-Over_Rear_Delt_Raise/0.jpg",
-    "reverse fly": f"{EXERCISE_IMG_BASE}Seated_Bent-Over_Rear_Delt_Raise/0.jpg",
-    "rear delt raise": f"{EXERCISE_IMG_BASE}Seated_Bent-Over_Rear_Delt_Raise/0.jpg",
-    "upright row": f"{EXERCISE_IMG_BASE}Upright_Barbell_Row/0.jpg",
-    "barbell upright row": f"{EXERCISE_IMG_BASE}Upright_Barbell_Row/0.jpg",
-    "shrug": f"{EXERCISE_IMG_BASE}Barbell_Shrug/0.jpg",
-    "barbell shrug": f"{EXERCISE_IMG_BASE}Barbell_Shrug/0.jpg",
-    "dumbbell shrug": f"{EXERCISE_IMG_BASE}Dumbbell_Shrug/0.jpg",
+    # Check cache first
+    if name_lower in exercise_gif_cache:
+        return exercise_gif_cache[name_lower]
     
-    # Arm exercises - Biceps
-    "bicep curl": f"{EXERCISE_IMG_BASE}Dumbbell_Bicep_Curl/0.jpg",
-    "dumbbell curl": f"{EXERCISE_IMG_BASE}Dumbbell_Bicep_Curl/0.jpg",
-    "dumbbell bicep curl": f"{EXERCISE_IMG_BASE}Dumbbell_Bicep_Curl/0.jpg",
-    "standing dumbbell curl": f"{EXERCISE_IMG_BASE}Dumbbell_Bicep_Curl/0.jpg",
-    "barbell curl": f"{EXERCISE_IMG_BASE}Barbell_Curl/0.jpg",
-    "standing barbell curl": f"{EXERCISE_IMG_BASE}Barbell_Curl/0.jpg",
-    "hammer curl": f"{EXERCISE_IMG_BASE}Hammer_Curls/0.jpg",
-    "dumbbell hammer curl": f"{EXERCISE_IMG_BASE}Hammer_Curls/0.jpg",
-    "preacher curl": f"{EXERCISE_IMG_BASE}Preacher_Curl/0.jpg",
-    "ez bar preacher curl": f"{EXERCISE_IMG_BASE}Preacher_Curl/0.jpg",
-    "concentration curl": f"{EXERCISE_IMG_BASE}Concentration_Curls/0.jpg",
-    "cable curl": f"{EXERCISE_IMG_BASE}Cable_Hammer_Curls_-_Rope_Attachment/0.jpg",
-    "incline dumbbell curl": f"{EXERCISE_IMG_BASE}Incline_Dumbbell_Curl/0.jpg",
-    "ez bar curl": f"{EXERCISE_IMG_BASE}EZ-Bar_Curl/0.jpg",
-    "spider curl": f"{EXERCISE_IMG_BASE}Spider_Curl/0.jpg",
-    "reverse curl": f"{EXERCISE_IMG_BASE}Reverse_Barbell_Curl/0.jpg",
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Search by exercise name
+            response = await client.get(
+                f"{EXERCISEDB_API_BASE}/exercises",
+                params={"search": name_lower, "limit": 5}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                exercises = data.get("data", [])
+                
+                if exercises:
+                    # Find best match
+                    for ex in exercises:
+                        ex_name = ex.get("name", "").lower()
+                        if name_lower in ex_name or ex_name in name_lower:
+                            gif_url = ex.get("gifUrl", "")
+                            if gif_url:
+                                exercise_gif_cache[name_lower] = gif_url
+                                return gif_url
+                    
+                    # If no exact match, use first result
+                    gif_url = exercises[0].get("gifUrl", "")
+                    if gif_url:
+                        exercise_gif_cache[name_lower] = gif_url
+                        return gif_url
+    except Exception as e:
+        logger.warning(f"ExerciseDB API error for '{exercise_name}': {e}")
     
-    # Arm exercises - Triceps
-    "tricep pushdown": f"{EXERCISE_IMG_BASE}Triceps_Pushdown/0.jpg",
-    "cable pushdown": f"{EXERCISE_IMG_BASE}Triceps_Pushdown/0.jpg",
-    "tricep extension": f"{EXERCISE_IMG_BASE}Standing_Dumbbell_Triceps_Extension/0.jpg",
-    "overhead tricep extension": f"{EXERCISE_IMG_BASE}Standing_Dumbbell_Triceps_Extension/0.jpg",
-    "dumbbell tricep extension": f"{EXERCISE_IMG_BASE}Standing_Dumbbell_Triceps_Extension/0.jpg",
-    "skull crusher": f"{EXERCISE_IMG_BASE}Lying_Triceps_Press/0.jpg",
-    "lying tricep extension": f"{EXERCISE_IMG_BASE}Lying_Triceps_Press/0.jpg",
-    "tricep dip": f"{EXERCISE_IMG_BASE}Dips_-_Triceps_Version/0.jpg",
-    "dip": f"{EXERCISE_IMG_BASE}Dips_-_Triceps_Version/0.jpg",
-    "bench dip": f"{EXERCISE_IMG_BASE}Bench_Dips/0.jpg",
-    "close grip bench press": f"{EXERCISE_IMG_BASE}Close-Grip_Barbell_Bench_Press/0.jpg",
-    "tricep kickback": f"{EXERCISE_IMG_BASE}Tricep_Dumbbell_Kickback/0.jpg",
-    "dumbbell kickback": f"{EXERCISE_IMG_BASE}Tricep_Dumbbell_Kickback/0.jpg",
-    "rope pushdown": f"{EXERCISE_IMG_BASE}Triceps_Pushdown_-_Rope_Attachment/0.jpg",
-    "overhead cable extension": f"{EXERCISE_IMG_BASE}Cable_Overhead_Triceps_Extension/0.jpg",
-    
-    # Leg exercises
-    "squat": f"{EXERCISE_IMG_BASE}Barbell_Full_Squat/0.jpg",
-    "barbell squat": f"{EXERCISE_IMG_BASE}Barbell_Full_Squat/0.jpg",
-    "back squat": f"{EXERCISE_IMG_BASE}Barbell_Full_Squat/0.jpg",
-    "front squat": f"{EXERCISE_IMG_BASE}Front_Barbell_Squat/0.jpg",
-    "barbell front squat": f"{EXERCISE_IMG_BASE}Front_Barbell_Squat/0.jpg",
-    "goblet squat": f"{EXERCISE_IMG_BASE}Goblet_Squat/0.jpg",
-    "dumbbell squat": f"{EXERCISE_IMG_BASE}Dumbbell_Squat/0.jpg",
-    "leg press": f"{EXERCISE_IMG_BASE}Leg_Press/0.jpg",
-    "lunge": f"{EXERCISE_IMG_BASE}Dumbbell_Lunges/0.jpg",
-    "dumbbell lunge": f"{EXERCISE_IMG_BASE}Dumbbell_Lunges/0.jpg",
-    "walking lunge": f"{EXERCISE_IMG_BASE}Dumbbell_Walking_Lunge/0.jpg",
-    "reverse lunge": f"{EXERCISE_IMG_BASE}Dumbbell_Rear_Lunge/0.jpg",
-    "bulgarian split squat": f"{EXERCISE_IMG_BASE}Dumbbell_Single_Leg_Split_Squat/0.jpg",
-    "split squat": f"{EXERCISE_IMG_BASE}Dumbbell_Single_Leg_Split_Squat/0.jpg",
-    "leg curl": f"{EXERCISE_IMG_BASE}Lying_Leg_Curls/0.jpg",
-    "lying leg curl": f"{EXERCISE_IMG_BASE}Lying_Leg_Curls/0.jpg",
-    "hamstring curl": f"{EXERCISE_IMG_BASE}Lying_Leg_Curls/0.jpg",
-    "seated leg curl": f"{EXERCISE_IMG_BASE}Seated_Leg_Curl/0.jpg",
-    "leg extension": f"{EXERCISE_IMG_BASE}Leg_Extensions/0.jpg",
-    "calf raise": f"{EXERCISE_IMG_BASE}Standing_Calf_Raises/0.jpg",
-    "standing calf raise": f"{EXERCISE_IMG_BASE}Standing_Calf_Raises/0.jpg",
-    "seated calf raise": f"{EXERCISE_IMG_BASE}Seated_Calf_Raise/0.jpg",
-    "romanian deadlift": f"{EXERCISE_IMG_BASE}Romanian_Deadlift/0.jpg",
-    "rdl": f"{EXERCISE_IMG_BASE}Romanian_Deadlift/0.jpg",
-    "stiff leg deadlift": f"{EXERCISE_IMG_BASE}Stiff-Legged_Barbell_Deadlift/0.jpg",
-    "hip thrust": f"{EXERCISE_IMG_BASE}Barbell_Hip_Thrust/0.jpg",
-    "barbell hip thrust": f"{EXERCISE_IMG_BASE}Barbell_Hip_Thrust/0.jpg",
-    "glute bridge": f"{EXERCISE_IMG_BASE}Barbell_Glute_Bridge/0.jpg",
-    "step up": f"{EXERCISE_IMG_BASE}Dumbbell_Step_Ups/0.jpg",
-    "dumbbell step up": f"{EXERCISE_IMG_BASE}Dumbbell_Step_Ups/0.jpg",
-    "hack squat": f"{EXERCISE_IMG_BASE}Hack_Squat/0.jpg",
-    "sumo deadlift": f"{EXERCISE_IMG_BASE}Sumo_Deadlift/0.jpg",
-    "good morning": f"{EXERCISE_IMG_BASE}Good_Morning/0.jpg",
-    "box squat": f"{EXERCISE_IMG_BASE}Barbell_Squat_To_A_Bench/0.jpg",
-    
-    # Core exercises
-    "plank": f"{EXERCISE_IMG_BASE}Plank/0.jpg",
-    "front plank": f"{EXERCISE_IMG_BASE}Plank/0.jpg",
-    "crunch": f"{EXERCISE_IMG_BASE}Crunches/0.jpg",
-    "crunches": f"{EXERCISE_IMG_BASE}Crunches/0.jpg",
-    "sit-up": f"{EXERCISE_IMG_BASE}Sit-Up/0.jpg",
-    "sit up": f"{EXERCISE_IMG_BASE}Sit-Up/0.jpg",
-    "russian twist": f"{EXERCISE_IMG_BASE}Russian_Twist/0.jpg",
-    "leg raise": f"{EXERCISE_IMG_BASE}Flat_Bench_Lying_Leg_Raise/0.jpg",
-    "lying leg raise": f"{EXERCISE_IMG_BASE}Flat_Bench_Lying_Leg_Raise/0.jpg",
-    "hanging leg raise": f"{EXERCISE_IMG_BASE}Hanging_Leg_Raise/0.jpg",
-    "hanging knee raise": f"{EXERCISE_IMG_BASE}Hanging_Knee_Raise/0.jpg",
-    "mountain climber": f"{EXERCISE_IMG_BASE}Cross-Body_Crunch/0.jpg",
-    "bicycle crunch": f"{EXERCISE_IMG_BASE}Air_Bike/0.jpg",
-    "ab wheel rollout": f"{EXERCISE_IMG_BASE}Ab_Roller/0.jpg",
-    "ab roller": f"{EXERCISE_IMG_BASE}Ab_Roller/0.jpg",
-    "reverse crunch": f"{EXERCISE_IMG_BASE}Reverse_Crunch/0.jpg",
-    "cable crunch": f"{EXERCISE_IMG_BASE}Cable_Crunch/0.jpg",
-    "side plank": f"{EXERCISE_IMG_BASE}Side_Bridge/0.jpg",
-    "dead bug": f"{EXERCISE_IMG_BASE}Dead_Bug/0.jpg",
-    "v-up": f"{EXERCISE_IMG_BASE}V-Up/0.jpg",
-    "toe touch": f"{EXERCISE_IMG_BASE}Toe_Touchers/0.jpg",
-    "flutter kick": f"{EXERCISE_IMG_BASE}Flutter_Kicks/0.jpg",
-    "woodchop": f"{EXERCISE_IMG_BASE}Dumbbell_Woodchop/0.jpg",
-    
-    # Full body / Compound
-    "burpee": f"{EXERCISE_IMG_BASE}Burpee/0.jpg",
-    "clean": f"{EXERCISE_IMG_BASE}Power_Clean/0.jpg",
-    "power clean": f"{EXERCISE_IMG_BASE}Power_Clean/0.jpg",
-    "hang clean": f"{EXERCISE_IMG_BASE}Hang_Clean/0.jpg",
-    "clean and press": f"{EXERCISE_IMG_BASE}Clean_and_Press/0.jpg",
-    "clean and jerk": f"{EXERCISE_IMG_BASE}Clean_and_Jerk/0.jpg",
-    "snatch": f"{EXERCISE_IMG_BASE}Power_Snatch/0.jpg",
-    "thruster": f"{EXERCISE_IMG_BASE}Thrusters/0.jpg",
-    "kettlebell swing": f"{EXERCISE_IMG_BASE}Kettlebell_Sumo_High_Pull/0.jpg",
-    "farmer walk": f"{EXERCISE_IMG_BASE}Farmers_Walk/0.jpg",
-    "farmers walk": f"{EXERCISE_IMG_BASE}Farmers_Walk/0.jpg",
-    "battle rope": f"{EXERCISE_IMG_BASE}Battling_Ropes/0.jpg",
-    "box jump": f"{EXERCISE_IMG_BASE}Box_Jump_-_Multiple_Response/0.jpg",
-    "jumping jack": f"{EXERCISE_IMG_BASE}Jumping_Jacks/0.jpg",
-    "jump squat": f"{EXERCISE_IMG_BASE}Freehand_Jump_Squat/0.jpg",
-}
+    # Fallback - return empty string
+    return ""
 
 def get_exercise_gif(exercise_name: str) -> str:
-    """Get illustration URL for an exercise by name matching"""
-    name_lower = exercise_name.lower()
-    
-    # Direct match first
-    if name_lower in EXERCISE_GIFS:
-        return EXERCISE_GIFS[name_lower]
-    
-    # Try partial matching - find the best match
-    best_match = None
-    best_score = 0
-    
-    for key, url in EXERCISE_GIFS.items():
-        if key in name_lower:
-            score = len(key)
-            if score > best_score:
-                best_score = score
-                best_match = url
-        elif name_lower in key:
-            score = len(name_lower)
-            if score > best_score:
-                best_score = score
-                best_match = url
-    
-    if best_match:
-        return best_match
-    
-    # Return a default exercise image if no match
-    return f"{EXERCISE_IMG_BASE}Dumbbell_Bicep_Curl/0.jpg"
+    """Synchronous wrapper that returns empty - actual GIFs fetched async during generation"""
+    # This is a placeholder - actual GIF fetching happens in generate_workout
+    return ""
 
 async def check_subscription_access(user_id: str) -> dict:
     """Check if user has subscription access or is admin/free access"""
@@ -726,13 +556,15 @@ Requirements:
         
         workout_data = json.loads(content)
         
-        # Add GIF URLs to exercises
+        # Add GIF URLs to exercises - fetch from ExerciseDB API
         processed_days = []
         for day in workout_data.get("workout_days", []):
             exercises_with_gifs = []
             for ex in day.get("exercises", []):
                 ex_dict = dict(ex)
-                ex_dict["gif_url"] = get_exercise_gif(ex.get("name", ""))
+                # Fetch animated GIF from ExerciseDB API
+                gif_url = await get_exercise_gif_from_api(ex.get("name", ""))
+                ex_dict["gif_url"] = gif_url
                 exercises_with_gifs.append(ex_dict)
             day["exercises"] = exercises_with_gifs
             processed_days.append(day)
