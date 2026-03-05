@@ -37,15 +37,18 @@ ADMIN_EMAILS = [
 # Free access emails - can be granted by admin
 FREE_ACCESS_EMAILS = []
 
-# Exercise demonstration - using ExerciseDB API for computer-generated animated GIFs
-EXERCISEDB_API_BASE = "https://exercisedb-api.vercel.app/api/v1"
+# Exercise demonstration - using ExerciseDB RapidAPI for computer-generated animated GIFs
+EXERCISEDB_API_KEY = os.getenv("EXERCISEDB_API_KEY")
+EXERCISEDB_API_HOST = "exercisedb.p.rapidapi.com"
+EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 
 # Cache for exercise GIFs to avoid repeated API calls
 exercise_gif_cache = {}
 
 async def get_exercise_gif_from_api(exercise_name: str) -> str:
-    """Fetch computer-generated animated GIF from ExerciseDB API"""
+    """Fetch computer-generated animated GIF from ExerciseDB RapidAPI"""
     import httpx
+    import urllib.parse
     
     name_lower = exercise_name.lower().strip()
     
@@ -53,33 +56,53 @@ async def get_exercise_gif_from_api(exercise_name: str) -> str:
     if name_lower in exercise_gif_cache:
         return exercise_gif_cache[name_lower]
     
+    if not EXERCISEDB_API_KEY:
+        logger.warning("ExerciseDB API key not configured")
+        return ""
+    
+    headers = {
+        "X-RapidAPI-Key": EXERCISEDB_API_KEY,
+        "X-RapidAPI-Host": EXERCISEDB_API_HOST
+    }
+    
+    # Try different search terms - some exercises have different naming conventions
+    search_terms = [name_lower]
+    
+    # Add variations for common naming differences
+    if "dumbbell" in name_lower:
+        search_terms.append(name_lower.replace("dumbbell ", ""))
+    if "barbell" in name_lower:
+        search_terms.append(name_lower.replace("barbell ", ""))
+    if "flyes" in name_lower:
+        search_terms.append(name_lower.replace("flyes", "fly"))
+    if "fly" in name_lower and "flyes" not in name_lower:
+        search_terms.append(name_lower.replace("fly", "flyes"))
+    
+    # Extract main exercise word for fallback
+    main_words = name_lower.split()
+    if len(main_words) > 1:
+        search_terms.append(main_words[-1])  # Try last word (e.g., "press", "curl")
+    
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            # Search by exercise name
-            response = await client.get(
-                f"{EXERCISEDB_API_BASE}/exercises",
-                params={"search": name_lower, "limit": 5}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                exercises = data.get("data", [])
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for search_term in search_terms:
+                encoded_term = urllib.parse.quote(search_term)
+                response = await client.get(
+                    f"{EXERCISEDB_API_BASE}/exercises/name/{encoded_term}",
+                    headers=headers
+                )
                 
-                if exercises:
-                    # Find best match
-                    for ex in exercises:
-                        ex_name = ex.get("name", "").lower()
-                        if name_lower in ex_name or ex_name in name_lower:
-                            gif_url = ex.get("gifUrl", "")
-                            if gif_url:
-                                exercise_gif_cache[name_lower] = gif_url
-                                return gif_url
+                if response.status_code == 200:
+                    exercises = response.json()
                     
-                    # If no exact match, use first result
-                    gif_url = exercises[0].get("gifUrl", "")
-                    if gif_url:
-                        exercise_gif_cache[name_lower] = gif_url
-                        return gif_url
+                    if exercises and len(exercises) > 0:
+                        # Use first result
+                        ex = exercises[0]
+                        exercise_id = ex.get("id", "")
+                        if exercise_id:
+                            gif_url = f"{EXERCISEDB_API_BASE}/image?exerciseId={exercise_id}&resolution=360&rapidapi-key={EXERCISEDB_API_KEY}"
+                            exercise_gif_cache[name_lower] = gif_url
+                            return gif_url
     except Exception as e:
         logger.warning(f"ExerciseDB API error for '{exercise_name}': {e}")
     
