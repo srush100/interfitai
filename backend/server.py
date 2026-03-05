@@ -37,81 +37,176 @@ ADMIN_EMAILS = [
 # Free access emails - can be granted by admin
 FREE_ACCESS_EMAILS = []
 
-# Exercise GIF Database - mapping common exercises to demonstration GIFs
+# Exercise demonstration images - using clean images from free-exercise-db (no watermarks)
+# Base URL for GitHub raw images
+EXERCISE_IMG_BASE = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
+
 EXERCISE_GIFS = {
     # Chest exercises
-    "bench press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Bench-Press.gif",
-    "push-up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Push-Up.gif",
-    "push up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Push-Up.gif",
-    "dumbbell press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Press.gif",
-    "dumbbell fly": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Fly.gif",
-    "incline bench press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Incline-Barbell-Bench-Press.gif",
-    "decline bench press": "https://fitnessprogramer.com/wp-content/uploads/2021/06/Decline-Barbell-Bench-Press.gif",
-    "cable crossover": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Cable-Crossover.gif",
-    "chest dip": "https://fitnessprogramer.com/wp-content/uploads/2021/06/Chest-Dip.gif",
+    "bench press": f"{EXERCISE_IMG_BASE}Barbell_Bench_Press_-_Medium_Grip/0.jpg",
+    "barbell bench press": f"{EXERCISE_IMG_BASE}Barbell_Bench_Press_-_Medium_Grip/0.jpg",
+    "dumbbell bench press": f"{EXERCISE_IMG_BASE}Dumbbell_Bench_Press/0.jpg",
+    "dumbbell press": f"{EXERCISE_IMG_BASE}Dumbbell_Bench_Press/0.jpg",
+    "incline bench press": f"{EXERCISE_IMG_BASE}Barbell_Incline_Bench_Press_-_Medium_Grip/0.jpg",
+    "incline dumbbell press": f"{EXERCISE_IMG_BASE}Incline_Dumbbell_Press/0.jpg",
+    "decline bench press": f"{EXERCISE_IMG_BASE}Decline_Barbell_Bench_Press/0.jpg",
+    "push-up": f"{EXERCISE_IMG_BASE}Pushups/0.jpg",
+    "push up": f"{EXERCISE_IMG_BASE}Pushups/0.jpg",
+    "pushup": f"{EXERCISE_IMG_BASE}Pushups/0.jpg",
+    "dumbbell fly": f"{EXERCISE_IMG_BASE}Dumbbell_Flyes/0.jpg",
+    "dumbbell flye": f"{EXERCISE_IMG_BASE}Dumbbell_Flyes/0.jpg",
+    "cable crossover": f"{EXERCISE_IMG_BASE}Cable_Crossover/0.jpg",
+    "cable fly": f"{EXERCISE_IMG_BASE}Cable_Crossover/0.jpg",
+    "chest dip": f"{EXERCISE_IMG_BASE}Dips_-_Chest_Version/0.jpg",
+    
     # Back exercises
-    "pull-up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Pull-up.gif",
-    "pull up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Pull-up.gif",
-    "lat pulldown": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lat-Pulldown.gif",
-    "barbell row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Bent-Over-Row.gif",
-    "bent over row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Bent-Over-Row.gif",
-    "dumbbell row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Row.gif",
-    "seated cable row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Seated-Cable-Row.gif",
-    "deadlift": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Deadlift.gif",
-    "t-bar row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/T-Bar-Row.gif",
+    "pull-up": f"{EXERCISE_IMG_BASE}Pullups/0.jpg",
+    "pull up": f"{EXERCISE_IMG_BASE}Pullups/0.jpg",
+    "pullup": f"{EXERCISE_IMG_BASE}Pullups/0.jpg",
+    "chin-up": f"{EXERCISE_IMG_BASE}Chin-Up/0.jpg",
+    "chin up": f"{EXERCISE_IMG_BASE}Chin-Up/0.jpg",
+    "lat pulldown": f"{EXERCISE_IMG_BASE}Wide-Grip_Lat_Pulldown/0.jpg",
+    "wide grip lat pulldown": f"{EXERCISE_IMG_BASE}Wide-Grip_Lat_Pulldown/0.jpg",
+    "barbell row": f"{EXERCISE_IMG_BASE}Bent_Over_Barbell_Row/0.jpg",
+    "bent over row": f"{EXERCISE_IMG_BASE}Bent_Over_Barbell_Row/0.jpg",
+    "barbell bent over row": f"{EXERCISE_IMG_BASE}Bent_Over_Barbell_Row/0.jpg",
+    "dumbbell row": f"{EXERCISE_IMG_BASE}One-Arm_Dumbbell_Row/0.jpg",
+    "one arm dumbbell row": f"{EXERCISE_IMG_BASE}One-Arm_Dumbbell_Row/0.jpg",
+    "seated cable row": f"{EXERCISE_IMG_BASE}Seated_Cable_Rows/0.jpg",
+    "cable row": f"{EXERCISE_IMG_BASE}Seated_Cable_Rows/0.jpg",
+    "deadlift": f"{EXERCISE_IMG_BASE}Barbell_Deadlift/0.jpg",
+    "barbell deadlift": f"{EXERCISE_IMG_BASE}Barbell_Deadlift/0.jpg",
+    "t-bar row": f"{EXERCISE_IMG_BASE}T-Bar_Row/0.jpg",
+    "t bar row": f"{EXERCISE_IMG_BASE}T-Bar_Row/0.jpg",
+    
     # Shoulder exercises
-    "shoulder press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Shoulder-Press.gif",
-    "military press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Shoulder-Press.gif",
-    "lateral raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Lateral-Raise.gif",
-    "front raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Front-Raise.gif",
-    "face pull": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Face-Pull.gif",
-    "upright row": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Upright-Row.gif",
-    "arnold press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Arnold-Press.gif",
-    "rear delt fly": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Rear-Delt-Fly.gif",
-    # Arm exercises
-    "bicep curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Curl.gif",
-    "hammer curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Hammer-Curl.gif",
-    "tricep pushdown": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Pushdown.gif",
-    "tricep extension": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Triceps-Extension.gif",
-    "skull crusher": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Skull-Crusher.gif",
-    "preacher curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Preacher-Curl.gif",
-    "concentration curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Concentration-Curl.gif",
-    "dip": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Triceps-Dip.gif",
+    "shoulder press": f"{EXERCISE_IMG_BASE}Dumbbell_Shoulder_Press/0.jpg",
+    "dumbbell shoulder press": f"{EXERCISE_IMG_BASE}Dumbbell_Shoulder_Press/0.jpg",
+    "overhead press": f"{EXERCISE_IMG_BASE}Standing_Military_Press/0.jpg",
+    "military press": f"{EXERCISE_IMG_BASE}Standing_Military_Press/0.jpg",
+    "barbell shoulder press": f"{EXERCISE_IMG_BASE}Standing_Military_Press/0.jpg",
+    "arnold press": f"{EXERCISE_IMG_BASE}Arnold_Dumbbell_Press/0.jpg",
+    "lateral raise": f"{EXERCISE_IMG_BASE}Side_Lateral_Raise/0.jpg",
+    "dumbbell lateral raise": f"{EXERCISE_IMG_BASE}Side_Lateral_Raise/0.jpg",
+    "side lateral raise": f"{EXERCISE_IMG_BASE}Side_Lateral_Raise/0.jpg",
+    "front raise": f"{EXERCISE_IMG_BASE}Front_Dumbbell_Raise/0.jpg",
+    "dumbbell front raise": f"{EXERCISE_IMG_BASE}Front_Dumbbell_Raise/0.jpg",
+    "rear delt fly": f"{EXERCISE_IMG_BASE}Bent_Over_Low_Pulley_Side_Lateral/0.jpg",
+    "reverse fly": f"{EXERCISE_IMG_BASE}Bent_Over_Low_Pulley_Side_Lateral/0.jpg",
+    "face pull": f"{EXERCISE_IMG_BASE}Face_Pull/0.jpg",
+    "upright row": f"{EXERCISE_IMG_BASE}Upright_Barbell_Row/0.jpg",
+    "barbell upright row": f"{EXERCISE_IMG_BASE}Upright_Barbell_Row/0.jpg",
+    "shrug": f"{EXERCISE_IMG_BASE}Barbell_Shrug/0.jpg",
+    "dumbbell shrug": f"{EXERCISE_IMG_BASE}Dumbbell_Shrug/0.jpg",
+    
+    # Arm exercises - Biceps
+    "bicep curl": f"{EXERCISE_IMG_BASE}Dumbbell_Bicep_Curl/0.jpg",
+    "dumbbell curl": f"{EXERCISE_IMG_BASE}Dumbbell_Bicep_Curl/0.jpg",
+    "dumbbell bicep curl": f"{EXERCISE_IMG_BASE}Dumbbell_Bicep_Curl/0.jpg",
+    "barbell curl": f"{EXERCISE_IMG_BASE}Barbell_Curl/0.jpg",
+    "hammer curl": f"{EXERCISE_IMG_BASE}Hammer_Curls/0.jpg",
+    "dumbbell hammer curl": f"{EXERCISE_IMG_BASE}Hammer_Curls/0.jpg",
+    "preacher curl": f"{EXERCISE_IMG_BASE}Preacher_Curl/0.jpg",
+    "concentration curl": f"{EXERCISE_IMG_BASE}Concentration_Curls/0.jpg",
+    "incline dumbbell curl": f"{EXERCISE_IMG_BASE}Incline_Dumbbell_Curl/0.jpg",
+    "ez bar curl": f"{EXERCISE_IMG_BASE}EZ-Bar_Curl/0.jpg",
+    
+    # Arm exercises - Triceps
+    "tricep pushdown": f"{EXERCISE_IMG_BASE}Triceps_Pushdown/0.jpg",
+    "tricep extension": f"{EXERCISE_IMG_BASE}Dumbbell_Tricep_Extension/0.jpg",
+    "overhead tricep extension": f"{EXERCISE_IMG_BASE}Standing_Dumbbell_Triceps_Extension/0.jpg",
+    "dumbbell tricep extension": f"{EXERCISE_IMG_BASE}Dumbbell_Tricep_Extension/0.jpg",
+    "skull crusher": f"{EXERCISE_IMG_BASE}Lying_Triceps_Press/0.jpg",
+    "lying tricep extension": f"{EXERCISE_IMG_BASE}Lying_Triceps_Press/0.jpg",
+    "tricep dip": f"{EXERCISE_IMG_BASE}Dips_-_Triceps_Version/0.jpg",
+    "dip": f"{EXERCISE_IMG_BASE}Dips_-_Triceps_Version/0.jpg",
+    "bench dip": f"{EXERCISE_IMG_BASE}Bench_Dips/0.jpg",
+    "close grip bench press": f"{EXERCISE_IMG_BASE}Close-Grip_Barbell_Bench_Press/0.jpg",
+    "tricep kickback": f"{EXERCISE_IMG_BASE}Tricep_Dumbbell_Kickback/0.jpg",
+    
     # Leg exercises
-    "squat": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Squat.gif",
-    "leg press": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Leg-Press.gif",
-    "lunge": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Lunge.gif",
-    "leg curl": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Leg-Curl.gif",
-    "leg extension": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Leg-Extension.gif",
-    "calf raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Standing-Calf-Raise.gif",
-    "romanian deadlift": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Romanian-Deadlift.gif",
-    "hip thrust": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Hip-Thrust.gif",
-    "goblet squat": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Goblet-Squat.gif",
-    "bulgarian split squat": "https://fitnessprogramer.com/wp-content/uploads/2021/05/Dumbbell-Bulgarian-Split-Squat.gif",
+    "squat": f"{EXERCISE_IMG_BASE}Barbell_Full_Squat/0.jpg",
+    "barbell squat": f"{EXERCISE_IMG_BASE}Barbell_Full_Squat/0.jpg",
+    "back squat": f"{EXERCISE_IMG_BASE}Barbell_Full_Squat/0.jpg",
+    "front squat": f"{EXERCISE_IMG_BASE}Front_Barbell_Squat/0.jpg",
+    "goblet squat": f"{EXERCISE_IMG_BASE}Goblet_Squat/0.jpg",
+    "dumbbell squat": f"{EXERCISE_IMG_BASE}Goblet_Squat/0.jpg",
+    "leg press": f"{EXERCISE_IMG_BASE}Leg_Press/0.jpg",
+    "lunge": f"{EXERCISE_IMG_BASE}Dumbbell_Lunges/0.jpg",
+    "dumbbell lunge": f"{EXERCISE_IMG_BASE}Dumbbell_Lunges/0.jpg",
+    "walking lunge": f"{EXERCISE_IMG_BASE}Dumbbell_Walking_Lunge/0.jpg",
+    "bulgarian split squat": f"{EXERCISE_IMG_BASE}Bulgarian_Split_Squat/0.jpg",
+    "split squat": f"{EXERCISE_IMG_BASE}Bulgarian_Split_Squat/0.jpg",
+    "leg curl": f"{EXERCISE_IMG_BASE}Lying_Leg_Curls/0.jpg",
+    "lying leg curl": f"{EXERCISE_IMG_BASE}Lying_Leg_Curls/0.jpg",
+    "hamstring curl": f"{EXERCISE_IMG_BASE}Lying_Leg_Curls/0.jpg",
+    "leg extension": f"{EXERCISE_IMG_BASE}Leg_Extensions/0.jpg",
+    "calf raise": f"{EXERCISE_IMG_BASE}Standing_Calf_Raises/0.jpg",
+    "standing calf raise": f"{EXERCISE_IMG_BASE}Standing_Calf_Raises/0.jpg",
+    "seated calf raise": f"{EXERCISE_IMG_BASE}Seated_Calf_Raise/0.jpg",
+    "romanian deadlift": f"{EXERCISE_IMG_BASE}Romanian_Deadlift/0.jpg",
+    "stiff leg deadlift": f"{EXERCISE_IMG_BASE}Stiff-Legged_Barbell_Deadlift/0.jpg",
+    "hip thrust": f"{EXERCISE_IMG_BASE}Barbell_Hip_Thrust/0.jpg",
+    "barbell hip thrust": f"{EXERCISE_IMG_BASE}Barbell_Hip_Thrust/0.jpg",
+    "glute bridge": f"{EXERCISE_IMG_BASE}Glute_Bridge/0.jpg",
+    "step up": f"{EXERCISE_IMG_BASE}Dumbbell_Step_Ups/0.jpg",
+    "hack squat": f"{EXERCISE_IMG_BASE}Hack_Squat/0.jpg",
+    "sumo deadlift": f"{EXERCISE_IMG_BASE}Sumo_Deadlift/0.jpg",
+    
     # Core exercises
-    "plank": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Plank.gif",
-    "crunch": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Crunch.gif",
-    "sit-up": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Sit-up.gif",
-    "russian twist": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Russian-Twist.gif",
-    "leg raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lying-Leg-Raise.gif",
-    "hanging leg raise": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Hanging-Leg-Raise.gif",
-    "mountain climber": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Mountain-Climber.gif",
-    "bicycle crunch": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Bicycle-Crunch.gif",
-    "ab wheel rollout": "https://fitnessprogramer.com/wp-content/uploads/2021/02/Ab-Wheel-Rollout.gif",
+    "plank": f"{EXERCISE_IMG_BASE}Plank/0.jpg",
+    "crunch": f"{EXERCISE_IMG_BASE}Crunches/0.jpg",
+    "sit-up": f"{EXERCISE_IMG_BASE}Sit-Up/0.jpg",
+    "sit up": f"{EXERCISE_IMG_BASE}Sit-Up/0.jpg",
+    "russian twist": f"{EXERCISE_IMG_BASE}Russian_Twist/0.jpg",
+    "leg raise": f"{EXERCISE_IMG_BASE}Lying_Leg_Raise/0.jpg",
+    "lying leg raise": f"{EXERCISE_IMG_BASE}Lying_Leg_Raise/0.jpg",
+    "hanging leg raise": f"{EXERCISE_IMG_BASE}Hanging_Leg_Raise/0.jpg",
+    "mountain climber": f"{EXERCISE_IMG_BASE}Mountain_Climbers/0.jpg",
+    "bicycle crunch": f"{EXERCISE_IMG_BASE}Air_Bike/0.jpg",
+    "ab wheel rollout": f"{EXERCISE_IMG_BASE}Ab_Roller/0.jpg",
+    "reverse crunch": f"{EXERCISE_IMG_BASE}Reverse_Crunch/0.jpg",
+    "cable crunch": f"{EXERCISE_IMG_BASE}Cable_Crunch/0.jpg",
+    
+    # Full body / Compound
+    "burpee": f"{EXERCISE_IMG_BASE}Burpee/0.jpg",
+    "clean": f"{EXERCISE_IMG_BASE}Power_Clean/0.jpg",
+    "power clean": f"{EXERCISE_IMG_BASE}Power_Clean/0.jpg",
+    "thruster": f"{EXERCISE_IMG_BASE}Thrusters/0.jpg",
+    "clean and press": f"{EXERCISE_IMG_BASE}Clean_and_Press/0.jpg",
+    "kettlebell swing": f"{EXERCISE_IMG_BASE}Kettlebell_Swing/0.jpg",
 }
 
 def get_exercise_gif(exercise_name: str) -> str:
-    """Get GIF URL for an exercise by name matching"""
+    """Get image URL for an exercise by name matching"""
     name_lower = exercise_name.lower()
-    # Direct match
+    
+    # Direct match first
     if name_lower in EXERCISE_GIFS:
         return EXERCISE_GIFS[name_lower]
-    # Partial match
+    
+    # Try partial matching - find the best match
+    best_match = None
+    best_score = 0
+    
     for key, url in EXERCISE_GIFS.items():
-        if key in name_lower or name_lower in key:
-            return url
-    # Default placeholder
-    return "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Curl.gif"
+        # Check if key is contained in name or name contains key
+        if key in name_lower:
+            score = len(key)
+            if score > best_score:
+                best_score = score
+                best_match = url
+        elif name_lower in key:
+            score = len(name_lower)
+            if score > best_score:
+                best_score = score
+                best_match = url
+    
+    if best_match:
+        return best_match
+    
+    # Return a default exercise image if no match
+    return f"{EXERCISE_IMG_BASE}Dumbbell_Bicep_Curl/0.jpg"
 
 async def check_subscription_access(user_id: str) -> dict:
     """Check if user has subscription access or is admin/free access"""
