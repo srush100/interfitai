@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -58,21 +59,21 @@ export default function HomeScreen() {
   const quickActions = [
     {
       icon: 'barbell',
-      title: 'Create Workout',
-      subtitle: 'AI-powered program',
+      title: 'Workouts',
+      subtitle: 'AI-powered programs',
       color: '#FF6B6B',
       onPress: () => router.push('/workout-questionnaire'),
     },
     {
       icon: 'restaurant',
-      title: 'Create Meal Plan',
-      subtitle: 'Personalized meals',
+      title: 'Meal Plans',
+      subtitle: 'Personalized nutrition',
       color: '#4ECDC4',
       onPress: () => router.push('/meal-questionnaire'),
     },
     {
       icon: 'camera',
-      title: 'Log Food',
+      title: 'Food Log',
       subtitle: 'Snap & track',
       color: '#45B7D1',
       onPress: () => router.push('/food-log'),
@@ -87,9 +88,16 @@ export default function HomeScreen() {
     {
       icon: 'chatbubble-ellipses',
       title: 'Ask InterFitAI',
-      subtitle: 'Get answers',
+      subtitle: 'Get AI answers',
       color: '#96CEB4',
       onPress: () => router.push('/(tabs)/ask-ai'),
+    },
+    {
+      icon: 'footsteps',
+      title: 'Daily Steps',
+      subtitle: `${todaySteps.toLocaleString()} steps`,
+      color: colors.primary,
+      onPress: () => router.push('/(tabs)/profile'),
     },
   ];
 
@@ -102,12 +110,13 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Welcome back,</Text>
-            <Text style={styles.name}>{profile?.name || 'Champion'}</Text>
-          </View>
+        {/* Logo Header */}
+        <View style={styles.logoHeader}>
+          <Image
+            source={require('../../assets/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <TouchableOpacity
             style={styles.subscriptionBadge}
             onPress={() => router.push('/subscription')}
@@ -117,6 +126,12 @@ export default function HomeScreen() {
               {profile?.subscription_status === 'free' ? 'Upgrade' : 'Premium'}
             </Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Welcome Section */}
+        <View style={styles.welcomeSection}>
+          <Text style={styles.greeting}>Welcome back,</Text>
+          <Text style={styles.name}>{profile?.name || 'Champion'}</Text>
         </View>
 
         {/* Motivation */}
@@ -178,7 +193,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Quick Actions */}
+        {/* Quick Actions - 6 Item Grid */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
           {quickActions.map((action, index) => (
@@ -195,28 +210,6 @@ export default function HomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
-
-        {/* Steps Goal */}
-        <TouchableOpacity
-          style={styles.stepsCard}
-          onPress={() => router.push('/(tabs)/profile')}
-        >
-          <View style={styles.stepsHeader}>
-            <Ionicons name="footsteps" size={24} color={colors.primary} />
-            <Text style={styles.stepsTitle}>Daily Steps</Text>
-          </View>
-          <View style={styles.stepsProgress}>
-            <View style={styles.stepsBarBg}>
-              <View
-                style={[
-                  styles.stepsBarFill,
-                  { width: `${Math.min((todaySteps / 10000) * 100, 100)}%` },
-                ]}
-              />
-            </View>
-            <Text style={styles.stepsText}>{todaySteps.toLocaleString()} / 10,000</Text>
-          </View>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -231,10 +224,17 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 100,
   },
-  header: {
+  logoHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 16,
+  },
+  logo: {
+    width: 120,
+    height: 50,
+  },
+  welcomeSection: {
     marginBottom: 20,
   },
   greeting: {
@@ -333,11 +333,12 @@ const styles = StyleSheet.create({
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
     gap: 12,
     marginBottom: 20,
   },
   actionCard: {
-    width: '48%',
+    width: '47%',
     backgroundColor: colors.surface,
     padding: 16,
     borderRadius: 16,
@@ -361,40 +362,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4,
-  },
-  stepsCard: {
-    backgroundColor: colors.surface,
-    padding: 20,
-    borderRadius: 16,
-  },
-  stepsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  stepsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  stepsProgress: {
-    gap: 8,
-  },
-  stepsBarBg: {
-    height: 8,
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  stepsBarFill: {
-    height: '100%',
-    backgroundColor: colors.primary,
-    borderRadius: 4,
-  },
-  stepsText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'right',
+    textAlign: 'center',
   },
 });
