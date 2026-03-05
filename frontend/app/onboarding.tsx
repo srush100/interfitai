@@ -109,15 +109,13 @@ export default function Onboarding() {
 
   const renderStep1 = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.logoContainer}>
-        <Image
-          source={require('../assets/logo-yellow.webp')}
-          style={styles.logoImage}
-          resizeMode="contain"
-        />
+      <View style={styles.splashContainer}>
+        <Text style={styles.splashTitle}>
+          <Text style={styles.splashWhite}>INTERFIT</Text>
+          <Text style={styles.splashYellow}>AI</Text>
+        </Text>
+        <Text style={styles.splashSubtitle}>Your AI-Powered Fitness Companion</Text>
       </View>
-      <Text style={styles.brandName}>INTERFIT<Text style={styles.brandAI}>AI</Text></Text>
-      <Text style={styles.stepSubtitle}>Your AI-Powered Fitness Journey Starts Here</Text>
       
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Your Name</Text>
@@ -390,6 +388,28 @@ const styles = StyleSheet.create({
   },
   stepContainer: {
     flex: 1,
+  },
+  splashContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
+    paddingTop: 20,
+  },
+  splashTitle: {
+    fontSize: 42,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+  splashWhite: {
+    color: colors.text,
+  },
+  splashYellow: {
+    color: colors.primary,
+  },
+  splashSubtitle: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    letterSpacing: 0.5,
   },
   logoContainer: {
     alignItems: 'center',

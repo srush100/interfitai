@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -129,9 +130,16 @@ export default function AskAIScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Ask InterFitAI</Text>
-          <Text style={styles.subtitle}>Your AI fitness coach</Text>
+        <View style={styles.headerLeft}>
+          <Image
+            source={require('../../assets/logo-yellow.webp')}
+            style={styles.headerLogo}
+            resizeMode="contain"
+          />
+          <View>
+            <Text style={styles.title}>Ask InterFitAI</Text>
+            <Text style={styles.subtitle}>Your AI fitness coach</Text>
+          </View>
         </View>
         <TouchableOpacity onPress={clearHistory} style={styles.clearBtn}>
           <Ionicons name="trash-outline" size={20} color={colors.textSecondary} />
@@ -261,8 +269,17 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 12,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerLogo: {
+    width: 40,
+    height: 40,
+  },
   title: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
     color: colors.text,
   },
