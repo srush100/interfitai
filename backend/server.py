@@ -630,6 +630,20 @@ async def delete_workout(workout_id: str):
         raise HTTPException(status_code=404, detail="Workout not found")
     return {"message": "Workout deleted successfully"}
 
+class RenameWorkoutRequest(BaseModel):
+    name: str
+
+@api_router.patch("/workout/{workout_id}/rename")
+async def rename_workout(workout_id: str, request: RenameWorkoutRequest):
+    """Rename a workout program"""
+    result = await db.workouts.update_one(
+        {"id": workout_id},
+        {"$set": {"name": request.name, "updated_at": datetime.utcnow()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    return {"message": "Workout renamed successfully", "name": request.name}
+
 # ==================== MEAL PLAN ENDPOINTS ====================
 
 @api_router.post("/mealplans/generate", response_model=MealPlan)

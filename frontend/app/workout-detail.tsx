@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  TextInput,
+  Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -51,6 +54,9 @@ export default function WorkoutDetail() {
   const [loading, setLoading] = useState(true);
   const [expandedDay, setExpandedDay] = useState<number>(0);
   const [expandedExercise, setExpandedExercise] = useState<string | null>(null);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     loadWorkout();
@@ -60,10 +66,27 @@ export default function WorkoutDetail() {
     try {
       const response = await api.get(`/workout/${id}`);
       setWorkout(response.data);
+      setNewName(response.data.name);
     } catch (error) {
       console.log('Error loading workout:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRename = async () => {
+    if (!newName.trim() || !workout) return;
+    
+    setRenaming(true);
+    try {
+      await api.patch(`/workout/${workout.id}/rename`, { name: newName.trim() });
+      setWorkout({ ...workout, name: newName.trim() });
+      setShowRenameModal(false);
+      Alert.alert('Success', 'Workout renamed successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to rename workout');
+    } finally {
+      setRenaming(false);
     }
   };
 
@@ -102,7 +125,16 @@ export default function WorkoutDetail() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Program Info */}
         <View style={styles.infoCard}>
-          <Text style={styles.programName}>{workout.name}</Text>
+          <TouchableOpacity 
+            style={styles.nameRow} 
+            onPress={() => {
+              setNewName(workout.name);
+              setShowRenameModal(true);
+            }}
+          >
+            <Text style={styles.programName}>{workout.name}</Text>
+            <Ionicons name="pencil" size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
           <Text style={styles.programGoal}>
             {workout.goal.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
           </Text>
@@ -232,6 +264,47 @@ export default function WorkoutDetail() {
           </View>
         )}
       </ScrollView>
+
+      {/* Rename Modal */}
+      <Modal
+        visible={showRenameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRenameModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Rename Workout</Text>
+            <TextInput
+              style={styles.renameInput}
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="Enter new name"
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalCancelBtn}
+                onPress={() => setShowRenameModal(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalSaveBtn, renaming && styles.modalBtnDisabled]}
+                onPress={handleRename}
+                disabled={renaming}
+              >
+                {renaming ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <Text style={styles.modalSaveText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -459,5 +532,73 @@ const styles = StyleSheet.create({
   detailValue: {
     fontSize: 14,
     color: colors.text,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  renameInput: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceLight,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  modalSaveBtn: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  modalSaveText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  modalBtnDisabled: {
+    opacity: 0.7,
   },
 });
