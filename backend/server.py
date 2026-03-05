@@ -497,38 +497,6 @@ async def list_profiles():
 
 # ==================== WORKOUT ENDPOINTS ====================
 
-# Exercise GIF mapping - using ExerciseDB style URLs
-EXERCISE_GIFS = {
-    "bench press": "https://images.ctfassets.net/4xhc7g6uowz1/6l1n19ORY2qxpqS4mxefGg/3c7c86f8fee41e99f5d4e1ef8cfc5ebb/bench_press.gif",
-    "squat": "https://images.ctfassets.net/4xhc7g6uowz1/4qzl7HL0Z2xyP8eFTPzJXu/b66e5f46e5d9aec7cd3fe04ec3a75d8e/squat.gif",
-    "deadlift": "https://images.ctfassets.net/4xhc7g6uowz1/2d2p4R8CRmwkY6C2y4xJhV/6f8c89c94c8e39e4b8c76d8f8d4e6e4a/deadlift.gif",
-    "pull up": "https://images.ctfassets.net/4xhc7g6uowz1/1Yj1kz5v2M8K0wE8qYqEyS/a7f3c89c94c8e39e4b8c76d8f8d4e6e4a/pullup.gif",
-    "push up": "https://images.ctfassets.net/4xhc7g6uowz1/3Xj2kz5v2M8K0wE8qYqEyS/b8f4c89c94c8e39e4b8c76d8f8d4e6e4a/pushup.gif",
-    "lat pulldown": "https://images.ctfassets.net/4xhc7g6uowz1/4Zj3kz5v2M8K0wE8qYqEyS/c9f5c89c94c8e39e4b8c76d8f8d4e6e4a/latpulldown.gif",
-    "shoulder press": "https://images.ctfassets.net/4xhc7g6uowz1/5Aj4kz5v2M8K0wE8qYqEyS/d0f6c89c94c8e39e4b8c76d8f8d4e6e4a/shoulderpress.gif",
-    "bicep curl": "https://images.ctfassets.net/4xhc7g6uowz1/6Bj5kz5v2M8K0wE8qYqEyS/e1f7c89c94c8e39e4b8c76d8f8d4e6e4a/bicepcurl.gif",
-    "tricep": "https://images.ctfassets.net/4xhc7g6uowz1/7Cj6kz5v2M8K0wE8qYqEyS/f2f8c89c94c8e39e4b8c76d8f8d4e6e4a/tricep.gif",
-    "row": "https://images.ctfassets.net/4xhc7g6uowz1/8Dj7kz5v2M8K0wE8qYqEyS/g3f9c89c94c8e39e4b8c76d8f8d4e6e4a/row.gif",
-    "lunge": "https://images.ctfassets.net/4xhc7g6uowz1/9Ej8kz5v2M8K0wE8qYqEyS/h4f0c89c94c8e39e4b8c76d8f8d4e6e4a/lunge.gif",
-    "leg press": "https://images.ctfassets.net/4xhc7g6uowz1/0Fj9kz5v2M8K0wE8qYqEyS/i5f1c89c94c8e39e4b8c76d8f8d4e6e4a/legpress.gif",
-    "calf raise": "https://images.ctfassets.net/4xhc7g6uowz1/1Gj0kz5v2M8K0wE8qYqEyS/j6f2c89c94c8e39e4b8c76d8f8d4e6e4a/calfraise.gif",
-    "plank": "https://images.ctfassets.net/4xhc7g6uowz1/2Hj1kz5v2M8K0wE8qYqEyS/k7f3c89c94c8e39e4b8c76d8f8d4e6e4a/plank.gif",
-    "crunch": "https://images.ctfassets.net/4xhc7g6uowz1/3Ij2kz5v2M8K0wE8qYqEyS/l8f4c89c94c8e39e4b8c76d8f8d4e6e4a/crunch.gif",
-    "dumbbell": "https://images.ctfassets.net/4xhc7g6uowz1/4Jj3kz5v2M8K0wE8qYqEyS/m9f5c89c94c8e39e4b8c76d8f8d4e6e4a/dumbbell.gif",
-    "cable": "https://images.ctfassets.net/4xhc7g6uowz1/5Kj4kz5v2M8K0wE8qYqEyS/n0f6c89c94c8e39e4b8c76d8f8d4e6e4a/cable.gif",
-    "fly": "https://images.ctfassets.net/4xhc7g6uowz1/6Lj5kz5v2M8K0wE8qYqEyS/o1f7c89c94c8e39e4b8c76d8f8d4e6e4a/fly.gif",
-    "hip thrust": "https://images.ctfassets.net/4xhc7g6uowz1/7Mj6kz5v2M8K0wE8qYqEyS/p2f8c89c94c8e39e4b8c76d8f8d4e6e4a/hipthrust.gif",
-    "glute": "https://images.ctfassets.net/4xhc7g6uowz1/8Nj7kz5v2M8K0wE8qYqEyS/q3f9c89c94c8e39e4b8c76d8f8d4e6e4a/glute.gif",
-}
-
-def get_exercise_gif(exercise_name: str) -> Optional[str]:
-    """Get GIF URL for an exercise based on name matching"""
-    name_lower = exercise_name.lower()
-    for key, url in EXERCISE_GIFS.items():
-        if key in name_lower:
-            return url
-    return None
-
 @api_router.post("/workouts/generate", response_model=WorkoutProgram)
 async def generate_workout(request: WorkoutGenerateRequest):
     """Generate AI-powered workout program"""

@@ -174,9 +174,19 @@ export default function WorkoutDetail() {
                 }
               >
                 <View style={styles.exerciseHeader}>
-                  <View style={styles.exerciseNumber}>
-                    <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
-                  </View>
+                  {/* GIF Thumbnail */}
+                  {exercise.gif_url && (
+                    <Image
+                      source={{ uri: exercise.gif_url }}
+                      style={styles.exerciseThumbnail}
+                      resizeMode="cover"
+                    />
+                  )}
+                  {!exercise.gif_url && (
+                    <View style={styles.exerciseNumber}>
+                      <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
+                    </View>
+                  )}
                   <View style={styles.exerciseInfo}>
                     <Text style={styles.exerciseName}>{exercise.name}</Text>
                     <Text style={styles.exerciseMeta}>
@@ -381,6 +391,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary + '20',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  exerciseThumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceLight,
   },
   exerciseNumberText: {
     fontSize: 14,
