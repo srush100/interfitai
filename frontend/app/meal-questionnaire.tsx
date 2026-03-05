@@ -68,6 +68,7 @@ export default function MealQuestionnaire() {
   const { profile } = useUserStore();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [checkingSubscription, setCheckingSubscription] = useState(false);
   const [formData, setFormData] = useState({
     food_preferences: 'whole_foods',
     supplements: [] as string[],
@@ -99,6 +100,30 @@ export default function MealQuestionnaire() {
     if (!profile?.calculated_macros) {
       Alert.alert('Error', 'Please set up your profile with body stats to calculate macros');
       return;
+    }
+
+    // Check subscription status before generating
+    setCheckingSubscription(true);
+    try {
+      const subResponse = await api.get(`/subscription/check/${profile.id}`);
+      if (!subResponse.data.has_access) {
+        setCheckingSubscription(false);
+        // Redirect to subscription page
+        Alert.alert(
+          'Subscription Required',
+          'Start your free trial to generate personalized AI meal plans!',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Start Free Trial', onPress: () => router.push('/subscription') },
+          ]
+        );
+        return;
+      }
+    } catch (error) {
+      console.log('Subscription check error:', error);
+      // Allow generation if subscription check fails (failsafe)
+    } finally {
+      setCheckingSubscription(false);
     }
 
     setLoading(true);

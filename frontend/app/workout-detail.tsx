@@ -236,13 +236,10 @@ export default function WorkoutDetail() {
                   <View style={styles.exerciseDetails}>
                     {exercise.gif_url && (
                       <View style={styles.gifContainer}>
-                        <Video
+                        <Image
                           source={{ uri: exercise.gif_url }}
                           style={styles.exerciseGif}
-                          resizeMode={ResizeMode.CONTAIN}
-                          shouldPlay={true}
-                          isLooping={true}
-                          isMuted={true}
+                          resizeMode="contain"
                         />
                       </View>
                     )}

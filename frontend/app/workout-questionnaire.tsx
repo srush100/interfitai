@@ -69,6 +69,7 @@ export default function WorkoutQuestionnaire() {
   const { profile } = useUserStore();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [checkingSubscription, setCheckingSubscription] = useState(false);
   const [formData, setFormData] = useState({
     goal: 'build_muscle',
     focus_areas: ['full_body'] as string[],
@@ -94,6 +95,30 @@ export default function WorkoutQuestionnaire() {
     if (!profile?.id) {
       Alert.alert('Error', 'Please complete your profile first');
       return;
+    }
+
+    // Check subscription status before generating
+    setCheckingSubscription(true);
+    try {
+      const subResponse = await api.get(`/subscription/check/${profile.id}`);
+      if (!subResponse.data.has_access) {
+        setCheckingSubscription(false);
+        // Redirect to subscription page
+        Alert.alert(
+          'Subscription Required',
+          'Start your free trial to generate personalized AI workouts!',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Start Free Trial', onPress: () => router.push('/subscription') },
+          ]
+        );
+        return;
+      }
+    } catch (error) {
+      console.log('Subscription check error:', error);
+      // Allow generation if subscription check fails (failsafe)
+    } finally {
+      setCheckingSubscription(false);
     }
 
     setLoading(true);

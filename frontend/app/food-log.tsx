@@ -280,6 +280,7 @@ export default function FoodLog() {
           { id: 'log', label: 'Today', icon: 'list' },
           { id: 'search', label: 'Search', icon: 'search' },
           { id: 'snap', label: 'Snap', icon: 'camera' },
+          { id: 'manual', label: 'Manual', icon: 'create' },
         ].map((tab) => (
           <TouchableOpacity
             key={tab.id}
@@ -452,10 +453,28 @@ export default function FoodLog() {
                   source={{ uri: `data:image/jpeg;base64,${capturedImage}` }}
                   style={styles.previewImage}
                 />
+                
+                {/* Additional Context Input */}
+                <TextInput
+                  style={styles.contextInput}
+                  placeholder="Add context (e.g., '2 eggs, half portion')"
+                  placeholderTextColor={colors.textMuted}
+                  value={additionalContext}
+                  onChangeText={setAdditionalContext}
+                  multiline
+                />
+                
+                {/* Quantity Selector */}
+                {renderQuantitySelector()}
+                
                 <View style={styles.previewActions}>
                   <TouchableOpacity
                     style={styles.retakeBtn}
-                    onPress={() => setCapturedImage(null)}
+                    onPress={() => {
+                      setCapturedImage(null);
+                      setAdditionalContext('');
+                      setQuantity(1);
+                    }}
                   >
                     <Ionicons name="refresh" size={20} color={colors.text} />
                     <Text style={styles.retakeBtnText}>Retake</Text>
@@ -497,6 +516,89 @@ export default function FoodLog() {
                 </View>
               </View>
             )}
+          </View>
+        )}
+
+        {/* Manual Entry Tab */}
+        {activeTab === 'manual' && (
+          <View style={styles.manualSection}>
+            {/* Meal Type Selector */}
+            <View style={styles.mealTypeContainer}>
+              {MEAL_TYPES.map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.mealTypeBtn, selectedMealType === type && styles.mealTypeBtnActive]}
+                  onPress={() => setSelectedMealType(type)}
+                >
+                  <Text style={[styles.mealTypeText, selectedMealType === type && styles.mealTypeTextActive]}>
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.manualLabel}>Food Name *</Text>
+            <TextInput
+              style={styles.manualInput}
+              placeholder="e.g., Grilled Chicken Breast"
+              placeholderTextColor={colors.textMuted}
+              value={manualFood.name}
+              onChangeText={(text) => setManualFood({ ...manualFood, name: text })}
+            />
+
+            <Text style={styles.manualLabel}>Calories *</Text>
+            <TextInput
+              style={styles.manualInput}
+              placeholder="e.g., 250"
+              placeholderTextColor={colors.textMuted}
+              value={manualFood.calories}
+              onChangeText={(text) => setManualFood({ ...manualFood, calories: text })}
+              keyboardType="numeric"
+            />
+
+            <View style={styles.macroRow}>
+              <View style={styles.macroInputContainer}>
+                <Text style={styles.manualLabel}>Protein (g)</Text>
+                <TextInput
+                  style={styles.manualInput}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  value={manualFood.protein}
+                  onChangeText={(text) => setManualFood({ ...manualFood, protein: text })}
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={styles.macroInputContainer}>
+                <Text style={styles.manualLabel}>Carbs (g)</Text>
+                <TextInput
+                  style={styles.manualInput}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  value={manualFood.carbs}
+                  onChangeText={(text) => setManualFood({ ...manualFood, carbs: text })}
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={styles.macroInputContainer}>
+                <Text style={styles.manualLabel}>Fats (g)</Text>
+                <TextInput
+                  style={styles.manualInput}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  value={manualFood.fats}
+                  onChangeText={(text) => setManualFood({ ...manualFood, fats: text })}
+                  keyboardType="numeric"
+                />
+              </View>
+            </View>
+
+            {/* Quantity Selector */}
+            {renderQuantitySelector()}
+
+            <TouchableOpacity style={styles.manualBtn} onPress={logManualFood}>
+              <Ionicons name="add-circle" size={22} color={colors.background} />
+              <Text style={styles.manualBtnText}>Log Food</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -854,8 +956,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   manualSection: {
-    padding: 20,
-    paddingBottom: 40,
+    gap: 4,
   },
   manualInput: {
     backgroundColor: colors.surface,
@@ -885,5 +986,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: colors.background,
+  },
+  macroRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  macroInputContainer: {
+    flex: 1,
   },
 });

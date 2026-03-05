@@ -32,6 +32,7 @@ export default function BodyAnalyzer() {
   const [beforeImage, setBeforeImage] = useState<string | null>(null);
   const [afterImage, setAfterImage] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [checkingSubscription, setCheckingSubscription] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [timePeriod, setTimePeriod] = useState('3 months');
 
@@ -88,6 +89,30 @@ export default function BodyAnalyzer() {
     if (!beforeImage || !afterImage || !profile?.id) {
       Alert.alert('Missing Photos', 'Please upload both before and after photos');
       return;
+    }
+
+    // Check subscription status before analyzing
+    setCheckingSubscription(true);
+    try {
+      const subResponse = await api.get(`/subscription/check/${profile.id}`);
+      if (!subResponse.data.has_access) {
+        setCheckingSubscription(false);
+        // Redirect to subscription page
+        Alert.alert(
+          'Subscription Required',
+          'Start your free trial to access AI body analysis!',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Start Free Trial', onPress: () => router.push('/subscription') },
+          ]
+        );
+        return;
+      }
+    } catch (error) {
+      console.log('Subscription check error:', error);
+      // Allow analysis if subscription check fails (failsafe)
+    } finally {
+      setCheckingSubscription(false);
     }
 
     setAnalyzing(true);

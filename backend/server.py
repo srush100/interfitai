@@ -485,6 +485,8 @@ class FoodImageAnalyzeRequest(BaseModel):
     user_id: str
     image_base64: str
     meal_type: str = "snack"
+    additional_context: Optional[str] = None  # e.g., "2 eggs, half portion"
+    quantity: int = 1
 
 # Chat Models
 class ChatMessage(BaseModel):
@@ -1012,19 +1014,25 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         if not request.image_base64 or len(request.image_base64) < 100:
             raise HTTPException(status_code=400, detail="Invalid image data")
         
+        # Build the user prompt with optional context
+        user_prompt = "Analyze this food image and provide nutritional information in JSON format only."
+        if request.additional_context:
+            user_prompt += f"\n\nAdditional context from user: {request.additional_context}"
+        
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {
                     "role": "system",
                     "content": """You are a nutrition expert. Analyze the food image and provide accurate nutritional information.
+Consider any additional context provided by the user (e.g., portion size, specific ingredients).
 Respond with ONLY valid JSON, no other text. Use this exact format:
 {"food_name": "Name", "serving_size": "1 serving", "calories": 300, "protein": 25.0, "carbs": 30.0, "fats": 10.0, "fiber": 5.0, "sugar": 8.0, "sodium": 400.0}"""
                 },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Analyze this food image and provide nutritional information in JSON format only:"},
+                        {"type": "text", "text": user_prompt},
                         {
                             "type": "image_url",
                             "image_url": {"url": f"data:image/jpeg;base64,{request.image_base64}"}
@@ -1072,17 +1080,20 @@ Respond with ONLY valid JSON, no other text. Use this exact format:
             else:
                 raise HTTPException(status_code=500, detail="Failed to parse food analysis. Please try with a clearer image.")
         
+        # Apply quantity multiplier
+        qty = request.quantity if request.quantity > 0 else 1
+        
         food_entry = FoodEntry(
             user_id=request.user_id,
             food_name=food_data.get("food_name", "Unknown Food"),
-            serving_size=food_data.get("serving_size", "1 serving"),
-            calories=int(food_data.get("calories", 0)),
-            protein=float(food_data.get("protein", 0)),
-            carbs=float(food_data.get("carbs", 0)),
-            fats=float(food_data.get("fats", 0)),
-            fiber=float(food_data.get("fiber", 0)),
-            sugar=float(food_data.get("sugar", 0)),
-            sodium=float(food_data.get("sodium", 0)),
+            serving_size=f"{qty}x {food_data.get('serving_size', '1 serving')}",
+            calories=int(food_data.get("calories", 0)) * qty,
+            protein=float(food_data.get("protein", 0)) * qty,
+            carbs=float(food_data.get("carbs", 0)) * qty,
+            fats=float(food_data.get("fats", 0)) * qty,
+            fiber=float(food_data.get("fiber", 0)) * qty,
+            sugar=float(food_data.get("sugar", 0)) * qty,
+            sodium=float(food_data.get("sodium", 0)) * qty,
             meal_type=request.meal_type,
             logged_date=datetime.now().strftime("%Y-%m-%d"),
             image_base64=request.image_base64[:100] + "..."  # Store truncated for reference

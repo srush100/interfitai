@@ -1,307 +1,223 @@
 #!/usr/bin/env python3
 """
-Comprehensive backend testing for InterFitAI
-Testing all newly implemented features based on review request:
-1. Admin Access System
-2. Subscription System  
-3. Exercise GIFs in Workout Generation
-4. Health Check
+Backend Testing Script for InterFitAI
+Tests specific endpoints as requested in the review request.
 """
 
 import requests
 import json
-import sys
-import os
 from datetime import datetime
+import sys
+import traceback
 
-# Backend URL from frontend .env
-BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
+# Base URL for the backend API
+BASE_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
 
 def test_health_check():
-    """Test GET /api/health endpoint"""
-    print("\n🔍 Testing Health Check...")
+    """Test the health check endpoint"""
+    print("🏥 Testing Health Check Endpoint...")
+    
     try:
-        response = requests.get(f"{BACKEND_URL}/health", timeout=20)
+        start_time = datetime.now()
+        response = requests.get(f"{BASE_URL}/health", timeout=30)
+        end_time = datetime.now()
+        response_time = (end_time - start_time).total_seconds()
+        
+        print(f"  Status Code: {response.status_code}")
+        print(f"  Response Time: {response_time:.2f}s")
+        
         if response.status_code == 200:
             data = response.json()
-            print(f"✅ Health check successful: {data}")
+            print(f"  Response: {data}")
+            print("  ✅ Health check endpoint working correctly")
             return True
         else:
-            print(f"❌ Health check failed: {response.status_code} - {response.text}")
+            print(f"  ❌ Health check failed with status {response.status_code}")
+            print(f"  Response: {response.text}")
             return False
+            
     except Exception as e:
-        print(f"❌ Health check error: {str(e)}")
+        print(f"  ❌ Health check failed with error: {str(e)}")
         return False
 
-def test_admin_access_system():
-    """Test all admin access endpoints"""
-    print("\n🔍 Testing Admin Access System...")
+def test_subscription_check():
+    """Test the subscription check endpoint with specific user_id"""
+    print("💳 Testing Subscription Check Endpoint...")
     
-    results = []
+    # Test user ID from review request
+    user_id = "d704bac8-fa54-4d5b-b984-cc17393c1244"
     
-    # Test 1: Check admin status for sebastianrush5@gmail.com (should be admin)
-    print("\n1. Testing admin check for sebastianrush5@gmail.com...")
     try:
-        response = requests.get(f"{BACKEND_URL}/admin/is-admin/sebastianrush5@gmail.com", timeout=10)
+        start_time = datetime.now()
+        response = requests.get(f"{BASE_URL}/subscription/check/{user_id}", timeout=30)
+        end_time = datetime.now()
+        response_time = (end_time - start_time).total_seconds()
+        
+        print(f"  User ID: {user_id}")
+        print(f"  Status Code: {response.status_code}")
+        print(f"  Response Time: {response_time:.2f}s")
+        
         if response.status_code == 200:
             data = response.json()
-            if data.get("is_admin") == True:
-                print(f"✅ Admin check passed: {data}")
-                results.append(True)
-            else:
-                print(f"❌ Expected is_admin: true, got: {data}")
-                results.append(False)
-        else:
-            print(f"❌ Admin check failed: {response.status_code} - {response.text}")
-            results.append(False)
-    except Exception as e:
-        print(f"❌ Admin check error: {str(e)}")
-        results.append(False)
-    
-    # Test 2: Check admin status for random email (should be false)
-    print("\n2. Testing admin check for random@email.com...")
-    try:
-        response = requests.get(f"{BACKEND_URL}/admin/is-admin/random@email.com", timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("is_admin") == False:
-                print(f"✅ Non-admin check passed: {data}")
-                results.append(True)
-            else:
-                print(f"❌ Expected is_admin: false, got: {data}")
-                results.append(False)
-        else:
-            print(f"❌ Non-admin check failed: {response.status_code} - {response.text}")
-            results.append(False)
-    except Exception as e:
-        print(f"❌ Non-admin check error: {str(e)}")
-        results.append(False)
-    
-    # Test 3: Grant access endpoint
-    print("\n3. Testing admin grant access...")
-    grant_data = {
-        "admin_email": "sebastianrush5@gmail.com",
-        "user_email": "testuser@example.com",
-        "reason": "testing"
-    }
-    try:
-        response = requests.post(f"{BACKEND_URL}/admin/grant-access", 
-                                json=grant_data, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Grant access successful: {data}")
-            results.append(True)
-        else:
-            print(f"❌ Grant access failed: {response.status_code} - {response.text}")
-            results.append(False)
-    except Exception as e:
-        print(f"❌ Grant access error: {str(e)}")
-        results.append(False)
-    
-    # Test 4: Get free access list
-    print("\n4. Testing get free access list...")
-    try:
-        response = requests.get(f"{BACKEND_URL}/admin/free-access-list?admin_email=sebastianrush5@gmail.com", timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Free access list retrieved: {len(data)} users")
-            # Check if our test user is in the list
-            test_user_found = any(user.get("email") == "testuser@example.com" for user in data)
-            if test_user_found:
-                print("✅ Test user found in free access list")
-            else:
-                print("⚠️  Test user not found in free access list (might be expected)")
-            results.append(True)
-        else:
-            print(f"❌ Get free access list failed: {response.status_code} - {response.text}")
-            results.append(False)
-    except Exception as e:
-        print(f"❌ Get free access list error: {str(e)}")
-        results.append(False)
-    
-    return all(results)
-
-def test_subscription_system():
-    """Test subscription system endpoints"""
-    print("\n🔍 Testing Subscription System...")
-    
-    results = []
-    
-    # Test 1: Get subscription plans
-    print("\n1. Testing subscription plans endpoint...")
-    try:
-        response = requests.get(f"{BACKEND_URL}/subscription/plans", timeout=10)
-        if response.status_code == 200:
-            plans = response.json()
-            print(f"✅ Subscription plans retrieved: {json.dumps(plans, indent=2)}")
+            print(f"  Response: {json.dumps(data, indent=2)}")
             
-            # Verify required plans exist with 3-day trial
-            required_plans = ["monthly", "quarterly", "yearly"]
-            all_plans_exist = all(plan in plans for plan in required_plans)
-            all_trials_correct = all(plans[plan].get("trial_days") == 3 for plan in required_plans if plan in plans)
+            # Validate response structure
+            required_fields = ['has_access', 'reason']
+            missing_fields = [field for field in required_fields if field not in data]
             
-            if all_plans_exist and all_trials_correct:
-                print("✅ All required plans with 3-day trial found")
-                results.append(True)
-            else:
-                print(f"❌ Missing required plans or incorrect trial days")
-                results.append(False)
+            if missing_fields:
+                print(f"  ❌ Missing required fields: {missing_fields}")
+                return False
+            
+            print(f"  Has Access: {data['has_access']}")
+            print(f"  Reason: {data['reason']}")
+            print("  ✅ Subscription check endpoint working correctly")
+            return True
         else:
-            print(f"❌ Get subscription plans failed: {response.status_code} - {response.text}")
-            results.append(False)
+            print(f"  ❌ Subscription check failed with status {response.status_code}")
+            print(f"  Response: {response.text}")
+            return False
+            
     except Exception as e:
-        print(f"❌ Get subscription plans error: {str(e)}")
-        results.append(False)
-    
-    # Test 2: Check subscription status for test user
-    print("\n2. Testing subscription check endpoint...")
-    test_user_id = "d704bac8-fa54-4d5b-b984-cc17393c1244"
-    try:
-        response = requests.get(f"{BACKEND_URL}/subscription/check/{test_user_id}", timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            print(f"✅ Subscription check successful: {data}")
-            # Should contain has_access, reason, subscription_status
-            required_fields = ["has_access", "reason", "subscription_status"]
-            if all(field in data for field in required_fields):
-                print("✅ All required subscription fields present")
-                results.append(True)
-            else:
-                print(f"❌ Missing required subscription fields")
-                results.append(False)
-        else:
-            print(f"❌ Subscription check failed: {response.status_code} - {response.text}")
-            results.append(False)
-    except Exception as e:
-        print(f"❌ Subscription check error: {str(e)}")
-        results.append(False)
-    
-    return all(results)
+        print(f"  ❌ Subscription check failed with error: {str(e)}")
+        return False
 
-def test_workout_generation_with_gifs():
-    """Test workout generation includes GIF URLs"""
-    print("\n🔍 Testing Exercise GIFs in Workout Generation...")
+def test_food_logging():
+    """Test the manual food logging endpoint"""
+    print("🍽️ Testing Food Logging Endpoint...")
     
-    workout_data = {
+    # Test data from review request
+    food_data = {
         "user_id": "d704bac8-fa54-4d5b-b984-cc17393c1244",
-        "goal": "muscle_building",
-        "focus_areas": ["chest"],
-        "equipment": ["dumbbell", "barbell"],
-        "injuries": "none",
-        "days_per_week": 2,
-        "duration_minutes": 30
+        "food_name": "Test Manual Entry", 
+        "serving_size": "1 serving",
+        "calories": 300,
+        "protein": 25.0,
+        "carbs": 30.0,
+        "fats": 10.0,
+        "fiber": 5.0,
+        "sugar": 8.0,
+        "sodium": 400.0,
+        "meal_type": "lunch",
+        "logged_date": "2026-03-05"
     }
     
     try:
-        response = requests.post(f"{BACKEND_URL}/workouts/generate", 
-                                json=workout_data, timeout=60)
+        start_time = datetime.now()
+        response = requests.post(
+            f"{BASE_URL}/food/log", 
+            json=food_data,
+            headers={'Content-Type': 'application/json'},
+            timeout=30
+        )
+        end_time = datetime.now()
+        response_time = (end_time - start_time).total_seconds()
+        
+        print(f"  Status Code: {response.status_code}")
+        print(f"  Response Time: {response_time:.2f}s")
+        print(f"  Request Data: {json.dumps(food_data, indent=2)}")
+        
         if response.status_code == 200:
-            workout = response.json()
-            print(f"✅ Workout generation successful")
-            print(f"Response keys: {list(workout.keys())}")
+            data = response.json()
+            print(f"  Response: {json.dumps(data, indent=2)}")
             
-            # Check if workout has exercises with gif_url
-            exercises_with_gifs = []
-            total_exercises = 0
-            
-            # Debug: print structure
-            if "workout_days" in workout:
-                print(f"Number of workout days: {len(workout['workout_days'])}")
-                for i, day in enumerate(workout["workout_days"]):
-                    print(f"Day {i+1} keys: {list(day.keys())}")
-                    if "exercises" in day:
-                        print(f"Day {i+1} exercises count: {len(day['exercises'])}")
-                        for j, exercise in enumerate(day["exercises"]):
-                            total_exercises += 1
-                            print(f"Exercise {j+1} keys: {list(exercise.keys())}")
-                            if "gif_url" in exercise and exercise["gif_url"]:
-                                exercises_with_gifs.append({
-                                    "name": exercise.get("name", "Unknown"),
-                                    "gif_url": exercise["gif_url"]
-                                })
-            elif "workout_plan" in workout:
-                workout_plan = workout["workout_plan"]
-                print(f"Workout plan keys: {list(workout_plan.keys())}")
-                if "workout_days" in workout_plan:
-                    print(f"Number of workout days: {len(workout_plan['workout_days'])}")
-                    for i, day in enumerate(workout_plan["workout_days"]):
-                        print(f"Day {i+1} keys: {list(day.keys())}")
-                        if "exercises" in day:
-                            print(f"Day {i+1} exercises count: {len(day['exercises'])}")
-                            for j, exercise in enumerate(day["exercises"]):
-                                total_exercises += 1
-                                print(f"Exercise {j+1} keys: {list(exercise.keys())}")
-                                if "gif_url" in exercise and exercise["gif_url"]:
-                                    exercises_with_gifs.append({
-                                        "name": exercise.get("name", "Unknown"),
-                                        "gif_url": exercise["gif_url"]
-                                    })
-            
-            print(f"✅ Total exercises: {total_exercises}")
-            print(f"✅ Exercises with GIFs: {len(exercises_with_gifs)}")
-            
-            if exercises_with_gifs:
-                print("✅ Sample exercises with GIFs:")
-                for i, ex in enumerate(exercises_with_gifs[:3]):  # Show first 3
-                    print(f"   - {ex['name']}: {ex['gif_url']}")
-                return True
+            # Validate response contains expected data
+            if (data.get('food_name') == food_data['food_name'] and
+                data.get('calories') == food_data['calories'] and
+                data.get('protein') == food_data['protein']):
+                print("  ✅ Food logging endpoint working correctly")
+                
+                # Test retrieval to verify it was saved
+                print("  🔍 Testing food log retrieval...")
+                return test_food_log_retrieval(food_data['user_id'], food_data['logged_date'])
             else:
-                if total_exercises > 0:
-                    print("❌ Exercises found but no gif_url field present")
-                else:
-                    print("❌ No exercises found in workout response")
+                print("  ❌ Response data doesn't match request data")
                 return False
         else:
-            print(f"❌ Workout generation failed: {response.status_code} - {response.text}")
+            print(f"  ❌ Food logging failed with status {response.status_code}")
+            print(f"  Response: {response.text}")
             return False
+            
     except Exception as e:
-        print(f"❌ Workout generation error: {str(e)}")
+        print(f"  ❌ Food logging failed with error: {str(e)}")
+        traceback.print_exc()
         return False
 
-def run_all_tests():
-    """Run all tests and provide summary"""
-    print("🚀 Starting InterFitAI Backend Testing...")
-    print(f"Backend URL: {BACKEND_URL}")
+def test_food_log_retrieval(user_id, date):
+    """Test retrieving food logs to verify logging worked"""
+    try:
+        response = requests.get(f"{BASE_URL}/food/logs/{user_id}?date={date}", timeout=30)
+        
+        if response.status_code == 200:
+            logs = response.json()
+            if logs and len(logs) > 0:
+                # Check if our test entry exists
+                test_entry = next((log for log in logs if log.get('food_name') == 'Test Manual Entry'), None)
+                if test_entry:
+                    print(f"    ✅ Food entry successfully retrieved: {test_entry['food_name']}")
+                    return True
+                else:
+                    print("    ⚠️ Test entry not found in retrieved logs")
+                    return False
+            else:
+                print("    ❌ No food logs retrieved")
+                return False
+        else:
+            print(f"    ❌ Food log retrieval failed with status {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"    ❌ Food log retrieval failed: {str(e)}")
+        return False
+
+def main():
+    """Run all backend tests"""
+    print("🚀 Starting Backend API Tests for InterFitAI")
+    print(f"🌐 Testing against: {BASE_URL}")
     print("=" * 60)
     
-    test_results = {}
+    results = []
     
-    # Run all tests
-    test_results["Health Check"] = test_health_check()
-    test_results["Admin Access System"] = test_admin_access_system()
-    test_results["Subscription System"] = test_subscription_system()
-    test_results["Exercise GIFs"] = test_workout_generation_with_gifs()
+    # Test 1: Health Check
+    health_result = test_health_check()
+    results.append(("Health Check", health_result))
+    print()
+    
+    # Test 2: Subscription Check
+    subscription_result = test_subscription_check()
+    results.append(("Subscription Check", subscription_result))
+    print()
+    
+    # Test 3: Food Logging
+    food_log_result = test_food_logging()
+    results.append(("Food Logging", food_log_result))
+    print()
     
     # Summary
-    print("\n" + "=" * 60)
-    print("📊 TEST SUMMARY")
+    print("=" * 60)
+    print("📊 TEST RESULTS SUMMARY")
     print("=" * 60)
     
     passed = 0
     failed = 0
     
-    for test_name, result in test_results.items():
+    for test_name, result in results:
         status = "✅ PASSED" if result else "❌ FAILED"
-        print(f"{test_name}: {status}")
+        print(f"  {test_name}: {status}")
         if result:
             passed += 1
         else:
             failed += 1
     
-    print(f"\nTotal: {passed + failed} tests")
-    print(f"Passed: {passed}")
-    print(f"Failed: {failed}")
+    print("=" * 60)
+    print(f"📈 Total: {len(results)} tests | ✅ Passed: {passed} | ❌ Failed: {failed}")
     
-    success_rate = (passed / (passed + failed)) * 100 if (passed + failed) > 0 else 0
-    print(f"Success Rate: {success_rate:.1f}%")
-    
-    if failed == 0:
-        print("\n🎉 All tests passed!")
-        return True
+    if failed > 0:
+        print("\n⚠️  Some tests failed. Please check the detailed output above.")
+        sys.exit(1)
     else:
-        print(f"\n⚠️  {failed} test(s) failed - check details above")
-        return False
+        print("\n🎉 All tests passed successfully!")
+        sys.exit(0)
 
 if __name__ == "__main__":
-    success = run_all_tests()
-    sys.exit(0 if success else 1)
+    main()
