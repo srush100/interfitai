@@ -14,7 +14,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Video, ResizeMode } from 'expo-av';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 
@@ -207,15 +206,12 @@ export default function WorkoutDetail() {
                 }
               >
                 <View style={styles.exerciseHeader}>
-                  {/* Video Thumbnail */}
+                  {/* Exercise Illustration Thumbnail */}
                   {exercise.gif_url && (
-                    <Video
+                    <Image
                       source={{ uri: exercise.gif_url }}
                       style={styles.exerciseThumbnail}
-                      resizeMode={ResizeMode.COVER}
-                      shouldPlay={true}
-                      isLooping={true}
-                      isMuted={true}
+                      resizeMode="cover"
                     />
                   )}
                   {!exercise.gif_url && (
