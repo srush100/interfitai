@@ -46,79 +46,201 @@ EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 # These are direct GIF URLs from exercisedb.io (publicly accessible)
 CACHED_EXERCISE_GIFS = {
     # Using exercise IDs that can be proxied through our endpoint
-    "pull up": "0652",
-    "pull-up": "0652",
-    "chin up": "0253",
-    "chin-up": "0253",
-    "push up": "0662",
-    "push-up": "0662",
+    # Chest exercises
     "bench press": "0025",
     "barbell bench press": "0025",
+    "flat bench press": "0025",
     "incline bench press": "0047",
+    "barbell incline bench press": "0047",
+    "decline bench press": "0033",
     "dumbbell bench press": "0289",
-    "squat": "0043",
-    "barbell squat": "0043",
-    "front squat": "0037",
-    "goblet squat": "0441",
-    "deadlift": "0032",
-    "barbell deadlift": "0032",
-    "romanian deadlift": "0085",
-    "overhead press": "0431",
-    "shoulder press": "0431",
-    "military press": "0431",
-    "dumbbell shoulder press": "0405",
+    "flat dumbbell press": "0289",
+    "incline dumbbell press": "0314",
+    "incline dumbbell bench press": "0314",
+    "decline dumbbell press": "0281",
+    "dumbbell fly": "0308",
+    "flat dumbbell fly": "0308",
+    "incline dumbbell fly": "0316",
+    "decline dumbbell fly": "0280",
+    "cable fly": "0160",
+    "cable crossover": "0160",
+    "push up": "0662",
+    "push-up": "0662",
+    "pushup": "0662",
+    "wide push up": "0672",
+    "diamond push up": "0279",
+    "decline push up": "1302",
+    "chest dip": "0251",
+    "dip": "0251",
+    "parallel bar dip": "0251",
+    
+    # Back exercises
+    "pull up": "0652",
+    "pull-up": "0652",
+    "pullup": "0652",
+    "wide grip pull up": "0655",
+    "chin up": "0253",
+    "chin-up": "0253",
     "lat pulldown": "0198",
     "cable lat pulldown": "0198",
+    "wide grip lat pulldown": "0198",
+    "close grip lat pulldown": "0196",
     "bent over row": "0027",
     "barbell row": "0027",
+    "barbell bent over row": "0027",
     "dumbbell row": "0292",
-    "cable row": "1325",
-    "seated cable row": "1325",
-    "leg press": "0738",
-    "leg extension": "0585",
-    "leg curl": "0586",
-    "hamstring curl": "0586",
-    "calf raise": "1373",
-    "standing calf raise": "1373",
-    "bicep curl": "0294",
-    "dumbbell curl": "0294",
-    "dumbbell bicep curl": "0294",
-    "barbell curl": "0023",
-    "hammer curl": "0301",
-    "preacher curl": "0672",
-    "tricep pushdown": "0242",
-    "cable pushdown": "0242",
-    "tricep extension": "0860",
-    "skull crusher": "0055",
-    "dip": "0353",
-    "tricep dip": "0353",
+    "single arm dumbbell row": "0292",
+    "one arm dumbbell row": "0292",
+    "cable row": "0861",
+    "seated cable row": "0861",
+    "seated row": "0861",
+    "t bar row": "1356",
+    "deadlift": "0032",
+    "barbell deadlift": "0032",
+    "conventional deadlift": "0032",
+    "romanian deadlift": "0085",
+    "stiff leg deadlift": "0116",
+    "sumo deadlift": "0118",
+    
+    # Shoulder exercises
+    "overhead press": "0431",
+    "shoulder press": "0431",
+    "barbell shoulder press": "0431",
+    "military press": "0431",
+    "standing military press": "0431",
+    "dumbbell shoulder press": "0405",
+    "seated dumbbell press": "0405",
+    "arnold press": "0251",
     "lateral raise": "0334",
     "dumbbell lateral raise": "0334",
+    "side lateral raise": "0334",
     "front raise": "0310",
+    "dumbbell front raise": "0310",
+    "rear delt fly": "0578",
+    "reverse fly": "0578",
     "face pull": "0174",
+    "cable face pull": "0174",
+    "upright row": "0122",
+    "barbell upright row": "0122",
     "shrug": "0091",
     "barbell shrug": "0091",
     "dumbbell shrug": "0406",
-    "plank": "0628",
-    "crunch": "0267",
-    "russian twist": "0703",
-    "leg raise": "0585",
-    "hanging leg raise": "1760",
-    "mountain climber": "0601",
-    "burpee": "1160",
+    
+    # Arm exercises - Biceps
+    "bicep curl": "0294",
+    "dumbbell curl": "0294",
+    "dumbbell bicep curl": "0294",
+    "standing dumbbell curl": "0294",
+    "barbell curl": "0023",
+    "standing barbell curl": "0023",
+    "ez bar curl": "0028",
+    "hammer curl": "0301",
+    "dumbbell hammer curl": "0301",
+    "preacher curl": "0672",
+    "concentration curl": "0274",
+    "incline dumbbell curl": "0313",
+    "cable curl": "0163",
+    "cable bicep curl": "0163",
+    
+    # Arm exercises - Triceps
+    "tricep pushdown": "0242",
+    "cable pushdown": "0242",
+    "tricep rope pushdown": "0242",
+    "rope pushdown": "0242",
+    "tricep extension": "0860",
+    "overhead tricep extension": "0860",
+    "dumbbell tricep extension": "0860",
+    "skull crusher": "0055",
+    "lying tricep extension": "0055",
+    "barbell skull crusher": "0055",
+    "tricep dip": "0353",
+    "bench dip": "0353",
+    "tricep kickback": "0347",
+    "dumbbell kickback": "0347",
+    "close grip bench press": "0031",
+    "diamond push up": "0279",
+    
+    # Leg exercises
+    "squat": "0043",
+    "barbell squat": "0043",
+    "back squat": "0043",
+    "front squat": "0037",
+    "barbell front squat": "0037",
+    "goblet squat": "0441",
+    "dumbbell goblet squat": "0441",
+    "leg press": "0738",
+    "sled leg press": "0738",
+    "hack squat": "0473",
+    "leg extension": "0585",
+    "seated leg extension": "0585",
+    "leg curl": "0586",
+    "lying leg curl": "0586",
+    "hamstring curl": "0586",
+    "seated leg curl": "0594",
+    "calf raise": "1373",
+    "standing calf raise": "1373",
+    "seated calf raise": "0720",
     "lunge": "0333",
     "dumbbell lunge": "0333",
     "walking lunge": "1466",
+    "reverse lunge": "0689",
+    "bulgarian split squat": "0130",
+    "split squat": "0130",
+    "step up": "0758",
+    "box step up": "0758",
     "hip thrust": "0046",
     "barbell hip thrust": "0046",
     "glute bridge": "0446",
+    "glute kickback": "0482",
+    "cable kickback": "0482",
+    "good morning": "0440",
+    "barbell good morning": "0440",
+    
+    # Core exercises
+    "plank": "0628",
+    "front plank": "0628",
+    "forearm plank": "0628",
+    "side plank": "0709",
+    "crunch": "0267",
+    "ab crunch": "0267",
+    "bicycle crunch": "0139",
+    "reverse crunch": "0690",
+    "russian twist": "0703",
+    "leg raise": "1472",
+    "lying leg raise": "1472",
+    "hanging leg raise": "1760",
+    "hanging knee raise": "0485",
+    "knee raise": "0485",
+    "mountain climber": "0601",
+    "ab wheel rollout": "0001",
+    "cable crunch": "0155",
+    "woodchopper": "0840",
+    "cable woodchopper": "0840",
+    "dead bug": "1474",
+    "flutter kick": "0395",
+    "sit up": "0735",
+    "v up": "1604",
+    
+    # Compound/Functional exercises
+    "burpee": "1160",
     "box jump": "1487",
     "kettlebell swing": "0509",
     "power clean": "0068",
     "clean and press": "1209",
-    "dumbbell fly": "0308",
-    "incline dumbbell press": "0314",
-    "dumbbell pullover": "0292",
+    "clean and jerk": "1212",
+    "snatch": "0104",
+    "thruster": "2143",
+    "wall ball": "2399",
+    
+    # Machine exercises
+    "chest press machine": "0152",
+    "machine chest press": "0152",
+    "pec deck": "0613",
+    "machine fly": "0613",
+    "shoulder press machine": "0718",
+    "machine shoulder press": "0718",
+    "cable lateral raise": "0175",
+    "rowing machine": "1866",
 }
 
 # Cache for exercise GIFs to avoid repeated API calls
@@ -136,19 +258,33 @@ async def get_exercise_gif_from_api(exercise_name: str) -> str:
     if name_lower in exercise_gif_cache:
         return exercise_gif_cache[name_lower]
     
-    # Check pre-cached exercise IDs
+    # Check pre-cached exercise IDs - exact match first
     if name_lower in CACHED_EXERCISE_GIFS:
         exercise_id = CACHED_EXERCISE_GIFS[name_lower]
         proxy_url = f"/api/exercises/gif/{exercise_id}"
         exercise_gif_cache[name_lower] = proxy_url
         return proxy_url
     
-    # Try partial match in cached exercise IDs
+    # Try smart matching - prioritize longer/more specific matches
+    best_match = None
+    best_match_len = 0
     for cached_name, exercise_id in CACHED_EXERCISE_GIFS.items():
-        if cached_name in name_lower or name_lower in cached_name:
-            proxy_url = f"/api/exercises/gif/{exercise_id}"
-            exercise_gif_cache[name_lower] = proxy_url
-            return proxy_url
+        # Exact substring match - the cached name should be IN the exercise name
+        # or exercise name should be IN cached name
+        if cached_name == name_lower:
+            best_match = exercise_id
+            break
+        elif cached_name in name_lower and len(cached_name) > best_match_len:
+            best_match = exercise_id
+            best_match_len = len(cached_name)
+        elif name_lower in cached_name and len(name_lower) > best_match_len:
+            best_match = exercise_id
+            best_match_len = len(name_lower)
+    
+    if best_match:
+        proxy_url = f"/api/exercises/gif/{best_match}"
+        exercise_gif_cache[name_lower] = proxy_url
+        return proxy_url
     
     # If no API key or quota exceeded, return empty
     if not EXERCISEDB_API_KEY:
@@ -159,18 +295,29 @@ async def get_exercise_gif_from_api(exercise_name: str) -> str:
         "X-RapidAPI-Host": EXERCISEDB_API_HOST
     }
     
-    # Normalize and map exercise names
+    # Normalize and map exercise names for API search
     exercise_mappings = {
-        "pull-up": "pull up", "pull up": "pull up", "pullup": "pull up",
-        "chin-up": "chin up", "chin up": "chin up",
-        "push-up": "push up", "push up": "push up", "pushup": "push up",
-        "bench press": "barbell bench press", "squat": "barbell squat",
-        "deadlift": "barbell deadlift", "overhead press": "barbell shoulder press",
-        "military press": "barbell shoulder press", "lat pulldown": "cable lat pulldown",
-        "bicep curl": "dumbbell bicep curl", "tricep pushdown": "cable pushdown",
-        "leg press": "sled leg press", "calf raise": "standing calf raise",
-        "hip thrust": "barbell hip thrust", "lateral raise": "dumbbell lateral raise",
-        "plank": "front plank", "burpee": "burpee", "lunge": "dumbbell lunge",
+        "pull-up": "pull up", "pullup": "pull up",
+        "chin-up": "chin up",
+        "push-up": "push up", "pushup": "push up",
+        "bench press": "barbell bench press", 
+        "squat": "barbell squat",
+        "deadlift": "barbell deadlift", 
+        "overhead press": "barbell shoulder press",
+        "military press": "barbell shoulder press", 
+        "lat pulldown": "cable lat pulldown",
+        "bicep curl": "dumbbell bicep curl", 
+        "tricep pushdown": "cable pushdown",
+        "leg press": "sled leg press", 
+        "calf raise": "standing calf raise",
+        "hip thrust": "barbell hip thrust", 
+        "lateral raise": "dumbbell lateral raise",
+        "plank": "front plank", 
+        "lunge": "dumbbell lunge",
+        "row": "barbell bent over row",
+        "fly": "dumbbell fly",
+        "extension": "tricep extension",
+        "curl": "dumbbell curl",
     }
     
     search_term = name_lower
@@ -196,9 +343,18 @@ async def get_exercise_gif_from_api(exercise_name: str) -> str:
             if response.status_code == 200:
                 exercises = response.json()
                 if exercises and len(exercises) > 0:
-                    exercise_id = exercises[0].get("id", "")
+                    # Try to find the best match from results
+                    exercise_id = None
+                    for ex in exercises:
+                        ex_name = ex.get("name", "").lower()
+                        if name_lower in ex_name or ex_name in name_lower:
+                            exercise_id = ex.get("id", "")
+                            break
+                    # Fallback to first result
+                    if not exercise_id:
+                        exercise_id = exercises[0].get("id", "")
+                    
                     if exercise_id:
-                        # Return proxy URL instead of direct API URL
                         proxy_url = f"/api/exercises/gif/{exercise_id}"
                         exercise_gif_cache[name_lower] = proxy_url
                         return proxy_url
@@ -885,6 +1041,52 @@ async def delete_exercise(workout_id: str, request: DeleteExerciseRequest):
     )
     
     return {"message": "Exercise deleted successfully"}
+
+class AddExerciseRequest(BaseModel):
+    day_index: int
+    exercise: dict  # Exercise object with name, sets, reps, etc.
+
+@api_router.post("/workout/{workout_id}/exercise")
+async def add_exercise(workout_id: str, request: AddExerciseRequest):
+    """Add a new exercise to a workout day"""
+    workout = await db.workouts.find_one({"id": workout_id})
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    
+    workout_days = workout.get("workout_days", [])
+    if request.day_index >= len(workout_days):
+        raise HTTPException(status_code=400, detail="Invalid day index")
+    
+    exercises = workout_days[request.day_index].get("exercises", [])
+    
+    # Add GIF URL if not provided
+    exercise_data = request.exercise
+    if not exercise_data.get("gif_url"):
+        gif_url = await get_exercise_gif_from_api(exercise_data.get("name", ""))
+        exercise_data["gif_url"] = gif_url
+    
+    # Add default values if missing
+    if "sets" not in exercise_data:
+        exercise_data["sets"] = 3
+    if "reps" not in exercise_data:
+        exercise_data["reps"] = "10-12"
+    if "rest_seconds" not in exercise_data:
+        exercise_data["rest_seconds"] = 90
+    if "instructions" not in exercise_data:
+        exercise_data["instructions"] = "Perform with proper form and controlled movements."
+    if "muscle_groups" not in exercise_data:
+        exercise_data["muscle_groups"] = []
+    
+    # Add the exercise to the end of the list
+    exercises.append(exercise_data)
+    workout_days[request.day_index]["exercises"] = exercises
+    
+    await db.workouts.update_one(
+        {"id": workout_id},
+        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"message": "Exercise added successfully", "exercise": exercise_data}
 
 @api_router.get("/exercises/search")
 async def search_exercises(search: str = None, muscle: str = None):

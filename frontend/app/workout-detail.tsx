@@ -79,9 +79,11 @@ export default function WorkoutDetail() {
   // Performance tracking state
   const [performance, setPerformance] = useState<Record<string, ExercisePerformance>>({});
   const [saving, setSaving] = useState(false);
-  // Exercise replacement state
+  // Exercise replacement/add state
   const [showReplaceModal, setShowReplaceModal] = useState(false);
   const [replaceTarget, setReplaceTarget] = useState<{dayIdx: number, exIdx: number} | null>(null);
+  const [isAddMode, setIsAddMode] = useState(false);  // true = adding new, false = replacing
+  const [addToDayIdx, setAddToDayIdx] = useState<number | null>(null);  // which day to add exercise to
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
@@ -315,6 +317,71 @@ export default function WorkoutDetail() {
     );
   };
 
+  // Add a new exercise to a day
+  const addExerciseToDay = async (newExercise: any) => {
+    if (!workout || addToDayIdx === null) return;
+    
+    try {
+      const exerciseData = {
+        name: newExercise.name,
+        sets: 3,
+        reps: '10-12',
+        rest_seconds: 90,
+        instructions: newExercise.instructions?.join(' ') || 'Perform with proper form and controlled movements.',
+        muscle_groups: [newExercise.target, ...(newExercise.secondaryMuscles || [])],
+        equipment: newExercise.equipment,
+        gif_url: newExercise.gifUrl || '',
+      };
+      
+      await api.post(`/workout/${workout.id}/exercise`, {
+        day_index: addToDayIdx,
+        exercise: exerciseData,
+      });
+      
+      // Close modal and reload
+      setShowReplaceModal(false);
+      setIsAddMode(false);
+      setAddToDayIdx(null);
+      setSearchQuery('');
+      setSearchResults([]);
+      setSelectedMuscle(null);
+      loadWorkout();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add exercise');
+    }
+  };
+
+  // Handle exercise selection in modal (either replace or add)
+  const handleExerciseSelect = (exercise: any) => {
+    if (isAddMode) {
+      addExerciseToDay(exercise);
+    } else {
+      replaceExercise(exercise);
+    }
+  };
+
+  // Open modal in add mode
+  const openAddExerciseModal = (dayIdx: number) => {
+    setIsAddMode(true);
+    setAddToDayIdx(dayIdx);
+    setReplaceTarget(null);
+    setShowReplaceModal(true);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSelectedMuscle(null);
+  };
+
+  // Open modal in replace mode
+  const openReplaceExerciseModal = (dayIdx: number, exIdx: number) => {
+    setIsAddMode(false);
+    setReplaceTarget({ dayIdx, exIdx });
+    setAddToDayIdx(null);
+    setShowReplaceModal(true);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSelectedMuscle(null);
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -546,10 +613,7 @@ export default function WorkoutDetail() {
                     <View style={styles.exerciseActions}>
                       <TouchableOpacity
                         style={styles.actionBtn}
-                        onPress={() => {
-                          setReplaceTarget({ dayIdx: expandedDay, exIdx });
-                          setShowReplaceModal(true);
-                        }}
+                        onPress={() => openReplaceExerciseModal(expandedDay, exIdx)}
                       >
                         <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
                         <Text style={styles.actionBtnText}>Replace</Text>
@@ -566,6 +630,15 @@ export default function WorkoutDetail() {
                 )}
               </TouchableOpacity>
             ))}
+            
+            {/* Add Exercise Button - at the end of exercise list */}
+            <TouchableOpacity
+              style={styles.addExerciseBtn}
+              onPress={() => openAddExerciseModal(expandedDay)}
+            >
+              <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
+              <Text style={styles.addExerciseBtnText}>Add Exercise</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -623,12 +696,14 @@ export default function WorkoutDetail() {
             {/* Header with drag indicator */}
             <View style={styles.modalDragIndicator} />
             <View style={styles.replaceModalHeader}>
-              <Text style={styles.replaceModalTitle}>Replace Exercise</Text>
+              <Text style={styles.replaceModalTitle}>{isAddMode ? 'Add Exercise' : 'Replace Exercise'}</Text>
               <TouchableOpacity 
                 style={styles.modalCloseBtn}
                 onPress={() => {
                   setShowReplaceModal(false);
                   setReplaceTarget(null);
+                  setIsAddMode(false);
+                  setAddToDayIdx(null);
                   setSearchQuery('');
                   setSearchResults([]);
                   setSelectedMuscle(null);
@@ -722,7 +797,7 @@ export default function WorkoutDetail() {
                     <TouchableOpacity
                       key={idx}
                       style={styles.exerciseResult}
-                      onPress={() => replaceExercise(ex)}
+                      onPress={() => handleExerciseSelect(ex)}
                     >
                       {ex.gifUrl ? (
                         <Image source={{ uri: getFullGifUrl(ex.gifUrl) || '' }} style={styles.exerciseResultGif} />
@@ -738,7 +813,7 @@ export default function WorkoutDetail() {
                         </Text>
                       </View>
                       <View style={styles.selectBadge}>
-                        <Text style={styles.selectBadgeText}>Select</Text>
+                        <Text style={styles.selectBadgeText}>{isAddMode ? 'Add' : 'Select'}</Text>
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -1142,6 +1217,24 @@ const styles = StyleSheet.create({
   },
   actionBtnTextDanger: {
     color: colors.error,
+  },
+  addExerciseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+    borderStyle: 'dashed',
+  },
+  addExerciseBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primary,
   },
   replaceModalContainer: {
     flex: 1,
