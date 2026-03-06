@@ -28,6 +28,12 @@ interface Exercise {
   gif_url?: string;
 }
 
+interface ExercisePerformance {
+  weight: string;
+  reps: string;
+  completed: boolean;
+}
+
 interface WorkoutDay {
   day: string;
   focus: string;
@@ -57,6 +63,9 @@ export default function WorkoutDetail() {
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [renaming, setRenaming] = useState(false);
+  // Performance tracking state: { "dayIndex-exerciseIndex-setIndex": { weight: "", reps: "", completed: false } }
+  const [performance, setPerformance] = useState<Record<string, ExercisePerformance>>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadWorkout();
@@ -256,6 +265,58 @@ export default function WorkoutDetail() {
                         <Text style={styles.detailLabel}>Muscles</Text>
                         <Text style={styles.detailValue}>{exercise.muscle_groups.join(', ')}</Text>
                       </View>
+                    </View>
+
+                    {/* Performance Tracking */}
+                    <View style={styles.trackingSection}>
+                      <Text style={styles.trackingTitle}>Log Your Sets</Text>
+                      {Array.from({ length: exercise.sets }, (_, setIdx) => {
+                        const key = `${expandedDay}-${exIdx}-${setIdx}`;
+                        const perf = performance[key] || { weight: '', reps: '', completed: false };
+                        return (
+                          <View key={setIdx} style={styles.setRow}>
+                            <TouchableOpacity
+                              style={[styles.setCheckbox, perf.completed && styles.setCheckboxChecked]}
+                              onPress={() => {
+                                setPerformance({
+                                  ...performance,
+                                  [key]: { ...perf, completed: !perf.completed },
+                                });
+                              }}
+                            >
+                              {perf.completed && <Ionicons name="checkmark" size={16} color={colors.background} />}
+                            </TouchableOpacity>
+                            <Text style={styles.setLabel}>Set {setIdx + 1}</Text>
+                            <TextInput
+                              style={styles.setInput}
+                              placeholder="kg"
+                              placeholderTextColor={colors.textMuted}
+                              keyboardType="decimal-pad"
+                              value={perf.weight}
+                              onChangeText={(text) => {
+                                setPerformance({
+                                  ...performance,
+                                  [key]: { ...perf, weight: text },
+                                });
+                              }}
+                            />
+                            <Text style={styles.setX}>×</Text>
+                            <TextInput
+                              style={styles.setInput}
+                              placeholder="reps"
+                              placeholderTextColor={colors.textMuted}
+                              keyboardType="number-pad"
+                              value={perf.reps}
+                              onChangeText={(text) => {
+                                setPerformance({
+                                  ...performance,
+                                  [key]: { ...perf, reps: text },
+                                });
+                              }}
+                            />
+                          </View>
+                        );
+                      })}
                     </View>
                   </View>
                 )}
@@ -600,5 +661,55 @@ const styles = StyleSheet.create({
   },
   modalBtnDisabled: {
     opacity: 0.7,
+  },
+  trackingSection: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 12,
+  },
+  trackingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  setRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  setCheckbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.textMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  setCheckboxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  setLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    width: 50,
+  },
+  setInput: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  setX: {
+    fontSize: 16,
+    color: colors.textMuted,
   },
 });

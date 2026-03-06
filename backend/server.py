@@ -1247,6 +1247,14 @@ async def save_chat_message(message_id: str):
         raise HTTPException(status_code=404, detail="Message not found")
     return {"message": "Message saved successfully"}
 
+@api_router.post("/chat/unsave/{message_id}")
+async def unsave_chat_message(message_id: str):
+    """Unsave/unbookmark a chat message"""
+    result = await db.chat_history.update_one({"id": message_id}, {"$set": {"saved": False}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return {"message": "Message unsaved successfully"}
+
 @api_router.get("/chat/saved/{user_id}")
 async def get_saved_messages(user_id: str):
     """Get saved/bookmarked messages for a user"""

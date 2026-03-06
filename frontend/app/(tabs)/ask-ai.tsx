@@ -32,6 +32,7 @@ export default function AskAIScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'chat' | 'saved'>('chat');
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -49,6 +50,9 @@ export default function AskAIScreen() {
       setHistoryLoading(false);
     }
   };
+
+  const savedMessages = messages.filter((m) => m.saved && m.role === 'assistant');
+  const chatMessages = messages;
 
   const sendMessage = async () => {
     if (!input.trim() || loading || !profile?.id) return;
@@ -95,6 +99,25 @@ export default function AskAIScreen() {
       );
     } catch (error) {
       Alert.alert('Error', 'Failed to save message');
+    }
+  };
+
+  const unsaveMessage = async (messageId: string) => {
+    try {
+      await api.post(`/chat/unsave/${messageId}`);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, saved: false } : m))
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to unsave message');
+    }
+  };
+
+  const toggleSave = (message: Message) => {
+    if (message.saved) {
+      unsaveMessage(message.id);
+    } else {
+      saveMessage(message.id);
     }
   };
 
@@ -146,15 +169,68 @@ export default function AskAIScreen() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.chatContainer}
-        keyboardVerticalOffset={100}
-      >
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.messagesContainer}
-          contentContainerStyle={styles.messagesContent}
+      {/* Tabs */}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'chat' && styles.tabActive]}
+          onPress={() => setActiveTab('chat')}
+        >
+          <Ionicons 
+            name="chatbubbles" 
+            size={18} 
+            color={activeTab === 'chat' ? colors.primary : colors.textSecondary} 
+          />
+          <Text style={[styles.tabText, activeTab === 'chat' && styles.tabTextActive]}>Chat</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'saved' && styles.tabActive]}
+          onPress={() => setActiveTab('saved')}
+        >
+          <Ionicons 
+            name="bookmark" 
+            size={18} 
+            color={activeTab === 'saved' ? colors.primary : colors.textSecondary} 
+          />
+          <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>
+            Saved ({savedMessages.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {activeTab === 'saved' ? (
+        <ScrollView style={styles.savedContainer} contentContainerStyle={styles.savedContent}>
+          {savedMessages.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="bookmark-outline" size={48} color={colors.textMuted} />
+              <Text style={styles.emptyTitle}>No Saved Responses</Text>
+              <Text style={styles.emptySubtitle}>Tap the bookmark icon on any AI response to save it here</Text>
+            </View>
+          ) : (
+            savedMessages.map((message) => (
+              <View key={message.id} style={styles.savedCard}>
+                <Text style={styles.savedContent}>{message.content}</Text>
+                <View style={styles.savedFooter}>
+                  <Text style={styles.savedDate}>
+                    {new Date(message.created_at).toLocaleDateString()}
+                  </Text>
+                  <TouchableOpacity onPress={() => toggleSave(message)}>
+                    <Ionicons name="bookmark" size={20} color={colors.primary} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      ) : (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.chatContainer}
+          keyboardVerticalOffset={100}
+        >
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.messagesContainer}
+            contentContainerStyle={styles.messagesContent}
           onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
         >
           {historyLoading ? (
@@ -196,7 +272,7 @@ export default function AskAIScreen() {
                     </View>
                     <Text style={styles.aiLabel}>InterFitAI</Text>
                     <TouchableOpacity
-                      onPress={() => saveMessage(message.id)}
+                      onPress={() => toggleSave(message)}
                       style={styles.saveBtn}
                     >
                       <Ionicons
@@ -252,7 +328,8 @@ export default function AskAIScreen() {
             />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      )}
     </SafeAreaView>
   );
 }
@@ -442,5 +519,63 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     backgroundColor: colors.surfaceLight,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    marginBottom: 8,
+    gap: 12,
+  },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    gap: 6,
+  },
+  tabActive: {
+    backgroundColor: colors.primary + '20',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  tabTextActive: {
+    color: colors.primary,
+  },
+  savedContainer: {
+    flex: 1,
+  },
+  savedContent: {
+    padding: 20,
+    gap: 12,
+  },
+  savedCard: {
+    backgroundColor: colors.surface,
+    padding: 16,
+    borderRadius: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  savedCardContent: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 20,
+  },
+  savedFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceLight,
+  },
+  savedDate: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
 });
