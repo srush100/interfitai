@@ -434,7 +434,7 @@ export default function WorkoutDetail() {
                   {/* Exercise Illustration Thumbnail */}
                   {exercise.gif_url && (
                     <Image
-                      source={{ uri: exercise.gif_url }}
+                      source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
                       style={styles.exerciseThumbnail}
                       resizeMode="cover"
                     />
@@ -462,7 +462,7 @@ export default function WorkoutDetail() {
                     {exercise.gif_url && (
                       <View style={styles.gifContainer}>
                         <Image
-                          source={{ uri: exercise.gif_url }}
+                          source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
                           style={styles.exerciseGif}
                           resizeMode="contain"
                         />
