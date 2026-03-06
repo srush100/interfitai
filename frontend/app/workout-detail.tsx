@@ -63,9 +63,21 @@ export default function WorkoutDetail() {
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [renaming, setRenaming] = useState(false);
-  // Performance tracking state: { "dayIndex-exerciseIndex-setIndex": { weight: "", reps: "", completed: false } }
+  // Performance tracking state
   const [performance, setPerformance] = useState<Record<string, ExercisePerformance>>({});
   const [saving, setSaving] = useState(false);
+  // Exercise replacement state
+  const [showReplaceModal, setShowReplaceModal] = useState(false);
+  const [replaceTarget, setReplaceTarget] = useState<{dayIdx: number, exIdx: number} | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
+
+  const muscleGroups = [
+    'chest', 'back', 'shoulders', 'biceps', 'triceps', 
+    'legs', 'glutes', 'abs', 'cardio'
+  ];
 
   useEffect(() => {
     loadWorkout();
@@ -128,6 +140,102 @@ export default function WorkoutDetail() {
     } finally {
       setRenaming(false);
     }
+  };
+
+  // Add extra set to an exercise
+  const addSet = async (dayIdx: number, exIdx: number) => {
+    if (!workout) return;
+    const newWorkout = { ...workout };
+    const exercise = newWorkout.workout_days[dayIdx].exercises[exIdx];
+    exercise.sets += 1;
+    
+    try {
+      await api.patch(`/workout/${workout.id}/exercise`, {
+        day_index: dayIdx,
+        exercise_index: exIdx,
+        sets: exercise.sets,
+      });
+      setWorkout(newWorkout);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add set');
+    }
+  };
+
+  // Search exercises from ExerciseDB
+  const searchExercises = async (query: string, muscle?: string) => {
+    if (!query && !muscle) return;
+    setSearching(true);
+    try {
+      const params = new URLSearchParams();
+      if (query) params.append('search', query);
+      if (muscle) params.append('muscle', muscle);
+      
+      const response = await api.get(`/exercises/search?${params.toString()}`);
+      setSearchResults(response.data.exercises || []);
+    } catch (error) {
+      console.log('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Replace an exercise
+  const replaceExercise = async (newExercise: any) => {
+    if (!workout || !replaceTarget) return;
+    const { dayIdx, exIdx } = replaceTarget;
+    
+    try {
+      await api.patch(`/workout/${workout.id}/replace-exercise`, {
+        day_index: dayIdx,
+        exercise_index: exIdx,
+        new_exercise: {
+          name: newExercise.name,
+          sets: workout.workout_days[dayIdx].exercises[exIdx].sets,
+          reps: workout.workout_days[dayIdx].exercises[exIdx].reps,
+          rest_seconds: workout.workout_days[dayIdx].exercises[exIdx].rest_seconds,
+          instructions: newExercise.instructions?.join(' ') || '',
+          muscle_groups: [newExercise.target, ...(newExercise.secondaryMuscles || [])],
+          equipment: newExercise.equipment,
+          gif_url: newExercise.gifUrl || '',
+        },
+      });
+      
+      // Reload workout
+      loadWorkout();
+      setShowReplaceModal(false);
+      setReplaceTarget(null);
+      setSearchQuery('');
+      setSearchResults([]);
+      Alert.alert('Success', 'Exercise replaced!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to replace exercise');
+    }
+  };
+
+  // Delete an exercise
+  const deleteExercise = async (dayIdx: number, exIdx: number) => {
+    Alert.alert(
+      'Delete Exercise',
+      'Are you sure you want to remove this exercise?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/workout/${workout?.id}/exercise`, {
+                data: { day_index: dayIdx, exercise_index: exIdx },
+              });
+              loadWorkout();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete exercise');
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (loading) {
@@ -300,7 +408,16 @@ export default function WorkoutDetail() {
 
                     {/* Performance Tracking */}
                     <View style={styles.trackingSection}>
-                      <Text style={styles.trackingTitle}>Log Your Sets</Text>
+                      <View style={styles.trackingHeader}>
+                        <Text style={styles.trackingTitle}>Log Your Sets</Text>
+                        <TouchableOpacity
+                          style={styles.addSetBtn}
+                          onPress={() => addSet(expandedDay, exIdx)}
+                        >
+                          <Ionicons name="add" size={18} color={colors.primary} />
+                          <Text style={styles.addSetText}>Add Set</Text>
+                        </TouchableOpacity>
+                      </View>
                       {Array.from({ length: exercise.sets }, (_, setIdx) => {
                         const key = `${expandedDay}-${exIdx}-${setIdx}`;
                         const perf = performance[key] || { weight: '', reps: '', completed: false };
@@ -339,6 +456,27 @@ export default function WorkoutDetail() {
                           </View>
                         );
                       })}
+                    </View>
+
+                    {/* Exercise Actions */}
+                    <View style={styles.exerciseActions}>
+                      <TouchableOpacity
+                        style={styles.actionBtn}
+                        onPress={() => {
+                          setReplaceTarget({ dayIdx: expandedDay, exIdx });
+                          setShowReplaceModal(true);
+                        }}
+                      >
+                        <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
+                        <Text style={styles.actionBtnText}>Replace</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionBtn, styles.actionBtnDanger]}
+                        onPress={() => deleteExercise(expandedDay, exIdx)}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={colors.error} />
+                        <Text style={[styles.actionBtnText, styles.actionBtnTextDanger]}>Delete</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 )}
@@ -385,6 +523,109 @@ export default function WorkoutDetail() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Replace Exercise Modal */}
+      <Modal
+        visible={showReplaceModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReplaceModal(false)}
+      >
+        <View style={styles.replaceModalContainer}>
+          <View style={styles.replaceModalContent}>
+            <View style={styles.replaceModalHeader}>
+              <Text style={styles.replaceModalTitle}>Replace Exercise</Text>
+              <TouchableOpacity onPress={() => {
+                setShowReplaceModal(false);
+                setReplaceTarget(null);
+                setSearchQuery('');
+                setSearchResults([]);
+                setSelectedMuscle(null);
+              }}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Input */}
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color={colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search exercises..."
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={(text) => {
+                  setSearchQuery(text);
+                  if (text.length > 2) {
+                    searchExercises(text, selectedMuscle || undefined);
+                  }
+                }}
+              />
+            </View>
+
+            {/* Muscle Group Filter */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.muscleFilter}>
+              <TouchableOpacity
+                style={[styles.muscleBtn, !selectedMuscle && styles.muscleBtnActive]}
+                onPress={() => {
+                  setSelectedMuscle(null);
+                  if (searchQuery.length > 2) {
+                    searchExercises(searchQuery);
+                  }
+                }}
+              >
+                <Text style={[styles.muscleBtnText, !selectedMuscle && styles.muscleBtnTextActive]}>All</Text>
+              </TouchableOpacity>
+              {muscleGroups.map((muscle) => (
+                <TouchableOpacity
+                  key={muscle}
+                  style={[styles.muscleBtn, selectedMuscle === muscle && styles.muscleBtnActive]}
+                  onPress={() => {
+                    setSelectedMuscle(muscle);
+                    searchExercises(searchQuery || muscle, muscle);
+                  }}
+                >
+                  <Text style={[styles.muscleBtnText, selectedMuscle === muscle && styles.muscleBtnTextActive]}>
+                    {muscle.charAt(0).toUpperCase() + muscle.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Search Results */}
+            <ScrollView style={styles.searchResults}>
+              {searching ? (
+                <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+              ) : searchResults.length === 0 ? (
+                <View style={styles.noResults}>
+                  <Text style={styles.noResultsText}>
+                    {searchQuery || selectedMuscle ? 'No exercises found' : 'Search for exercises or select a muscle group'}
+                  </Text>
+                </View>
+              ) : (
+                searchResults.map((ex, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.exerciseResult}
+                    onPress={() => replaceExercise(ex)}
+                  >
+                    {ex.gifUrl && (
+                      <Image source={{ uri: ex.gifUrl }} style={styles.exerciseResultGif} />
+                    )}
+                    <View style={styles.exerciseResultInfo}>
+                      <Text style={styles.exerciseResultName}>{ex.name}</Text>
+                      <Text style={styles.exerciseResultMuscle}>
+                        {ex.target} • {ex.equipment}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -733,5 +974,155 @@ const styles = StyleSheet.create({
   setX: {
     fontSize: 16,
     color: colors.textMuted,
+  },
+  trackingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  addSetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: colors.primary + '20',
+  },
+  addSetText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  exerciseActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceLight,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: colors.primary + '15',
+  },
+  actionBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  actionBtnDanger: {
+    backgroundColor: colors.error + '15',
+  },
+  actionBtnTextDanger: {
+    color: colors.error,
+  },
+  replaceModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  replaceModalContent: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '85%',
+    padding: 20,
+  },
+  replaceModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  replaceModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: colors.text,
+  },
+  muscleFilter: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  muscleBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    marginRight: 8,
+  },
+  muscleBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  muscleBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  muscleBtnTextActive: {
+    color: colors.background,
+  },
+  searchResults: {
+    flex: 1,
+  },
+  noResults: {
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  noResultsText: {
+    fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  exerciseResult: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
+  exerciseResultGif: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceLight,
+  },
+  exerciseResultInfo: {
+    flex: 1,
+  },
+  exerciseResultName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  exerciseResultMuscle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textTransform: 'capitalize',
   },
 });

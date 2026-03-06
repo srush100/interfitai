@@ -818,6 +818,132 @@ async def update_exercise(workout_id: str, request: UpdateExerciseRequest):
     
     return {"message": "Exercise updated successfully"}
 
+class ReplaceExerciseRequest(BaseModel):
+    day_index: int
+    exercise_index: int
+    new_exercise: dict
+
+@api_router.patch("/workout/{workout_id}/replace-exercise")
+async def replace_exercise(workout_id: str, request: ReplaceExerciseRequest):
+    """Replace an exercise in a workout"""
+    workout = await db.workouts.find_one({"id": workout_id})
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    
+    workout_days = workout.get("workout_days", [])
+    if request.day_index >= len(workout_days):
+        raise HTTPException(status_code=400, detail="Invalid day index")
+    
+    exercises = workout_days[request.day_index].get("exercises", [])
+    if request.exercise_index >= len(exercises):
+        raise HTTPException(status_code=400, detail="Invalid exercise index")
+    
+    # Replace the exercise
+    exercises[request.exercise_index] = request.new_exercise
+    workout_days[request.day_index]["exercises"] = exercises
+    
+    await db.workouts.update_one(
+        {"id": workout_id},
+        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"message": "Exercise replaced successfully"}
+
+class DeleteExerciseRequest(BaseModel):
+    day_index: int
+    exercise_index: int
+
+@api_router.delete("/workout/{workout_id}/exercise")
+async def delete_exercise(workout_id: str, request: DeleteExerciseRequest):
+    """Delete an exercise from a workout"""
+    workout = await db.workouts.find_one({"id": workout_id})
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    
+    workout_days = workout.get("workout_days", [])
+    if request.day_index >= len(workout_days):
+        raise HTTPException(status_code=400, detail="Invalid day index")
+    
+    exercises = workout_days[request.day_index].get("exercises", [])
+    if request.exercise_index >= len(exercises):
+        raise HTTPException(status_code=400, detail="Invalid exercise index")
+    
+    # Remove the exercise
+    exercises.pop(request.exercise_index)
+    workout_days[request.day_index]["exercises"] = exercises
+    
+    await db.workouts.update_one(
+        {"id": workout_id},
+        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"message": "Exercise deleted successfully"}
+
+@api_router.get("/exercises/search")
+async def search_exercises(search: str = None, muscle: str = None):
+    """Search exercises from ExerciseDB"""
+    import httpx
+    import urllib.parse
+    
+    if not EXERCISEDB_API_KEY:
+        return {"exercises": []}
+    
+    headers = {
+        "X-RapidAPI-Key": EXERCISEDB_API_KEY,
+        "X-RapidAPI-Host": EXERCISEDB_API_HOST
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            exercises = []
+            
+            if muscle:
+                # Search by body part/muscle
+                muscle_map = {
+                    "chest": "chest", "back": "back", "shoulders": "shoulders",
+                    "biceps": "upper arms", "triceps": "upper arms",
+                    "legs": "upper legs", "glutes": "upper legs",
+                    "abs": "waist", "cardio": "cardio"
+                }
+                mapped_muscle = muscle_map.get(muscle.lower(), muscle.lower())
+                response = await client.get(
+                    f"{EXERCISEDB_API_BASE}/exercises/bodyPart/{mapped_muscle}",
+                    headers=headers,
+                    params={"limit": 50}
+                )
+                if response.status_code == 200:
+                    exercises = response.json()
+            
+            elif search:
+                # Search by name
+                encoded = urllib.parse.quote(search)
+                response = await client.get(
+                    f"{EXERCISEDB_API_BASE}/exercises/name/{encoded}",
+                    headers=headers,
+                    params={"limit": 30}
+                )
+                if response.status_code == 200:
+                    exercises = response.json()
+            
+            # Format response
+            formatted = []
+            for ex in exercises[:30]:
+                formatted.append({
+                    "id": ex.get("id"),
+                    "name": ex.get("name"),
+                    "target": ex.get("target"),
+                    "equipment": ex.get("equipment"),
+                    "bodyPart": ex.get("bodyPart"),
+                    "gifUrl": ex.get("gifUrl"),
+                    "secondaryMuscles": ex.get("secondaryMuscles", []),
+                    "instructions": ex.get("instructions", []),
+                })
+            
+            return {"exercises": formatted}
+    except Exception as e:
+        logger.error(f"Exercise search error: {e}")
+        return {"exercises": []}
+
 # ==================== MEAL PLAN ENDPOINTS ====================
 
 @api_router.post("/mealplans/generate", response_model=MealPlan)
