@@ -143,8 +143,22 @@ export default function HomeScreen() {
 
         {/* Welcome Section */}
         <View style={styles.welcomeSection}>
-          <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.name}>{profile?.name || 'Champion'}</Text>
+          <View style={styles.welcomeRow}>
+            {profile?.profile_image ? (
+              <Image
+                source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
+                style={styles.welcomeAvatar}
+              />
+            ) : (
+              <View style={styles.welcomeAvatarPlaceholder}>
+                <Ionicons name="person" size={24} color={colors.primary} />
+              </View>
+            )}
+            <View>
+              <Text style={styles.greeting}>Welcome back,</Text>
+              <Text style={styles.name}>{profile?.name || 'Champion'}</Text>
+            </View>
+          </View>
         </View>
 
         {/* Motivation */}
@@ -249,6 +263,24 @@ const styles = StyleSheet.create({
   },
   welcomeSection: {
     marginBottom: 20,
+  },
+  welcomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  welcomeAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
+  welcomeAvatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   greeting: {
     fontSize: 14,

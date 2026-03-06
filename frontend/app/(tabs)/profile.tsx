@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Pedometer } from 'expo-sensors';
+import * as ImagePicker from 'expo-image-picker';
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
@@ -56,12 +57,48 @@ export default function ProfileScreen() {
   const [stepCount, setStepCount] = useState(0);
   const [connectedDevices, setConnectedDevices] = useState<string[]>([]);
   const [stepGoal, setStepGoal] = useState(10000);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   useEffect(() => {
     checkPedometer();
     loadDevices();
     loadStepGoal();
   }, []);
+
+  const pickProfileImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Permission Required', 'Please allow access to your photo library.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0].base64) {
+        setUploadingPhoto(true);
+        try {
+          await updateProfile({
+            profile_image: result.assets[0].base64,
+          });
+          Alert.alert('Success', 'Profile picture updated!');
+        } catch (error) {
+          Alert.alert('Error', 'Failed to update profile picture');
+        } finally {
+          setUploadingPhoto(false);
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
 
   const checkPedometer = async () => {
     const available = await Pedometer.isAvailableAsync();
@@ -209,9 +246,25 @@ export default function ProfileScreen() {
         {/* User Info Card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <View style={styles.avatar}>
-              <Ionicons name="person" size={32} color={colors.primary} />
-            </View>
+            <TouchableOpacity onPress={pickProfileImage} style={styles.avatarContainer}>
+              {uploadingPhoto ? (
+                <View style={styles.avatar}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : profile?.profile_image ? (
+                <Image
+                  source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <View style={styles.avatar}>
+                  <Ionicons name="person" size={32} color={colors.primary} />
+                </View>
+              )}
+              <View style={styles.avatarEditBadge}>
+                <Ionicons name="camera" size={12} color={colors.background} />
+              </View>
+            </TouchableOpacity>
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{profile?.name || 'User'}</Text>
               <Text style={styles.userGoal}>
@@ -797,5 +850,26 @@ const styles = StyleSheet.create({
   },
   activityBtnTextActive: {
     color: colors.background,
+  },
+  avatarContainer: {
+    position: 'relative',
+  },
+  avatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
   },
 });

@@ -46,7 +46,7 @@ EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 exercise_gif_cache = {}
 
 async def get_exercise_gif_from_api(exercise_name: str) -> str:
-    """Fetch computer-generated animated GIF from ExerciseDB RapidAPI"""
+    """Fetch computer-generated animated GIF from ExerciseDB RapidAPI with improved matching"""
     import httpx
     import urllib.parse
     
@@ -65,23 +65,62 @@ async def get_exercise_gif_from_api(exercise_name: str) -> str:
         "X-RapidAPI-Host": EXERCISEDB_API_HOST
     }
     
-    # Try different search terms - some exercises have different naming conventions
-    search_terms = [name_lower]
+    # Normalize exercise name for better matching
+    # Remove common prefixes/suffixes and normalize
+    normalized = name_lower.replace("-", " ").replace("_", " ")
     
-    # Add variations for common naming differences
-    if "dumbbell" in name_lower:
-        search_terms.append(name_lower.replace("dumbbell ", ""))
-    if "barbell" in name_lower:
-        search_terms.append(name_lower.replace("barbell ", ""))
-    if "flyes" in name_lower:
-        search_terms.append(name_lower.replace("flyes", "fly"))
-    if "fly" in name_lower and "flyes" not in name_lower:
-        search_terms.append(name_lower.replace("fly", "flyes"))
+    # Build search terms from most specific to least specific
+    search_terms = [normalized]
     
-    # Extract main exercise word for fallback
-    main_words = name_lower.split()
-    if len(main_words) > 1:
-        search_terms.append(main_words[-1])  # Try last word (e.g., "press", "curl")
+    # Common exercise name mappings for better accuracy
+    exercise_mappings = {
+        "pull-up": "pull up",
+        "pull up": "pull up",
+        "pullup": "pull up",
+        "chin-up": "chin up",
+        "chin up": "chin up", 
+        "push-up": "push up",
+        "push up": "push up",
+        "pushup": "push up",
+        "bench press": "barbell bench press",
+        "squat": "barbell squat",
+        "deadlift": "barbell deadlift",
+        "overhead press": "barbell shoulder press",
+        "military press": "barbell shoulder press",
+        "lat pulldown": "cable lat pulldown",
+        "cable row": "cable seated row",
+        "dumbbell curl": "dumbbell bicep curl",
+        "bicep curl": "dumbbell bicep curl",
+        "tricep pushdown": "cable pushdown",
+        "leg press": "sled leg press",
+        "calf raise": "standing calf raise",
+        "hip thrust": "barbell hip thrust",
+        "romanian deadlift": "barbell romanian deadlift",
+        "rdl": "barbell romanian deadlift",
+        "face pull": "cable face pull",
+        "lateral raise": "dumbbell lateral raise",
+        "front raise": "dumbbell front raise",
+        "shrug": "barbell shrug",
+        "crunch": "crunch",
+        "plank": "front plank",
+        "mountain climber": "mountain climber",
+        "burpee": "burpee",
+        "lunge": "dumbbell lunge",
+        "step up": "dumbbell step up",
+        "row": "bent over row",
+    }
+    
+    # Check if we have a mapping for this exercise
+    for key, mapped in exercise_mappings.items():
+        if key in normalized:
+            search_terms.insert(0, mapped)  # Add mapped term first
+            break
+    
+    # Add variations
+    if "dumbbell" in normalized:
+        search_terms.append(normalized.replace("dumbbell ", ""))
+    if "barbell" in normalized:
+        search_terms.append(normalized.replace("barbell ", ""))
     
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -96,13 +135,40 @@ async def get_exercise_gif_from_api(exercise_name: str) -> str:
                     exercises = response.json()
                     
                     if exercises and len(exercises) > 0:
-                        # Use first result
-                        ex = exercises[0]
-                        exercise_id = ex.get("id", "")
-                        if exercise_id:
-                            gif_url = f"{EXERCISEDB_API_BASE}/image?exerciseId={exercise_id}&resolution=360&rapidapi-key={EXERCISEDB_API_KEY}"
-                            exercise_gif_cache[name_lower] = gif_url
-                            return gif_url
+                        # Find the best match based on name similarity
+                        best_match = None
+                        best_score = 0
+                        
+                        for ex in exercises:
+                            ex_name = ex.get("name", "").lower()
+                            # Calculate match score
+                            score = 0
+                            search_words = set(search_term.split())
+                            ex_words = set(ex_name.split())
+                            
+                            # Exact match gets highest score
+                            if search_term == ex_name:
+                                score = 100
+                            # Check word overlap
+                            else:
+                                common_words = search_words & ex_words
+                                score = len(common_words) * 20
+                                # Bonus for containing the search term
+                                if search_term in ex_name:
+                                    score += 30
+                                if ex_name in search_term:
+                                    score += 20
+                            
+                            if score > best_score:
+                                best_score = score
+                                best_match = ex
+                        
+                        if best_match:
+                            exercise_id = best_match.get("id", "")
+                            if exercise_id:
+                                gif_url = f"{EXERCISEDB_API_BASE}/image?exerciseId={exercise_id}&resolution=360&rapidapi-key={EXERCISEDB_API_KEY}"
+                                exercise_gif_cache[name_lower] = gif_url
+                                return gif_url
     except Exception as e:
         logger.warning(f"ExerciseDB API error for '{exercise_name}': {e}")
     
@@ -509,14 +575,24 @@ async def generate_workout(request: WorkoutGenerateRequest):
     fitness_level = request.fitness_level if hasattr(request, 'fitness_level') else "intermediate"
     
     # Define fitness level parameters
+    # Determine rest times based on goal (scientifically optimal)
+    rest_times_by_goal = {
+        "strength": "180-300",  # 3-5 minutes for strength
+        "build_muscle": "90-120",  # 1.5-2 minutes for hypertrophy
+        "weight_loss": "30-60",  # Shorter rest for metabolic conditioning
+        "endurance": "30-45",  # Short rest for endurance
+        "general_fitness": "60-90",
+    }
+    goal_rest = rest_times_by_goal.get(request.goal, "60-90")
+    
     fitness_params = {
-        "beginner": {"sets": "2-3", "rest": "90-120", "complexity": "basic compound movements, focus on form"},
-        "intermediate": {"sets": "3-4", "rest": "60-90", "complexity": "mix of compound and isolation exercises"},
-        "advanced": {"sets": "4-5", "rest": "45-60", "complexity": "advanced techniques, supersets, drop sets"}
+        "beginner": {"sets": "2-3", "complexity": "basic compound movements, focus on form"},
+        "intermediate": {"sets": "3-4", "complexity": "mix of compound and isolation exercises"},
+        "advanced": {"sets": "4-5", "complexity": "advanced techniques, supersets, drop sets"}
     }
     level_info = fitness_params.get(fitness_level, fitness_params["intermediate"])
     
-    prompt = f"""Create a detailed {request.days_per_week}-day per week workout program for someone with the following goals and constraints:
+    prompt = f"""Create a scientifically-optimized {request.days_per_week}-day per week workout program for someone with the following goals and constraints:
 
 Goal: {request.goal.replace('_', ' ')}
 Focus Areas: {', '.join(request.focus_areas)}
@@ -524,6 +600,12 @@ Available Equipment: {', '.join(request.equipment)}
 Injuries/Limitations: {request.injuries or 'None'}
 Session Duration: {session_duration} minutes per workout
 Fitness Level: {fitness_level.upper()} - {level_info['complexity']}
+
+IMPORTANT SCIENTIFIC GUIDELINES:
+- For STRENGTH/POWER goals: Use 180-300 seconds rest between sets (3-5 mins) for full ATP recovery
+- For MUSCLE BUILDING (hypertrophy): Use 90-120 seconds rest between sets (1.5-2 mins)
+- For WEIGHT LOSS/FAT BURNING: Use 30-60 seconds rest to maintain elevated heart rate
+- For ENDURANCE: Use 30-45 seconds rest
 
 Please provide a structured workout program in JSON format with the following structure:
 {{
@@ -536,10 +618,10 @@ Please provide a structured workout program in JSON format with the following st
             "notes": "Tips for this day",
             "exercises": [
                 {{
-                    "name": "Exercise Name",
+                    "name": "Exercise Name (use common names like: Pull-Up, Bench Press, Barbell Squat, Deadlift, etc.)",
                     "sets": 4,
                     "reps": "8-12",
-                    "rest_seconds": 90,
+                    "rest_seconds": {goal_rest.split('-')[0]},
                     "instructions": "Step-by-step instructions on how to perform the exercise correctly with form cues",
                     "muscle_groups": ["primary", "secondary"],
                     "equipment": "equipment needed"
@@ -555,7 +637,12 @@ Requirements:
 - Focus on compound movements first, then isolation
 - Include proper warm-up notes
 - Provide detailed form cues for each exercise
-- Adjust difficulty for {fitness_level.upper()} level: {level_info['sets']} sets per exercise, {level_info['rest']}s rest between sets"""
+- Use SCIENTIFICALLY OPTIMAL rest times for the goal ({request.goal}): {goal_rest} seconds
+- For strength goals: prioritize heavier weights (3-6 reps), longer rest (180-300s)
+- For muscle building: moderate weights (8-12 reps), moderate rest (90-120s)
+- For fat loss: lighter weights (12-15 reps), minimal rest (30-60s)
+- Adjust difficulty for {fitness_level.upper()} level: {level_info['sets']} sets per exercise
+- Use standard exercise names that match ExerciseDB (e.g., "Pull-Up" not "Wide Grip Pulldown")"""
 
     try:
         response = openai.chat.completions.create(
@@ -648,6 +735,63 @@ async def rename_workout(workout_id: str, request: RenameWorkoutRequest):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Workout not found")
     return {"message": "Workout renamed successfully", "name": request.name}
+
+class WorkoutPerformanceRequest(BaseModel):
+    performance: dict  # { "dayIndex-exerciseIndex-setIndex": { "weight": "50", "reps": "10", "completed": true } }
+
+@api_router.post("/workout/{workout_id}/performance")
+async def save_workout_performance(workout_id: str, request: WorkoutPerformanceRequest):
+    """Save workout performance data (weights, reps, completion status)"""
+    result = await db.workouts.update_one(
+        {"id": workout_id},
+        {"$set": {"performance": request.performance, "updated_at": datetime.utcnow()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    return {"message": "Performance saved successfully"}
+
+@api_router.get("/workout/{workout_id}/performance")
+async def get_workout_performance(workout_id: str):
+    """Get workout performance data"""
+    workout = await db.workouts.find_one({"id": workout_id})
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    return {"performance": workout.get("performance", {})}
+
+class UpdateExerciseRequest(BaseModel):
+    day_index: int
+    exercise_index: int
+    sets: Optional[int] = None
+    reps: Optional[str] = None
+
+@api_router.patch("/workout/{workout_id}/exercise")
+async def update_exercise(workout_id: str, request: UpdateExerciseRequest):
+    """Update exercise sets/reps in a workout"""
+    workout = await db.workouts.find_one({"id": workout_id})
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    
+    workout_days = workout.get("workout_days", [])
+    if request.day_index >= len(workout_days):
+        raise HTTPException(status_code=400, detail="Invalid day index")
+    
+    exercises = workout_days[request.day_index].get("exercises", [])
+    if request.exercise_index >= len(exercises):
+        raise HTTPException(status_code=400, detail="Invalid exercise index")
+    
+    if request.sets is not None:
+        exercises[request.exercise_index]["sets"] = request.sets
+    if request.reps is not None:
+        exercises[request.exercise_index]["reps"] = request.reps
+    
+    workout_days[request.day_index]["exercises"] = exercises
+    
+    await db.workouts.update_one(
+        {"id": workout_id},
+        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"message": "Exercise updated successfully"}
 
 # ==================== MEAL PLAN ENDPOINTS ====================
 

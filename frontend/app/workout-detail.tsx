@@ -76,10 +76,41 @@ export default function WorkoutDetail() {
       const response = await api.get(`/workout/${id}`);
       setWorkout(response.data);
       setNewName(response.data.name);
+      
+      // Load saved performance data
+      try {
+        const perfResponse = await api.get(`/workout/${id}/performance`);
+        if (perfResponse.data.performance) {
+          setPerformance(perfResponse.data.performance);
+        }
+      } catch (perfError) {
+        console.log('No saved performance data');
+      }
     } catch (error) {
       console.log('Error loading workout:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Auto-save performance when it changes
+  const savePerformance = async (newPerformance: Record<string, ExercisePerformance>) => {
+    if (!workout) return;
+    try {
+      await api.post(`/workout/${workout.id}/performance`, { performance: newPerformance });
+    } catch (error) {
+      console.log('Error saving performance:', error);
+    }
+  };
+
+  // Update performance and auto-save
+  const updatePerformance = (key: string, data: ExercisePerformance) => {
+    const newPerformance = { ...performance, [key]: data };
+    setPerformance(newPerformance);
+    
+    // Auto-save when checkbox is checked
+    if (data.completed) {
+      savePerformance(newPerformance);
     }
   };
 
@@ -278,10 +309,7 @@ export default function WorkoutDetail() {
                             <TouchableOpacity
                               style={[styles.setCheckbox, perf.completed && styles.setCheckboxChecked]}
                               onPress={() => {
-                                setPerformance({
-                                  ...performance,
-                                  [key]: { ...perf, completed: !perf.completed },
-                                });
+                                updatePerformance(key, { ...perf, completed: !perf.completed });
                               }}
                             >
                               {perf.completed && <Ionicons name="checkmark" size={16} color={colors.background} />}
@@ -294,10 +322,7 @@ export default function WorkoutDetail() {
                               keyboardType="decimal-pad"
                               value={perf.weight}
                               onChangeText={(text) => {
-                                setPerformance({
-                                  ...performance,
-                                  [key]: { ...perf, weight: text },
-                                });
+                                updatePerformance(key, { ...perf, weight: text });
                               }}
                             />
                             <Text style={styles.setX}>×</Text>
@@ -308,10 +333,7 @@ export default function WorkoutDetail() {
                               keyboardType="number-pad"
                               value={perf.reps}
                               onChangeText={(text) => {
-                                setPerformance({
-                                  ...performance,
-                                  [key]: { ...perf, reps: text },
-                                });
+                                updatePerformance(key, { ...perf, reps: text });
                               }}
                             />
                           </View>
