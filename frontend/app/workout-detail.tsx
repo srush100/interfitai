@@ -14,8 +14,21 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
+
+// Get backend URL for constructing full GIF URLs
+const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 
+                    process.env.EXPO_PUBLIC_BACKEND_URL || 
+                    'https://ai-fitness-pro-4.preview.emergentagent.com';
+
+// Helper to get full GIF URL
+const getFullGifUrl = (gifUrl: string | undefined) => {
+  if (!gifUrl) return null;
+  if (gifUrl.startsWith('http')) return gifUrl;
+  return `${BACKEND_URL}${gifUrl}`;
+};
 
 interface Exercise {
   name: string;
@@ -74,9 +87,17 @@ export default function WorkoutDetail() {
   const [searching, setSearching] = useState(false);
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
 
+  // Muscle groups with icons for professional UI
   const muscleGroups = [
-    'chest', 'back', 'shoulders', 'biceps', 'triceps', 
-    'legs', 'glutes', 'abs', 'cardio'
+    { id: 'chest', label: 'Chest', icon: 'fitness-outline' },
+    { id: 'back', label: 'Back', icon: 'body-outline' },
+    { id: 'shoulders', label: 'Shoulders', icon: 'ellipse-outline' },
+    { id: 'biceps', label: 'Biceps', icon: 'barbell-outline' },
+    { id: 'triceps', label: 'Triceps', icon: 'barbell-outline' },
+    { id: 'legs', label: 'Legs', icon: 'walk-outline' },
+    { id: 'glutes', label: 'Glutes', icon: 'accessibility-outline' },
+    { id: 'abs', label: 'Core', icon: 'grid-outline' },
+    { id: 'cardio', label: 'Cardio', icon: 'heart-outline' },
   ];
 
   useEffect(() => {
@@ -509,6 +530,13 @@ export default function WorkoutDetail() {
                                 updatePerformance(key, { ...perf, reps: text });
                               }}
                             />
+                            {/* Remove Set Button */}
+                            <TouchableOpacity
+                              style={styles.removeSetBtn}
+                              onPress={() => removeSet(expandedDay, exIdx)}
+                            >
+                              <Ionicons name="close-circle" size={22} color={colors.error} />
+                            </TouchableOpacity>
                           </View>
                         );
                       })}
@@ -592,94 +620,129 @@ export default function WorkoutDetail() {
       >
         <View style={styles.replaceModalContainer}>
           <View style={styles.replaceModalContent}>
+            {/* Header with drag indicator */}
+            <View style={styles.modalDragIndicator} />
             <View style={styles.replaceModalHeader}>
               <Text style={styles.replaceModalTitle}>Replace Exercise</Text>
-              <TouchableOpacity onPress={() => {
-                setShowReplaceModal(false);
-                setReplaceTarget(null);
-                setSearchQuery('');
-                setSearchResults([]);
-                setSelectedMuscle(null);
-              }}>
+              <TouchableOpacity 
+                style={styles.modalCloseBtn}
+                onPress={() => {
+                  setShowReplaceModal(false);
+                  setReplaceTarget(null);
+                  setSearchQuery('');
+                  setSearchResults([]);
+                  setSelectedMuscle(null);
+                }}
+              >
                 <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
 
-            {/* Search Input */}
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color={colors.textMuted} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search exercises..."
-                placeholderTextColor={colors.textMuted}
-                value={searchQuery}
-                onChangeText={(text) => {
-                  setSearchQuery(text);
-                  if (text.length > 2) {
-                    searchExercises(text, selectedMuscle || undefined);
-                  }
-                }}
-              />
+            {/* Manual Entry Section */}
+            <View style={styles.manualEntrySection}>
+              <Text style={styles.manualEntryLabel}>Can't find what you need?</Text>
+              <View style={styles.manualEntryRow}>
+                <TextInput
+                  style={styles.manualEntryInput}
+                  placeholder="Enter exercise name manually..."
+                  placeholderTextColor={colors.textMuted}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                <TouchableOpacity
+                  style={[styles.manualAddBtn, !searchQuery.trim() && styles.manualAddBtnDisabled]}
+                  onPress={addManualExercise}
+                  disabled={!searchQuery.trim()}
+                >
+                  <Ionicons name="add" size={20} color={searchQuery.trim() ? colors.background : colors.textMuted} />
+                  <Text style={[styles.manualAddBtnText, !searchQuery.trim() && styles.manualAddBtnTextDisabled]}>Add</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
-            {/* Muscle Group Filter */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.muscleFilter}>
+            {/* Divider */}
+            <View style={styles.modalDivider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or search from database</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Muscle Group Grid */}
+            <Text style={styles.muscleGridLabel}>Filter by Muscle Group</Text>
+            <View style={styles.muscleGrid}>
               <TouchableOpacity
-                style={[styles.muscleBtn, !selectedMuscle && styles.muscleBtnActive]}
+                style={[styles.muscleGridItem, !selectedMuscle && styles.muscleGridItemActive]}
                 onPress={() => {
                   setSelectedMuscle(null);
-                  if (searchQuery.length > 2) {
-                    searchExercises(searchQuery);
-                  }
+                  setSearchResults([]);
                 }}
               >
-                <Text style={[styles.muscleBtnText, !selectedMuscle && styles.muscleBtnTextActive]}>All</Text>
+                <Ionicons name="apps-outline" size={24} color={!selectedMuscle ? colors.primary : colors.textSecondary} />
+                <Text style={[styles.muscleGridText, !selectedMuscle && styles.muscleGridTextActive]}>All</Text>
               </TouchableOpacity>
               {muscleGroups.map((muscle) => (
                 <TouchableOpacity
-                  key={muscle}
-                  style={[styles.muscleBtn, selectedMuscle === muscle && styles.muscleBtnActive]}
+                  key={muscle.id}
+                  style={[styles.muscleGridItem, selectedMuscle === muscle.id && styles.muscleGridItemActive]}
                   onPress={() => {
-                    setSelectedMuscle(muscle);
-                    searchExercises(searchQuery || muscle, muscle);
+                    setSelectedMuscle(muscle.id);
+                    searchExercises('', muscle.id);
                   }}
                 >
-                  <Text style={[styles.muscleBtnText, selectedMuscle === muscle && styles.muscleBtnTextActive]}>
-                    {muscle.charAt(0).toUpperCase() + muscle.slice(1)}
+                  <Ionicons 
+                    name={muscle.icon as any} 
+                    size={24} 
+                    color={selectedMuscle === muscle.id ? colors.primary : colors.textSecondary} 
+                  />
+                  <Text style={[styles.muscleGridText, selectedMuscle === muscle.id && styles.muscleGridTextActive]}>
+                    {muscle.label}
                   </Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
 
             {/* Search Results */}
-            <ScrollView style={styles.searchResults}>
+            <ScrollView style={styles.searchResults} showsVerticalScrollIndicator={false}>
               {searching ? (
-                <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.loadingText}>Searching exercises...</Text>
+                </View>
               ) : searchResults.length === 0 ? (
                 <View style={styles.noResults}>
+                  <Ionicons name="barbell-outline" size={48} color={colors.textMuted} />
                   <Text style={styles.noResultsText}>
-                    {searchQuery || selectedMuscle ? 'No exercises found' : 'Search for exercises or select a muscle group'}
+                    {selectedMuscle ? 'Tap a muscle group above to browse exercises' : 'Select a muscle group to get started'}
                   </Text>
                 </View>
               ) : (
-                searchResults.map((ex, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={styles.exerciseResult}
-                    onPress={() => replaceExercise(ex)}
-                  >
-                    {ex.gifUrl && (
-                      <Image source={{ uri: ex.gifUrl }} style={styles.exerciseResultGif} />
-                    )}
-                    <View style={styles.exerciseResultInfo}>
-                      <Text style={styles.exerciseResultName}>{ex.name}</Text>
-                      <Text style={styles.exerciseResultMuscle}>
-                        {ex.target} • {ex.equipment}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-                  </TouchableOpacity>
-                ))
+                <>
+                  <Text style={styles.resultsCount}>{searchResults.length} exercises found</Text>
+                  {searchResults.map((ex, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={styles.exerciseResult}
+                      onPress={() => replaceExercise(ex)}
+                    >
+                      {ex.gifUrl ? (
+                        <Image source={{ uri: getFullGifUrl(ex.gifUrl) || '' }} style={styles.exerciseResultGif} />
+                      ) : (
+                        <View style={styles.exerciseResultPlaceholder}>
+                          <Ionicons name="image-outline" size={24} color={colors.textMuted} />
+                        </View>
+                      )}
+                      <View style={styles.exerciseResultInfo}>
+                        <Text style={styles.exerciseResultName} numberOfLines={2}>{ex.name}</Text>
+                        <Text style={styles.exerciseResultMuscle}>
+                          {ex.target} • {ex.equipment}
+                        </Text>
+                      </View>
+                      <View style={styles.selectBadge}>
+                        <Text style={styles.selectBadgeText}>Select</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </>
               )}
             </ScrollView>
           </View>
@@ -1082,63 +1145,159 @@ const styles = StyleSheet.create({
   },
   replaceModalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
   replaceModalContent: {
     backgroundColor: colors.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    height: '85%',
-    padding: 20,
+    height: '90%',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  modalDragIndicator: {
+    width: 40,
+    height: 4,
+    backgroundColor: colors.textMuted,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 8,
   },
   replaceModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
+    paddingTop: 8,
+  },
+  modalCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   replaceModalTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: colors.text,
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  manualEntrySection: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: colors.text,
-  },
-  muscleFilter: {
-    flexDirection: 'row',
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 16,
   },
-  muscleBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    marginRight: 8,
-  },
-  muscleBtnActive: {
-    backgroundColor: colors.primary,
-  },
-  muscleBtnText: {
+  manualEntryLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.textSecondary,
+    marginBottom: 10,
   },
-  muscleBtnTextActive: {
+  manualEntryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  manualEntryInput: {
+    flex: 1,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  manualAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    gap: 4,
+  },
+  manualAddBtnDisabled: {
+    backgroundColor: colors.surfaceLight,
+  },
+  manualAddBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
     color: colors.background,
+  },
+  manualAddBtnTextDisabled: {
+    color: colors.textMuted,
+  },
+  modalDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  muscleGridLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 12,
+  },
+  muscleGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 16,
+  },
+  muscleGridItem: {
+    width: '31%',
+    aspectRatio: 1.4,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  muscleGridItemActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '15',
+  },
+  muscleGridText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  muscleGridTextActive: {
+    color: colors.primary,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingTop: 60,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  resultsCount: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 12,
+    fontWeight: '500',
   },
   searchResults: {
     flex: 1,
@@ -1146,11 +1305,14 @@ const styles = StyleSheet.create({
   noResults: {
     alignItems: 'center',
     paddingTop: 60,
+    gap: 12,
   },
   noResultsText: {
     fontSize: 14,
     color: colors.textMuted,
     textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 20,
   },
   exerciseResult: {
     flexDirection: 'row',
@@ -1158,14 +1320,22 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: colors.surface,
     borderRadius: 12,
-    marginBottom: 8,
+    marginBottom: 10,
     gap: 12,
   },
   exerciseResultGif: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
+    width: 64,
+    height: 64,
+    borderRadius: 10,
     backgroundColor: colors.surfaceLight,
+  },
+  exerciseResultPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   exerciseResultInfo: {
     flex: 1,
@@ -1174,11 +1344,27 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: 4,
+    textTransform: 'capitalize',
   },
   exerciseResultMuscle: {
     fontSize: 13,
     color: colors.textSecondary,
     textTransform: 'capitalize',
+  },
+  selectBadge: {
+    backgroundColor: colors.primary + '20',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  selectBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  removeSetBtn: {
+    padding: 4,
+    marginLeft: 4,
   },
 });

@@ -925,12 +925,12 @@ async def search_exercises(search: str = None, muscle: str = None):
                 if response.status_code == 200:
                     exercises = response.json()
             
-            # Format response - construct gifUrl from exercise ID
+            # Format response - construct gifUrl using our proxy endpoint
             formatted = []
             for ex in exercises[:40]:
                 exercise_id = ex.get("id", "")
-                # Construct the GIF URL using the image endpoint
-                gif_url = f"https://v2.exercisedb.io/image/{exercise_id}" if exercise_id else None
+                # Use our proxy endpoint to serve GIFs with proper authentication
+                gif_url = f"/api/exercises/gif/{exercise_id}" if exercise_id else None
                 
                 formatted.append({
                     "id": exercise_id,
@@ -947,6 +947,34 @@ async def search_exercises(search: str = None, muscle: str = None):
     except Exception as e:
         logger.error(f"Exercise search error: {e}")
         return {"exercises": []}
+
+@api_router.get("/exercises/gif/{exercise_id}")
+async def get_exercise_gif(exercise_id: str, resolution: str = "360"):
+    """Proxy endpoint to serve exercise GIFs with proper authentication"""
+    import httpx
+    from fastapi.responses import Response
+    
+    if not EXERCISEDB_API_KEY:
+        raise HTTPException(status_code=503, detail="ExerciseDB API not configured")
+    
+    # Use the documented image endpoint
+    gif_url = f"https://exercisedb.p.rapidapi.com/image?exerciseId={exercise_id}&resolution={resolution}&rapidapi-key={EXERCISEDB_API_KEY}"
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(gif_url, follow_redirects=True)
+            if response.status_code == 200:
+                return Response(
+                    content=response.content,
+                    media_type="image/gif",
+                    headers={
+                        "Cache-Control": "public, max-age=43200",  # Cache for 12 hours (GIF URLs change every 12 hours per docs)
+                    }
+                )
+            raise HTTPException(status_code=404, detail="GIF not found")
+    except Exception as e:
+        logger.error(f"GIF proxy error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch GIF")
 
 # ==================== MEAL PLAN ENDPOINTS ====================
 
