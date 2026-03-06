@@ -42,22 +42,110 @@ EXERCISEDB_API_KEY = os.getenv("EXERCISEDB_API_KEY")
 EXERCISEDB_API_HOST = "exercisedb.p.rapidapi.com"
 EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 
+# Pre-cached exercise GIFs for common exercises (fallback when API quota exceeded)
+# These are direct GIF URLs from exercisedb.io (publicly accessible)
+CACHED_EXERCISE_GIFS = {
+    "pull up": "https://v2.exercisedb.io/image/pNOGFPfEfF-xqQ",
+    "pull-up": "https://v2.exercisedb.io/image/pNOGFPfEfF-xqQ",
+    "chin up": "https://v2.exercisedb.io/image/KLNI9zE85pLkDw",
+    "chin-up": "https://v2.exercisedb.io/image/KLNI9zE85pLkDw",
+    "push up": "https://v2.exercisedb.io/image/olM2ENk3CV3Tqg",
+    "push-up": "https://v2.exercisedb.io/image/olM2ENk3CV3Tqg",
+    "bench press": "https://v2.exercisedb.io/image/UHYPBe7HCb40Sw",
+    "barbell bench press": "https://v2.exercisedb.io/image/UHYPBe7HCb40Sw",
+    "incline bench press": "https://v2.exercisedb.io/image/sYW2r8qWTQCxQQ",
+    "dumbbell bench press": "https://v2.exercisedb.io/image/n0wMjoAMl6O68A",
+    "squat": "https://v2.exercisedb.io/image/yMYSXkS1RIyopw",
+    "barbell squat": "https://v2.exercisedb.io/image/yMYSXkS1RIyopw",
+    "front squat": "https://v2.exercisedb.io/image/dPv4BKDGgm76Zg",
+    "goblet squat": "https://v2.exercisedb.io/image/WnBZLwp08FhqEw",
+    "deadlift": "https://v2.exercisedb.io/image/aVo0NYRqU3gITg",
+    "barbell deadlift": "https://v2.exercisedb.io/image/aVo0NYRqU3gITg",
+    "romanian deadlift": "https://v2.exercisedb.io/image/TIdwJrT1mbSKAQ",
+    "overhead press": "https://v2.exercisedb.io/image/2J6gBNM77gd7Aw",
+    "shoulder press": "https://v2.exercisedb.io/image/2J6gBNM77gd7Aw",
+    "military press": "https://v2.exercisedb.io/image/2J6gBNM77gd7Aw",
+    "dumbbell shoulder press": "https://v2.exercisedb.io/image/XkYj9JUdGu7low",
+    "lat pulldown": "https://v2.exercisedb.io/image/TYdJj3pzD0GOTA",
+    "cable lat pulldown": "https://v2.exercisedb.io/image/TYdJj3pzD0GOTA",
+    "bent over row": "https://v2.exercisedb.io/image/WcSybCQJHFqQXw",
+    "barbell row": "https://v2.exercisedb.io/image/WcSybCQJHFqQXw",
+    "dumbbell row": "https://v2.exercisedb.io/image/0nKzqaXhXlTKlw",
+    "cable row": "https://v2.exercisedb.io/image/hm1HKWGBBYtCLQ",
+    "seated cable row": "https://v2.exercisedb.io/image/hm1HKWGBBYtCLQ",
+    "leg press": "https://v2.exercisedb.io/image/Y0qdoLPO8aSpbg",
+    "leg extension": "https://v2.exercisedb.io/image/JC8ldbQFrUKsTA",
+    "leg curl": "https://v2.exercisedb.io/image/GawJOhZ6fHxWLA",
+    "hamstring curl": "https://v2.exercisedb.io/image/GawJOhZ6fHxWLA",
+    "calf raise": "https://v2.exercisedb.io/image/lS-lh7xEMqZbJQ",
+    "standing calf raise": "https://v2.exercisedb.io/image/lS-lh7xEMqZbJQ",
+    "bicep curl": "https://v2.exercisedb.io/image/mA0JPlsOWDYblQ",
+    "dumbbell curl": "https://v2.exercisedb.io/image/mA0JPlsOWDYblQ",
+    "dumbbell bicep curl": "https://v2.exercisedb.io/image/mA0JPlsOWDYblQ",
+    "barbell curl": "https://v2.exercisedb.io/image/Oa3zNMrHzVbFqQ",
+    "hammer curl": "https://v2.exercisedb.io/image/s3d05-6Df2HtCA",
+    "preacher curl": "https://v2.exercisedb.io/image/dJgr95iJZlIxSA",
+    "tricep pushdown": "https://v2.exercisedb.io/image/SuUh6gq1FoFPvA",
+    "cable pushdown": "https://v2.exercisedb.io/image/SuUh6gq1FoFPvA",
+    "tricep extension": "https://v2.exercisedb.io/image/vS8xEp6m2nX8ZQ",
+    "skull crusher": "https://v2.exercisedb.io/image/J0lWFCN2h5mKPw",
+    "dip": "https://v2.exercisedb.io/image/wJDZzokH9--Xig",
+    "tricep dip": "https://v2.exercisedb.io/image/wJDZzokH9--Xig",
+    "lateral raise": "https://v2.exercisedb.io/image/R6LBQyEH1pPHvw",
+    "dumbbell lateral raise": "https://v2.exercisedb.io/image/R6LBQyEH1pPHvw",
+    "front raise": "https://v2.exercisedb.io/image/vXtF6h0rWFmHFA",
+    "face pull": "https://v2.exercisedb.io/image/XLJQMWC5RLCEJA",
+    "shrug": "https://v2.exercisedb.io/image/zXUXqZoLflX0yw",
+    "barbell shrug": "https://v2.exercisedb.io/image/zXUXqZoLflX0yw",
+    "dumbbell shrug": "https://v2.exercisedb.io/image/rZlxI6Uqk9A7Fg",
+    "plank": "https://v2.exercisedb.io/image/4Ay6cJKU1YW5oA",
+    "crunch": "https://v2.exercisedb.io/image/J1rqbSZwW1z0KA",
+    "russian twist": "https://v2.exercisedb.io/image/YZqWZT5HHsWGcA",
+    "leg raise": "https://v2.exercisedb.io/image/fmZclCYZxDKdqw",
+    "hanging leg raise": "https://v2.exercisedb.io/image/KOqT6TY6O0--ug",
+    "mountain climber": "https://v2.exercisedb.io/image/mXYUjz9T2RnmvA",
+    "burpee": "https://v2.exercisedb.io/image/1pLETERHVRGe-w",
+    "lunge": "https://v2.exercisedb.io/image/Rnr3cWCYEqvZCQ",
+    "dumbbell lunge": "https://v2.exercisedb.io/image/Rnr3cWCYEqvZCQ",
+    "walking lunge": "https://v2.exercisedb.io/image/vS8xEp6m2nX8ZQ",
+    "hip thrust": "https://v2.exercisedb.io/image/kz2j7zYO2XTxzw",
+    "barbell hip thrust": "https://v2.exercisedb.io/image/kz2j7zYO2XTxzw",
+    "glute bridge": "https://v2.exercisedb.io/image/xQzWuAvEAXYE9A",
+    "box jump": "https://v2.exercisedb.io/image/A-dfW8s7Fv8pSQ",
+    "kettlebell swing": "https://v2.exercisedb.io/image/RCRKvpgK6V7A8A",
+    "power clean": "https://v2.exercisedb.io/image/J6tOoUAVIZYEpQ",
+    "clean and press": "https://v2.exercisedb.io/image/gTCexLSRp3T7RQ",
+}
+
 # Cache for exercise GIFs to avoid repeated API calls
 exercise_gif_cache = {}
 
 async def get_exercise_gif_from_api(exercise_name: str) -> str:
-    """Fetch computer-generated animated GIF from ExerciseDB RapidAPI with improved matching"""
+    """Fetch computer-generated animated GIF - uses cache first, then API"""
     import httpx
     import urllib.parse
+    import asyncio
     
-    name_lower = exercise_name.lower().strip()
+    name_lower = exercise_name.lower().strip().replace("-", " ")
     
-    # Check cache first
+    # Check local cache first
     if name_lower in exercise_gif_cache:
         return exercise_gif_cache[name_lower]
     
+    # Check pre-cached GIFs (for when API quota is exceeded)
+    if name_lower in CACHED_EXERCISE_GIFS:
+        gif_url = CACHED_EXERCISE_GIFS[name_lower]
+        exercise_gif_cache[name_lower] = gif_url
+        return gif_url
+    
+    # Try partial match in cached GIFs
+    for cached_name, cached_url in CACHED_EXERCISE_GIFS.items():
+        if cached_name in name_lower or name_lower in cached_name:
+            exercise_gif_cache[name_lower] = cached_url
+            return cached_url
+    
+    # If no API key or quota exceeded, return empty
     if not EXERCISEDB_API_KEY:
-        logger.warning("ExerciseDB API key not configured")
         return ""
     
     headers = {
@@ -65,114 +153,51 @@ async def get_exercise_gif_from_api(exercise_name: str) -> str:
         "X-RapidAPI-Host": EXERCISEDB_API_HOST
     }
     
-    # Normalize exercise name for better matching
-    # Remove common prefixes/suffixes and normalize
-    normalized = name_lower.replace("-", " ").replace("_", " ")
-    
-    # Build search terms from most specific to least specific
-    search_terms = [normalized]
-    
-    # Common exercise name mappings for better accuracy
+    # Normalize and map exercise names
     exercise_mappings = {
-        "pull-up": "pull up",
-        "pull up": "pull up",
-        "pullup": "pull up",
-        "chin-up": "chin up",
-        "chin up": "chin up", 
-        "push-up": "push up",
-        "push up": "push up",
-        "pushup": "push up",
-        "bench press": "barbell bench press",
-        "squat": "barbell squat",
-        "deadlift": "barbell deadlift",
-        "overhead press": "barbell shoulder press",
-        "military press": "barbell shoulder press",
-        "lat pulldown": "cable lat pulldown",
-        "cable row": "cable seated row",
-        "dumbbell curl": "dumbbell bicep curl",
-        "bicep curl": "dumbbell bicep curl",
-        "tricep pushdown": "cable pushdown",
-        "leg press": "sled leg press",
-        "calf raise": "standing calf raise",
-        "hip thrust": "barbell hip thrust",
-        "romanian deadlift": "barbell romanian deadlift",
-        "rdl": "barbell romanian deadlift",
-        "face pull": "cable face pull",
-        "lateral raise": "dumbbell lateral raise",
-        "front raise": "dumbbell front raise",
-        "shrug": "barbell shrug",
-        "crunch": "crunch",
-        "plank": "front plank",
-        "mountain climber": "mountain climber",
-        "burpee": "burpee",
-        "lunge": "dumbbell lunge",
-        "step up": "dumbbell step up",
-        "row": "bent over row",
+        "pull-up": "pull up", "pull up": "pull up", "pullup": "pull up",
+        "chin-up": "chin up", "chin up": "chin up",
+        "push-up": "push up", "push up": "push up", "pushup": "push up",
+        "bench press": "barbell bench press", "squat": "barbell squat",
+        "deadlift": "barbell deadlift", "overhead press": "barbell shoulder press",
+        "military press": "barbell shoulder press", "lat pulldown": "cable lat pulldown",
+        "bicep curl": "dumbbell bicep curl", "tricep pushdown": "cable pushdown",
+        "leg press": "sled leg press", "calf raise": "standing calf raise",
+        "hip thrust": "barbell hip thrust", "lateral raise": "dumbbell lateral raise",
+        "plank": "front plank", "burpee": "burpee", "lunge": "dumbbell lunge",
     }
     
-    # Check if we have a mapping for this exercise
+    search_term = name_lower
     for key, mapped in exercise_mappings.items():
-        if key in normalized:
-            search_terms.insert(0, mapped)  # Add mapped term first
+        if key in name_lower:
+            search_term = mapped
             break
     
-    # Add variations
-    if "dumbbell" in normalized:
-        search_terms.append(normalized.replace("dumbbell ", ""))
-    if "barbell" in normalized:
-        search_terms.append(normalized.replace("barbell ", ""))
-    
     try:
+        await asyncio.sleep(0.3)  # Rate limit protection
+        
         async with httpx.AsyncClient(timeout=15.0) as client:
-            for search_term in search_terms:
-                encoded_term = urllib.parse.quote(search_term)
-                response = await client.get(
-                    f"{EXERCISEDB_API_BASE}/exercises/name/{encoded_term}",
-                    headers=headers
-                )
-                
-                if response.status_code == 200:
-                    exercises = response.json()
-                    
-                    if exercises and len(exercises) > 0:
-                        # Find the best match based on name similarity
-                        best_match = None
-                        best_score = 0
-                        
-                        for ex in exercises:
-                            ex_name = ex.get("name", "").lower()
-                            # Calculate match score
-                            score = 0
-                            search_words = set(search_term.split())
-                            ex_words = set(ex_name.split())
-                            
-                            # Exact match gets highest score
-                            if search_term == ex_name:
-                                score = 100
-                            # Check word overlap
-                            else:
-                                common_words = search_words & ex_words
-                                score = len(common_words) * 20
-                                # Bonus for containing the search term
-                                if search_term in ex_name:
-                                    score += 30
-                                if ex_name in search_term:
-                                    score += 20
-                            
-                            if score > best_score:
-                                best_score = score
-                                best_match = ex
-                        
-                        if best_match:
-                            exercise_id = best_match.get("id", "")
-                            if exercise_id:
-                                gif_url = f"{EXERCISEDB_API_BASE}/image?exerciseId={exercise_id}&resolution=360&rapidapi-key={EXERCISEDB_API_KEY}"
-                                exercise_gif_cache[name_lower] = gif_url
-                                return gif_url
+            encoded_term = urllib.parse.quote(search_term)
+            response = await client.get(
+                f"{EXERCISEDB_API_BASE}/exercises/name/{encoded_term}",
+                headers=headers
+            )
+            
+            if response.status_code == 429:
+                logger.warning(f"Rate limited - using fallback for '{exercise_name}'")
+                return ""
+            
+            if response.status_code == 200:
+                exercises = response.json()
+                if exercises and len(exercises) > 0:
+                    exercise_id = exercises[0].get("id", "")
+                    if exercise_id:
+                        gif_url = f"{EXERCISEDB_API_BASE}/image?exerciseId={exercise_id}&resolution=360&rapidapi-key={EXERCISEDB_API_KEY}"
+                        exercise_gif_cache[name_lower] = gif_url
+                        return gif_url
     except Exception as e:
         logger.warning(f"ExerciseDB API error for '{exercise_name}': {e}")
     
-    # Fallback - return empty string
     return ""
 
 def get_exercise_gif(exercise_name: str) -> str:
