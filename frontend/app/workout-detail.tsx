@@ -209,24 +209,47 @@ export default function WorkoutDetail() {
   };
 
   // Add manual exercise (user-typed)
-  const addManualExercise = () => {
-    if (!searchQuery.trim() || !replaceTarget || !workout) return;
-    
-    const { dayIdx, exIdx } = replaceTarget;
-    const currentEx = workout.workout_days[dayIdx].exercises[exIdx];
+  const addManualExercise = async () => {
+    if (!searchQuery.trim() || !workout) return;
     
     const manualExercise = {
       name: searchQuery.trim(),
-      sets: currentEx.sets,
-      reps: currentEx.reps,
-      rest_seconds: currentEx.rest_seconds,
+      sets: 3,
+      reps: '10-12',
+      rest_seconds: 90,
       instructions: 'Perform the exercise with proper form.',
       muscle_groups: [selectedMuscle || 'general'],
       equipment: 'varies',
-      gif_url: '',  // No GIF for manual entries
+      gif_url: '',  // Backend will try to fetch GIF
     };
     
-    replaceWithExercise(manualExercise);
+    if (isAddMode && addToDayIdx !== null) {
+      // Add mode - add new exercise
+      try {
+        await api.post(`/workout/${workout.id}/exercise`, {
+          day_index: addToDayIdx,
+          exercise: manualExercise,
+        });
+        
+        setShowReplaceModal(false);
+        setIsAddMode(false);
+        setAddToDayIdx(null);
+        setSearchQuery('');
+        setSearchResults([]);
+        setSelectedMuscle(null);
+        loadWorkout();
+      } catch (error) {
+        Alert.alert('Error', 'Failed to add exercise');
+      }
+    } else if (replaceTarget) {
+      // Replace mode - replace existing exercise
+      const { dayIdx, exIdx } = replaceTarget;
+      const currentEx = workout.workout_days[dayIdx].exercises[exIdx];
+      manualExercise.sets = currentEx.sets;
+      manualExercise.reps = currentEx.reps;
+      manualExercise.rest_seconds = currentEx.rest_seconds;
+      replaceWithExercise(manualExercise);
+    }
   };
 
   // Replace with selected exercise
@@ -1262,8 +1285,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    paddingTop: 8,
+    marginBottom: 12,
+    paddingTop: 4,
   },
   modalCloseBtn: {
     width: 40,
@@ -1280,15 +1303,15 @@ const styles = StyleSheet.create({
   },
   manualEntrySection: {
     backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
   },
   manualEntryLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.textSecondary,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   manualEntryRow: {
     flexDirection: 'row',
@@ -1328,8 +1351,8 @@ const styles = StyleSheet.create({
   modalDivider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 12,
+    marginBottom: 8,
+    gap: 10,
   },
   dividerLine: {
     flex: 1,
@@ -1337,31 +1360,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   dividerText: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   muscleGridLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.textSecondary,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   muscleGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 16,
+    gap: 6,
+    marginBottom: 8,
   },
   muscleGridItem: {
-    width: '31%',
-    aspectRatio: 1.4,
+    width: '19%',
+    aspectRatio: 1,
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
+    gap: 2,
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -1370,7 +1393,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary + '15',
   },
   muscleGridText: {
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '600',
     color: colors.textSecondary,
   },
@@ -1379,17 +1402,17 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     alignItems: 'center',
-    paddingTop: 60,
-    gap: 12,
+    paddingTop: 30,
+    gap: 10,
   },
   loadingText: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.textMuted,
   },
   resultsCount: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.textSecondary,
-    marginBottom: 12,
+    marginBottom: 8,
     fontWeight: '500',
   },
   searchResults: {
@@ -1397,15 +1420,15 @@ const styles = StyleSheet.create({
   },
   noResults: {
     alignItems: 'center',
-    paddingTop: 60,
-    gap: 12,
+    paddingTop: 30,
+    gap: 10,
   },
   noResultsText: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.textMuted,
     textAlign: 'center',
-    lineHeight: 20,
-    paddingHorizontal: 20,
+    lineHeight: 18,
+    paddingHorizontal: 16,
   },
   exerciseResult: {
     flexDirection: 'row',

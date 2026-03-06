@@ -1118,7 +1118,7 @@ async def search_exercises(search: str = None, muscle: str = None):
                 response = await client.get(
                     f"{EXERCISEDB_API_BASE}/exercises/bodyPart/{mapped_muscle}",
                     headers=headers,
-                    params={"limit": 50}
+                    params={"limit": 100}
                 )
                 if response.status_code == 200:
                     exercises = response.json()
@@ -1129,14 +1129,14 @@ async def search_exercises(search: str = None, muscle: str = None):
                 response = await client.get(
                     f"{EXERCISEDB_API_BASE}/exercises/name/{encoded}",
                     headers=headers,
-                    params={"limit": 30}
+                    params={"limit": 50}
                 )
                 if response.status_code == 200:
                     exercises = response.json()
             
             # Format response - construct gifUrl using our proxy endpoint
             formatted = []
-            for ex in exercises[:40]:
+            for ex in exercises[:100]:  # Increased limit to 100
                 exercise_id = ex.get("id", "")
                 # Use our proxy endpoint to serve GIFs with proper authentication
                 gif_url = f"/api/exercises/gif/{exercise_id}" if exercise_id else None
