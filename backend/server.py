@@ -925,16 +925,20 @@ async def search_exercises(search: str = None, muscle: str = None):
                 if response.status_code == 200:
                     exercises = response.json()
             
-            # Format response
+            # Format response - construct gifUrl from exercise ID
             formatted = []
-            for ex in exercises[:30]:
+            for ex in exercises[:40]:
+                exercise_id = ex.get("id", "")
+                # Construct the GIF URL using the image endpoint
+                gif_url = f"https://v2.exercisedb.io/image/{exercise_id}" if exercise_id else None
+                
                 formatted.append({
-                    "id": ex.get("id"),
-                    "name": ex.get("name"),
-                    "target": ex.get("target"),
-                    "equipment": ex.get("equipment"),
-                    "bodyPart": ex.get("bodyPart"),
-                    "gifUrl": ex.get("gifUrl"),
+                    "id": exercise_id,
+                    "name": ex.get("name", "").title(),
+                    "target": ex.get("target", ""),
+                    "equipment": ex.get("equipment", ""),
+                    "bodyPart": ex.get("bodyPart", ""),
+                    "gifUrl": gif_url,
                     "secondaryMuscles": ex.get("secondaryMuscles", []),
                     "instructions": ex.get("instructions", []),
                 })

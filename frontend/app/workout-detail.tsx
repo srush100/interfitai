@@ -161,6 +161,75 @@ export default function WorkoutDetail() {
     }
   };
 
+  // Remove a set from an exercise
+  const removeSet = async (dayIdx: number, exIdx: number) => {
+    if (!workout) return;
+    const exercise = workout.workout_days[dayIdx].exercises[exIdx];
+    if (exercise.sets <= 1) {
+      Alert.alert('Cannot Remove', 'Exercise must have at least 1 set');
+      return;
+    }
+    
+    const newWorkout = { ...workout };
+    newWorkout.workout_days[dayIdx].exercises[exIdx].sets -= 1;
+    
+    try {
+      await api.patch(`/workout/${workout.id}/exercise`, {
+        day_index: dayIdx,
+        exercise_index: exIdx,
+        sets: newWorkout.workout_days[dayIdx].exercises[exIdx].sets,
+      });
+      setWorkout(newWorkout);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to remove set');
+    }
+  };
+
+  // Add manual exercise (user-typed)
+  const addManualExercise = () => {
+    if (!searchQuery.trim() || !replaceTarget || !workout) return;
+    
+    const { dayIdx, exIdx } = replaceTarget;
+    const currentEx = workout.workout_days[dayIdx].exercises[exIdx];
+    
+    const manualExercise = {
+      name: searchQuery.trim(),
+      sets: currentEx.sets,
+      reps: currentEx.reps,
+      rest_seconds: currentEx.rest_seconds,
+      instructions: 'Perform the exercise with proper form.',
+      muscle_groups: [selectedMuscle || 'general'],
+      equipment: 'varies',
+      gif_url: '',  // No GIF for manual entries
+    };
+    
+    replaceWithExercise(manualExercise);
+  };
+
+  // Replace with selected exercise
+  const replaceWithExercise = async (newExercise: any) => {
+    if (!workout || !replaceTarget) return;
+    const { dayIdx, exIdx } = replaceTarget;
+    
+    try {
+      await api.patch(`/workout/${workout.id}/replace-exercise`, {
+        day_index: dayIdx,
+        exercise_index: exIdx,
+        new_exercise: newExercise,
+      });
+      
+      loadWorkout();
+      setShowReplaceModal(false);
+      setReplaceTarget(null);
+      setSearchQuery('');
+      setSearchResults([]);
+      setSelectedMuscle(null);
+      Alert.alert('Success', 'Exercise replaced!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to replace exercise');
+    }
+  };
+
   // Search exercises from ExerciseDB
   const searchExercises = async (query: string, muscle?: string) => {
     if (!query && !muscle) return;
@@ -180,37 +249,24 @@ export default function WorkoutDetail() {
     }
   };
 
-  // Replace an exercise
+  // Replace an exercise with one from search results
   const replaceExercise = async (newExercise: any) => {
     if (!workout || !replaceTarget) return;
     const { dayIdx, exIdx } = replaceTarget;
+    const currentEx = workout.workout_days[dayIdx].exercises[exIdx];
     
-    try {
-      await api.patch(`/workout/${workout.id}/replace-exercise`, {
-        day_index: dayIdx,
-        exercise_index: exIdx,
-        new_exercise: {
-          name: newExercise.name,
-          sets: workout.workout_days[dayIdx].exercises[exIdx].sets,
-          reps: workout.workout_days[dayIdx].exercises[exIdx].reps,
-          rest_seconds: workout.workout_days[dayIdx].exercises[exIdx].rest_seconds,
-          instructions: newExercise.instructions?.join(' ') || '',
-          muscle_groups: [newExercise.target, ...(newExercise.secondaryMuscles || [])],
-          equipment: newExercise.equipment,
-          gif_url: newExercise.gifUrl || '',
-        },
-      });
-      
-      // Reload workout
-      loadWorkout();
-      setShowReplaceModal(false);
-      setReplaceTarget(null);
-      setSearchQuery('');
-      setSearchResults([]);
-      Alert.alert('Success', 'Exercise replaced!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to replace exercise');
-    }
+    const exerciseData = {
+      name: newExercise.name,
+      sets: currentEx.sets,
+      reps: currentEx.reps,
+      rest_seconds: currentEx.rest_seconds,
+      instructions: newExercise.instructions?.join(' ') || 'Perform with proper form.',
+      muscle_groups: [newExercise.target, ...(newExercise.secondaryMuscles || [])],
+      equipment: newExercise.equipment,
+      gif_url: newExercise.gifUrl || '',
+    };
+    
+    await replaceWithExercise(exerciseData);
   };
 
   // Delete an exercise
