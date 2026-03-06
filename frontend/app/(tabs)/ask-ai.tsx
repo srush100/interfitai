@@ -132,7 +132,7 @@ export default function AskAIScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Image
-            source={require('../../assets/logo-yellow.webp')}
+            source={require('../../assets/logo-icon-yellow.png')}
             style={styles.headerLogo}
             resizeMode="contain"
           />

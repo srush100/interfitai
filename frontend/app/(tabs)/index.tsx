@@ -126,7 +126,7 @@ export default function HomeScreen() {
         {/* Logo Header */}
         <View style={styles.logoHeader}>
           <Image
-            source={require('../../assets/logo-text.png')}
+            source={require('../../assets/logo-icon-yellow.png')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -244,8 +244,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   logo: {
-    width: 150,
-    height: 40,
+    width: 50,
+    height: 50,
   },
   welcomeSection: {
     marginBottom: 20,
