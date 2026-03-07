@@ -494,13 +494,15 @@ class WorkoutProgram(BaseModel):
 
 class WorkoutGenerateRequest(BaseModel):
     user_id: str
-    goal: str  # build_muscle, lose_fat, general_fitness, strength
+    goal: str  # build_muscle, lose_fat, body_recomp, strength, general_fitness
+    training_style: str = "weights"  # weights, calisthenics, hybrid, functional
     focus_areas: List[str]  # full_body, back, chest, legs, glutes, arms
     equipment: List[str]  # full_gym, barbells, dumbbells, bodyweight, kettlebells, machines
     injuries: Optional[str] = None  # lower_back, knees, shoulders, none
     days_per_week: int = 4
     duration_minutes: int = 60  # Session duration
     fitness_level: str = "intermediate"  # beginner, intermediate, advanced
+    preferred_split: str = "ai_choose"  # ai_choose, full_body, upper_lower, push_pull_legs, bro_split
 
 # Meal Plan Models
 class Meal(BaseModel):
@@ -773,17 +775,36 @@ async def generate_workout(request: WorkoutGenerateRequest):
     profile = await db.profiles.find_one({"id": request.user_id})
     session_duration = request.duration_minutes if hasattr(request, 'duration_minutes') else 60
     fitness_level = request.fitness_level if hasattr(request, 'fitness_level') else "intermediate"
+    training_style = getattr(request, 'training_style', 'weights')
+    preferred_split = getattr(request, 'preferred_split', 'ai_choose')
     
     # Define fitness level parameters
     # Determine rest times based on goal (scientifically optimal)
     rest_times_by_goal = {
         "strength": "180-300",  # 3-5 minutes for strength
         "build_muscle": "90-120",  # 1.5-2 minutes for hypertrophy
-        "weight_loss": "30-60",  # Shorter rest for metabolic conditioning
-        "endurance": "30-45",  # Short rest for endurance
+        "body_recomp": "60-90",  # Moderate rest for recomposition
+        "lose_fat": "30-60",  # Shorter rest for metabolic conditioning
         "general_fitness": "60-90",
     }
     goal_rest = rest_times_by_goal.get(request.goal, "60-90")
+    
+    # Training style descriptions
+    style_desc = {
+        "weights": "Traditional weight training with barbells, dumbbells, and machines",
+        "calisthenics": "Bodyweight exercises - pull-ups, push-ups, dips, pistol squats, muscle-ups",
+        "hybrid": "Mix of weighted exercises and advanced bodyweight movements",
+        "functional": "Functional movements, kettlebells, medicine balls, athletic training"
+    }
+    
+    # Workout split descriptions
+    split_desc = {
+        "ai_choose": f"Choose the optimal split for {request.goal} goal with {request.days_per_week} days",
+        "full_body": "Full body workout each session, training all major muscle groups",
+        "upper_lower": "Alternate between upper body and lower body days",
+        "push_pull_legs": "Push (chest/shoulders/triceps), Pull (back/biceps), Legs rotation",
+        "bro_split": "One major muscle group per day (chest day, back day, leg day, etc.)"
+    }
     
     fitness_params = {
         "beginner": {"sets": "2-3", "complexity": "basic compound movements, focus on form"},
@@ -792,24 +813,31 @@ async def generate_workout(request: WorkoutGenerateRequest):
     }
     level_info = fitness_params.get(fitness_level, fitness_params["intermediate"])
     
-    prompt = f"""Create a scientifically-optimized {request.days_per_week}-day per week workout program for someone with the following goals and constraints:
+    prompt = f"""Create a scientifically-optimized {request.days_per_week}-day per week workout program:
 
-Goal: {request.goal.replace('_', ' ')}
-Focus Areas: {', '.join(request.focus_areas)}
-Available Equipment: {', '.join(request.equipment)}
-Injuries/Limitations: {request.injuries or 'None'}
-Session Duration: {session_duration} minutes per workout
-Fitness Level: {fitness_level.upper()} - {level_info['complexity']}
+PROGRAM PARAMETERS:
+- Goal: {request.goal.replace('_', ' ').title()}
+- Training Style: {training_style.upper()} - {style_desc.get(training_style, 'Traditional weight training')}
+- Workout Split: {split_desc.get(preferred_split, 'AI optimized')}
+- Focus Areas: {', '.join(request.focus_areas)}
+- Available Equipment: {', '.join(request.equipment)}
+- Injuries/Limitations: {request.injuries or 'None'}
+- Session Duration: {session_duration} minutes per workout
+- Fitness Level: {fitness_level.upper()} - {level_info['complexity']}
 
-IMPORTANT SCIENTIFIC GUIDELINES:
-- For STRENGTH/POWER goals: Use 180-300 seconds rest between sets (3-5 mins) for full ATP recovery
-- For MUSCLE BUILDING (hypertrophy): Use 90-120 seconds rest between sets (1.5-2 mins)
-- For WEIGHT LOSS/FAT BURNING: Use 30-60 seconds rest to maintain elevated heart rate
-- For ENDURANCE: Use 30-45 seconds rest
+SCIENTIFIC GUIDELINES:
+- STRENGTH goals: Heavy weights (3-6 reps), 180-300s rest for ATP recovery
+- MUSCLE BUILDING: Moderate weights (8-12 reps), 90-120s rest for hypertrophy
+- BODY RECOMPOSITION: Mix of strength and metabolic work, 60-90s rest
+- FAT LOSS: Higher reps (12-15+), 30-60s rest for metabolic conditioning
+- Use rest time of {goal_rest} seconds based on the {request.goal} goal
 
-Please provide a structured workout program in JSON format with the following structure:
+{"CALISTHENICS FOCUS: Use bodyweight exercises like pull-ups, chin-ups, dips, push-up variations, pistol squats, muscle-ups, handstand progressions" if training_style == "calisthenics" else ""}
+{"FUNCTIONAL FOCUS: Include kettlebell swings, cleans, snatches, medicine ball work, box jumps, battle ropes" if training_style == "functional" else ""}
+
+Provide the workout program in this JSON structure:
 {{
-    "name": "Program Name",
+    "name": "Creative Program Name reflecting the goal and style",
     "workout_days": [
         {{
             "day": "Day 1 - Focus Area",
@@ -818,11 +846,11 @@ Please provide a structured workout program in JSON format with the following st
             "notes": "Tips for this day",
             "exercises": [
                 {{
-                    "name": "Exercise Name (use common names like: Pull-Up, Bench Press, Barbell Squat, Deadlift, etc.)",
+                    "name": "Exercise Name (use standard names: Pull-Up, Bench Press, Barbell Squat, Deadlift)",
                     "sets": 4,
                     "reps": "8-12",
                     "rest_seconds": {goal_rest.split('-')[0]},
-                    "instructions": "Step-by-step instructions on how to perform the exercise correctly with form cues",
+                    "instructions": "Detailed form cues and execution tips",
                     "muscle_groups": ["primary", "secondary"],
                     "equipment": "equipment needed"
                 }}
@@ -832,17 +860,12 @@ Please provide a structured workout program in JSON format with the following st
 }}
 
 Requirements:
-- Each workout should be approximately {session_duration} minutes
-- Include 5-8 exercises per day depending on duration
-- Focus on compound movements first, then isolation
-- Include proper warm-up notes
-- Provide detailed form cues for each exercise
-- Use SCIENTIFICALLY OPTIMAL rest times for the goal ({request.goal}): {goal_rest} seconds
-- For strength goals: prioritize heavier weights (3-6 reps), longer rest (180-300s)
-- For muscle building: moderate weights (8-12 reps), moderate rest (90-120s)
-- For fat loss: lighter weights (12-15 reps), minimal rest (30-60s)
-- Adjust difficulty for {fitness_level.upper()} level: {level_info['sets']} sets per exercise
-- Use standard exercise names that match ExerciseDB (e.g., "Pull-Up" not "Wide Grip Pulldown")"""
+- Each workout approximately {session_duration} minutes
+- 5-8 exercises per day depending on duration and goal
+- Compound movements first, then isolation
+- Use {level_info['sets']} sets per exercise for {fitness_level.upper()} level
+- Standard exercise names matching ExerciseDB (Pull-Up, Barbell Bench Press, etc.)
+- Include detailed form instructions for each exercise"""
 
     try:
         response = openai.chat.completions.create(
