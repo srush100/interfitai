@@ -18,12 +18,14 @@ import api from '../src/services/api';
 interface FavoriteMeal {
   id: string;
   user_id: string;
-  meal_name: string;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fats: number;
-  serving_size: string;
+  meal: {
+    name: string;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+    meal_type: string;
+  };
   created_at: string;
 }
 
@@ -53,7 +55,7 @@ export default function SavedMeals() {
   const removeFavorite = async (favorite: FavoriteMeal) => {
     Alert.alert(
       'Remove Favorite',
-      `Remove "${favorite.meal_name}" from your favorites?`,
+      `Remove "${favorite.meal.name}" from your favorites?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -79,18 +81,19 @@ export default function SavedMeals() {
     if (!profile?.id) return;
     
     try {
+      const today = new Date().toISOString().split('T')[0];
       await api.post('/food/log', {
         user_id: profile.id,
-        food_name: favorite.meal_name,
-        calories: favorite.calories,
-        protein: favorite.protein,
-        carbs: favorite.carbs,
-        fats: favorite.fats,
-        serving_size: favorite.serving_size,
-        quantity: 1,
-        source: 'favorite',
+        food_name: favorite.meal.name,
+        calories: favorite.meal.calories,
+        protein: favorite.meal.protein,
+        carbs: favorite.meal.carbs,
+        fats: favorite.meal.fats,
+        serving_size: '1 serving',
+        meal_type: 'snack',
+        logged_date: today,
       });
-      Alert.alert('Success', `${favorite.meal_name} logged to your food diary!`);
+      Alert.alert('Success', `${favorite.meal.name} logged to your food diary!`);
     } catch (error) {
       Alert.alert('Error', 'Failed to log meal');
     }
@@ -142,11 +145,10 @@ export default function SavedMeals() {
                     <Ionicons name="heart" size={20} color={colors.error} />
                   </View>
                   <View style={styles.mealInfo}>
-                    <Text style={styles.mealName}>{favorite.meal_name}</Text>
+                    <Text style={styles.mealName}>{favorite.meal.name}</Text>
                     <Text style={styles.mealMacros}>
-                      {favorite.calories} cal • {favorite.protein}g P • {favorite.carbs}g C • {favorite.fats}g F
+                      {favorite.meal.calories} cal • {favorite.meal.protein}g P • {favorite.meal.carbs}g C • {favorite.meal.fats}g F
                     </Text>
-                    <Text style={styles.servingSize}>{favorite.serving_size}</Text>
                   </View>
                 </View>
 

@@ -1438,11 +1438,11 @@ async def add_favorite_meal(user_id: str, meal_name: str, calories: int, protein
     await db.favorite_meals.insert_one(favorite.model_dump())
     return {"message": "Meal added to favorites", "id": favorite.id}
 
-@api_router.get("/food/favorites/{user_id}")
+@api_router.get("/food/favorites/{user_id}", response_model=List[FavoriteMeal])
 async def get_favorite_meals(user_id: str):
     """Get user's favorite meals"""
     favorites = await db.favorite_meals.find({"user_id": user_id}).sort("created_at", -1).to_list(100)
-    return favorites
+    return [FavoriteMeal(**fav) for fav in favorites]
 
 @api_router.delete("/food/favorite/{favorite_id}")
 async def remove_favorite_meal(favorite_id: str):

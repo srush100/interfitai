@@ -38,6 +38,20 @@ interface SearchResult {
   fats: number;
 }
 
+interface FavoriteMeal {
+  id: string;
+  user_id: string;
+  meal: {
+    name: string;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+    meal_type: string;
+  };
+  created_at: string;
+}
+
 export default function FoodLog() {
   const router = useRouter();
   const { profile } = useUserStore();
@@ -61,10 +75,22 @@ export default function FoodLog() {
     carbs: '',
     fats: '',
   });
+  
+  // Saved meals state
+  const [savedMeals, setSavedMeals] = useState<FavoriteMeal[]>([]);
+  const [loadingSavedMeals, setLoadingSavedMeals] = useState(false);
+  const [showSavedMeals, setShowSavedMeals] = useState(true);
 
   useEffect(() => {
     loadTodayLogs();
   }, [profile]);
+
+  useEffect(() => {
+    // Load saved meals when search tab is active
+    if (activeTab === 'search' && profile?.id) {
+      loadSavedMeals();
+    }
+  }, [activeTab, profile]);
 
   const loadTodayLogs = async () => {
     if (!profile?.id) return;
@@ -76,6 +102,42 @@ export default function FoodLog() {
       console.log('Error loading food logs:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSavedMeals = async () => {
+    if (!profile?.id) return;
+    setLoadingSavedMeals(true);
+    try {
+      const response = await api.get(`/food/favorites/${profile.id}`);
+      setSavedMeals(response.data);
+    } catch (error) {
+      console.log('Error loading saved meals:', error);
+    } finally {
+      setLoadingSavedMeals(false);
+    }
+  };
+
+  const logSavedMeal = async (meal: FavoriteMeal) => {
+    if (!profile?.id) return;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await api.post('/food/log', {
+        user_id: profile.id,
+        food_name: meal.meal.name,
+        serving_size: '1 serving',
+        calories: meal.meal.calories,
+        protein: meal.meal.protein,
+        carbs: meal.meal.carbs,
+        fats: meal.meal.fats,
+        meal_type: selectedMealType,
+        logged_date: today,
+      });
+      Alert.alert('Success', `${meal.meal.name} logged!`);
+      loadTodayLogs();
+      setActiveTab('log');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to log meal');
     }
   };
 
@@ -379,6 +441,60 @@ export default function FoodLog() {
                   </Text>
                 </TouchableOpacity>
               ))}
+            </View>
+
+            {/* Saved Meals Section */}
+            {savedMeals.length > 0 && (
+              <View style={styles.savedMealsSection}>
+                <TouchableOpacity 
+                  style={styles.savedMealsHeader}
+                  onPress={() => setShowSavedMeals(!showSavedMeals)}
+                >
+                  <View style={styles.savedMealsHeaderLeft}>
+                    <Ionicons name="heart" size={18} color={colors.error} />
+                    <Text style={styles.savedMealsTitle}>Saved Meals</Text>
+                    <View style={styles.savedMealsBadge}>
+                      <Text style={styles.savedMealsBadgeText}>{savedMeals.length}</Text>
+                    </View>
+                  </View>
+                  <Ionicons 
+                    name={showSavedMeals ? 'chevron-up' : 'chevron-down'} 
+                    size={20} 
+                    color={colors.textSecondary} 
+                  />
+                </TouchableOpacity>
+                
+                {showSavedMeals && (
+                  <View style={styles.savedMealsList}>
+                    {loadingSavedMeals ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      savedMeals.map((savedMeal) => (
+                        <TouchableOpacity
+                          key={savedMeal.id}
+                          style={styles.savedMealItem}
+                          onPress={() => logSavedMeal(savedMeal)}
+                        >
+                          <View style={styles.savedMealInfo}>
+                            <Text style={styles.savedMealName}>{savedMeal.meal.name}</Text>
+                            <Text style={styles.savedMealMacros}>
+                              {savedMeal.meal.calories} cal • {savedMeal.meal.protein}g P • {savedMeal.meal.carbs}g C • {savedMeal.meal.fats}g F
+                            </Text>
+                          </View>
+                          <Ionicons name="add-circle" size={26} color={colors.primary} />
+                        </TouchableOpacity>
+                      ))
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Divider with "or search" text */}
+            <View style={styles.dividerContainer}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or search food database</Text>
+              <View style={styles.dividerLine} />
             </View>
 
             <View style={styles.searchBar}>
@@ -993,5 +1109,79 @@ const styles = StyleSheet.create({
   },
   macroInputContainer: {
     flex: 1,
+  },
+  // Saved meals styles
+  savedMealsSection: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  savedMealsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+  },
+  savedMealsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  savedMealsTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  savedMealsBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minWidth: 22,
+    alignItems: 'center',
+  },
+  savedMealsBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.background,
+  },
+  savedMealsList: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingVertical: 4,
+  },
+  savedMealItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  savedMealInfo: {
+    flex: 1,
+  },
+  savedMealName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  savedMealMacros: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  // Divider styles
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    fontSize: 13,
+    color: colors.textMuted,
   },
 });

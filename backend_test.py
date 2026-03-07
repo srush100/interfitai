@@ -1,179 +1,238 @@
 #!/usr/bin/env python3
+"""
+Backend API Testing Script for InterFitAI - Save Favorite Meals Feature
+Tests the favorite meals endpoints as requested in the review.
+"""
 
 import requests
-import time
 import json
+import time
 from datetime import datetime
 
-# Backend URL from environment
+# Backend URL from frontend environment
 BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
 
-def log_test(test_name, status, details=""):
-    """Log test results with timestamp"""
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    status_icon = "✅" if status else "❌"
-    print(f"[{timestamp}] {status_icon} {test_name}: {details}")
-    return status
+# Test user ID as specified in the review request
+TEST_USER_ID = "cbd82a69-3a37-48c2-88e8-0fe95081fa4b"
+
+# Test meal data as specified in the review request
+TEST_MEAL_DATA = {
+    "user_id": TEST_USER_ID,
+    "meal_name": "Test Grilled Chicken Salad",
+    "calories": 450,
+    "protein": 45,
+    "carbs": 20,
+    "fats": 18
+}
+
+def log_test_result(test_name, success, response_time=None, details=""):
+    """Log test result with timestamp"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    status = "✅ PASSED" if success else "❌ FAILED"
+    time_info = f" ({response_time:.2f}s)" if response_time else ""
+    print(f"[{timestamp}] {status}{time_info} - {test_name}")
+    if details:
+        print(f"    Details: {details}")
+    print()
 
 def test_health_check():
-    """Test health check endpoint"""
-    start_time = time.time()
+    """Test GET /api/health endpoint"""
+    print("=" * 60)
+    print("Testing Health Check Endpoint")
+    print("=" * 60)
+    
     try:
+        start_time = time.time()
         response = requests.get(f"{BACKEND_URL}/health", timeout=10)
         response_time = time.time() - start_time
         
         if response.status_code == 200:
             data = response.json()
-            if "status" in data and "timestamp" in data:
-                return log_test("Health Check", True, f"Response: {response.status_code}, Time: {response_time:.2f}s, Data: {data}")
-            else:
-                return log_test("Health Check", False, f"Missing required fields in response: {data}")
+            log_test_result("Health Check", True, response_time, 
+                          f"Status: {response.status_code}, Response: {data}")
+            return True
         else:
-            return log_test("Health Check", False, f"Status: {response.status_code}, Response: {response.text}")
-    
+            log_test_result("Health Check", False, response_time,
+                          f"Status: {response.status_code}, Response: {response.text}")
+            return False
+            
     except Exception as e:
-        response_time = time.time() - start_time
-        return log_test("Health Check", False, f"Exception after {response_time:.2f}s: {str(e)}")
+        log_test_result("Health Check", False, details=f"Exception: {str(e)}")
+        return False
 
-def test_exercise_search():
-    """Test exercise search endpoint with muscle parameter"""
-    start_time = time.time()
+def test_add_favorite_meal():
+    """Test POST /api/food/favorite endpoint"""
+    print("=" * 60)
+    print("Testing Add Favorite Meal Endpoint")
+    print("=" * 60)
+    
     try:
-        response = requests.get(f"{BACKEND_URL}/exercises/search?muscle=chest", timeout=15)
+        start_time = time.time()
+        response = requests.post(f"{BACKEND_URL}/food/favorite", params=TEST_MEAL_DATA, timeout=15)
         response_time = time.time() - start_time
         
         if response.status_code == 200:
             data = response.json()
-            
-            if "exercises" not in data:
-                return log_test("Exercise Search", False, f"Missing 'exercises' key in response: {data}")
-            
-            exercises = data["exercises"]
-            
-            # Check if we got results
-            if len(exercises) == 0:
-                return log_test("Exercise Search", True, f"No exercises found for chest muscle (API may be limited), Response time: {response_time:.2f}s")
-            
-            # Verify structure of first exercise
-            first_exercise = exercises[0]
-            required_fields = ["id", "name", "target", "equipment", "bodyPart", "gifUrl"]
-            missing_fields = [field for field in required_fields if field not in first_exercise]
-            
-            if missing_fields:
-                return log_test("Exercise Search", False, f"Missing fields in exercise: {missing_fields}")
-            
-            # Verify gifUrl format (should be our proxy endpoint)
-            gif_url = first_exercise.get("gifUrl")
-            if gif_url and not gif_url.startswith("/api/exercises/gif/"):
-                return log_test("Exercise Search", False, f"Incorrect gifUrl format: {gif_url} (should start with /api/exercises/gif/)")
-            
-            return log_test("Exercise Search", True, f"Found {len(exercises)} exercises, Response time: {response_time:.2f}s, Sample exercise: {first_exercise.get('name', 'Unknown')}")
-        
+            favorite_id = data.get('id')
+            log_test_result("Add Favorite Meal", True, response_time,
+                          f"Status: {response.status_code}, Favorite ID: {favorite_id}")
+            return favorite_id
         else:
-            return log_test("Exercise Search", False, f"Status: {response.status_code}, Response: {response.text[:200]}")
-    
+            log_test_result("Add Favorite Meal", False, response_time,
+                          f"Status: {response.status_code}, Response: {response.text}")
+            return None
+            
     except Exception as e:
-        response_time = time.time() - start_time
-        return log_test("Exercise Search", False, f"Exception after {response_time:.2f}s: {str(e)}")
+        log_test_result("Add Favorite Meal", False, details=f"Exception: {str(e)}")
+        return None
 
-def test_exercise_gif_proxy():
-    """Test exercise GIF proxy endpoint with a known exercise ID"""
-    start_time = time.time()
-    test_exercise_ids = ["0025", "0001", "0002"]  # Common exercise IDs from ExerciseDB
+def test_get_favorite_meals():
+    """Test GET /api/food/favorites/{user_id} endpoint"""
+    print("=" * 60)
+    print("Testing Get Favorite Meals Endpoint")
+    print("=" * 60)
     
-    for exercise_id in test_exercise_ids:
-        try:
-            response = requests.get(f"{BACKEND_URL}/exercises/gif/{exercise_id}", timeout=30)
-            response_time = time.time() - start_time
-            
-            if response.status_code == 200:
-                content_type = response.headers.get("Content-Type", "")
-                content_length = len(response.content)
-                
-                if content_type.startswith("image/gif"):
-                    # Check if it's actually GIF content
-                    if response.content[:3] == b'GIF':
-                        return log_test("Exercise GIF Proxy", True, f"Exercise ID {exercise_id}: Content-Type: {content_type}, Size: {content_length} bytes, Response time: {response_time:.2f}s")
-                    else:
-                        return log_test("Exercise GIF Proxy", False, f"Exercise ID {exercise_id}: Content-Type is image/gif but content is not GIF format")
-                else:
-                    return log_test("Exercise GIF Proxy", False, f"Exercise ID {exercise_id}: Wrong Content-Type: {content_type} (expected image/gif)")
-            
-            elif response.status_code == 404:
-                # Try next exercise ID
-                continue
-                
-            elif response.status_code == 503:
-                return log_test("Exercise GIF Proxy", False, f"Exercise ID {exercise_id}: Service unavailable (ExerciseDB API not configured)")
-            
-            else:
-                return log_test("Exercise GIF Proxy", False, f"Exercise ID {exercise_id}: Status {response.status_code}, Response: {response.text[:200]}")
-        
-        except Exception as e:
-            response_time = time.time() - start_time
-            return log_test("Exercise GIF Proxy", False, f"Exercise ID {exercise_id}: Exception after {response_time:.2f}s: {str(e)}")
-    
-    # If all IDs failed, it's likely an API configuration issue
-    return log_test("Exercise GIF Proxy", False, f"All test exercise IDs failed - likely ExerciseDB API not configured or quota exceeded")
-
-def test_exercise_search_with_name():
-    """Test exercise search by name parameter"""
-    start_time = time.time()
     try:
-        response = requests.get(f"{BACKEND_URL}/exercises/search?search=bench press", timeout=15)
+        start_time = time.time()
+        response = requests.get(f"{BACKEND_URL}/food/favorites/{TEST_USER_ID}", timeout=10)
+        response_time = time.time() - start_time
+        
+        if response.status_code == 200:
+            favorites = response.json()
+            log_test_result("Get Favorite Meals", True, response_time,
+                          f"Status: {response.status_code}, Found {len(favorites)} favorite meals")
+            
+            # Verify nested meal object structure as requested
+            if favorites:
+                first_favorite = favorites[0]
+                required_fields = ['id', 'user_id', 'meal', 'created_at']
+                meal_fields = ['name', 'calories', 'protein', 'carbs', 'fats']
+                
+                structure_valid = True
+                missing_fields = []
+                
+                # Check top-level fields
+                for field in required_fields:
+                    if field not in first_favorite:
+                        structure_valid = False
+                        missing_fields.append(field)
+                
+                # Check nested meal object
+                if 'meal' in first_favorite:
+                    meal_obj = first_favorite['meal']
+                    for field in meal_fields:
+                        if field not in meal_obj:
+                            structure_valid = False
+                            missing_fields.append(f"meal.{field}")
+                
+                if structure_valid:
+                    log_test_result("Favorite Meals Structure Validation", True, 
+                                  details=f"Correct nested structure with meal object: {json.dumps(first_favorite, indent=2)}")
+                else:
+                    log_test_result("Favorite Meals Structure Validation", False,
+                                  details=f"Missing fields: {missing_fields}")
+            
+            return favorites
+        else:
+            log_test_result("Get Favorite Meals", False, response_time,
+                          f"Status: {response.status_code}, Response: {response.text}")
+            return None
+            
+    except Exception as e:
+        log_test_result("Get Favorite Meals", False, details=f"Exception: {str(e)}")
+        return None
+
+def test_remove_favorite_meal(favorite_id):
+    """Test DELETE /api/food/favorite/{favorite_id} endpoint"""
+    print("=" * 60)
+    print("Testing Remove Favorite Meal Endpoint")
+    print("=" * 60)
+    
+    if not favorite_id:
+        log_test_result("Remove Favorite Meal", False, details="No favorite ID provided")
+        return False
+    
+    try:
+        start_time = time.time()
+        response = requests.delete(f"{BACKEND_URL}/food/favorite/{favorite_id}", timeout=10)
         response_time = time.time() - start_time
         
         if response.status_code == 200:
             data = response.json()
-            exercises = data.get("exercises", [])
-            
-            if len(exercises) > 0:
-                # Look for bench press exercises
-                bench_exercises = [ex for ex in exercises if "bench" in ex.get("name", "").lower()]
-                if bench_exercises:
-                    return log_test("Exercise Search by Name", True, f"Found {len(bench_exercises)} bench press exercises, Response time: {response_time:.2f}s")
-                else:
-                    return log_test("Exercise Search by Name", True, f"Search completed but no bench press exercises found, Response time: {response_time:.2f}s")
-            else:
-                return log_test("Exercise Search by Name", True, f"No exercises found for 'bench press' (API may be limited), Response time: {response_time:.2f}s")
-        
+            log_test_result("Remove Favorite Meal", True, response_time,
+                          f"Status: {response.status_code}, Response: {data}")
+            return True
         else:
-            return log_test("Exercise Search by Name", False, f"Status: {response.status_code}, Response: {response.text[:200]}")
-    
+            log_test_result("Remove Favorite Meal", False, response_time,
+                          f"Status: {response.status_code}, Response: {response.text}")
+            return False
+            
     except Exception as e:
-        response_time = time.time() - start_time
-        return log_test("Exercise Search by Name", False, f"Exception after {response_time:.2f}s: {str(e)}")
+        log_test_result("Remove Favorite Meal", False, details=f"Exception: {str(e)}")
+        return False
 
-def run_all_tests():
-    """Run all exercise-related tests"""
-    print("=" * 80)
-    print("🏋️ EXERCISE GIF PROXY & WORKOUT CUSTOMIZATION TESTING")
-    print("=" * 80)
+def main():
+    """Run all favorite meals endpoint tests"""
+    print("🚀 Starting Save Favorite Meals Feature Backend Testing")
     print(f"Backend URL: {BACKEND_URL}")
-    print(f"Test Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("-" * 80)
+    print(f"Test User ID: {TEST_USER_ID}")
+    print(f"Test Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("\n")
     
-    test_results = []
+    results = {
+        'health_check': False,
+        'add_favorite': False,
+        'get_favorites': False,
+        'remove_favorite': False,
+        'structure_validation': False
+    }
     
-    # Run all tests
-    test_results.append(test_health_check())
-    test_results.append(test_exercise_search())
-    test_results.append(test_exercise_search_with_name())
-    test_results.append(test_exercise_gif_proxy())
+    # 1. Test Health Check
+    results['health_check'] = test_health_check()
+    
+    # 2. Test Add Favorite Meal
+    favorite_id = test_add_favorite_meal()
+    results['add_favorite'] = favorite_id is not None
+    
+    # 3. Test Get Favorite Meals (and verify structure)
+    favorites = test_get_favorite_meals()
+    results['get_favorites'] = favorites is not None
+    
+    # Check if we found our test meal in the results
+    if favorites and favorite_id:
+        found_test_meal = any(fav.get('id') == favorite_id for fav in favorites)
+        if found_test_meal:
+            log_test_result("Test Meal Found in Favorites", True,
+                          details="Successfully retrieved the meal we just added")
+            results['structure_validation'] = True
+        else:
+            log_test_result("Test Meal Found in Favorites", False,
+                          details="Could not find the test meal we just added")
+    
+    # 4. Test Remove Favorite Meal
+    results['remove_favorite'] = test_remove_favorite_meal(favorite_id)
     
     # Summary
-    print("-" * 80)
-    passed = sum(test_results)
-    total = len(test_results)
-    print(f"📊 TEST SUMMARY: {passed}/{total} tests passed ({passed/total*100:.1f}%)")
+    print("=" * 60)
+    print("TEST SUMMARY")
+    print("=" * 60)
     
-    if passed == total:
-        print("✅ All workout customization features are working properly!")
+    passed_tests = sum(results.values())
+    total_tests = len(results)
+    
+    for test_name, passed in results.items():
+        status = "✅ PASSED" if passed else "❌ FAILED"
+        print(f"{status} - {test_name.replace('_', ' ').title()}")
+    
+    print(f"\nOverall Result: {passed_tests}/{total_tests} tests passed")
+    
+    if passed_tests == total_tests:
+        print("🎉 All Save Favorite Meals endpoints working perfectly!")
+        return True
     else:
-        print(f"❌ {total - passed} test(s) failed - requires investigation")
-    
-    print("=" * 80)
-    return passed == total
+        print("⚠️  Some Save Favorite Meals endpoints need attention")
+        return False
 
 if __name__ == "__main__":
-    run_all_tests()
+    success = main()
+    exit(0 if success else 1)

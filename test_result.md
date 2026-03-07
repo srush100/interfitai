@@ -519,6 +519,21 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: Exercise GIF Proxy and Search endpoints working perfectly! GET /api/exercises/gif/{exercise_id} serves proper GIF content with image/gif content-type and 12-hour caching. GET /api/exercises/search?muscle=chest returns 40 exercises with proxied gif URLs (/api/exercises/gif/{id} format). GET /api/exercises/search?search=bench press returns 30 bench exercises. ExerciseDB API integration fully operational with proper authentication, error handling (500 for invalid IDs), and response times under 1 second."
 
+  - task: "Save Favorite Meals Feature"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL ISSUE: GET /api/food/favorites/{user_id} endpoint failing with 500 Internal Server Error due to MongoDB ObjectId serialization problem. Error: 'ObjectId object is not iterable' and 'vars() argument must have __dict__ attribute'. Other endpoints (POST add favorite, DELETE remove favorite) working correctly."
+      - working: true
+        agent: "testing"
+        comment: "✅ FIXED & TESTED: Save Favorite Meals Feature working perfectly! Fixed MongoDB ObjectId serialization issue by adding response_model=List[FavoriteMeal] and proper model conversion. All 4 favorite meals endpoints working: Health Check (0.13s), POST /api/food/favorite (add meal to favorites, 0.13s), GET /api/food/favorites/{user_id} (retrieve favorites with proper nested meal structure, 0.16s), DELETE /api/food/favorite/{favorite_id} (remove favorite, 0.17s). Verified correct nested meal object structure as requested: {id, user_id, meal: {name, calories, protein, carbs, fats}, created_at}. All 5/5 tests passed with 100% success rate."
+
 frontend:
   - task: "Onboarding Flow"
     implemented: true
@@ -616,7 +631,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Exercise GIF Proxy Endpoint & Search"
+    - "Save Favorite Meals Feature"
   stuck_tasks: 
     - "Food Image Analysis"
   test_all: false
@@ -659,3 +674,7 @@ agent_communication:
     message: "WORKOUT CUSTOMIZATION FEATURES: Implemented comprehensive workout detail enhancements. 1) Added 'Remove Set' button with red X icon next to each logged set. 2) Redesigned 'Replace Exercise' modal with: a) Manual exercise entry section, b) Professional muscle group grid with icons, c) Search results with animated GIF thumbnails via new proxy endpoint. 3) Added backend GIF proxy endpoint (/api/exercises/gif/{id}) to serve ExerciseDB images with proper authentication. Ready for backend testing."
   - agent: "testing"
     message: "✅ WORKOUT CUSTOMIZATION FEATURES TESTING COMPLETE: All newly implemented exercise endpoints working perfectly! 1) Health Check (GET /api/health): ✅ 0.35s response with proper timestamp. 2) Exercise Search by Muscle (GET /api/exercises/search?muscle=chest): ✅ Returns 40 exercises with proper structure including proxied gifUrl paths (/api/exercises/gif/{id} format), response time 0.45s. 3) Exercise Search by Name (GET /api/exercises/search?search=bench press): ✅ Found 30 bench press exercises, response time 0.32s. 4) Exercise GIF Proxy (GET /api/exercises/gif/{exercise_id}): ✅ Successfully serves GIF content with proper Content-Type: image/gif, tested with exercise ID 0025 (338KB GIF file), response time 0.67s. ExerciseDB API integration fully operational with proper authentication and caching. All 4/4 tests passed with 100% success rate."
+  - agent: "main"
+    message: "SAVE FAVORITE MEALS FEATURE COMPLETE: Integrated saved meals into the Food Log Search tab instead of a separate screen. When user goes to Food Log > Search tab, they now see: 1) Their saved meals with a heart icon section at the top (collapsible), 2) An 'or search food database' divider, 3) The existing food search functionality. Users can tap any saved meal to instantly log it. Updated FavoriteMeal interface to properly handle the nested 'meal' object from the backend. Both food-log.tsx and saved-meals.tsx updated to use correct data structure."
+  - agent: "testing"
+    message: "✅ SAVE FAVORITE MEALS FEATURE TESTING COMPLETE: All favorite meals endpoints working perfectly! Initially found MongoDB ObjectId serialization issue in GET /api/food/favorites/{user_id} endpoint (500 Internal Server Error), but quickly fixed by adding response_model=List[FavoriteMeal] and proper model conversion. All 4 requested endpoints now working: 1) Health Check (GET /api/health): ✅ 0.13s response time, 2) Add Favorite Meal (POST /api/food/favorite): ✅ 0.13s response with proper favorite ID returned, 3) Get Favorite Meals (GET /api/food/favorites/{user_id}): ✅ 0.16s response with correct nested meal object structure as requested {id, user_id, meal: {name, calories, protein, carbs, fats}, created_at}, 4) Remove Favorite Meal (DELETE /api/food/favorite/{favorite_id}): ✅ 0.17s response. Used test user ID 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b' and test meal 'Test Grilled Chicken Salad' (450 cal, 45g protein) as specified in review request. All 5/5 tests passed with 100% success rate. Save Favorite Meals feature fully operational!"
