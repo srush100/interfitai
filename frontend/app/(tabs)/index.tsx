@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   RefreshControl,
   Image,
+  Modal,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -16,6 +19,8 @@ import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 export default function HomeScreen() {
   const router = useRouter();
   const { profile } = useUserStore();
@@ -23,6 +28,8 @@ export default function HomeScreen() {
   const [motivation, setMotivation] = useState('');
   const [todaySteps, setTodaySteps] = useState(0);
   const [dailySummary, setDailySummary] = useState<any>(null);
+  const [showProfilePicture, setShowProfilePicture] = useState(false);
+  const [imageScale] = useState(new Animated.Value(0.8));
 
   useEffect(() => {
     loadData();
@@ -65,6 +72,27 @@ export default function HomeScreen() {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  // Profile picture modal functions
+  const openProfilePicture = () => {
+    setShowProfilePicture(true);
+    Animated.spring(imageScale, {
+      toValue: 1,
+      friction: 6,
+      tension: 100,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeProfilePicture = () => {
+    Animated.timing(imageScale, {
+      toValue: 0.8,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowProfilePicture(false);
+    });
   };
 
   const macros = profile?.calculated_macros;
@@ -144,22 +172,68 @@ export default function HomeScreen() {
         {/* Welcome Section */}
         <View style={styles.welcomeSection}>
           <View style={styles.welcomeRow}>
-            {profile?.profile_image ? (
-              <Image
-                source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
-                style={styles.welcomeAvatar}
-              />
-            ) : (
-              <View style={styles.welcomeAvatarPlaceholder}>
-                <Ionicons name="person" size={24} color={colors.primary} />
-              </View>
-            )}
+            <TouchableOpacity 
+              onPress={profile?.profile_image ? openProfilePicture : undefined}
+              activeOpacity={profile?.profile_image ? 0.8 : 1}
+              style={styles.avatarTouchable}
+            >
+              {profile?.profile_image ? (
+                <View style={styles.avatarRing}>
+                  <Image
+                    source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
+                    style={styles.welcomeAvatar}
+                  />
+                </View>
+              ) : (
+                <View style={styles.welcomeAvatarPlaceholder}>
+                  <Ionicons name="person" size={24} color={colors.primary} />
+                </View>
+              )}
+            </TouchableOpacity>
             <View>
               <Text style={styles.greeting}>Welcome back,</Text>
               <Text style={styles.name}>{profile?.name || 'Champion'}</Text>
             </View>
           </View>
         </View>
+
+        {/* Profile Picture Modal - Instagram Style */}
+        <Modal
+          visible={showProfilePicture}
+          transparent
+          animationType="fade"
+          onRequestClose={closeProfilePicture}
+        >
+          <TouchableOpacity
+            style={styles.profilePictureModal}
+            activeOpacity={1}
+            onPress={closeProfilePicture}
+          >
+            <View style={styles.profilePictureHeader}>
+              <View style={styles.profilePictureUserInfo}>
+                <Text style={styles.profilePictureUsername}>{profile?.name || 'User'}</Text>
+              </View>
+              <TouchableOpacity onPress={closeProfilePicture} style={styles.profilePictureClose}>
+                <Ionicons name="close" size={28} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <Animated.View 
+              style={[
+                styles.profilePictureContainer,
+                { transform: [{ scale: imageScale }] }
+              ]}
+            >
+              {profile?.profile_image && (
+                <Image
+                  source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
+                  style={styles.profilePictureLarge}
+                  resizeMode="contain"
+                />
+              )}
+            </Animated.View>
+          </TouchableOpacity>
+        </Modal>
 
         {/* Motivation */}
         {motivation && profile?.motivation_enabled && (
@@ -408,5 +482,64 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
     textAlign: 'center',
+  },
+  // Profile Picture Modal Styles
+  avatarTouchable: {
+    position: 'relative',
+  },
+  avatarRing: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    padding: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profilePictureModal: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profilePictureHeader: {
+    position: 'absolute',
+    top: 50,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  profilePictureUserInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  profilePictureUsername: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  profilePictureClose: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profilePictureContainer: {
+    width: SCREEN_WIDTH - 40,
+    height: SCREEN_WIDTH - 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
+  profilePictureLarge: {
+    width: '100%',
+    height: '100%',
   },
 });
