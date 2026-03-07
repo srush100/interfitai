@@ -405,6 +405,23 @@ export default function WorkoutDetail() {
     setSelectedMuscle(null);
   };
 
+  // Refresh GIF URLs for all exercises
+  const [refreshingGifs, setRefreshingGifs] = useState(false);
+  
+  const refreshGifs = async () => {
+    if (!workout) return;
+    setRefreshingGifs(true);
+    try {
+      await api.post(`/workout/${workout.id}/refresh-gifs`);
+      await loadWorkout();
+      Alert.alert('Success', 'Exercise images have been refreshed!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to refresh images');
+    } finally {
+      setRefreshingGifs(false);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -472,6 +489,22 @@ export default function WorkoutDetail() {
               </View>
             ))}
           </View>
+          
+          {/* Refresh GIFs Button */}
+          <TouchableOpacity
+            style={styles.refreshGifsBtn}
+            onPress={refreshGifs}
+            disabled={refreshingGifs}
+          >
+            {refreshingGifs ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons name="refresh" size={16} color={colors.primary} />
+            )}
+            <Text style={styles.refreshGifsBtnText}>
+              {refreshingGifs ? 'Refreshing...' : 'Refresh Exercise Images'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Day Tabs */}
@@ -930,6 +963,23 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 12,
     color: colors.textSecondary,
+  },
+  refreshGifsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: colors.primary + '15',
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  refreshGifsBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
   },
   dayTabs: {
     marginBottom: 16,

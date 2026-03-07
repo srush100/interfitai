@@ -255,119 +255,121 @@ CACHED_EXERCISE_GIFS = {
 exercise_gif_cache = {}
 
 async def get_exercise_gif_from_api(exercise_name: str) -> str:
-    """Fetch computer-generated animated GIF - uses cache first, then API"""
+    """Fetch computer-generated animated GIF - API search first for accuracy, then cache fallback"""
     import httpx
     import urllib.parse
     import asyncio
     
-    name_lower = exercise_name.lower().strip().replace("-", " ")
+    name_lower = exercise_name.lower().strip().replace("-", " ").replace("  ", " ")
     
-    # Check local cache first
+    # Check local runtime cache first (already verified correct)
     if name_lower in exercise_gif_cache:
         return exercise_gif_cache[name_lower]
     
-    # Check pre-cached exercise IDs - exact match first
+    # Check pre-cached exercise IDs - EXACT match only
     if name_lower in CACHED_EXERCISE_GIFS:
         exercise_id = CACHED_EXERCISE_GIFS[name_lower]
         proxy_url = f"/api/exercises/gif/{exercise_id}"
         exercise_gif_cache[name_lower] = proxy_url
         return proxy_url
     
-    # Try smart matching - prioritize longer/more specific matches
-    best_match = None
-    best_match_len = 0
-    for cached_name, exercise_id in CACHED_EXERCISE_GIFS.items():
-        # Exact substring match - the cached name should be IN the exercise name
-        # or exercise name should be IN cached name
-        if cached_name == name_lower:
-            best_match = exercise_id
-            break
-        elif cached_name in name_lower and len(cached_name) > best_match_len:
-            best_match = exercise_id
-            best_match_len = len(cached_name)
-        elif name_lower in cached_name and len(name_lower) > best_match_len:
-            best_match = exercise_id
-            best_match_len = len(name_lower)
+    # If we have API key, ALWAYS try API search first for accuracy
+    if EXERCISEDB_API_KEY:
+        headers = {
+            "X-RapidAPI-Key": EXERCISEDB_API_KEY,
+            "X-RapidAPI-Host": EXERCISEDB_API_HOST
+        }
+        
+        try:
+            await asyncio.sleep(0.2)  # Rate limit protection
+            
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                # Search for the exercise by name
+                encoded_term = urllib.parse.quote(name_lower)
+                response = await client.get(
+                    f"{EXERCISEDB_API_BASE}/exercises/name/{encoded_term}",
+                    headers=headers,
+                    params={"limit": 10}
+                )
+                
+                if response.status_code == 200:
+                    exercises = response.json()
+                    if exercises and len(exercises) > 0:
+                        # Find the best match from results
+                        best_exercise = None
+                        best_score = 0
+                        
+                        for ex in exercises:
+                            ex_name = ex.get("name", "").lower()
+                            # Calculate similarity score
+                            score = 0
+                            
+                            # Exact match gets highest score
+                            if ex_name == name_lower:
+                                score = 100
+                            # Exercise name contains our search term
+                            elif name_lower in ex_name:
+                                score = 80 + len(name_lower)
+                            # Our search term contains exercise name
+                            elif ex_name in name_lower:
+                                score = 60 + len(ex_name)
+                            # Word-level matching
+                            else:
+                                our_words = set(name_lower.split())
+                                ex_words = set(ex_name.split())
+                                common = our_words & ex_words
+                                if common:
+                                    score = len(common) * 20
+                            
+                            if score > best_score:
+                                best_score = score
+                                best_exercise = ex
+                        
+                        if best_exercise and best_score >= 20:
+                            exercise_id = best_exercise.get("id", "")
+                            if exercise_id:
+                                proxy_url = f"/api/exercises/gif/{exercise_id}"
+                                exercise_gif_cache[name_lower] = proxy_url
+                                logger.info(f"GIF match for '{exercise_name}': {best_exercise.get('name')} (score: {best_score})")
+                                return proxy_url
+                
+                elif response.status_code == 429:
+                    logger.warning(f"Rate limited - falling back to cache for '{exercise_name}'")
+                    
+        except Exception as e:
+            logger.warning(f"ExerciseDB API error for '{exercise_name}': {e}")
     
-    if best_match:
+    # Fallback: Try smart cache matching only if API failed
+    # Use word-based matching instead of substring matching
+    name_words = set(name_lower.split())
+    best_match = None
+    best_match_score = 0
+    
+    for cached_name, exercise_id in CACHED_EXERCISE_GIFS.items():
+        cached_words = set(cached_name.split())
+        # Calculate word overlap
+        common_words = name_words & cached_words
+        if common_words:
+            # Score based on how many words match and their specificity
+            score = len(common_words) * 10
+            # Bonus for exact match
+            if cached_name == name_lower:
+                score = 100
+            # Bonus for significant overlap
+            elif len(common_words) >= 2:
+                score += 20
+            # Penalize if cached name has many extra words
+            extra_cached = len(cached_words - name_words)
+            score -= extra_cached * 2
+            
+            if score > best_match_score:
+                best_match_score = score
+                best_match = exercise_id
+    
+    if best_match and best_match_score >= 15:
         proxy_url = f"/api/exercises/gif/{best_match}"
         exercise_gif_cache[name_lower] = proxy_url
         return proxy_url
-    
-    # If no API key or quota exceeded, return empty
-    if not EXERCISEDB_API_KEY:
-        return ""
-    
-    headers = {
-        "X-RapidAPI-Key": EXERCISEDB_API_KEY,
-        "X-RapidAPI-Host": EXERCISEDB_API_HOST
-    }
-    
-    # Normalize and map exercise names for API search
-    exercise_mappings = {
-        "pull-up": "pull up", "pullup": "pull up",
-        "chin-up": "chin up",
-        "push-up": "push up", "pushup": "push up",
-        "bench press": "barbell bench press", 
-        "squat": "barbell squat",
-        "deadlift": "barbell deadlift", 
-        "overhead press": "barbell shoulder press",
-        "military press": "barbell shoulder press", 
-        "lat pulldown": "cable lat pulldown",
-        "bicep curl": "dumbbell bicep curl", 
-        "tricep pushdown": "cable pushdown",
-        "leg press": "sled leg press", 
-        "calf raise": "standing calf raise",
-        "hip thrust": "barbell hip thrust", 
-        "lateral raise": "dumbbell lateral raise",
-        "plank": "front plank", 
-        "lunge": "dumbbell lunge",
-        "row": "barbell bent over row",
-        "fly": "dumbbell fly",
-        "extension": "tricep extension",
-        "curl": "dumbbell curl",
-    }
-    
-    search_term = name_lower
-    for key, mapped in exercise_mappings.items():
-        if key in name_lower:
-            search_term = mapped
-            break
-    
-    try:
-        await asyncio.sleep(0.3)  # Rate limit protection
-        
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            encoded_term = urllib.parse.quote(search_term)
-            response = await client.get(
-                f"{EXERCISEDB_API_BASE}/exercises/name/{encoded_term}",
-                headers=headers
-            )
-            
-            if response.status_code == 429:
-                logger.warning(f"Rate limited - using fallback for '{exercise_name}'")
-                return ""
-            
-            if response.status_code == 200:
-                exercises = response.json()
-                if exercises and len(exercises) > 0:
-                    # Try to find the best match from results
-                    exercise_id = None
-                    for ex in exercises:
-                        ex_name = ex.get("name", "").lower()
-                        if name_lower in ex_name or ex_name in name_lower:
-                            exercise_id = ex.get("id", "")
-                            break
-                    # Fallback to first result
-                    if not exercise_id:
-                        exercise_id = exercises[0].get("id", "")
-                    
-                    if exercise_id:
-                        proxy_url = f"/api/exercises/gif/{exercise_id}"
-                        exercise_gif_cache[name_lower] = proxy_url
-                        return proxy_url
-    except Exception as e:
-        logger.warning(f"ExerciseDB API error for '{exercise_name}': {e}")
     
     return ""
 
@@ -1097,6 +1099,39 @@ async def add_exercise(workout_id: str, request: AddExerciseRequest):
     )
     
     return {"message": "Exercise added successfully", "exercise": exercise_data}
+
+@api_router.post("/workout/{workout_id}/refresh-gifs")
+async def refresh_workout_gifs(workout_id: str):
+    """Refresh all GIF URLs for a workout using the latest matching algorithm"""
+    workout = await db.workouts.find_one({"id": workout_id})
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    
+    workout_days = workout.get("workout_days", workout.get("program", {}).get("days", []))
+    updated = False
+    
+    for day in workout_days:
+        for exercise in day.get("exercises", []):
+            # Get fresh GIF URL for this exercise
+            new_gif_url = await get_exercise_gif_from_api(exercise.get("name", ""))
+            if new_gif_url:
+                exercise["gif_url"] = new_gif_url
+                updated = True
+    
+    if updated:
+        # Determine which field to update based on structure
+        if "workout_days" in workout:
+            await db.workouts.update_one(
+                {"id": workout_id},
+                {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+            )
+        else:
+            await db.workouts.update_one(
+                {"id": workout_id},
+                {"$set": {"program.days": workout_days, "updated_at": datetime.utcnow()}}
+            )
+    
+    return {"message": "GIF URLs refreshed successfully", "updated": updated}
 
 @api_router.get("/exercises/search")
 async def search_exercises(search: str = None, muscle: str = None):
