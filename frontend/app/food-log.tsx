@@ -80,6 +80,8 @@ export default function FoodLog() {
   const [savedMeals, setSavedMeals] = useState<FavoriteMeal[]>([]);
   const [loadingSavedMeals, setLoadingSavedMeals] = useState(false);
   const [showSavedMeals, setShowSavedMeals] = useState(true);
+  const [removingFavoriteId, setRemovingFavoriteId] = useState<string | null>(null);
+  const [resettingLogs, setResettingLogs] = useState(false);
 
   useEffect(() => {
     loadTodayLogs();
@@ -139,6 +141,51 @@ export default function FoodLog() {
     } catch (error) {
       Alert.alert('Error', 'Failed to log meal');
     }
+  };
+
+  const removeSavedMeal = async (meal: FavoriteMeal) => {
+    setRemovingFavoriteId(meal.id);
+    try {
+      await api.delete(`/food/favorite/${meal.id}`);
+      setSavedMeals(prev => prev.filter(m => m.id !== meal.id));
+    } catch (error) {
+      Alert.alert('Error', 'Failed to remove saved meal');
+    } finally {
+      setRemovingFavoriteId(null);
+    }
+  };
+
+  const resetTodayLogs = () => {
+    if (todayLogs.length === 0) {
+      Alert.alert('Nothing to Reset', 'No meals logged today.');
+      return;
+    }
+    
+    Alert.alert(
+      'Reset Today\'s Log',
+      `Are you sure you want to remove all ${todayLogs.length} logged meal${todayLogs.length > 1 ? 's' : ''}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            setResettingLogs(true);
+            try {
+              // Delete all logs one by one
+              await Promise.all(todayLogs.map(log => api.delete(`/food/log/${log.id}`)));
+              setTodayLogs([]);
+              Alert.alert('Done', 'All meals have been cleared.');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to reset logs');
+              loadTodayLogs(); // Reload to get current state
+            } finally {
+              setResettingLogs(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const searchFood = async () => {
@@ -398,6 +445,27 @@ export default function FoodLog() {
         {/* Log Tab */}
         {activeTab === 'log' && (
           <View style={styles.logsSection}>
+            {/* Reset Button Header */}
+            {todayLogs.length > 0 && (
+              <View style={styles.logsSectionHeader}>
+                <Text style={styles.logsSectionTitle}>{todayLogs.length} meal{todayLogs.length !== 1 ? 's' : ''} logged</Text>
+                <TouchableOpacity 
+                  style={styles.resetBtn}
+                  onPress={resetTodayLogs}
+                  disabled={resettingLogs}
+                >
+                  {resettingLogs ? (
+                    <ActivityIndicator size="small" color={colors.error} />
+                  ) : (
+                    <>
+                      <Ionicons name="refresh" size={16} color={colors.error} />
+                      <Text style={styles.resetBtnText}>Reset</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+            
             {loading ? (
               <ActivityIndicator size="large" color={colors.primary} />
             ) : todayLogs.length === 0 ? (
@@ -470,19 +538,31 @@ export default function FoodLog() {
                       <ActivityIndicator size="small" color={colors.primary} />
                     ) : (
                       savedMeals.map((savedMeal) => (
-                        <TouchableOpacity
-                          key={savedMeal.id}
-                          style={styles.savedMealItem}
-                          onPress={() => logSavedMeal(savedMeal)}
-                        >
-                          <View style={styles.savedMealInfo}>
-                            <Text style={styles.savedMealName}>{savedMeal.meal.name}</Text>
-                            <Text style={styles.savedMealMacros}>
-                              {savedMeal.meal.calories} cal • {savedMeal.meal.protein}g P • {savedMeal.meal.carbs}g C • {savedMeal.meal.fats}g F
-                            </Text>
-                          </View>
-                          <Ionicons name="add-circle" size={26} color={colors.primary} />
-                        </TouchableOpacity>
+                        <View key={savedMeal.id} style={styles.savedMealItem}>
+                          <TouchableOpacity
+                            style={styles.savedMealContent}
+                            onPress={() => logSavedMeal(savedMeal)}
+                          >
+                            <View style={styles.savedMealInfo}>
+                              <Text style={styles.savedMealName}>{savedMeal.meal.name}</Text>
+                              <Text style={styles.savedMealMacros}>
+                                {savedMeal.meal.calories} cal • {savedMeal.meal.protein}g P • {savedMeal.meal.carbs}g C • {savedMeal.meal.fats}g F
+                              </Text>
+                            </View>
+                            <Ionicons name="add-circle" size={24} color={colors.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.unsaveBtn}
+                            onPress={() => removeSavedMeal(savedMeal)}
+                            disabled={removingFavoriteId === savedMeal.id}
+                          >
+                            {removingFavoriteId === savedMeal.id ? (
+                              <ActivityIndicator size="small" color={colors.error} />
+                            ) : (
+                              <Ionicons name="heart-dislike" size={18} color={colors.error} />
+                            )}
+                          </TouchableOpacity>
+                        </View>
                       ))
                     )}
                   </View>
@@ -1153,8 +1233,14 @@ const styles = StyleSheet.create({
   savedMealItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 14,
+    gap: 8,
+  },
+  savedMealContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   savedMealInfo: {
     flex: 1,
@@ -1168,6 +1254,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  unsaveBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.error + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   // Divider styles
   dividerContainer: {
@@ -1183,5 +1277,31 @@ const styles = StyleSheet.create({
   dividerText: {
     fontSize: 13,
     color: colors.textMuted,
+  },
+  // Logs section header
+  logsSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  logsSectionTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  resetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: colors.error + '15',
+  },
+  resetBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.error,
   },
 });
