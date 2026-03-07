@@ -204,7 +204,7 @@ export default function AskAIScreen() {
   const confirmRename = async () => {
     if (renameNote && newNoteName.trim()) {
       try {
-        await api.post(`/chat/save/${renameNote.id}`, null, {
+        await api.put(`/chat/rename/${renameNote.id}`, null, {
           params: { title: newNoteName.trim() }
         });
         setSavedNotes((prev) =>

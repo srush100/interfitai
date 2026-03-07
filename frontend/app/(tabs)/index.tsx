@@ -15,7 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Pedometer } from 'expo-sensors';
-import { PinchGestureHandler, State } from 'react-native-gesture-handler';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import ReanimatedModule, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
@@ -31,8 +32,12 @@ export default function HomeScreen() {
   const [dailySummary, setDailySummary] = useState<any>(null);
   const [showProfilePicture, setShowProfilePicture] = useState(false);
   const [imageScale] = useState(new Animated.Value(0.8));
-  const [pinchScale, setPinchScale] = useState(1);
-  const [lastScale, setLastScale] = useState(1);
+  
+  // Pinch-to-zoom with Reanimated
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const focalX = useSharedValue(0);
+  const focalY = useSharedValue(0);
 
   useEffect(() => {
     loadData();
@@ -95,25 +100,43 @@ export default function HomeScreen() {
       useNativeDriver: true,
     }).start(() => {
       setShowProfilePicture(false);
-      setPinchScale(1);
-      setLastScale(1);
+      scale.value = 1;
+      savedScale.value = 1;
     });
   };
 
-  const onPinchGestureEvent = (event: any) => {
-    const scale = lastScale * event.nativeEvent.scale;
-    // Limit zoom between 1x and 3x
-    setPinchScale(Math.min(Math.max(scale, 1), 3));
-  };
+  // Instagram-style pinch gesture
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((event) => {
+      scale.value = Math.min(Math.max(savedScale.value * event.scale, 1), 4);
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      // Spring back if zoomed out
+      if (scale.value < 1) {
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+      }
+    });
 
-  const onPinchHandlerStateChange = (event: any) => {
-    if (event.nativeEvent.oldState === State.ACTIVE) {
-      // Save the current scale when gesture ends
-      const newScale = Math.min(Math.max(lastScale * event.nativeEvent.scale, 1), 3);
-      setLastScale(newScale);
-      setPinchScale(newScale);
-    }
-  };
+  // Double tap to zoom
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      if (scale.value > 1) {
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+      } else {
+        scale.value = withSpring(2);
+        savedScale.value = 2;
+      }
+    });
+
+  const composedGesture = Gesture.Simultaneous(pinchGesture, doubleTapGesture);
+
+  const animatedImageStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   const macros = profile?.calculated_macros;
 
@@ -238,16 +261,8 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
             
-            <PinchGestureHandler
-              onGestureEvent={onPinchGestureEvent}
-              onHandlerStateChange={onPinchHandlerStateChange}
-            >
-              <Animated.View 
-                style={[
-                  styles.profilePictureContainer,
-                  { transform: [{ scale: imageScale }, { scale: pinchScale }] }
-                ]}
-              >
+            <GestureDetector gesture={composedGesture}>
+              <ReanimatedModule.View style={[styles.profilePictureContainer, animatedImageStyle]}>
                 {profile?.profile_image && (
                   <Image
                     source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
@@ -255,10 +270,8 @@ export default function HomeScreen() {
                     resizeMode="cover"
                   />
                 )}
-              </Animated.View>
-            </PinchGestureHandler>
-            
-            <Text style={styles.pinchHint}>Pinch to zoom</Text>
+              </ReanimatedModule.View>
+            </GestureDetector>
           </TouchableOpacity>
         </Modal>
 
@@ -570,11 +583,5 @@ const styles = StyleSheet.create({
   profilePictureLarge: {
     width: '100%',
     height: '100%',
-  },
-  pinchHint: {
-    marginTop: 20,
-    fontSize: 13,
-    color: colors.textMuted,
-    textAlign: 'center',
   },
 });

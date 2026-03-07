@@ -821,6 +821,7 @@ class ChatMessage(BaseModel):
     role: str  # user, assistant
     content: str
     saved: bool = False
+    title: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class ChatRequest(BaseModel):
@@ -1951,6 +1952,17 @@ async def save_chat_message(message_id: str, title: str = None):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Message not found")
     return {"message": "Message saved successfully"}
+
+@api_router.put("/chat/rename/{message_id}")
+async def rename_chat_message(message_id: str, title: str):
+    """Rename a saved chat message"""
+    result = await db.chat_history.update_one(
+        {"id": message_id, "saved": True}, 
+        {"$set": {"title": title}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Message not found or not saved")
+    return {"message": "Message renamed successfully"}
 
 @api_router.post("/chat/unsave/{message_id}")
 async def unsave_chat_message(message_id: str):
