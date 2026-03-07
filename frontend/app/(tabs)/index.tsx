@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Pedometer } from 'expo-sensors';
+import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
@@ -30,6 +31,8 @@ export default function HomeScreen() {
   const [dailySummary, setDailySummary] = useState<any>(null);
   const [showProfilePicture, setShowProfilePicture] = useState(false);
   const [imageScale] = useState(new Animated.Value(0.8));
+  const [pinchScale, setPinchScale] = useState(1);
+  const [lastScale, setLastScale] = useState(1);
 
   useEffect(() => {
     loadData();
@@ -92,7 +95,24 @@ export default function HomeScreen() {
       useNativeDriver: true,
     }).start(() => {
       setShowProfilePicture(false);
+      setPinchScale(1);
+      setLastScale(1);
     });
+  };
+
+  const onPinchGestureEvent = (event: any) => {
+    const scale = lastScale * event.nativeEvent.scale;
+    // Limit zoom between 1x and 3x
+    setPinchScale(Math.min(Math.max(scale, 1), 3));
+  };
+
+  const onPinchHandlerStateChange = (event: any) => {
+    if (event.nativeEvent.oldState === State.ACTIVE) {
+      // Save the current scale when gesture ends
+      const newScale = Math.min(Math.max(lastScale * event.nativeEvent.scale, 1), 3);
+      setLastScale(newScale);
+      setPinchScale(newScale);
+    }
   };
 
   const macros = profile?.calculated_macros;
@@ -218,20 +238,27 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
             
-            <Animated.View 
-              style={[
-                styles.profilePictureContainer,
-                { transform: [{ scale: imageScale }] }
-              ]}
+            <PinchGestureHandler
+              onGestureEvent={onPinchGestureEvent}
+              onHandlerStateChange={onPinchHandlerStateChange}
             >
-              {profile?.profile_image && (
-                <Image
-                  source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
-                  style={styles.profilePictureLarge}
-                  resizeMode="cover"
-                />
-              )}
-            </Animated.View>
+              <Animated.View 
+                style={[
+                  styles.profilePictureContainer,
+                  { transform: [{ scale: imageScale }, { scale: pinchScale }] }
+                ]}
+              >
+                {profile?.profile_image && (
+                  <Image
+                    source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
+                    style={styles.profilePictureLarge}
+                    resizeMode="cover"
+                  />
+                )}
+              </Animated.View>
+            </PinchGestureHandler>
+            
+            <Text style={styles.pinchHint}>Pinch to zoom</Text>
           </TouchableOpacity>
         </Modal>
 
@@ -543,5 +570,11 @@ const styles = StyleSheet.create({
   profilePictureLarge: {
     width: '100%',
     height: '100%',
+  },
+  pinchHint: {
+    marginTop: 20,
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
 });

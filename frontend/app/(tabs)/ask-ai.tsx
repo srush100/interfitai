@@ -47,10 +47,22 @@ export default function AskAIScreen() {
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [pendingSaveMessage, setPendingSaveMessage] = useState<Message | null>(null);
   const [noteTitle, setNoteTitle] = useState('');
+  const [savedNotes, setSavedNotes] = useState<SavedNote[]>([]);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameNote, setRenameNote] = useState<SavedNote | null>(null);
+  const [newNoteName, setNewNoteName] = useState('');
 
   useEffect(() => {
     loadHistory();
+    loadSavedNotes();
   }, [profile]);
+
+  useEffect(() => {
+    // Reload saved notes when switching to saved tab
+    if (activeTab === 'saved') {
+      loadSavedNotes();
+    }
+  }, [activeTab]);
 
   const loadHistory = async () => {
     if (!profile?.id) return;
@@ -64,7 +76,22 @@ export default function AskAIScreen() {
     }
   };
 
-  const savedMessages = messages.filter((m) => m.saved && m.role === 'assistant');
+  const loadSavedNotes = async () => {
+    if (!profile?.id) return;
+    try {
+      const response = await api.get(`/chat/saved/${profile.id}`);
+      const notes = response.data.map((m: any) => ({
+        id: m.id,
+        title: m.title || generateDefaultTitle(m.content),
+        content: m.content,
+        created_at: m.created_at,
+      }));
+      setSavedNotes(notes);
+    } catch (error) {
+      console.log('Error loading saved notes:', error);
+    }
+  };
+
   const chatMessages = messages;
 
   const sendMessage = async () => {
@@ -109,22 +136,89 @@ export default function AskAIScreen() {
       await api.post(`/chat/save/${messageId}`, null, {
         params: { title }
       });
+      // Update message state
+      const savedMsg = messages.find(m => m.id === messageId);
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, saved: true, title } : m))
       );
+      // Add to saved notes
+      if (savedMsg) {
+        setSavedNotes((prev) => [...prev, {
+          id: messageId,
+          title,
+          content: savedMsg.content,
+          created_at: savedMsg.created_at
+        }]);
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to save message');
     }
   };
 
   const unsaveMessage = async (messageId: string) => {
+    // Only update the visual state in chat, don't delete from saved notes
     try {
-      await api.post(`/chat/unsave/${messageId}`);
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, saved: false, title: undefined } : m))
       );
     } catch (error) {
-      Alert.alert('Error', 'Failed to unsave message');
+      Alert.alert('Error', 'Failed to update message');
+    }
+  };
+
+  const deleteNote = async (noteId: string) => {
+    Alert.alert(
+      'Delete Note',
+      'Are you sure you want to permanently delete this saved note?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.post(`/chat/unsave/${noteId}`);
+              setSavedNotes((prev) => prev.filter((n) => n.id !== noteId));
+              // Also update the message state if it exists
+              setMessages((prev) =>
+                prev.map((m) => (m.id === noteId ? { ...m, saved: false, title: undefined } : m))
+              );
+              if (selectedNote?.id === noteId) {
+                setSelectedNote(null);
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete note');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openRenameModal = (note: SavedNote) => {
+    setRenameNote(note);
+    setNewNoteName(note.title);
+    setShowRenameModal(true);
+  };
+
+  const confirmRename = async () => {
+    if (renameNote && newNoteName.trim()) {
+      try {
+        await api.post(`/chat/save/${renameNote.id}`, null, {
+          params: { title: newNoteName.trim() }
+        });
+        setSavedNotes((prev) =>
+          prev.map((n) => (n.id === renameNote.id ? { ...n, title: newNoteName.trim() } : n))
+        );
+        if (selectedNote?.id === renameNote.id) {
+          setSelectedNote({ ...selectedNote, title: newNoteName.trim() });
+        }
+        setShowRenameModal(false);
+        setRenameNote(null);
+        setNewNoteName('');
+      } catch (error) {
+        Alert.alert('Error', 'Failed to rename note');
+      }
     }
   };
 
@@ -267,10 +361,51 @@ export default function AskAIScreen() {
             color={activeTab === 'saved' ? colors.primary : colors.textSecondary} 
           />
           <Text style={[styles.tabText, activeTab === 'saved' && styles.tabTextActive]}>
-            Saved ({savedMessages.length})
+            Saved ({savedNotes.length})
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Rename Modal */}
+      <Modal
+        visible={showRenameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRenameModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.titleModal}>
+            <Text style={styles.titleModalHeader}>Rename Note</Text>
+            <TextInput
+              style={styles.titleInput}
+              placeholder="Enter new title..."
+              placeholderTextColor={colors.textMuted}
+              value={newNoteName}
+              onChangeText={setNewNoteName}
+              autoFocus
+            />
+            <View style={styles.titleModalActions}>
+              <TouchableOpacity 
+                style={styles.titleModalCancel}
+                onPress={() => {
+                  setShowRenameModal(false);
+                  setRenameNote(null);
+                }}
+              >
+                <Text style={styles.titleModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.titleModalSave, !newNoteName.trim() && styles.titleModalSaveDisabled]}
+                onPress={confirmRename}
+                disabled={!newNoteName.trim()}
+              >
+                <Ionicons name="checkmark" size={18} color={colors.background} />
+                <Text style={styles.titleModalSaveText}>Rename</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {activeTab === 'saved' ? (
         <ScrollView style={styles.savedContainer} contentContainerStyle={styles.savedContentContainer}>
@@ -286,7 +421,12 @@ export default function AskAIScreen() {
               </TouchableOpacity>
               
               <View style={styles.noteDetailCard}>
-                <Text style={styles.noteDetailTitle}>{selectedNote.title}</Text>
+                <View style={styles.noteDetailHeader}>
+                  <Text style={styles.noteDetailTitle}>{selectedNote.title}</Text>
+                  <TouchableOpacity onPress={() => openRenameModal(selectedNote)}>
+                    <Ionicons name="pencil" size={20} color={colors.primary} />
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.noteDetailDate}>
                   Saved on {new Date(selectedNote.created_at).toLocaleDateString('en-US', {
                     year: 'numeric',
@@ -298,7 +438,7 @@ export default function AskAIScreen() {
                 <Text style={styles.noteDetailContent}>{selectedNote.content}</Text>
               </View>
             </View>
-          ) : savedMessages.length === 0 ? (
+          ) : savedNotes.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="folder-open-outline" size={48} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No Saved Notes</Text>
@@ -307,37 +447,32 @@ export default function AskAIScreen() {
           ) : (
             // Note list view
             <View style={styles.notesList}>
-              <Text style={styles.notesListHeader}>{savedMessages.length} Saved Note{savedMessages.length !== 1 ? 's' : ''}</Text>
-              {savedMessages.map((message) => (
+              <Text style={styles.notesListHeader}>{savedNotes.length} Saved Note{savedNotes.length !== 1 ? 's' : ''}</Text>
+              <Text style={styles.notesListHint}>Long press to rename</Text>
+              {savedNotes.map((note) => (
                 <TouchableOpacity 
-                  key={message.id} 
+                  key={note.id} 
                   style={styles.noteCard}
-                  onPress={() => setSelectedNote({
-                    id: message.id,
-                    title: message.title || generateDefaultTitle(message.content),
-                    content: message.content,
-                    created_at: message.created_at
-                  })}
+                  onPress={() => setSelectedNote(note)}
+                  onLongPress={() => openRenameModal(note)}
+                  delayLongPress={500}
                 >
                   <View style={styles.noteCardIcon}>
                     <Ionicons name="document-text" size={22} color={colors.primary} />
                   </View>
                   <View style={styles.noteCardContent}>
                     <Text style={styles.noteCardTitle} numberOfLines={1}>
-                      {message.title || generateDefaultTitle(message.content)}
+                      {note.title}
                     </Text>
                     <Text style={styles.noteCardPreview} numberOfLines={2}>
-                      {message.content}
+                      {note.content}
                     </Text>
                     <Text style={styles.noteCardDate}>
-                      {new Date(message.created_at).toLocaleDateString()}
+                      {new Date(note.created_at).toLocaleDateString()}
                     </Text>
                   </View>
                   <TouchableOpacity 
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      toggleSave(message);
-                    }}
+                    onPress={() => deleteNote(note.id)}
                     style={styles.noteCardDelete}
                   >
                     <Ionicons name="trash-outline" size={18} color={colors.error} />
@@ -714,6 +849,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: 4,
   },
+  notesListHint: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginBottom: 12,
+  },
   noteCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -777,10 +917,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
   },
+  noteDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
   noteDetailTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: colors.text,
+    flex: 1,
+    marginRight: 12,
   },
   noteDetailDate: {
     fontSize: 13,
