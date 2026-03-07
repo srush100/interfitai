@@ -109,12 +109,20 @@ export default function Onboarding() {
 
   const renderStep1 = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.splashContainer}>
+      {/* Logo and Welcome Section */}
+      <View style={styles.welcomeHeader}>
+        <View style={styles.logoGlow}>
+          <Image
+            source={require('../assets/logo-icon-yellow.png')}
+            style={styles.welcomeLogo}
+            resizeMode="contain"
+          />
+        </View>
         <Text style={styles.splashTitle}>
           <Text style={styles.splashWhite}>INTERFIT</Text>
           <Text style={styles.splashYellow}>AI</Text>
         </Text>
-        <Text style={styles.splashSubtitle}>Your AI-Powered Fitness Companion</Text>
+        <Text style={styles.splashSubtitle}>Your AI-Powered Fitness Journey{'\n'}Starts Here</Text>
       </View>
       
       <View style={styles.inputGroup}>
@@ -389,16 +397,39 @@ const styles = StyleSheet.create({
   stepContainer: {
     flex: 1,
   },
+  welcomeHeader: {
+    alignItems: 'center',
+    marginBottom: 36,
+    paddingTop: 16,
+  },
+  logoGlow: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  welcomeLogo: {
+    width: 80,
+    height: 80,
+  },
   splashContainer: {
     alignItems: 'center',
     marginBottom: 32,
     paddingTop: 20,
   },
   splashTitle: {
-    fontSize: 42,
+    fontSize: 38,
     fontWeight: '800',
     letterSpacing: 2,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   splashWhite: {
     color: colors.text,
@@ -410,6 +441,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
     letterSpacing: 0.5,
+    textAlign: 'center',
+    lineHeight: 22,
   },
   logoContainer: {
     alignItems: 'center',
