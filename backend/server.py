@@ -1942,9 +1942,12 @@ async def get_chat_history(user_id: str, limit: int = 50):
     return [ChatMessage(**msg) for msg in history]
 
 @api_router.post("/chat/save/{message_id}")
-async def save_chat_message(message_id: str):
-    """Save/bookmark a chat message"""
-    result = await db.chat_history.update_one({"id": message_id}, {"$set": {"saved": True}})
+async def save_chat_message(message_id: str, title: str = None):
+    """Save/bookmark a chat message with optional title"""
+    update_data = {"saved": True}
+    if title:
+        update_data["title"] = title
+    result = await db.chat_history.update_one({"id": message_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Message not found")
     return {"message": "Message saved successfully"}
@@ -1952,7 +1955,7 @@ async def save_chat_message(message_id: str):
 @api_router.post("/chat/unsave/{message_id}")
 async def unsave_chat_message(message_id: str):
     """Unsave/unbookmark a chat message"""
-    result = await db.chat_history.update_one({"id": message_id}, {"$set": {"saved": False}})
+    result = await db.chat_history.update_one({"id": message_id}, {"$set": {"saved": False, "title": None}})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Message not found")
     return {"message": "Message unsaved successfully"}

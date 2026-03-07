@@ -228,7 +228,7 @@ export default function HomeScreen() {
                 <Image
                   source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
                   style={styles.profilePictureLarge}
-                  resizeMode="contain"
+                  resizeMode="cover"
                 />
               )}
             </Animated.View>
@@ -532,11 +532,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   profilePictureContainer: {
-    width: SCREEN_WIDTH - 40,
-    height: SCREEN_WIDTH - 40,
-    borderRadius: 20,
+    width: SCREEN_WIDTH * 0.85,
+    height: SCREEN_WIDTH * 0.85,
+    borderRadius: (SCREEN_WIDTH * 0.85) / 2,
     overflow: 'hidden',
     backgroundColor: colors.surface,
+    borderWidth: 3,
+    borderColor: colors.primary,
   },
   profilePictureLarge: {
     width: '100%',

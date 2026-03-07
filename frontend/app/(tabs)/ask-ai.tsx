@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +25,14 @@ interface Message {
   content: string;
   saved: boolean;
   created_at: string;
+  title?: string;
+}
+
+interface SavedNote {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
 }
 
 export default function AskAIScreen() {
@@ -34,6 +43,10 @@ export default function AskAIScreen() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'chat' | 'saved'>('chat');
   const scrollViewRef = useRef<ScrollView>(null);
+  const [selectedNote, setSelectedNote] = useState<SavedNote | null>(null);
+  const [showTitleModal, setShowTitleModal] = useState(false);
+  const [pendingSaveMessage, setPendingSaveMessage] = useState<Message | null>(null);
+  const [noteTitle, setNoteTitle] = useState('');
 
   useEffect(() => {
     loadHistory();
@@ -91,11 +104,13 @@ export default function AskAIScreen() {
     }
   };
 
-  const saveMessage = async (messageId: string) => {
+  const saveMessage = async (messageId: string, title: string) => {
     try {
-      await api.post(`/chat/save/${messageId}`);
+      await api.post(`/chat/save/${messageId}`, null, {
+        params: { title }
+      });
       setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, saved: true } : m))
+        prev.map((m) => (m.id === messageId ? { ...m, saved: true, title } : m))
       );
     } catch (error) {
       Alert.alert('Error', 'Failed to save message');
@@ -106,7 +121,7 @@ export default function AskAIScreen() {
     try {
       await api.post(`/chat/unsave/${messageId}`);
       setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, saved: false } : m))
+        prev.map((m) => (m.id === messageId ? { ...m, saved: false, title: undefined } : m))
       );
     } catch (error) {
       Alert.alert('Error', 'Failed to unsave message');
@@ -117,8 +132,26 @@ export default function AskAIScreen() {
     if (message.saved) {
       unsaveMessage(message.id);
     } else {
-      saveMessage(message.id);
+      // Show title input modal
+      setPendingSaveMessage(message);
+      setNoteTitle('');
+      setShowTitleModal(true);
     }
+  };
+
+  const confirmSave = () => {
+    if (pendingSaveMessage && noteTitle.trim()) {
+      saveMessage(pendingSaveMessage.id, noteTitle.trim());
+      setShowTitleModal(false);
+      setPendingSaveMessage(null);
+      setNoteTitle('');
+    }
+  };
+
+  const generateDefaultTitle = (content: string) => {
+    // Generate a title from the first few words of the response
+    const words = content.split(' ').slice(0, 6).join(' ');
+    return words.length > 30 ? words.substring(0, 30) + '...' : words;
   };
 
   const clearHistory = async () => {
@@ -152,6 +185,48 @@ export default function AskAIScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Title Input Modal */}
+      <Modal
+        visible={showTitleModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowTitleModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.titleModal}>
+            <Text style={styles.titleModalHeader}>Save Note</Text>
+            <Text style={styles.titleModalSubtext}>Give this response a title for easy access</Text>
+            <TextInput
+              style={styles.titleInput}
+              placeholder="Enter a title..."
+              placeholderTextColor={colors.textMuted}
+              value={noteTitle}
+              onChangeText={setNoteTitle}
+              autoFocus
+            />
+            <View style={styles.titleModalActions}>
+              <TouchableOpacity 
+                style={styles.titleModalCancel}
+                onPress={() => {
+                  setShowTitleModal(false);
+                  setPendingSaveMessage(null);
+                }}
+              >
+                <Text style={styles.titleModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.titleModalSave, !noteTitle.trim() && styles.titleModalSaveDisabled]}
+                onPress={confirmSave}
+                disabled={!noteTitle.trim()}
+              >
+                <Ionicons name="bookmark" size={18} color={colors.background} />
+                <Text style={styles.titleModalSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Image
@@ -198,27 +273,78 @@ export default function AskAIScreen() {
       </View>
 
       {activeTab === 'saved' ? (
-        <ScrollView style={styles.savedContainer} contentContainerStyle={styles.savedContent}>
-          {savedMessages.length === 0 ? (
+        <ScrollView style={styles.savedContainer} contentContainerStyle={styles.savedContentContainer}>
+          {selectedNote ? (
+            // Full note view
+            <View style={styles.noteDetailView}>
+              <TouchableOpacity 
+                style={styles.noteBackBtn}
+                onPress={() => setSelectedNote(null)}
+              >
+                <Ionicons name="arrow-back" size={20} color={colors.primary} />
+                <Text style={styles.noteBackText}>Back to Notes</Text>
+              </TouchableOpacity>
+              
+              <View style={styles.noteDetailCard}>
+                <Text style={styles.noteDetailTitle}>{selectedNote.title}</Text>
+                <Text style={styles.noteDetailDate}>
+                  Saved on {new Date(selectedNote.created_at).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </Text>
+                <View style={styles.noteDetailDivider} />
+                <Text style={styles.noteDetailContent}>{selectedNote.content}</Text>
+              </View>
+            </View>
+          ) : savedMessages.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="bookmark-outline" size={48} color={colors.textMuted} />
-              <Text style={styles.emptyTitle}>No Saved Responses</Text>
+              <Ionicons name="folder-open-outline" size={48} color={colors.textMuted} />
+              <Text style={styles.emptyTitle}>No Saved Notes</Text>
               <Text style={styles.emptySubtitle}>Tap the bookmark icon on any AI response to save it here</Text>
             </View>
           ) : (
-            savedMessages.map((message) => (
-              <View key={message.id} style={styles.savedCard}>
-                <Text style={styles.savedContent}>{message.content}</Text>
-                <View style={styles.savedFooter}>
-                  <Text style={styles.savedDate}>
-                    {new Date(message.created_at).toLocaleDateString()}
-                  </Text>
-                  <TouchableOpacity onPress={() => toggleSave(message)}>
-                    <Ionicons name="bookmark" size={20} color={colors.primary} />
+            // Note list view
+            <View style={styles.notesList}>
+              <Text style={styles.notesListHeader}>{savedMessages.length} Saved Note{savedMessages.length !== 1 ? 's' : ''}</Text>
+              {savedMessages.map((message) => (
+                <TouchableOpacity 
+                  key={message.id} 
+                  style={styles.noteCard}
+                  onPress={() => setSelectedNote({
+                    id: message.id,
+                    title: message.title || generateDefaultTitle(message.content),
+                    content: message.content,
+                    created_at: message.created_at
+                  })}
+                >
+                  <View style={styles.noteCardIcon}>
+                    <Ionicons name="document-text" size={22} color={colors.primary} />
+                  </View>
+                  <View style={styles.noteCardContent}>
+                    <Text style={styles.noteCardTitle} numberOfLines={1}>
+                      {message.title || generateDefaultTitle(message.content)}
+                    </Text>
+                    <Text style={styles.noteCardPreview} numberOfLines={2}>
+                      {message.content}
+                    </Text>
+                    <Text style={styles.noteCardDate}>
+                      {new Date(message.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <TouchableOpacity 
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      toggleSave(message);
+                    }}
+                    style={styles.noteCardDelete}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={colors.error} />
                   </TouchableOpacity>
-                </View>
-              </View>
-            ))
+                </TouchableOpacity>
+              ))}
+            </View>
           )}
         </ScrollView>
       ) : (
@@ -549,9 +675,9 @@ const styles = StyleSheet.create({
   savedContainer: {
     flex: 1,
   },
-  savedContent: {
+  savedContentContainer: {
     padding: 20,
-    gap: 12,
+    paddingBottom: 40,
   },
   savedCard: {
     backgroundColor: colors.surface,
@@ -577,5 +703,170 @@ const styles = StyleSheet.create({
   savedDate: {
     fontSize: 12,
     color: colors.textSecondary,
+  },
+  // Note List Styles
+  notesList: {
+    gap: 12,
+  },
+  notesListHeader: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  noteCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    padding: 14,
+    borderRadius: 12,
+    gap: 12,
+  },
+  noteCardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noteCardContent: {
+    flex: 1,
+  },
+  noteCardTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  noteCardPreview: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  noteCardDate: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 4,
+  },
+  noteCardDelete: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.error + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Note Detail View Styles
+  noteDetailView: {
+    flex: 1,
+  },
+  noteBackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 16,
+  },
+  noteBackText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.primary,
+  },
+  noteDetailCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+  },
+  noteDetailTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  noteDetailDate: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  noteDetailDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 16,
+  },
+  noteDetailContent: {
+    fontSize: 15,
+    color: colors.text,
+    lineHeight: 24,
+  },
+  // Title Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  titleModal: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+  },
+  titleModalHeader: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  titleModalSubtext: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 20,
+  },
+  titleInput: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  titleModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  titleModalCancel: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceLight,
+    alignItems: 'center',
+  },
+  titleModalCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  titleModalSave: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  titleModalSaveDisabled: {
+    opacity: 0.5,
+  },
+  titleModalSaveText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.background,
   },
 });

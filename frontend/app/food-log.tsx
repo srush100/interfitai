@@ -82,6 +82,7 @@ export default function FoodLog() {
   const [showSavedMeals, setShowSavedMeals] = useState(true);
   const [removingFavoriteId, setRemovingFavoriteId] = useState<string | null>(null);
   const [resettingLogs, setResettingLogs] = useState(false);
+  const [savingSearchFavorite, setSavingSearchFavorite] = useState<number | null>(null);
 
   useEffect(() => {
     loadTodayLogs();
@@ -152,6 +153,31 @@ export default function FoodLog() {
       Alert.alert('Error', 'Failed to remove saved meal');
     } finally {
       setRemovingFavoriteId(null);
+    }
+  };
+
+  const saveSearchedFoodToFavorites = async (food: SearchResult, idx: number) => {
+    if (!profile?.id) return;
+    setSavingSearchFavorite(idx);
+    try {
+      await api.post('/food/favorite', null, {
+        params: {
+          user_id: profile.id,
+          meal_name: food.name,
+          calories: food.calories,
+          protein: food.protein,
+          carbs: food.carbs,
+          fats: food.fats,
+          serving_size: '1 serving',
+        },
+      });
+      Alert.alert('Saved!', `${food.name} has been added to your favorites.`);
+      // Reload saved meals to show the new item
+      loadSavedMeals();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save to favorites');
+    } finally {
+      setSavingSearchFavorite(null);
     }
   };
 
@@ -606,19 +632,31 @@ export default function FoodLog() {
             {searchResults.length > 0 && (
               <View style={styles.resultsContainer}>
                 {searchResults.map((food, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={styles.resultItem}
-                    onPress={() => logFood(food)}
-                  >
-                    <View style={styles.resultInfo}>
-                      <Text style={styles.resultName}>{food.name}</Text>
-                      <Text style={styles.resultMacros}>
-                        {food.calories} cal • {food.protein}g P • {food.carbs}g C • {food.fats}g F
-                      </Text>
-                    </View>
-                    <Ionicons name="add-circle" size={28} color={colors.primary} />
-                  </TouchableOpacity>
+                  <View key={idx} style={styles.resultItem}>
+                    <TouchableOpacity
+                      style={styles.resultContent}
+                      onPress={() => logFood(food)}
+                    >
+                      <View style={styles.resultInfo}>
+                        <Text style={styles.resultName}>{food.name}</Text>
+                        <Text style={styles.resultMacros}>
+                          {food.calories} cal • {food.protein}g P • {food.carbs}g C • {food.fats}g F
+                        </Text>
+                      </View>
+                      <Ionicons name="add-circle" size={26} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.saveFavoriteBtn}
+                      onPress={() => saveSearchedFoodToFavorites(food, idx)}
+                      disabled={savingSearchFavorite === idx}
+                    >
+                      {savingSearchFavorite === idx ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Ionicons name="heart-outline" size={20} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 ))}
               </View>
             )}
@@ -987,21 +1025,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    padding: 16,
+    padding: 14,
     borderRadius: 12,
+    gap: 10,
+  },
+  resultContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   resultInfo: {
     flex: 1,
   },
   resultName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: colors.text,
   },
   resultMacros: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.textSecondary,
-    marginTop: 4,
+    marginTop: 3,
+  },
+  saveFavoriteBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   snapSection: {
     gap: 16,
