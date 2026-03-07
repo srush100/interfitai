@@ -50,6 +50,11 @@ interface MealPlan {
   created_at: string;
 }
 
+interface FavoriteMeal {
+  id: string;
+  meal_name: string;
+}
+
 export default function MealDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
@@ -59,9 +64,12 @@ export default function MealDetail() {
   const [selectedDay, setSelectedDay] = useState(0);
   const [expandedMeal, setExpandedMeal] = useState<string | null>(null);
   const [generatingAlternate, setGeneratingAlternate] = useState<string | null>(null);
+  const [favoriteMeals, setFavoriteMeals] = useState<Set<string>>(new Set());
+  const [savingFavorite, setSavingFavorite] = useState<string | null>(null);
 
   useEffect(() => {
     loadMealPlan();
+    loadFavorites();
   }, [id]);
 
   const loadMealPlan = async () => {
@@ -72,6 +80,59 @@ export default function MealDetail() {
       console.log('Error loading meal plan:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadFavorites = async () => {
+    if (!profile?.id) return;
+    try {
+      const response = await api.get(`/food/favorites/${profile.id}`);
+      const favoriteNames = new Set(response.data.map((f: FavoriteMeal) => f.meal_name));
+      setFavoriteMeals(favoriteNames);
+    } catch (error) {
+      console.log('Error loading favorites:', error);
+    }
+  };
+
+  const toggleFavorite = async (meal: Meal) => {
+    if (!profile?.id) return;
+    
+    const mealKey = meal.name;
+    setSavingFavorite(mealKey);
+    
+    try {
+      if (favoriteMeals.has(mealKey)) {
+        // Find and remove the favorite
+        const response = await api.get(`/food/favorites/${profile.id}`);
+        const favorite = response.data.find((f: any) => f.meal_name === mealKey);
+        if (favorite) {
+          await api.delete(`/food/favorite/${favorite.id}`);
+          setFavoriteMeals(prev => {
+            const updated = new Set(prev);
+            updated.delete(mealKey);
+            return updated;
+          });
+        }
+      } else {
+        // Add to favorites
+        await api.post('/food/favorite', null, {
+          params: {
+            user_id: profile.id,
+            meal_name: meal.name,
+            calories: meal.calories,
+            protein: meal.protein,
+            carbs: meal.carbs,
+            fats: meal.fats,
+            serving_size: '1 serving',
+          },
+        });
+        setFavoriteMeals(prev => new Set([...prev, mealKey]));
+      }
+    } catch (error) {
+      console.log('Error toggling favorite:', error);
+      Alert.alert('Error', 'Failed to update favorites');
+    } finally {
+      setSavingFavorite(null);
     }
   };
 
@@ -235,6 +296,27 @@ export default function MealDetail() {
                   {meal.calories} cal • {meal.protein}g P • {meal.carbs}g C • {meal.fats}g F
                 </Text>
               </View>
+              
+              {/* Favorite Button */}
+              <TouchableOpacity
+                style={styles.favoriteBtn}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  toggleFavorite(meal);
+                }}
+                disabled={savingFavorite === meal.name}
+              >
+                {savingFavorite === meal.name ? (
+                  <ActivityIndicator size="small" color={colors.error} />
+                ) : (
+                  <Ionicons
+                    name={favoriteMeals.has(meal.name) ? 'heart' : 'heart-outline'}
+                    size={22}
+                    color={favoriteMeals.has(meal.name) ? colors.error : colors.textSecondary}
+                  />
+                )}
+              </TouchableOpacity>
+              
               <Ionicons
                 name={expandedMeal === `${selectedDay}-${mealIdx}` ? 'chevron-up' : 'chevron-down'}
                 size={20}
@@ -412,6 +494,13 @@ const styles = StyleSheet.create({
   mealInfo: {
     flex: 1,
     marginLeft: 12,
+  },
+  favoriteBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 4,
   },
   mealType: {
     fontSize: 12,
