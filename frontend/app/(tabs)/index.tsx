@@ -33,11 +33,13 @@ export default function HomeScreen() {
   const [showProfilePicture, setShowProfilePicture] = useState(false);
   const [imageScale] = useState(new Animated.Value(0.8));
   
-  // Pinch-to-zoom with Reanimated
+  // Pinch-to-zoom and pan with Reanimated
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
-  const focalX = useSharedValue(0);
-  const focalY = useSharedValue(0);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
 
   useEffect(() => {
     loadData();
@@ -100,8 +102,13 @@ export default function HomeScreen() {
       useNativeDriver: true,
     }).start(() => {
       setShowProfilePicture(false);
+      // Reset all transforms
       scale.value = 1;
       savedScale.value = 1;
+      translateX.value = 0;
+      translateY.value = 0;
+      savedTranslateX.value = 0;
+      savedTranslateY.value = 0;
     });
   };
 
@@ -112,11 +119,28 @@ export default function HomeScreen() {
     })
     .onEnd(() => {
       savedScale.value = scale.value;
-      // Spring back if zoomed out
-      if (scale.value < 1) {
+      // Spring back if zoomed out and reset position
+      if (scale.value <= 1) {
         scale.value = withSpring(1);
         savedScale.value = 1;
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
       }
+    });
+
+  // Pan gesture for dragging (only when zoomed)
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      if (scale.value > 1) {
+        translateX.value = savedTranslateX.value + event.translationX;
+        translateY.value = savedTranslateY.value + event.translationY;
+      }
+    })
+    .onEnd(() => {
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
     });
 
   // Double tap to zoom
@@ -126,16 +150,24 @@ export default function HomeScreen() {
       if (scale.value > 1) {
         scale.value = withSpring(1);
         savedScale.value = 1;
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
       } else {
         scale.value = withSpring(2);
         savedScale.value = 2;
       }
     });
 
-  const composedGesture = Gesture.Simultaneous(pinchGesture, doubleTapGesture);
+  const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture, doubleTapGesture);
 
   const animatedImageStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value }
+    ],
   }));
 
   const macros = profile?.calculated_macros;

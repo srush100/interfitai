@@ -31,7 +31,8 @@ interface Message {
 interface SavedNote {
   id: string;
   title: string;
-  content: string;
+  question: string;
+  answer: string;
   created_at: string;
 }
 
@@ -79,13 +80,35 @@ export default function AskAIScreen() {
   const loadSavedNotes = async () => {
     if (!profile?.id) return;
     try {
-      const response = await api.get(`/chat/saved/${profile.id}`);
-      const notes = response.data.map((m: any) => ({
-        id: m.id,
-        title: m.title || generateDefaultTitle(m.content),
-        content: m.content,
-        created_at: m.created_at,
-      }));
+      // Get all saved messages and the full history to find questions
+      const [savedResponse, historyResponse] = await Promise.all([
+        api.get(`/chat/saved/${profile.id}`),
+        api.get(`/chat/history/${profile.id}?limit=200`)
+      ]);
+      
+      const history = historyResponse.data;
+      const notes = savedResponse.data.map((m: any) => {
+        // Find the user question that preceded this assistant response
+        const msgIndex = history.findIndex((h: any) => h.id === m.id);
+        let question = '';
+        if (msgIndex > 0) {
+          // Look backwards for the user message
+          for (let i = msgIndex - 1; i >= 0; i--) {
+            if (history[i].role === 'user') {
+              question = history[i].content;
+              break;
+            }
+          }
+        }
+        
+        return {
+          id: m.id,
+          title: m.title || generateDefaultTitle(m.content),
+          question: question,
+          answer: m.content,
+          created_at: m.created_at,
+        };
+      });
       setSavedNotes(notes);
     } catch (error) {
       console.log('Error loading saved notes:', error);
@@ -141,12 +164,23 @@ export default function AskAIScreen() {
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, saved: true, title } : m))
       );
-      // Add to saved notes
+      // Find the question that preceded this answer
       if (savedMsg) {
+        const msgIndex = messages.findIndex(m => m.id === messageId);
+        let question = '';
+        if (msgIndex > 0) {
+          for (let i = msgIndex - 1; i >= 0; i--) {
+            if (messages[i].role === 'user') {
+              question = messages[i].content;
+              break;
+            }
+          }
+        }
         setSavedNotes((prev) => [...prev, {
           id: messageId,
           title,
-          content: savedMsg.content,
+          question,
+          answer: savedMsg.content,
           created_at: savedMsg.created_at
         }]);
       }
@@ -435,7 +469,26 @@ export default function AskAIScreen() {
                   })}
                 </Text>
                 <View style={styles.noteDetailDivider} />
-                <Text style={styles.noteDetailContent}>{selectedNote.content}</Text>
+                
+                {/* Question */}
+                {selectedNote.question && (
+                  <View style={styles.conversationBlock}>
+                    <View style={styles.questionHeader}>
+                      <Ionicons name="person-circle" size={20} color={colors.textSecondary} />
+                      <Text style={styles.conversationLabel}>Your Question</Text>
+                    </View>
+                    <Text style={styles.questionText}>{selectedNote.question}</Text>
+                  </View>
+                )}
+                
+                {/* Answer */}
+                <View style={styles.conversationBlock}>
+                  <View style={styles.answerHeader}>
+                    <Ionicons name="sparkles" size={20} color={colors.primary} />
+                    <Text style={styles.conversationLabelAI}>InterFitAI</Text>
+                  </View>
+                  <Text style={styles.noteDetailContent}>{selectedNote.answer}</Text>
+                </View>
               </View>
             </View>
           ) : savedNotes.length === 0 ? (
@@ -465,7 +518,7 @@ export default function AskAIScreen() {
                       {note.title}
                     </Text>
                     <Text style={styles.noteCardPreview} numberOfLines={2}>
-                      {note.content}
+                      {note.question ? `Q: ${note.question}` : note.answer}
                     </Text>
                     <Text style={styles.noteCardDate}>
                       {new Date(note.created_at).toLocaleDateString()}
@@ -943,6 +996,40 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
     lineHeight: 24,
+  },
+  // Conversation block styles
+  conversationBlock: {
+    marginBottom: 16,
+  },
+  questionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  answerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  conversationLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  conversationLabelAI: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  questionText: {
+    fontSize: 15,
+    color: colors.text,
+    lineHeight: 22,
+    backgroundColor: colors.surfaceLight,
+    padding: 12,
+    borderRadius: 10,
   },
   // Title Modal Styles
   modalOverlay: {
