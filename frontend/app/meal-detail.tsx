@@ -66,6 +66,7 @@ export default function MealDetail() {
   const [generatingAlternate, setGeneratingAlternate] = useState<string | null>(null);
   const [favoriteMeals, setFavoriteMeals] = useState<Set<string>>(new Set());
   const [savingFavorite, setSavingFavorite] = useState<string | null>(null);
+  const [loggingMeal, setLoggingMeal] = useState<string | null>(null);
 
   useEffect(() => {
     loadMealPlan();
@@ -87,7 +88,7 @@ export default function MealDetail() {
     if (!profile?.id) return;
     try {
       const response = await api.get(`/food/favorites/${profile.id}`);
-      const favoriteNames = new Set(response.data.map((f: FavoriteMeal) => f.meal_name));
+      const favoriteNames = new Set(response.data.map((f: any) => f.meal?.name || f.meal_name));
       setFavoriteMeals(favoriteNames);
     } catch (error) {
       console.log('Error loading favorites:', error);
@@ -104,7 +105,7 @@ export default function MealDetail() {
       if (favoriteMeals.has(mealKey)) {
         // Find and remove the favorite
         const response = await api.get(`/food/favorites/${profile.id}`);
-        const favorite = response.data.find((f: any) => f.meal_name === mealKey);
+        const favorite = response.data.find((f: any) => (f.meal?.name || f.meal_name) === mealKey);
         if (favorite) {
           await api.delete(`/food/favorite/${favorite.id}`);
           setFavoriteMeals(prev => {
@@ -133,6 +134,34 @@ export default function MealDetail() {
       Alert.alert('Error', 'Failed to update favorites');
     } finally {
       setSavingFavorite(null);
+    }
+  };
+
+  const logMeal = async (meal: Meal) => {
+    if (!profile?.id) return;
+    
+    const mealKey = meal.name;
+    setLoggingMeal(mealKey);
+    
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await api.post('/food/log', {
+        user_id: profile.id,
+        food_name: meal.name,
+        serving_size: '1 serving',
+        calories: meal.calories,
+        protein: meal.protein,
+        carbs: meal.carbs,
+        fats: meal.fats,
+        meal_type: meal.meal_type.toLowerCase(),
+        logged_date: today,
+      });
+      Alert.alert('Logged!', `${meal.name} has been added to your food diary.`);
+    } catch (error) {
+      console.log('Error logging meal:', error);
+      Alert.alert('Error', 'Failed to log meal');
+    } finally {
+      setLoggingMeal(null);
     }
   };
 
@@ -347,20 +376,65 @@ export default function MealDetail() {
                   </Text>
                 </View>
 
-                <TouchableOpacity
-                  style={styles.swapBtn}
-                  onPress={() => generateAlternateMeal(selectedDay, mealIdx)}
-                  disabled={generatingAlternate === `${selectedDay}-${mealIdx}`}
-                >
-                  {generatingAlternate === `${selectedDay}-${mealIdx}` ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <>
-                      <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
-                      <Text style={styles.swapBtnText}>Generate Alternate</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                {/* Action Buttons Row */}
+                <View style={styles.actionButtonsRow}>
+                  {/* Log Meal Button */}
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => logMeal(meal)}
+                    disabled={loggingMeal === meal.name}
+                  >
+                    {loggingMeal === meal.name ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <>
+                        <Ionicons name="add-circle" size={20} color={colors.primary} />
+                        <Text style={styles.actionBtnText}>Log</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Save to Favorites Button */}
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => toggleFavorite(meal)}
+                    disabled={savingFavorite === meal.name}
+                  >
+                    {savingFavorite === meal.name ? (
+                      <ActivityIndicator size="small" color={colors.error} />
+                    ) : (
+                      <>
+                        <Ionicons 
+                          name={favoriteMeals.has(meal.name) ? "heart" : "heart-outline"} 
+                          size={20} 
+                          color={favoriteMeals.has(meal.name) ? colors.error : colors.textSecondary} 
+                        />
+                        <Text style={[
+                          styles.actionBtnText,
+                          favoriteMeals.has(meal.name) && styles.actionBtnTextActive
+                        ]}>
+                          {favoriteMeals.has(meal.name) ? 'Saved' : 'Save'}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Generate Alternate Button */}
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => generateAlternateMeal(selectedDay, mealIdx)}
+                    disabled={generatingAlternate === `${selectedDay}-${mealIdx}`}
+                  >
+                    {generatingAlternate === `${selectedDay}-${mealIdx}` ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <>
+                        <Ionicons name="swap-horizontal" size={20} color={colors.primary} />
+                        <Text style={styles.actionBtnText}>Swap</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </TouchableOpacity>
@@ -553,6 +627,32 @@ const styles = StyleSheet.create({
   prepTimeText: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    gap: 10,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  actionBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  actionBtnTextActive: {
+    color: colors.error,
   },
   swapBtn: {
     flexDirection: 'row',
