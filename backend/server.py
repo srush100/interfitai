@@ -71,8 +71,8 @@ CACHED_EXERCISE_GIFS = {
     "diamond push up": "0279",
     "decline push up": "1302",
     "chest dip": "0251",
-    "dip": "0251",
     "parallel bar dip": "0251",
+    "weighted dip": "0251",
     
     # Back exercises
     "pull up": "0652",
@@ -106,18 +106,23 @@ CACHED_EXERCISE_GIFS = {
     "overhead press": "0431",
     "shoulder press": "0431",
     "barbell shoulder press": "0431",
+    "barbell overhead press": "0431",
     "military press": "0431",
     "standing military press": "0431",
     "dumbbell shoulder press": "0405",
     "seated dumbbell press": "0405",
-    "arnold press": "0251",
+    "seated dumbbell shoulder press": "0405",
+    "arnold press": "0262",
+    "dumbbell arnold press": "0262",
     "lateral raise": "0334",
     "dumbbell lateral raise": "0334",
     "side lateral raise": "0334",
+    "side raise": "0334",
     "front raise": "0310",
     "dumbbell front raise": "0310",
     "rear delt fly": "0578",
     "reverse fly": "0578",
+    "rear delt": "0578",
     "face pull": "0174",
     "cable face pull": "0174",
     "upright row": "0122",
@@ -153,8 +158,11 @@ CACHED_EXERCISE_GIFS = {
     "skull crusher": "0055",
     "lying tricep extension": "0055",
     "barbell skull crusher": "0055",
-    "tricep dip": "0353",
-    "bench dip": "0353",
+    "tricep dip": "0814",
+    "triceps dip": "0814",
+    "dips": "0814",
+    "bench dip": "0129",
+    "bench dips": "0129",
     "tricep kickback": "0347",
     "dumbbell kickback": "0347",
     "close grip bench press": "0031",
@@ -423,6 +431,7 @@ class UserProfile(BaseModel):
     subscription_end_date: Optional[str] = None
     reminders_enabled: bool = True
     motivation_enabled: bool = True
+    profile_image: Optional[str] = None  # Base64 encoded profile picture
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -447,6 +456,7 @@ class UserProfileUpdate(BaseModel):
     goal: Optional[str] = None
     reminders_enabled: Optional[bool] = None
     motivation_enabled: Optional[bool] = None
+    profile_image: Optional[str] = None  # Base64 encoded profile picture
 
 # Workout Models
 class Exercise(BaseModel):
