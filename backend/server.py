@@ -50,6 +50,10 @@ FATSECRET_CLIENT_SECRET = os.getenv("FATSECRET_CLIENT_SECRET")
 FATSECRET_TOKEN_URL = "https://oauth.fatsecret.com/connect/token"
 FATSECRET_API_BASE = "https://platform.fatsecret.com/rest/server.api"
 
+# USDA FoodData Central API (free, no IP restrictions)
+USDA_API_KEY = "DEMO_KEY"  # Using demo key - works for reasonable usage
+USDA_API_BASE = "https://api.nal.usda.gov/fdc/v1"
+
 # Cache for FatSecret access token
 fatsecret_token_cache = {
     "access_token": None,
@@ -177,6 +181,71 @@ async def search_fatsecret(query: str, max_results: int = 50):
             })
         
         return results
+
+async def search_usda(query: str, max_results: int = 50):
+    """Search USDA FoodData Central database (free, no IP restrictions)"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{USDA_API_BASE}/foods/search",
+                params={
+                    "api_key": USDA_API_KEY,
+                    "query": query,
+                    "pageSize": max_results,
+                    "dataType": ["Branded", "Foundation", "SR Legacy"]
+                },
+                timeout=10.0
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"USDA search error: {response.status_code} - {response.text}")
+                return []
+            
+            data = response.json()
+            foods = data.get("foods", [])
+            
+            logger.info(f"USDA returned {len(foods)} foods")
+            
+            results = []
+            for food in foods:
+                # Extract nutrients
+                nutrients = {n.get("nutrientName", ""): n.get("value", 0) for n in food.get("foodNutrients", [])}
+                
+                calories = nutrients.get("Energy", 0)
+                protein = nutrients.get("Protein", 0)
+                carbs = nutrients.get("Carbohydrate, by difference", 0)
+                fats = nutrients.get("Total lipid (fat)", 0)
+                
+                # Get serving size info
+                serving = food.get("servingSize", "")
+                serving_unit = food.get("servingSizeUnit", "")
+                serving_info = f"{serving}{serving_unit}" if serving and serving_unit else "per 100g"
+                
+                brand = food.get("brandName", "") or food.get("brandOwner", "")
+                food_name = food.get("description", "Unknown")
+                
+                # Clean up the name
+                if brand and brand.lower() not in food_name.lower():
+                    display_name = f"{brand} - {food_name}"
+                else:
+                    display_name = food_name
+                
+                results.append({
+                    "name": f"{display_name} ({serving_info})",
+                    "brand": brand,
+                    "calories": round(calories, 0),
+                    "protein": round(protein, 1),
+                    "carbs": round(carbs, 1),
+                    "fats": round(fats, 1),
+                    "food_id": str(food.get("fdcId", "")),
+                    "source": "usda"
+                })
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"USDA search exception: {e}")
+            return []
 
 # Pre-cached exercise GIFs for common exercises (fallback when API quota exceeded)
 # These are direct GIF URLs from exercisedb.io (publicly accessible)
@@ -1768,18 +1837,26 @@ async def delete_food_log(log_id: str):
 
 @api_router.get("/food/search")
 async def search_foods(query: str):
-    """Search FatSecret food database - millions of foods including branded items"""
-    logger.info(f"Searching FatSecret for: {query}")
+    """Search food database - tries FatSecret first, then USDA FoodData Central"""
+    logger.info(f"Searching food database for: {query}")
     
-    # Search FatSecret API
+    # Try FatSecret first (if IP whitelist is working)
     results = await search_fatsecret(query, max_results=50)
     
     if results:
         logger.info(f"FatSecret returned {len(results)} results")
         return results
     
-    # Fallback to basic local database if FatSecret fails
-    logger.warning("FatSecret search failed, falling back to local database")
+    # Try USDA FoodData Central (free, no IP restrictions)
+    logger.info("Trying USDA FoodData Central...")
+    results = await search_usda(query, max_results=50)
+    
+    if results:
+        logger.info(f"USDA returned {len(results)} results")
+        return results
+    
+    # Fallback to basic local database if both APIs fail
+    logger.warning("All food APIs failed, falling back to local database")
     common_foods = [
         {"name": "Chicken Breast, Grilled (100g)", "calories": 165, "protein": 31, "carbs": 0, "fats": 3.6},
         {"name": "Salmon, Atlantic (100g)", "calories": 208, "protein": 20, "carbs": 0, "fats": 13},
