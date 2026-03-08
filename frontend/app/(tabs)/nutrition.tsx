@@ -83,6 +83,11 @@ export default function NutritionScreen() {
 
   const macros = profile?.calculated_macros;
   const consumed = dailySummary?.consumed || {};
+  
+  // Apply calorie adjustment (only affects carbs, protein and fats stay fixed)
+  const calorieAdjustment = profile?.calorie_adjustment || 0;
+  const adjustedCalories = (macros?.calories || 0) + calorieAdjustment;
+  const adjustedCarbs = Math.round((macros?.carbs || 0) + (calorieAdjustment / 4));
 
   const getProgress = (current: number, target: number) => {
     return Math.min((current / target) * 100, 100);
@@ -121,11 +126,11 @@ export default function NutritionScreen() {
             <View style={styles.caloriesRow}>
               <View style={styles.caloriesInfo}>
                 <Text style={styles.caloriesValue}>{consumed.calories || 0}</Text>
-                <Text style={styles.caloriesLabel}>/ {macros.calories} cal</Text>
+                <Text style={styles.caloriesLabel}>/ {adjustedCalories} cal</Text>
               </View>
               <View style={styles.caloriesRing}>
                 <Text style={styles.ringText}>
-                  {Math.round(getProgress(consumed.calories || 0, macros.calories))}%
+                  {Math.round(getProgress(consumed.calories || 0, adjustedCalories))}%
                 </Text>
               </View>
             </View>
@@ -153,14 +158,14 @@ export default function NutritionScreen() {
                 <View style={styles.macroHeader}>
                   <Text style={styles.macroName}>Carbs</Text>
                   <Text style={styles.macroValues}>
-                    {Math.round(consumed.carbs || 0)}g / {macros.carbs}g
+                    {Math.round(consumed.carbs || 0)}g / {adjustedCarbs}g
                   </Text>
                 </View>
                 <View style={styles.progressBar}>
                   <View
                     style={[
                       styles.progressFill,
-                      { width: `${getProgress(consumed.carbs || 0, macros.carbs)}%`, backgroundColor: '#4ECDC4' },
+                      { width: `${getProgress(consumed.carbs || 0, adjustedCarbs)}%`, backgroundColor: '#4ECDC4' },
                     ]}
                   />
                 </View>
