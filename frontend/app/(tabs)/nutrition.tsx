@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
@@ -27,11 +28,19 @@ interface MealPlan {
 
 export default function NutritionScreen() {
   const router = useRouter();
-  const { profile } = useUserStore();
+  const { profile, loadProfile } = useUserStore();
   const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dailySummary, setDailySummary] = useState<any>(null);
+
+  // Reload profile when screen comes into focus (to get latest calorie_adjustment)
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+      loadData();
+    }, [])
+  );
 
   useEffect(() => {
     loadData();
