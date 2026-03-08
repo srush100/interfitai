@@ -321,7 +321,9 @@ export default function HomeScreen() {
             <Text style={styles.sectionTitle}>Your Daily Targets</Text>
             <View style={styles.macrosGrid}>
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{macros.calories}</Text>
+                <Text style={styles.macroValue}>
+                  {(macros.calories || 0) + (profile?.calorie_adjustment || 0)}
+                </Text>
                 <Text style={styles.macroLabel}>Calories</Text>
               </View>
               <View style={styles.macroItem}>
@@ -329,7 +331,9 @@ export default function HomeScreen() {
                 <Text style={styles.macroLabel}>Protein</Text>
               </View>
               <View style={styles.macroItem}>
-                <Text style={[styles.macroValue, { color: '#4ECDC4' }]}>{macros.carbs}g</Text>
+                <Text style={[styles.macroValue, { color: '#4ECDC4' }]}>
+                  {Math.round((macros.carbs || 0) + ((profile?.calorie_adjustment || 0) / 4))}g
+                </Text>
                 <Text style={styles.macroLabel}>Carbs</Text>
               </View>
               <View style={styles.macroItem}>

@@ -634,6 +634,7 @@ class UserProfile(BaseModel):
     activity_level: str = "moderate"  # sedentary, light, moderate, active, very_active
     goal: str = "maintenance"  # weight_loss, maintenance, muscle_building
     calculated_macros: Optional[Dict[str, float]] = None
+    calorie_adjustment: int = 0  # Manual calorie adjustment (+/- from calculated)
     subscription_status: str = "free"  # free, monthly, quarterly, yearly
     subscription_end_date: Optional[str] = None
     reminders_enabled: bool = True
@@ -661,6 +662,7 @@ class UserProfileUpdate(BaseModel):
     gender: Optional[str] = None
     activity_level: Optional[str] = None
     goal: Optional[str] = None
+    calorie_adjustment: Optional[int] = None
     reminders_enabled: Optional[bool] = None
     motivation_enabled: Optional[bool] = None
     profile_image: Optional[str] = None  # Base64 encoded profile picture
