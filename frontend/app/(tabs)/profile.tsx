@@ -58,6 +58,8 @@ export default function ProfileScreen() {
   const [connectedDevices, setConnectedDevices] = useState<string[]>([]);
   const [stepGoal, setStepGoal] = useState(10000);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [calorieAdjustment, setCalorieAdjustment] = useState(0);
+  const [showAdjustmentGuide, setShowAdjustmentGuide] = useState(false);
 
   useEffect(() => {
     checkPedometer();
@@ -373,28 +375,143 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {/* Macros Card */}
+        {/* Macros Card with Calorie Adjustment */}
         {macros && (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Your Daily Macros</Text>
+            <Text style={styles.sectionTitle}>Your Daily Targets</Text>
+            
+            {/* Calorie Adjuster */}
+            <View style={styles.calorieAdjuster}>
+              <TouchableOpacity 
+                style={styles.adjustBtn}
+                onPress={() => setCalorieAdjustment(prev => prev - 50)}
+              >
+                <Ionicons name="remove" size={24} color={colors.text} />
+              </TouchableOpacity>
+              
+              <View style={styles.calorieDisplay}>
+                <Text style={styles.calorieValue}>
+                  {macros.calories + calorieAdjustment}
+                </Text>
+                <Text style={styles.calorieUnit}>calories</Text>
+                {calorieAdjustment !== 0 && (
+                  <Text style={styles.adjustmentLabel}>
+                    {calorieAdjustment > 0 ? '+' : ''}{calorieAdjustment} from calculated
+                  </Text>
+                )}
+              </View>
+              
+              <TouchableOpacity 
+                style={styles.adjustBtn}
+                onPress={() => setCalorieAdjustment(prev => prev + 50)}
+              >
+                <Ionicons name="add" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick Adjustment Buttons */}
+            <View style={styles.quickAdjustRow}>
+              {[-200, -100, 0, 100, 200].map((adj) => (
+                <TouchableOpacity
+                  key={adj}
+                  style={[
+                    styles.quickAdjustBtn,
+                    calorieAdjustment === adj && styles.quickAdjustBtnActive
+                  ]}
+                  onPress={() => setCalorieAdjustment(adj)}
+                >
+                  <Text style={[
+                    styles.quickAdjustText,
+                    calorieAdjustment === adj && styles.quickAdjustTextActive
+                  ]}>
+                    {adj === 0 ? 'Base' : adj > 0 ? `+${adj}` : adj}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Help Toggle */}
+            <TouchableOpacity 
+              style={styles.helpToggle}
+              onPress={() => setShowAdjustmentGuide(!showAdjustmentGuide)}
+            >
+              <Ionicons 
+                name={showAdjustmentGuide ? "chevron-up" : "help-circle-outline"} 
+                size={18} 
+                color={colors.textSecondary} 
+              />
+              <Text style={styles.helpToggleText}>
+                {showAdjustmentGuide ? 'Hide guide' : 'Not seeing results?'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Adjustment Guide */}
+            {showAdjustmentGuide && (
+              <View style={styles.adjustmentGuide}>
+                <TouchableOpacity 
+                  style={styles.guideOption}
+                  onPress={() => setCalorieAdjustment(-200)}
+                >
+                  <View style={styles.guideIconWrap}>
+                    <Ionicons name="trending-down" size={18} color="#FF6B6B" />
+                  </View>
+                  <View style={styles.guideContent}>
+                    <Text style={styles.guideTitle}>Weight not moving?</Text>
+                    <Text style={styles.guideDesc}>Try reducing by 100-200 cal</Text>
+                  </View>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.guideOption}
+                  onPress={() => setCalorieAdjustment(0)}
+                >
+                  <View style={styles.guideIconWrap}>
+                    <Ionicons name="checkmark-circle" size={18} color="#4ECDC4" />
+                  </View>
+                  <View style={styles.guideContent}>
+                    <Text style={styles.guideTitle}>Progress is steady?</Text>
+                    <Text style={styles.guideDesc}>Keep your current target</Text>
+                  </View>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.guideOption}
+                  onPress={() => setCalorieAdjustment(200)}
+                >
+                  <View style={styles.guideIconWrap}>
+                    <Ionicons name="trending-up" size={18} color={colors.primary} />
+                  </View>
+                  <View style={styles.guideContent}>
+                    <Text style={styles.guideTitle}>Losing too fast / low energy?</Text>
+                    <Text style={styles.guideDesc}>Try adding 100-200 cal</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Macros Grid */}
+            <View style={styles.macrosDivider} />
             <View style={styles.macrosGrid}>
               <View style={styles.macroItem}>
-                <Text style={[styles.macroValue, { color: colors.primary }]}>{macros.calories}</Text>
-                <Text style={styles.macroLabel}>Calories</Text>
-              </View>
-              <View style={styles.macroItem}>
-                <Text style={[styles.macroValue, { color: '#FF6B6B' }]}>{macros.protein}g</Text>
+                <Text style={[styles.macroValue, { color: '#FF6B6B' }]}>
+                  {Math.round((macros.calories + calorieAdjustment) * 0.25 / 4)}g
+                </Text>
                 <Text style={styles.macroLabel}>Protein</Text>
               </View>
               <View style={styles.macroItem}>
-                <Text style={[styles.macroValue, { color: '#4ECDC4' }]}>{macros.carbs}g</Text>
+                <Text style={[styles.macroValue, { color: '#4ECDC4' }]}>
+                  {Math.round((macros.calories + calorieAdjustment) * 0.45 / 4)}g
+                </Text>
                 <Text style={styles.macroLabel}>Carbs</Text>
               </View>
               <View style={styles.macroItem}>
-                <Text style={[styles.macroValue, { color: '#FFD93D' }]}>{macros.fats}g</Text>
+                <Text style={[styles.macroValue, { color: '#FFD93D' }]}>
+                  {Math.round((macros.calories + calorieAdjustment) * 0.30 / 9)}g
+                </Text>
                 <Text style={styles.macroLabel}>Fats</Text>
               </View>
             </View>
+            
             <View style={styles.tdeeRow}>
               <Text style={styles.tdeeLabel}>TDEE: {macros.tdee} cal</Text>
               <Text style={styles.tdeeLabel}>BMR: {macros.bmr} cal</Text>
@@ -871,5 +988,115 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: colors.surface,
+  },
+  // Calorie Adjustment Styles
+  calorieAdjuster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    marginBottom: 16,
+  },
+  adjustBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  calorieDisplay: {
+    alignItems: 'center',
+    minWidth: 140,
+  },
+  calorieValue: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  calorieUnit: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  adjustmentLabel: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 4,
+  },
+  quickAdjustRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  quickAdjustBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceLight,
+  },
+  quickAdjustBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  quickAdjustText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  quickAdjustTextActive: {
+    color: colors.background,
+  },
+  helpToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+  },
+  helpToggleText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  adjustmentGuide: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    gap: 8,
+  },
+  guideOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+  },
+  guideIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  guideContent: {
+    flex: 1,
+  },
+  guideTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  guideDesc: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  macrosDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 16,
   },
 });
