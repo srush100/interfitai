@@ -242,13 +242,54 @@ export default function MealDetail() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Plan Info */}
-        <View style={styles.infoCard}>
-          <Text style={styles.planName}>{mealPlan.name}</Text>
-          <Text style={styles.planPref}>
-            {mealPlan.food_preferences.replace(/_/g, ' ')}
+        {/* Personalization Header - NEW */}
+        <View style={styles.personalizationCard}>
+          <View style={styles.personalizationHeader}>
+            <Ionicons name="sparkles" size={20} color={colors.primary} />
+            <Text style={styles.personalizationTitle}>Your AI Meal Plan</Text>
+          </View>
+          <Text style={styles.personalizationSubtitle}>
+            Built specifically for you based on your goals and preferences
           </Text>
+          
+          {/* Quick Stats */}
+          <View style={styles.quickStats}>
+            <View style={styles.quickStat}>
+              <Text style={styles.quickStatLabel}>Goal</Text>
+              <Text style={styles.quickStatValue}>
+                {profile?.goal?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Build Muscle'}
+              </Text>
+            </View>
+            <View style={styles.quickStatDivider} />
+            <View style={styles.quickStat}>
+              <Text style={styles.quickStatLabel}>Diet Style</Text>
+              <Text style={styles.quickStatValue}>
+                {mealPlan.food_preferences?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Whole Foods'}
+              </Text>
+            </View>
+            <View style={styles.quickStatDivider} />
+            <View style={styles.quickStat}>
+              <Text style={styles.quickStatLabel}>Meals/Day</Text>
+              <Text style={styles.quickStatValue}>
+                {currentDay?.meals?.length || 4}
+              </Text>
+            </View>
+          </View>
+          
+          {/* Allergies Avoided */}
+          {mealPlan.allergies && mealPlan.allergies.length > 0 && !mealPlan.allergies.includes('none') && (
+            <View style={styles.allergiesRow}>
+              <Ionicons name="shield-checkmark" size={16} color="#4ECDC4" />
+              <Text style={styles.allergiesText}>
+                Avoiding: {mealPlan.allergies.map(a => a.replace(/_/g, ' ')).join(', ')}
+              </Text>
+            </View>
+          )}
+        </View>
 
+        {/* Macro Targets Card - IMPROVED */}
+        <View style={styles.infoCard}>
+          <Text style={styles.infoCardTitle}>Daily Targets</Text>
           <View style={styles.macrosRow}>
             <View style={styles.macroBox}>
               <Text style={[styles.macroValue, { color: colors.primary }]}>
@@ -275,6 +316,23 @@ export default function MealDetail() {
               <Text style={styles.macroLabel}>Fats</Text>
             </View>
           </View>
+        </View>
+
+        {/* AI Explanation Card - NEW */}
+        <View style={styles.aiExplanationCard}>
+          <View style={styles.aiExplanationHeader}>
+            <Ionicons name="bulb" size={18} color={colors.primary} />
+            <Text style={styles.aiExplanationTitle}>Why This Plan Works</Text>
+          </View>
+          <Text style={styles.aiExplanationText}>
+            {profile?.goal === 'build_muscle' || profile?.goal === 'muscle_building' ? (
+              `• High protein (${mealPlan.target_protein}g) to support muscle growth and recovery\n• Adequate carbs for workout energy and glycogen replenishment\n• Balanced fats for hormone optimization`
+            ) : profile?.goal === 'lose_weight' || profile?.goal === 'weight_loss' ? (
+              `• Moderate calorie deficit for sustainable fat loss\n• High protein (${mealPlan.target_protein}g) to preserve muscle mass\n• Fiber-rich foods for satiety and fullness`
+            ) : (
+              `• Balanced macros for stable energy throughout the day\n• Adequate protein to support body composition\n• Nutrient-dense foods for overall health`
+            )}
+          </Text>
         </View>
 
         {/* Day Selector */}
@@ -479,11 +537,109 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
+  // Personalization Card Styles - NEW
+  personalizationCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  personalizationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  personalizationTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  personalizationSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 16,
+  },
+  quickStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 12,
+    padding: 12,
+  },
+  quickStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  quickStatLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  quickStatValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  quickStatDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: colors.border,
+  },
+  allergiesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  allergiesText: {
+    fontSize: 13,
+    color: '#4ECDC4',
+    flex: 1,
+  },
+  // AI Explanation Card - NEW
+  aiExplanationCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  aiExplanationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  aiExplanationTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  aiExplanationText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
   infoCard: {
     backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 20,
-    marginBottom: 20,
+    marginBottom: 16,
+  },
+  infoCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
   },
   planName: {
     fontSize: 24,

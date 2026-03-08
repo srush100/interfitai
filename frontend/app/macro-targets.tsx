@@ -23,6 +23,10 @@ export default function MacroTargetsScreen() {
   const [showGuide, setShowGuide] = useState(false);
 
   const macros = profile?.calculated_macros;
+  const userGoal = profile?.goal || 'lose_weight';
+  
+  // Determine if user is in a muscle-building phase
+  const isBulking = userGoal === 'build_muscle' || userGoal === 'gain_weight';
 
   const adjustedCalories = (macros?.calories || 0) + calorieAdjustment;
   const adjustedCarbs = Math.round((macros?.carbs || 0) + (calorieAdjustment / 4));
@@ -139,7 +143,7 @@ export default function MacroTargetsScreen() {
           </View>
 
           <Text style={styles.baseInfo}>
-            Base: {macros.calories} cal (Mifflin-St Jeor)
+            Base: {macros.calories} cal
           </Text>
         </View>
 
@@ -198,44 +202,91 @@ export default function MacroTargetsScreen() {
 
         {showGuide && (
           <View style={styles.guideCard}>
-            <TouchableOpacity 
-              style={styles.guideOption}
-              onPress={() => setCalorieAdjustment(-200)}
-            >
-              <View style={[styles.guideIconWrap, { backgroundColor: '#FF6B6B20' }]}>
-                <Ionicons name="trending-down" size={20} color="#FF6B6B" />
-              </View>
-              <View style={styles.guideContent}>
-                <Text style={styles.guideTitle}>Weight not moving?</Text>
-                <Text style={styles.guideDesc}>Try reducing by 100-200 cal</Text>
-              </View>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.guideOption}
-              onPress={() => setCalorieAdjustment(0)}
-            >
-              <View style={[styles.guideIconWrap, { backgroundColor: '#4ECDC420' }]}>
-                <Ionicons name="checkmark-circle" size={20} color="#4ECDC4" />
-              </View>
-              <View style={styles.guideContent}>
-                <Text style={styles.guideTitle}>Progress is steady?</Text>
-                <Text style={styles.guideDesc}>Keep your current target</Text>
-              </View>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.guideOption}
-              onPress={() => setCalorieAdjustment(200)}
-            >
-              <View style={[styles.guideIconWrap, { backgroundColor: colors.primary + '20' }]}>
-                <Ionicons name="trending-up" size={20} color={colors.primary} />
-              </View>
-              <View style={styles.guideContent}>
-                <Text style={styles.guideTitle}>Losing too fast / low energy?</Text>
-                <Text style={styles.guideDesc}>Try adding 100-200 cal</Text>
-              </View>
-            </TouchableOpacity>
+            {isBulking ? (
+              // Muscle building / weight gain guide
+              <>
+                <TouchableOpacity 
+                  style={styles.guideOption}
+                  onPress={() => setCalorieAdjustment(200)}
+                >
+                  <View style={[styles.guideIconWrap, { backgroundColor: colors.primary + '20' }]}>
+                    <Ionicons name="trending-up" size={20} color={colors.primary} />
+                  </View>
+                  <View style={styles.guideContent}>
+                    <Text style={styles.guideTitle}>Not gaining weight?</Text>
+                    <Text style={styles.guideDesc}>Try adding 100-200 cal</Text>
+                  </View>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.guideOption}
+                  onPress={() => setCalorieAdjustment(0)}
+                >
+                  <View style={[styles.guideIconWrap, { backgroundColor: '#4ECDC420' }]}>
+                    <Ionicons name="checkmark-circle" size={20} color="#4ECDC4" />
+                  </View>
+                  <View style={styles.guideContent}>
+                    <Text style={styles.guideTitle}>Gaining steadily?</Text>
+                    <Text style={styles.guideDesc}>Keep your current target</Text>
+                  </View>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.guideOption}
+                  onPress={() => setCalorieAdjustment(-200)}
+                >
+                  <View style={[styles.guideIconWrap, { backgroundColor: '#FF6B6B20' }]}>
+                    <Ionicons name="trending-down" size={20} color="#FF6B6B" />
+                  </View>
+                  <View style={styles.guideContent}>
+                    <Text style={styles.guideTitle}>Gaining too much fat?</Text>
+                    <Text style={styles.guideDesc}>Try reducing by 100-200 cal</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            ) : (
+              // Weight loss / cutting guide
+              <>
+                <TouchableOpacity 
+                  style={styles.guideOption}
+                  onPress={() => setCalorieAdjustment(-200)}
+                >
+                  <View style={[styles.guideIconWrap, { backgroundColor: '#FF6B6B20' }]}>
+                    <Ionicons name="trending-down" size={20} color="#FF6B6B" />
+                  </View>
+                  <View style={styles.guideContent}>
+                    <Text style={styles.guideTitle}>Weight not moving?</Text>
+                    <Text style={styles.guideDesc}>Try reducing by 100-200 cal</Text>
+                  </View>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.guideOption}
+                  onPress={() => setCalorieAdjustment(0)}
+                >
+                  <View style={[styles.guideIconWrap, { backgroundColor: '#4ECDC420' }]}>
+                    <Ionicons name="checkmark-circle" size={20} color="#4ECDC4" />
+                  </View>
+                  <View style={styles.guideContent}>
+                    <Text style={styles.guideTitle}>Progress is steady?</Text>
+                    <Text style={styles.guideDesc}>Keep your current target</Text>
+                  </View>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.guideOption}
+                  onPress={() => setCalorieAdjustment(200)}
+                >
+                  <View style={[styles.guideIconWrap, { backgroundColor: colors.primary + '20' }]}>
+                    <Ionicons name="trending-up" size={20} color={colors.primary} />
+                  </View>
+                  <View style={styles.guideContent}>
+                    <Text style={styles.guideTitle}>Losing too fast / low energy?</Text>
+                    <Text style={styles.guideDesc}>Try adding 100-200 cal</Text>
+                  </View>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
 

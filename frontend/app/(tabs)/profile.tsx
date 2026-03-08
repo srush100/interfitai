@@ -45,6 +45,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { profile, updateProfile, setOnboarded } = useUserStore();
   const [editing, setEditing] = useState(false);
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>('kg');
+  const [heightUnit, setHeightUnit] = useState<'cm' | 'in'>('cm');
   const [editData, setEditData] = useState({
     weight: profile?.weight?.toString() || '',
     height: profile?.height?.toString() || '',
@@ -58,6 +60,36 @@ export default function ProfileScreen() {
   const [connectedDevices, setConnectedDevices] = useState<string[]>([]);
   const [stepGoal, setStepGoal] = useState(10000);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Conversion helpers
+  const kgToLbs = (kg: number) => Math.round(kg * 2.20462 * 10) / 10;
+  const lbsToKg = (lbs: number) => Math.round(lbs / 2.20462 * 10) / 10;
+  const cmToIn = (cm: number) => Math.round(cm / 2.54 * 10) / 10;
+  const inToCm = (inches: number) => Math.round(inches * 2.54 * 10) / 10;
+
+  // Handle unit toggle for weight
+  const toggleWeightUnit = () => {
+    const currentWeight = parseFloat(editData.weight) || 0;
+    if (weightUnit === 'kg') {
+      setWeightUnit('lbs');
+      setEditData({ ...editData, weight: kgToLbs(currentWeight).toString() });
+    } else {
+      setWeightUnit('kg');
+      setEditData({ ...editData, weight: lbsToKg(currentWeight).toString() });
+    }
+  };
+
+  // Handle unit toggle for height
+  const toggleHeightUnit = () => {
+    const currentHeight = parseFloat(editData.height) || 0;
+    if (heightUnit === 'cm') {
+      setHeightUnit('in');
+      setEditData({ ...editData, height: cmToIn(currentHeight).toString() });
+    } else {
+      setHeightUnit('cm');
+      setEditData({ ...editData, height: inToCm(currentHeight).toString() });
+    }
+  };
 
   useEffect(() => {
     checkPedometer();
@@ -152,9 +184,20 @@ export default function ProfileScreen() {
 
     setSaving(true);
     try {
+      // Convert to metric (kg/cm) before saving
+      let weightInKg = parseFloat(editData.weight);
+      let heightInCm = parseFloat(editData.height);
+      
+      if (weightUnit === 'lbs') {
+        weightInKg = lbsToKg(weightInKg);
+      }
+      if (heightUnit === 'in') {
+        heightInCm = inToCm(heightInCm);
+      }
+      
       await updateProfile({
-        weight: parseFloat(editData.weight),
-        height: parseFloat(editData.height),
+        weight: weightInKg,
+        height: heightInCm,
         age: parseInt(editData.age),
         goal: editData.goal,
         activity_level: editData.activity_level,
@@ -283,21 +326,43 @@ export default function ProfileScreen() {
             <View style={styles.editForm}>
               <View style={styles.editRow}>
                 <View style={styles.editField}>
-                  <Text style={styles.editLabel}>Weight (kg)</Text>
+                  <View style={styles.labelWithToggle}>
+                    <Text style={styles.editLabel}>Weight</Text>
+                    <TouchableOpacity 
+                      style={styles.unitToggle}
+                      onPress={toggleWeightUnit}
+                    >
+                      <Text style={[styles.unitText, weightUnit === 'kg' && styles.unitTextActive]}>kg</Text>
+                      <Text style={styles.unitDivider}>/</Text>
+                      <Text style={[styles.unitText, weightUnit === 'lbs' && styles.unitTextActive]}>lbs</Text>
+                    </TouchableOpacity>
+                  </View>
                   <TextInput
                     style={styles.editInput}
                     value={editData.weight}
                     onChangeText={(text) => setEditData({ ...editData, weight: text })}
                     keyboardType="decimal-pad"
+                    placeholder={weightUnit === 'kg' ? '70' : '154'}
                   />
                 </View>
                 <View style={styles.editField}>
-                  <Text style={styles.editLabel}>Height (cm)</Text>
+                  <View style={styles.labelWithToggle}>
+                    <Text style={styles.editLabel}>Height</Text>
+                    <TouchableOpacity 
+                      style={styles.unitToggle}
+                      onPress={toggleHeightUnit}
+                    >
+                      <Text style={[styles.unitText, heightUnit === 'cm' && styles.unitTextActive]}>cm</Text>
+                      <Text style={styles.unitDivider}>/</Text>
+                      <Text style={[styles.unitText, heightUnit === 'in' && styles.unitTextActive]}>in</Text>
+                    </TouchableOpacity>
+                  </View>
                   <TextInput
                     style={styles.editInput}
                     value={editData.height}
                     onChangeText={(text) => setEditData({ ...editData, height: text })}
                     keyboardType="decimal-pad"
+                    placeholder={heightUnit === 'cm' ? '175' : '69'}
                   />
                 </View>
                 <View style={styles.editField}>
@@ -631,6 +696,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginBottom: 6,
+  },
+  labelWithToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  unitToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  unitText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  unitTextActive: {
+    color: colors.primary,
+  },
+  unitDivider: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginHorizontal: 4,
   },
   editInput: {
     backgroundColor: colors.surfaceLight,

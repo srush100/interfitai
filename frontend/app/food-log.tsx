@@ -435,66 +435,133 @@ export default function FoodLog() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Today's Summary */}
-        {activeTab === 'log' && (
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>Today's Progress</Text>
-            {/* Target vs Consumed */}
-            {profile?.calculated_macros && (
-              <View style={styles.targetVsConsumed}>
-                <View style={styles.targetRow}>
-                  <Text style={styles.targetLabel}>Target</Text>
-                  <Text style={styles.targetValues}>
-                    {(profile.calculated_macros.calories || 0) + (profile.calorie_adjustment || 0)} cal • {profile.calculated_macros.protein}g P • {Math.round((profile.calculated_macros.carbs || 0) + ((profile.calorie_adjustment || 0) / 4))}g C • {profile.calculated_macros.fats}g F
+        {/* Today's Summary - ENHANCED */}
+        {activeTab === 'log' && profile?.calculated_macros && (
+          <View style={styles.dashboardCard}>
+            {/* Calorie Ring Section */}
+            <View style={styles.calorieSection}>
+              <View style={styles.calorieRing}>
+                <View style={[
+                  styles.calorieRingProgress, 
+                  { 
+                    borderColor: totalNutrition.calories > ((profile.calculated_macros.calories || 0) + (profile.calorie_adjustment || 0)) 
+                      ? colors.error 
+                      : colors.primary 
+                  }
+                ]} />
+                <View style={styles.calorieRingContent}>
+                  <Text style={styles.calorieRingValue}>{totalNutrition.calories}</Text>
+                  <Text style={styles.calorieRingLabel}>eaten</Text>
+                </View>
+              </View>
+              <View style={styles.calorieStats}>
+                <View style={styles.calorieStatRow}>
+                  <Text style={styles.calorieStatLabel}>Target</Text>
+                  <Text style={styles.calorieStatValue}>
+                    {(profile.calculated_macros.calories || 0) + (profile.calorie_adjustment || 0)}
+                  </Text>
+                </View>
+                <View style={styles.calorieStatRow}>
+                  <Text style={styles.calorieStatLabel}>Remaining</Text>
+                  <Text style={[
+                    styles.calorieStatValue,
+                    ((profile.calculated_macros.calories || 0) + (profile.calorie_adjustment || 0)) - totalNutrition.calories < 0 
+                      ? { color: colors.error }
+                      : { color: '#4ECDC4' }
+                  ]}>
+                    {((profile.calculated_macros.calories || 0) + (profile.calorie_adjustment || 0)) - totalNutrition.calories}
                   </Text>
                 </View>
               </View>
-            )}
-            <View style={styles.summaryRow}>
-              <View style={styles.summaryItem}>
-                <Text style={[styles.summaryValue, { color: colors.primary }]}>
-                  {totalNutrition.calories}
-                </Text>
-                <Text style={styles.summaryLabel}>Calories</Text>
-                {profile?.calculated_macros && (
-                  <Text style={styles.remainingText}>
-                    {((profile.calculated_macros.calories || 0) + (profile.calorie_adjustment || 0)) - totalNutrition.calories} left
+            </View>
+
+            {/* Macro Progress Bars */}
+            <View style={styles.macroProgressSection}>
+              {/* Protein */}
+              <View style={styles.macroProgressItem}>
+                <View style={styles.macroProgressHeader}>
+                  <Text style={styles.macroProgressName}>Protein</Text>
+                  <Text style={styles.macroProgressValues}>
+                    {Math.round(totalNutrition.protein)}g / {profile.calculated_macros.protein}g
                   </Text>
-                )}
+                </View>
+                <View style={styles.progressBarBg}>
+                  <View style={[
+                    styles.progressBarFill, 
+                    { 
+                      width: `${Math.min((totalNutrition.protein / (profile.calculated_macros.protein || 1)) * 100, 100)}%`,
+                      backgroundColor: '#FF6B6B'
+                    }
+                  ]} />
+                </View>
               </View>
-              <View style={styles.summaryItem}>
-                <Text style={[styles.summaryValue, { color: '#FF6B6B' }]}>
-                  {Math.round(totalNutrition.protein)}g
-                </Text>
-                <Text style={styles.summaryLabel}>Protein</Text>
-                {profile?.calculated_macros && (
-                  <Text style={styles.remainingText}>
-                    {Math.round((profile.calculated_macros.protein || 0) - totalNutrition.protein)}g left
+
+              {/* Carbs */}
+              <View style={styles.macroProgressItem}>
+                <View style={styles.macroProgressHeader}>
+                  <Text style={styles.macroProgressName}>Carbs</Text>
+                  <Text style={styles.macroProgressValues}>
+                    {Math.round(totalNutrition.carbs)}g / {Math.round((profile.calculated_macros.carbs || 0) + ((profile.calorie_adjustment || 0) / 4))}g
                   </Text>
-                )}
+                </View>
+                <View style={styles.progressBarBg}>
+                  <View style={[
+                    styles.progressBarFill, 
+                    { 
+                      width: `${Math.min((totalNutrition.carbs / ((profile.calculated_macros.carbs || 1) + ((profile.calorie_adjustment || 0) / 4))) * 100, 100)}%`,
+                      backgroundColor: '#4ECDC4'
+                    }
+                  ]} />
+                </View>
               </View>
-              <View style={styles.summaryItem}>
-                <Text style={[styles.summaryValue, { color: '#4ECDC4' }]}>
-                  {Math.round(totalNutrition.carbs)}g
-                </Text>
-                <Text style={styles.summaryLabel}>Carbs</Text>
-                {profile?.calculated_macros && (
-                  <Text style={styles.remainingText}>
-                    {Math.round(((profile.calculated_macros.carbs || 0) + ((profile.calorie_adjustment || 0) / 4)) - totalNutrition.carbs)}g left
+
+              {/* Fats */}
+              <View style={styles.macroProgressItem}>
+                <View style={styles.macroProgressHeader}>
+                  <Text style={styles.macroProgressName}>Fats</Text>
+                  <Text style={styles.macroProgressValues}>
+                    {Math.round(totalNutrition.fats)}g / {profile.calculated_macros.fats}g
                   </Text>
-                )}
+                </View>
+                <View style={styles.progressBarBg}>
+                  <View style={[
+                    styles.progressBarFill, 
+                    { 
+                      width: `${Math.min((totalNutrition.fats / (profile.calculated_macros.fats || 1)) * 100, 100)}%`,
+                      backgroundColor: '#FFD93D'
+                    }
+                  ]} />
+                </View>
               </View>
-              <View style={styles.summaryItem}>
-                <Text style={[styles.summaryValue, { color: '#FFD93D' }]}>
-                  {Math.round(totalNutrition.fats)}g
-                </Text>
-                <Text style={styles.summaryLabel}>Fats</Text>
-                {profile?.calculated_macros && (
-                  <Text style={styles.remainingText}>
-                    {Math.round((profile.calculated_macros.fats || 0) - totalNutrition.fats)}g left
-                  </Text>
-                )}
-              </View>
+            </View>
+
+            {/* AI Coach Feedback */}
+            <View style={styles.aiFeedbackCard}>
+              <Ionicons name="sparkles" size={16} color={colors.primary} />
+              <Text style={styles.aiFeedbackText}>
+                {(() => {
+                  const calorieTarget = (profile.calculated_macros.calories || 0) + (profile.calorie_adjustment || 0);
+                  const proteinTarget = profile.calculated_macros.protein || 0;
+                  const caloriePercent = (totalNutrition.calories / calorieTarget) * 100;
+                  const proteinPercent = (totalNutrition.protein / proteinTarget) * 100;
+                  
+                  if (todayLogs.length === 0) {
+                    return "Start logging your meals to track your progress!";
+                  } else if (caloriePercent >= 90 && caloriePercent <= 110 && proteinPercent >= 90) {
+                    return "Great job! You're right on track with your targets today.";
+                  } else if (proteinPercent < 50 && caloriePercent > 60) {
+                    return "Try to prioritize protein in your remaining meals.";
+                  } else if (caloriePercent > 100) {
+                    return "You've exceeded your calorie target. Consider lighter options.";
+                  } else if (proteinPercent >= 90) {
+                    return "Excellent protein intake! You're supporting muscle recovery.";
+                  } else if (caloriePercent < 50) {
+                    return `You have ${Math.round(calorieTarget - totalNutrition.calories)} calories remaining today.`;
+                  } else {
+                    return "Keep going! You're making good progress toward your goals.";
+                  }
+                })()}
+              </Text>
             </View>
           </View>
         )}
@@ -952,6 +1019,116 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  // Enhanced Dashboard Styles
+  dashboardCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+  },
+  calorieSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  calorieRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  calorieRingProgress: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 50,
+    borderWidth: 6,
+    borderColor: colors.primary,
+  },
+  calorieRingContent: {
+    alignItems: 'center',
+  },
+  calorieRingValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  calorieRingLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  calorieStats: {
+    flex: 1,
+    marginLeft: 20,
+    gap: 12,
+  },
+  calorieStatRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  calorieStatLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  calorieStatValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  macroProgressSection: {
+    gap: 12,
+    marginBottom: 16,
+  },
+  macroProgressItem: {
+    gap: 6,
+  },
+  macroProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  macroProgressName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  macroProgressValues: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  progressBarBg: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.surfaceLight,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  aiFeedbackCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.primary + '15',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  aiFeedbackText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 18,
   },
   targetVsConsumed: {
     marginBottom: 16,
