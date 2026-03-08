@@ -494,19 +494,24 @@ export default function ProfileScreen() {
             <View style={styles.macrosGrid}>
               <View style={styles.macroItem}>
                 <Text style={[styles.macroValue, { color: '#FF6B6B' }]}>
-                  {Math.round((macros.calories + calorieAdjustment) * 0.25 / 4)}g
+                  {macros.protein}g
                 </Text>
                 <Text style={styles.macroLabel}>Protein</Text>
               </View>
               <View style={styles.macroItem}>
                 <Text style={[styles.macroValue, { color: '#4ECDC4' }]}>
-                  {Math.round((macros.calories + calorieAdjustment) * 0.45 / 4)}g
+                  {Math.round(macros.carbs + (calorieAdjustment / 4))}g
                 </Text>
                 <Text style={styles.macroLabel}>Carbs</Text>
+                {calorieAdjustment !== 0 && (
+                  <Text style={styles.macroAdjustment}>
+                    {calorieAdjustment > 0 ? '+' : ''}{Math.round(calorieAdjustment / 4)}g
+                  </Text>
+                )}
               </View>
               <View style={styles.macroItem}>
                 <Text style={[styles.macroValue, { color: '#FFD93D' }]}>
-                  {Math.round((macros.calories + calorieAdjustment) * 0.30 / 9)}g
+                  {macros.fats}g
                 </Text>
                 <Text style={styles.macroLabel}>Fats</Text>
               </View>
@@ -772,6 +777,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  macroAdjustment: {
+    fontSize: 11,
+    color: '#4ECDC4',
+    marginTop: 2,
   },
   tdeeRow: {
     flexDirection: 'row',
