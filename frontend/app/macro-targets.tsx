@@ -26,7 +26,7 @@ export default function MacroTargetsScreen() {
   const userGoal = profile?.goal || 'lose_weight';
   
   // Determine if user is in a muscle-building phase
-  const isBulking = userGoal === 'build_muscle' || userGoal === 'gain_weight';
+  const isBulking = userGoal === 'muscle_building' || userGoal === 'build_muscle' || userGoal === 'gain_weight';
 
   const adjustedCalories = (macros?.calories || 0) + calorieAdjustment;
   const adjustedCarbs = Math.round((macros?.carbs || 0) + (calorieAdjustment / 4));
