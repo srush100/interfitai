@@ -438,31 +438,62 @@ export default function FoodLog() {
         {/* Today's Summary */}
         {activeTab === 'log' && (
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>Today's Totals</Text>
+            <Text style={styles.summaryTitle}>Today's Progress</Text>
+            {/* Target vs Consumed */}
+            {profile?.calculated_macros && (
+              <View style={styles.targetVsConsumed}>
+                <View style={styles.targetRow}>
+                  <Text style={styles.targetLabel}>Target</Text>
+                  <Text style={styles.targetValues}>
+                    {(profile.calculated_macros.calories || 0) + (profile.calorie_adjustment || 0)} cal • {profile.calculated_macros.protein}g P • {Math.round((profile.calculated_macros.carbs || 0) + ((profile.calorie_adjustment || 0) / 4))}g C • {profile.calculated_macros.fats}g F
+                  </Text>
+                </View>
+              </View>
+            )}
             <View style={styles.summaryRow}>
               <View style={styles.summaryItem}>
                 <Text style={[styles.summaryValue, { color: colors.primary }]}>
                   {totalNutrition.calories}
                 </Text>
                 <Text style={styles.summaryLabel}>Calories</Text>
+                {profile?.calculated_macros && (
+                  <Text style={styles.remainingText}>
+                    {((profile.calculated_macros.calories || 0) + (profile.calorie_adjustment || 0)) - totalNutrition.calories} left
+                  </Text>
+                )}
               </View>
               <View style={styles.summaryItem}>
                 <Text style={[styles.summaryValue, { color: '#FF6B6B' }]}>
                   {Math.round(totalNutrition.protein)}g
                 </Text>
                 <Text style={styles.summaryLabel}>Protein</Text>
+                {profile?.calculated_macros && (
+                  <Text style={styles.remainingText}>
+                    {Math.round((profile.calculated_macros.protein || 0) - totalNutrition.protein)}g left
+                  </Text>
+                )}
               </View>
               <View style={styles.summaryItem}>
                 <Text style={[styles.summaryValue, { color: '#4ECDC4' }]}>
                   {Math.round(totalNutrition.carbs)}g
                 </Text>
                 <Text style={styles.summaryLabel}>Carbs</Text>
+                {profile?.calculated_macros && (
+                  <Text style={styles.remainingText}>
+                    {Math.round(((profile.calculated_macros.carbs || 0) + ((profile.calorie_adjustment || 0) / 4)) - totalNutrition.carbs)}g left
+                  </Text>
+                )}
               </View>
               <View style={styles.summaryItem}>
                 <Text style={[styles.summaryValue, { color: '#FFD93D' }]}>
                   {Math.round(totalNutrition.fats)}g
                 </Text>
                 <Text style={styles.summaryLabel}>Fats</Text>
+                {profile?.calculated_macros && (
+                  <Text style={styles.remainingText}>
+                    {Math.round((profile.calculated_macros.fats || 0) - totalNutrition.fats)}g left
+                  </Text>
+                )}
               </View>
             </View>
           </View>
@@ -921,6 +952,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  targetVsConsumed: {
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  targetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  targetLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  targetValues: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  remainingText: {
+    fontSize: 10,
+    color: colors.textMuted,
+    marginTop: 2,
   },
   logsSection: {
     gap: 12,

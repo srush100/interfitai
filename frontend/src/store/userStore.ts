@@ -24,6 +24,8 @@ interface UserProfile {
   subscription_end_date: string | null;
   reminders_enabled: boolean;
   motivation_enabled: boolean;
+  calorie_adjustment: number;
+  profile_image?: string;
 }
 
 interface UserState {
@@ -35,6 +37,7 @@ interface UserState {
   createProfile: (data: Partial<UserProfile>) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
   setOnboarded: (value: boolean) => Promise<void>;
+  setProfile: (profile: UserProfile) => void;
 }
 
 export const useUserStore = create<UserState>((set, get) => ({
@@ -90,5 +93,9 @@ export const useUserStore = create<UserState>((set, get) => ({
   setOnboarded: async (value) => {
     await AsyncStorage.setItem('isOnboarded', value.toString());
     set({ isOnboarded: value });
+  },
+
+  setProfile: (profile) => {
+    set({ profile });
   },
 }));

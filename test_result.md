@@ -534,6 +534,21 @@ backend:
         agent: "testing"
         comment: "✅ FIXED & TESTED: Save Favorite Meals Feature working perfectly! Fixed MongoDB ObjectId serialization issue by adding response_model=List[FavoriteMeal] and proper model conversion. All 4 favorite meals endpoints working: Health Check (0.13s), POST /api/food/favorite (add meal to favorites, 0.13s), GET /api/food/favorites/{user_id} (retrieve favorites with proper nested meal structure, 0.16s), DELETE /api/food/favorite/{favorite_id} (remove favorite, 0.17s). Verified correct nested meal object structure as requested: {id, user_id, meal: {name, calories, protein, carbs, fats}, created_at}. All 5/5 tests passed with 100% success rate."
 
+  - task: "Calorie Adjustment Feature"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented calorie adjustment feature. Backend: Added calorie_adjustment field to UserProfile model. Frontend: Created macro-targets.tsx screen for adjusting calories (+/- from base), updated userStore.ts with setProfile function and calorie_adjustment/profile_image fields. Updated food-log.tsx to display adjusted targets and remaining macros. Adjustments only affect carbs (protein and fats stay fixed). Home screen already uses adjusted values."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Calorie Adjustment Feature working perfectly! All 5 test cases passed with 100% success rate. GET /api/profile/{user_id} includes calorie_adjustment field (default 0), PUT /api/profile/{user_id} successfully updates calorie adjustment values (+200, -150, 0), all updates persist correctly. Used test user ID cbd82a69-3a37-48c2-88e8-0fe95081fa4b as specified. Response times excellent (0.06-0.35s). Backend endpoints fully operational for calorie adjustment functionality."
+
 frontend:
   - task: "Onboarding Flow"
     implemented: true
@@ -631,7 +646,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Save Favorite Meals Feature"
+    []
   stuck_tasks: 
     - "Food Image Analysis"
   test_all: false
@@ -678,3 +693,5 @@ agent_communication:
     message: "SAVE FAVORITE MEALS FEATURE COMPLETE: Integrated saved meals into the Food Log Search tab instead of a separate screen. When user goes to Food Log > Search tab, they now see: 1) Their saved meals with a heart icon section at the top (collapsible), 2) An 'or search food database' divider, 3) The existing food search functionality. Users can tap any saved meal to instantly log it. Updated FavoriteMeal interface to properly handle the nested 'meal' object from the backend. Both food-log.tsx and saved-meals.tsx updated to use correct data structure."
   - agent: "testing"
     message: "✅ SAVE FAVORITE MEALS FEATURE TESTING COMPLETE: All favorite meals endpoints working perfectly! Initially found MongoDB ObjectId serialization issue in GET /api/food/favorites/{user_id} endpoint (500 Internal Server Error), but quickly fixed by adding response_model=List[FavoriteMeal] and proper model conversion. All 4 requested endpoints now working: 1) Health Check (GET /api/health): ✅ 0.13s response time, 2) Add Favorite Meal (POST /api/food/favorite): ✅ 0.13s response with proper favorite ID returned, 3) Get Favorite Meals (GET /api/food/favorites/{user_id}): ✅ 0.16s response with correct nested meal object structure as requested {id, user_id, meal: {name, calories, protein, carbs, fats}, created_at}, 4) Remove Favorite Meal (DELETE /api/food/favorite/{favorite_id}): ✅ 0.17s response. Used test user ID 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b' and test meal 'Test Grilled Chicken Salad' (450 cal, 45g protein) as specified in review request. All 5/5 tests passed with 100% success rate. Save Favorite Meals feature fully operational!"
+  - agent: "testing"
+    message: "✅ CALORIE ADJUSTMENT FEATURE TESTING COMPLETE: All 5 test cases passed with 100% success rate! Comprehensive testing of GET /api/profile/{user_id} and PUT /api/profile/{user_id} endpoints with calorie_adjustment functionality. Test results: 1) Profile contains calorie_adjustment field (default value 0), 2) Successfully updated calorie_adjustment to +200 calories, 3) Verified +200 adjustment persisted correctly, 4) Successfully updated to -150 calories (negative adjustment), 5) Successfully reset to 0 calories. Used test user ID cbd82a69-3a37-48c2-88e8-0fe95081fa4b as specified. All response times excellent (0.06-0.35s). Backend calorie adjustment feature fully operational and ready for production."
