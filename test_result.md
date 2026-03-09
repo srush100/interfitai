@@ -573,13 +573,16 @@ backend:
     implemented: true
     working: false
     file: "server.py"
-    stuck_count: 0
+    stuck_count: 1
     priority: "high"
     needs_retesting: false
     status_history:
       - working: false
         agent: "testing"
         comment: "❌ CRITICAL ISSUE: Meal plan improved portion guidance testing reveals INCONSISTENCY across 3 days. Generated meal plan 'Whole Foods 3-Day Meal Plan' has perfect calorie accuracy (Day 1: 2273cal, Day 2: 2272cal, Day 3: 2274cal vs target 2273cal), but significant macro inconsistencies between days. Protein deviation: 14.4% (Day 1: 159g, Day 2: 139g, Day 3: 138g vs target 170g), Carbs deviation: 32.5% (Day 1: 215g, Day 2: 152g, Day 3: 214g vs target 227g), Fats deviation: 42.6% (Day 1: 87g, Day 2: 132g, Day 3: 98g vs target 76g). None of the 3 days are within ±10% consistency tolerance. While calorie post-processing works perfectly, macro consistency across days needs improvement. Backend logs confirm: Day 1: 2273cal/159g P/215g C/87g F, Day 2: 2272cal/139g P/152g C/132g F, Day 3: 2274cal/138g P/214g C/98g F. Response time: 12.94s. Structure mostly valid (4 meals per day with gram amounts) with 1 minor issue (Day 2 Meal 4: 1030cal unrealistic). The improved portion guidance needs work for macro CONSISTENCY across all 3 days, not just daily accuracy."
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL CONSISTENCY ISSUE CONFIRMED: Re-tested with review request exact template. Generated 'Whole Foods 3-Day Meal Plan' in 19.73s shows SEVERE inconsistencies across days. Day 1: 2287cal, 177g P, 217g C, 80g F | Day 2: 2274cal, 207g P, 119g C, 112g F | Day 3: 2273cal, 148g P, 142g C, 132g F vs Target: 2273cal, 170g P, 227g C, 76g F. Consistency deviations far exceed ±10% tolerance: Protein 33.3%, Carbs 61.5%, Fats 48.1%. Only Day 1 meets ±15% target accuracy. Portion size consistency BROKEN: Day 1 breakfast (50g oats, 200ml milk, 100g banana) vs Days 2&3 (eggs with no gram amounts). Structure issue: Day 3 Meal 4 has unrealistic 1038 calories. Backend logs confirm post-processing attempts but fails at macro consistency between days. The AI template following and portion consistency is NOT WORKING - Days 2&3 do not use similar portion sizes as Day 1 as specified in template requirements."
 
 frontend:
   - task: "Onboarding Flow"
@@ -678,9 +681,10 @@ metadata:
 
 test_plan:
   current_focus:
-    - ""
+    - "Improved Portion Guidance & Consistency Testing"
   stuck_tasks: 
     - "Food Image Analysis"
+    - "Improved Portion Guidance & Consistency Testing"
   test_all: false
   test_priority: "high_first"
 
@@ -733,6 +737,7 @@ agent_communication:
     message: "✅ MEAL PLAN MACRO ACCURACY ROUND 2 TESTING COMPLETE: POST-PROCESSING SUCCESS! The backend post-processing improvements are working perfectly. Generated 'Whole Foods 3-Day Meal Plan' with EXACT macro accuracy - all 4 meals on Day 1 sum to precisely match target macros with 0 deviation: Calculated Total: 2273 cal, 170g P, 227g C, 76g F vs Target: 2273 cal, 170g P, 227g C, 76g F. Backend logs confirm the post-processing algorithm is functioning correctly: 'Day 1: 2273 cal, 170g P, 227g C, 76g F (target: 2273/170/227/76)'. The 4th meal (snack) adjustment logic successfully calculates remaining macros to achieve exact totals. All Round 2 improvements verified: 1) Post-processing forces exact macro totals by adjusting the last meal ✅, 2) More explicit AI prompting with exact numbers pre-calculated ✅, 3) Lower temperature (0.3) for consistent output ✅. Response time: 12.10s. Meal Plan Macro Accuracy is now WORKING with zero tolerance deviation."
   - agent: "testing"
     message: "✅ TWO-PHASE PROGRAMMATIC MACRO CALCULATION REVIEW COMPLETE: Successfully tested the meal plan generation's TWO-PHASE approach as specifically requested. Phase 1: AI generates meal ideas with specific ingredient quantities (e.g., '40g oats', '240ml milk', '100g mixed berries', '30g almonds'). Phase 2: Python code parses ingredients and calculates macros from comprehensive INGREDIENT_DB database with 50+ common foods. Individual meal macro accuracy VERIFIED: Manual calculation (470 cal, 20.3g P, 56.6g C, 20.2g F) vs API result (470 cal, 20.0g P, 57.0g C, 20.0g F) - perfect match! The programmatic macro calculation system is working correctly for individual meals. However, backend logs show daily totals still have deviations (Day 1: 2122 cal vs target 2273 cal), indicating the post-processing enforcement needs additional refinement for exact daily targets, but the core TWO-PHASE approach is functioning as designed."
-
   - agent: "testing"
     message: "❌ IMPROVED PORTION GUIDANCE INCONSISTENCY DETECTED: Tested POST /api/mealplans/generate with improved portion guidance as specified in review request using user 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b' and food_preferences 'whole_foods'. Generated meal plan shows CALORIE post-processing working perfectly (Day 1: 2273cal, Day 2: 2272cal, Day 3: 2274cal vs target 2273cal), but MACRO CONSISTENCY across 3 days is broken. Deviations between days exceed ±10% tolerance: Protein 14.4% (159g/139g/138g), Carbs 32.5% (215g/152g/214g), Fats 42.6% (87g/132g/98g). While individual day accuracy to target varies (Day 1 mostly within ±15%, Days 2&3 have macro deviations >15%), the bigger issue is DAY-TO-DAY INCONSISTENCY. Each day has vastly different macro distributions despite same targets. Response time: 12.94s. Structure valid (4 meals/day, gram amounts specified). The improved portion guidance needs enhancement to ensure CONSISTENT macro proportions across all 3 days, not just calorie accuracy. This affects user experience as macro intake varies wildly day to day."
+  - agent: "testing"
+    message: "❌ CRITICAL REVIEW REQUEST CONFIRMATION: Tested exact template as specified in review request with user 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b' and food_preferences 'whole_foods'. The key question 'Did the AI follow the template and keep portion sizes CONSISTENT?' - Answer: NO. Generated 'Whole Foods 3-Day Meal Plan' (19.73s) shows SEVERE inconsistencies across days far exceeding review tolerances. Day 1: 2287cal, 177g P, 217g C, 80g F | Day 2: 2274cal, 207g P, 119g C, 112g F | Day 3: 2273cal, 148g P, 142g C, 132g F. Variance between days: Protein 33.3%, Carbs 61.5%, Fats 48.1% (all far above ±10%). Breakfast inconsistency: Day 1 (~506 cal with 50g oats, 200ml milk, 100g banana) vs Day 2/3 (scrambled eggs without gram amounts). Only Day 1 meets ±15% target accuracy. Critical structure issue: Day 3 Meal 4 has unrealistic 1038 calories for a snack. Backend logs confirm post-processing attempts but fails at day-to-day consistency. The improved portion guidance and template following is BROKEN - Days 2&3 do NOT use similar portions as Day 1 as required."

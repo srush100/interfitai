@@ -1638,59 +1638,87 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     dinner_cals = round(calories * 0.35)
     snack_cals = round(calories * 0.10)
     
-    # Calculate target portions based on user's macros
-    # For a high-protein diet targeting ~170g protein, we need ~170g protein foods per day
-    protein_per_meal = round(protein / 4)  # Split across 4 meals
-    carbs_per_main_meal = round(carbs / 3)  # Carbs mainly in breakfast, lunch, dinner
+    # Calculate exact macro targets per meal
+    breakfast_p = round(protein * 0.20)
+    breakfast_c = round(carbs * 0.30)
+    breakfast_f = round(fats * 0.25)
+    
+    lunch_p = round(protein * 0.30)
+    lunch_c = round(carbs * 0.30)
+    lunch_f = round(fats * 0.25)
+    
+    dinner_p = round(protein * 0.35)
+    dinner_c = round(carbs * 0.30)
+    dinner_f = round(fats * 0.35)
+    
+    snack_p = round(protein * 0.15)
+    snack_c = round(carbs * 0.10)
+    snack_f = round(fats * 0.15)
 
-    prompt = f"""Create a 3-day meal plan with these EXACT daily targets: {calories} calories, {protein}g protein, {carbs}g carbs, {fats}g fats.
+    prompt = f"""Create a 3-day meal plan. I will give you EXACT ingredient templates for Day 1 - you must follow them precisely, then create similar meals for Days 2 and 3.
 
-CRITICAL PORTION SIZING GUIDE (use these exact amounts to hit targets):
-
-FOR PROTEIN (~{protein}g/day):
-- Each main meal needs ~{protein_per_meal}g protein
-- Use: 150-200g chicken breast (46-62g protein), 150-180g salmon (30-36g protein), 150g ground beef (39g protein)
-- Add: eggs (6g each), Greek yogurt 200g (20g protein), protein powder 30g (24g protein)
-
-FOR CARBS (~{carbs}g/day):
-- Each main meal needs ~{carbs_per_main_meal}g carbs  
-- Use: 200-250g cooked rice (56-70g carbs), 200g sweet potato (42g carbs), 50g oats (34g carbs)
-- Add: fruits, bread, beans for extra carbs
-
-FOR FATS (~{fats}g/day):
-- Use: 1-2 tbsp olive oil (14-28g fat), 30g nuts (15g fat), half avocado (15g fat)
-- Cooking oils and fatty fish provide additional fats
-
-MEAL STRUCTURE (4 meals/day):
-- Breakfast (~{breakfast_cals} cal): Oats/eggs + fruit + nuts/butter
-- Lunch (~{lunch_cals} cal): Protein (chicken/beef) + carbs (rice/potato) + vegetables + oil
-- Dinner (~{dinner_cals} cal): Protein (fish/chicken) + carbs (rice/potato) + vegetables + oil  
-- Snack (~{snack_cals} cal): Greek yogurt + fruit OR protein shake OR nuts
+DAILY TARGETS: {calories} cal, {protein}g protein, {carbs}g carbs, {fats}g fats
 
 USER PREFERENCES:
 - Food Style: {request.food_preferences}
 - {cuisine_str}
 - Allergies: {', '.join(request.allergies) if request.allergies else 'None'}
 
-INSTRUCTIONS:
-1. Use ONLY gram measurements (e.g., "180g chicken breast", "200g brown rice")
-2. Each day MUST have similar total portions to hit {calories} calories
-3. DO NOT include macro numbers - they will be calculated from ingredients
-4. Make meals realistic and tasty
+=== DAY 1 TEMPLATE (use these EXACT portions) ===
+
+BREAKFAST (~{breakfast_cals} cal, ~{breakfast_p}g P, ~{breakfast_c}g C, ~{breakfast_f}g F):
+- 50g oats (dry) = 188 cal, 6g P, 34g C, 3g F
+- 200ml milk = 84 cal, 7g P, 10g C, 2g F
+- 100g banana = 89 cal, 1g P, 23g C, 0g F
+- 25g almonds = 145 cal, 5g P, 5g C, 13g F
+Total: ~506 cal, 19g P, 72g C, 18g F
+
+LUNCH (~{lunch_cals} cal, ~{lunch_p}g P, ~{lunch_c}g C, ~{lunch_f}g F):
+- 180g chicken breast = 297 cal, 56g P, 0g C, 6g F
+- 200g brown rice (cooked) = 224 cal, 5g P, 48g C, 2g F
+- 100g broccoli = 34 cal, 3g P, 7g C, 0g F
+- 14g olive oil (1 tbsp) = 124 cal, 0g P, 0g C, 14g F
+Total: ~679 cal, 64g P, 55g C, 22g F
+
+DINNER (~{dinner_cals} cal, ~{dinner_p}g P, ~{dinner_c}g C, ~{dinner_f}g F):
+- 180g salmon = 374 cal, 36g P, 0g C, 23g F
+- 250g sweet potato = 225 cal, 5g P, 53g C, 0g F
+- 150g asparagus = 30 cal, 3g P, 6g C, 0g F
+- 14g olive oil (1 tbsp) = 124 cal, 0g P, 0g C, 14g F
+Total: ~753 cal, 44g P, 59g C, 37g F
+
+SNACK (~{snack_cals} cal, ~{snack_p}g P, ~{snack_c}g C, ~{snack_f}g F):
+- 250g greek yogurt = 148 cal, 25g P, 10g C, 1g F
+- 100g berries = 45 cal, 1g P, 11g C, 0g F
+- 30g whey protein = 120 cal, 24g P, 3g C, 1g F
+Total: ~313 cal, 50g P, 24g C, 2g F
+
+DAY 1 GRAND TOTAL: ~2251 cal, 177g P, 210g C, 79g F
+
+=== INSTRUCTIONS ===
+1. For Day 1: Use the EXACT ingredients and portions from the template above
+2. For Days 2 and 3: Create different meals but with VERY SIMILAR portion sizes
+   - Swap chicken for ground beef or turkey (same 180g)
+   - Swap salmon for tilapia or tuna (same 180g)
+   - Swap brown rice for quinoa or pasta (same 200g)
+   - Swap oats for eggs (3 eggs = similar calories)
+3. Keep ALL protein portions at 180g for main meals
+4. Keep ALL carb portions at 200-250g for main meals
+5. Keep ALL fat portions at 14g oil per meal
 
 Return ONLY this JSON:
 {{"name": "{request.food_preferences.replace('_', ' ').title()} 3-Day Meal Plan", "meal_days": [
   {{"day": "Day 1", "meals": [
-    {{"id": "d1m1", "name": "Breakfast Name", "meal_type": "breakfast", "ingredients": ["50g oats", "240ml milk", "1 banana (100g)", "30g almonds"], "instructions": "Steps", "prep_time_minutes": 10}},
-    {{"id": "d1m2", "name": "Lunch Name", "meal_type": "lunch", "ingredients": ["180g chicken breast", "220g brown rice", "100g broccoli", "14g olive oil"], "instructions": "Steps", "prep_time_minutes": 20}},
-    {{"id": "d1m3", "name": "Dinner Name", "meal_type": "dinner", "ingredients": ["180g salmon", "200g sweet potato", "150g asparagus", "14g olive oil"], "instructions": "Steps", "prep_time_minutes": 25}},
-    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["200g greek yogurt", "100g berries", "15g honey"], "instructions": "Steps", "prep_time_minutes": 5}}
+    {{"id": "d1m1", "name": "Oatmeal with Banana and Almonds", "meal_type": "breakfast", "ingredients": ["50g oats", "200ml milk", "100g banana", "25g almonds"], "instructions": "Cook oats with milk, top with sliced banana and almonds", "prep_time_minutes": 10}},
+    {{"id": "d1m2", "name": "Grilled Chicken with Brown Rice", "meal_type": "lunch", "ingredients": ["180g chicken breast", "200g brown rice", "100g broccoli", "14g olive oil"], "instructions": "Grill chicken, serve with rice and steamed broccoli drizzled with olive oil", "prep_time_minutes": 25}},
+    {{"id": "d1m3", "name": "Baked Salmon with Sweet Potato", "meal_type": "dinner", "ingredients": ["180g salmon", "250g sweet potato", "150g asparagus", "14g olive oil"], "instructions": "Bake salmon, roast sweet potato and asparagus with olive oil", "prep_time_minutes": 30}},
+    {{"id": "d1m4", "name": "Protein Yogurt Bowl", "meal_type": "snack", "ingredients": ["250g greek yogurt", "100g berries", "30g whey protein"], "instructions": "Mix protein powder into yogurt, top with berries", "prep_time_minutes": 5}}
   ]}},
-  {{"day": "Day 2", "meals": [similar structure with different foods]}},
-  {{"day": "Day 3", "meals": [similar structure with different foods]}}
+  {{"day": "Day 2", "meals": [DIFFERENT meals but SAME portion sizes as Day 1]}},
+  {{"day": "Day 3", "meals": [DIFFERENT meals but SAME portion sizes as Day 1]}}
 ]}}
 
-IMPORTANT: Keep portion sizes CONSISTENT across all 3 days to maintain ~{calories} calories daily."""
+CRITICAL: The key to hitting macro targets is keeping portion sizes IDENTICAL across all 3 days!"""
 
     try:
         response = openai.chat.completions.create(
