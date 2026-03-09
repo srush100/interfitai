@@ -2472,6 +2472,113 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         MEAL_TEMPLATES = BALANCED_TEMPLATES
         plan_name = "Balanced"
     
+    # If user specified preferred foods, use AI to generate custom meals
+    if request.preferred_foods and request.preferred_foods.strip():
+        logger.info(f"Using AI generation with preferred foods: {request.preferred_foods}")
+        
+        # Build diet-specific instructions
+        diet_instructions = ""
+        if eating_style == 'keto':
+            diet_instructions = "This is a KETO diet - keep carbs under 30g per day. Focus on high fat, moderate protein. NO grains, NO sugar, NO high-carb vegetables."
+        elif eating_style == 'carnivore':
+            diet_instructions = "This is a CARNIVORE diet - ONLY meat, fish, eggs, and animal products. NO plants, NO vegetables, NO fruits. Zero carbs."
+        elif eating_style == 'paleo':
+            diet_instructions = "This is a PALEO diet - NO grains, NO dairy, NO legumes, NO processed foods. Only meat, fish, vegetables, fruits, nuts, seeds."
+        elif eating_style == 'vegan':
+            diet_instructions = "This is a VEGAN diet - NO animal products whatsoever. NO meat, NO fish, NO dairy, NO eggs, NO honey."
+        elif eating_style == 'vegetarian':
+            diet_instructions = "This is a VEGETARIAN diet - NO meat, NO fish. Eggs and dairy are OK."
+        elif eating_style == 'high_protein':
+            diet_instructions = "This is a HIGH PROTEIN diet - prioritize protein-rich foods. Aim for 40%+ calories from protein."
+        
+        allergies_str = ', '.join(request.allergies) if request.allergies else 'None'
+        avoid_str = request.foods_to_avoid if request.foods_to_avoid else 'None'
+        
+        prompt = f"""Create a 3-day meal plan using these SPECIFIC foods as the foundation:
+
+REQUIRED FOODS TO INCLUDE: {request.preferred_foods}
+You MUST build meals around these ingredients. Every day should feature these foods prominently.
+
+FOODS TO AVOID: {avoid_str}
+ALLERGIES: {allergies_str}
+
+{diet_instructions}
+
+DAILY MACRO TARGETS:
+- Calories: {target_cal}
+- Protein: {target_pro}g
+- Carbs: {target_carb}g  
+- Fats: {target_fat}g
+
+Create 4 meals per day (breakfast, lunch, dinner, snack) that:
+1. PRIMARILY use the requested foods: {request.preferred_foods}
+2. Hit the calorie target closely (~{target_cal} calories per day)
+3. Follow the eating style strictly
+4. Use specific gram amounts for all ingredients
+
+Return ONLY valid JSON in this exact format:
+{{"name": "{plan_name} Custom Meal Plan", "meal_days": [
+  {{"day": "Day 1", "total_calories": <number>, "total_protein": <number>, "total_carbs": <number>, "total_fats": <number>, "meals": [
+    {{"id": "d1m1", "name": "Meal Name", "meal_type": "breakfast", "ingredients": ["200g steak", "150g eggs", "100g sweet potato"], "instructions": "Cooking steps", "calories": <number>, "protein": <number>, "carbs": <number>, "fats": <number>, "prep_time_minutes": 15}},
+    {{"id": "d1m2", "name": "Meal Name", "meal_type": "lunch", ...}},
+    {{"id": "d1m3", "name": "Meal Name", "meal_type": "dinner", ...}},
+    {{"id": "d1m4", "name": "Meal Name", "meal_type": "snack", ...}}
+  ]}},
+  {{"day": "Day 2", ...}},
+  {{"day": "Day 3", ...}}
+]}}
+
+IMPORTANT: The meals MUST feature {request.preferred_foods} prominently. Do not use generic meals."""
+
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": f"You are a precision meal planner. Create meals that SPECIFICALLY use the user's requested foods. The user asked for: {request.preferred_foods}. Make sure these foods appear in most meals."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.5,
+                max_tokens=6000
+            )
+            
+            content = response.choices[0].message.content
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+            content = content.strip()
+            
+            meal_data = json.loads(content)
+            
+            # Log the generated days
+            for day in meal_data.get("meal_days", []):
+                logger.info(f"{day.get('day')}: {day.get('total_calories')} cal, {day.get('total_protein')}g P, {day.get('total_carbs')}g C, {day.get('total_fats')}g F")
+            
+            meal_plan = MealPlan(
+                user_id=request.user_id,
+                name=meal_data.get("name", f"{plan_name} Custom Meal Plan"),
+                food_preferences=request.food_preferences,
+                preferred_foods=request.preferred_foods,
+                foods_to_avoid=request.foods_to_avoid,
+                supplements=request.supplements,
+                supplements_custom=request.supplements_custom,
+                allergies=request.allergies,
+                target_calories=target_cal,
+                target_protein=target_pro,
+                target_carbs=target_carb,
+                target_fats=target_fat,
+                meal_days=[MealDay(**day) for day in meal_data.get("meal_days", [])]
+            )
+            
+            await db.mealplans.insert_one(meal_plan.model_dump())
+            return meal_plan
+            
+        except Exception as e:
+            logger.error(f"AI meal plan generation error: {e}")
+            # Fall back to template-based generation
+            logger.info("Falling back to template-based generation")
+    
+    # Template-based generation (when no preferred foods specified)
     # Calculate base totals for template (before scaling)
     def calc_day_totals(day_template):
         totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}

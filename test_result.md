@@ -602,6 +602,18 @@ backend:
         agent: "testing"
         comment: "✅ DIET-SPECIFIC MEAL PLAN TESTING COMPLETE: Successfully tested Keto and Carnivore meal plan generation as requested in review. Both diet types use pre-calculated templates with mathematical scaling for perfect macro compliance. KETO RESULTS: Generated 'Keto 3-Day Meal Plan' with Day 1: 2272cal, 21g carbs, 189g fats, 127g protein. ✅ KETO COMPLIANCE: Carbs 21g < 50g limit. Sample meals: 'Keto Egg & Bacon Plate', 'Grilled Salmon with Greens', 'Ribeye Steak with Asparagus'. CARNIVORE RESULTS: Generated 'Carnivore 3-Day Meal Plan' with Day 1: 2274cal, 3g carbs, 156g fats, 209g protein. ✅ CARNIVORE COMPLIANCE: Near-zero carbs 3g < 10g limit. All 4/4 meals are meat-based: 'Steak and Eggs', 'Ground Beef Patties', 'Roasted Chicken Thighs', 'Beef Jerky'. Both plans generated in 0.17s using template-based approach. Backend logs confirm proper template scaling: 'Day 1: 2272 cal, 127g P, 21g C, 189g F' for Keto and 'Day 1: 2274 cal, 209g P, 3g C, 156g F' for Carnivore. Diet-specific meal plan generation working perfectly with correct macro profiles and meal names that reflect eating styles."
 
+  - task: "AI Meal Plan Generation with Preferred Foods"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PREFERRED FOODS MEAL PLAN TESTING COMPLETE: Successfully tested meal plan generation with preferred foods as requested in review. Tested POST /api/mealplans/generate with user_id 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b', food_preferences 'none', and preferred_foods 'steak, eggs, sweet potato'. AI generation working perfectly - when preferred_foods parameter is provided, system correctly switches from template-based generation to OpenAI GPT-4o AI generation. RESULTS: Generated 'Balanced Custom Meal Plan' featuring all 3 preferred foods prominently. Day 1 meals: Breakfast 'Steak and Egg Breakfast Scramble' (contains eggs ✅), Lunch 'Sweet Potato and Steak Salad' (contains steak/sweet potato ✅), Dinner 'Egg and Sweet Potato Hash with Steak' (contains steak/sweet potato ✅). All meals feature the requested foods with proper ingredient quantities (e.g., '150g steak', '200g eggs', '100g sweet potato'). Backend logs confirm: 'Using AI generation with preferred foods: steak, eggs, sweet potato' and successful OpenAI API calls. Response times: 18.89s and 22.94s (appropriate for AI generation). The AI successfully respected user preferences and generated meals that prominently feature steak, eggs, and sweet potato as requested. Preferred foods functionality working perfectly."
+
 frontend:
   - task: "Onboarding Flow"
     implemented: true
@@ -699,7 +711,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Diet-Specific Meal Plan Generation (Keto & Carnivore) - COMPLETED SUCCESSFULLY"
+    - "AI Meal Plan Generation with Preferred Foods - COMPLETED SUCCESSFULLY"
   stuck_tasks: 
     - "Food Image Analysis"
   test_all: false
@@ -762,3 +774,5 @@ agent_communication:
     message: "🎉 TEMPLATE-BASED MEAL PLAN GENERATION SUCCESS! Tested the NEW PRE-CALCULATED template implementation as requested. The main agent has SOLVED the consistency issues by replacing AI-generated content with mathematical scaling of pre-verified templates. MAJOR IMPROVEMENTS: ✅ Perfect calorie consistency (all days exactly 2272cal vs target 2273cal), ✅ Dramatically faster (0.05s vs previous 12-30+s), ✅ Reliable meal structure (4 meals per day with realistic portions like '52g oats, 210g milk'), ✅ Mathematical approach eliminates AI inconsistency. While macro distribution varies by day as expected (different meal templates), the core goals from review request are achieved: same calorie target across all days and proper meal structure. The template-based approach using pre-calculated macros and mathematical scaling has successfully replaced the fundamentally flawed AI-based approaches. Testing confirms this is working as designed and ready for production use."
   - agent: "testing"
     message: "✅ DIET-SPECIFIC MEAL PLAN GENERATION TESTING COMPLETE: Successfully tested Keto and Carnivore meal plan generation as requested in review. Both diet types use pre-calculated templates with mathematical scaling for perfect macro compliance and ultra-fast response times (0.17s). KETO RESULTS: Generated 'Keto 3-Day Meal Plan' with Day 1: 2272cal, 21g carbs, 189g fats, 127g protein. ✅ KETO COMPLIANCE: Carbs 21g well below 50g limit with high-fat meals. Sample meals: 'Keto Egg & Bacon Plate', 'Grilled Salmon with Greens', 'Ribeye Steak with Asparagus', 'Cheese & Nut Plate' - all reflecting ketogenic eating style. CARNIVORE RESULTS: Generated 'Carnivore 3-Day Meal Plan' with Day 1: 2274cal, 3g carbs, 156g fats, 209g protein. ✅ CARNIVORE COMPLIANCE: Near-zero carbs 3g well below 10g limit with all 4/4 meals being meat-based: 'Steak and Eggs', 'Ground Beef Patties', 'Roasted Chicken Thighs', 'Beef Jerky'. Backend logs confirm proper diet-specific template usage and macro accuracy. Diet-specific meal plan generation working perfectly - meal names reflect eating styles and macros precisely match diet requirements."
+  - agent: "testing"
+    message: "✅ PREFERRED FOODS MEAL PLAN TESTING COMPLETE: Successfully tested meal plan generation with preferred foods as requested in review. Tested POST /api/mealplans/generate with user_id 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b', food_preferences 'none', and preferred_foods 'steak, eggs, sweet potato'. AI generation working perfectly - when preferred_foods parameter is provided, system correctly switches from template-based generation to OpenAI GPT-4o AI generation. RESULTS: Generated 'Balanced Custom Meal Plan' featuring all 3 preferred foods prominently. Day 1 meals: Breakfast 'Steak and Egg Breakfast Scramble' (contains eggs ✅), Lunch 'Sweet Potato and Steak Salad' (contains steak/sweet potato ✅), Dinner 'Egg and Sweet Potato Hash with Steak' (contains steak/sweet potato ✅). All meals feature the requested foods with proper ingredient quantities (e.g., '150g steak', '200g eggs', '100g sweet potato'). Backend logs confirm: 'Using AI generation with preferred foods: steak, eggs, sweet potato' and successful OpenAI API calls. Response times: 18.89s and 22.94s (appropriate for AI generation). The AI successfully respected user preferences and generated meals that prominently feature steak, eggs, and sweet potato as requested. Preferred foods functionality working perfectly."

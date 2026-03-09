@@ -19,15 +19,15 @@ import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 
 const EATING_STYLES = [
+  { id: 'none', label: 'No Preference', desc: 'Flexible eating' },
   { id: 'balanced', label: 'Balanced', desc: 'Well-rounded nutrition' },
   { id: 'high_protein', label: 'High Protein', desc: 'Protein-focused meals' },
   { id: 'whole_foods', label: 'Whole Foods', desc: 'Natural, unprocessed' },
-  { id: 'vegetarian', label: 'Vegetarian', desc: 'No meat or fish' },
-  { id: 'vegan', label: 'Vegan', desc: 'Plant-based only' },
   { id: 'keto', label: 'Keto', desc: 'Low carb, high fat' },
   { id: 'paleo', label: 'Paleo', desc: 'Ancestral eating' },
   { id: 'carnivore', label: 'Carnivore', desc: 'Meat-based diet' },
-  { id: 'none', label: 'No Preference', desc: 'Flexible eating' },
+  { id: 'vegetarian', label: 'Vegetarian', desc: 'No meat or fish' },
+  { id: 'vegan', label: 'Vegan', desc: 'Plant-based only' },
 ];
 
 const ALLERGIES = [
@@ -48,7 +48,7 @@ export default function MealQuestionnaire() {
   const [loading, setLoading] = useState(false);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
   const [formData, setFormData] = useState({
-    eating_style: 'balanced',
+    eating_style: 'none',
     preferred_foods: '',
     foods_to_avoid: '',
     allergies: [] as string[],
