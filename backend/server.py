@@ -1637,45 +1637,60 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     lunch_cals = round(calories * 0.30)
     dinner_cals = round(calories * 0.35)
     snack_cals = round(calories * 0.10)
+    
+    # Calculate target portions based on user's macros
+    # For a high-protein diet targeting ~170g protein, we need ~170g protein foods per day
+    protein_per_meal = round(protein / 4)  # Split across 4 meals
+    carbs_per_main_meal = round(carbs / 3)  # Carbs mainly in breakfast, lunch, dinner
 
-    prompt = f"""Create a 3-day meal plan. Focus on creating delicious, realistic meals with specific ingredient quantities.
+    prompt = f"""Create a 3-day meal plan with these EXACT daily targets: {calories} calories, {protein}g protein, {carbs}g carbs, {fats}g fats.
 
-USER'S DAILY TARGETS (approximate):
-- Calories: {calories} kcal
-- Protein: {protein}g  
-- Carbs: {carbs}g
-- Fats: {fats}g
+CRITICAL PORTION SIZING GUIDE (use these exact amounts to hit targets):
 
-MEAL SIZE GUIDANCE:
-- Breakfast: ~{breakfast_cals} calories
-- Lunch: ~{lunch_cals} calories
-- Dinner: ~{dinner_cals} calories
-- Snack: ~{snack_cals} calories
+FOR PROTEIN (~{protein}g/day):
+- Each main meal needs ~{protein_per_meal}g protein
+- Use: 150-200g chicken breast (46-62g protein), 150-180g salmon (30-36g protein), 150g ground beef (39g protein)
+- Add: eggs (6g each), Greek yogurt 200g (20g protein), protein powder 30g (24g protein)
+
+FOR CARBS (~{carbs}g/day):
+- Each main meal needs ~{carbs_per_main_meal}g carbs  
+- Use: 200-250g cooked rice (56-70g carbs), 200g sweet potato (42g carbs), 50g oats (34g carbs)
+- Add: fruits, bread, beans for extra carbs
+
+FOR FATS (~{fats}g/day):
+- Use: 1-2 tbsp olive oil (14-28g fat), 30g nuts (15g fat), half avocado (15g fat)
+- Cooking oils and fatty fish provide additional fats
+
+MEAL STRUCTURE (4 meals/day):
+- Breakfast (~{breakfast_cals} cal): Oats/eggs + fruit + nuts/butter
+- Lunch (~{lunch_cals} cal): Protein (chicken/beef) + carbs (rice/potato) + vegetables + oil
+- Dinner (~{dinner_cals} cal): Protein (fish/chicken) + carbs (rice/potato) + vegetables + oil  
+- Snack (~{snack_cals} cal): Greek yogurt + fruit OR protein shake OR nuts
 
 USER PREFERENCES:
 - Food Style: {request.food_preferences}
 - {cuisine_str}
 - Allergies: {', '.join(request.allergies) if request.allergies else 'None'}
 
-IMPORTANT INSTRUCTIONS:
-1. Use common whole foods: chicken, beef, fish, eggs, rice, potatoes, oats, vegetables, olive oil, etc.
-2. Specify EXACT gram amounts for all ingredients (e.g., "150g chicken breast", "200g brown rice")
-3. Use realistic portion sizes
-4. DO NOT include macro numbers - I will calculate them from the ingredients
+INSTRUCTIONS:
+1. Use ONLY gram measurements (e.g., "180g chicken breast", "200g brown rice")
+2. Each day MUST have similar total portions to hit {calories} calories
+3. DO NOT include macro numbers - they will be calculated from ingredients
+4. Make meals realistic and tasty
 
-Return ONLY this JSON (macros will be calculated automatically):
+Return ONLY this JSON:
 {{"name": "{request.food_preferences.replace('_', ' ').title()} 3-Day Meal Plan", "meal_days": [
   {{"day": "Day 1", "meals": [
-    {{"id": "d1m1", "name": "Breakfast Name", "meal_type": "breakfast", "ingredients": ["40g oats", "240ml milk", "100g berries", "30g almonds"], "instructions": "Cooking steps", "prep_time_minutes": 10}},
-    {{"id": "d1m2", "name": "Lunch Name", "meal_type": "lunch", "ingredients": ["200g chicken breast", "200g brown rice", "100g broccoli", "15g olive oil"], "instructions": "Steps", "prep_time_minutes": 20}},
-    {{"id": "d1m3", "name": "Dinner Name", "meal_type": "dinner", "ingredients": ["180g salmon", "200g sweet potato", "150g asparagus", "15g butter"], "instructions": "Steps", "prep_time_minutes": 25}},
-    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["200g greek yogurt", "50g banana", "20g honey"], "instructions": "Steps", "prep_time_minutes": 5}}
+    {{"id": "d1m1", "name": "Breakfast Name", "meal_type": "breakfast", "ingredients": ["50g oats", "240ml milk", "1 banana (100g)", "30g almonds"], "instructions": "Steps", "prep_time_minutes": 10}},
+    {{"id": "d1m2", "name": "Lunch Name", "meal_type": "lunch", "ingredients": ["180g chicken breast", "220g brown rice", "100g broccoli", "14g olive oil"], "instructions": "Steps", "prep_time_minutes": 20}},
+    {{"id": "d1m3", "name": "Dinner Name", "meal_type": "dinner", "ingredients": ["180g salmon", "200g sweet potato", "150g asparagus", "14g olive oil"], "instructions": "Steps", "prep_time_minutes": 25}},
+    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["200g greek yogurt", "100g berries", "15g honey"], "instructions": "Steps", "prep_time_minutes": 5}}
   ]}},
-  {{"day": "Day 2", "meals": [...]}},
-  {{"day": "Day 3", "meals": [...]}}
+  {{"day": "Day 2", "meals": [similar structure with different foods]}},
+  {{"day": "Day 3", "meals": [similar structure with different foods]}}
 ]}}
 
-Remember: Use gram measurements (e.g., 150g, 200g) for ALL ingredients. Vary meals across days."""
+IMPORTANT: Keep portion sizes CONSISTENT across all 3 days to maintain ~{calories} calories daily."""
 
     try:
         response = openai.chat.completions.create(
@@ -1723,6 +1738,42 @@ Remember: Use gram measurements (e.g., 150g, 200g) for ALL ingredients. Vary mea
                 day_totals["protein"] += meal["protein"]
                 day_totals["carbs"] += meal["carbs"]
                 day_totals["fats"] += meal["fats"]
+            
+            # PHASE 3: Scale meals proportionally to hit calorie target
+            if day_totals["calories"] > 0:
+                calorie_ratio = calories / day_totals["calories"]
+                
+                # Only scale if we're significantly off (more than 5%)
+                if abs(calorie_ratio - 1.0) > 0.05:
+                    for meal in day.get("meals", []):
+                        meal["calories"] = round(meal["calories"] * calorie_ratio)
+                        meal["protein"] = round(meal["protein"] * calorie_ratio)
+                        meal["carbs"] = round(meal["carbs"] * calorie_ratio)
+                        meal["fats"] = round(meal["fats"] * calorie_ratio)
+                        
+                        # Also scale ingredient amounts in the text for accuracy
+                        scaled_ingredients = []
+                        for ing in meal.get("ingredients", []):
+                            # Try to scale numeric amounts
+                            import re
+                            match = re.match(r'(\d+(?:\.\d+)?)(g|ml)\s+(.+)', ing)
+                            if match:
+                                amount = float(match.group(1))
+                                unit = match.group(2)
+                                name = match.group(3)
+                                new_amount = round(amount * calorie_ratio)
+                                scaled_ingredients.append(f"{new_amount}{unit} {name}")
+                            else:
+                                scaled_ingredients.append(ing)
+                        meal["ingredients"] = scaled_ingredients
+                    
+                    # Recalculate day totals after scaling
+                    day_totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
+                    for meal in day.get("meals", []):
+                        day_totals["calories"] += meal["calories"]
+                        day_totals["protein"] += meal["protein"]
+                        day_totals["carbs"] += meal["carbs"]
+                        day_totals["fats"] += meal["fats"]
             
             # Set day totals
             day["total_calories"] = day_totals["calories"]
