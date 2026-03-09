@@ -1637,88 +1637,34 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     lunch_cals = round(calories * 0.30)
     dinner_cals = round(calories * 0.35)
     snack_cals = round(calories * 0.10)
-    
-    # Calculate exact macro targets per meal
-    breakfast_p = round(protein * 0.20)
-    breakfast_c = round(carbs * 0.30)
-    breakfast_f = round(fats * 0.25)
-    
-    lunch_p = round(protein * 0.30)
-    lunch_c = round(carbs * 0.30)
-    lunch_f = round(fats * 0.25)
-    
-    dinner_p = round(protein * 0.35)
-    dinner_c = round(carbs * 0.30)
-    dinner_f = round(fats * 0.35)
-    
-    snack_p = round(protein * 0.15)
-    snack_c = round(carbs * 0.10)
-    snack_f = round(fats * 0.15)
 
-    prompt = f"""Create a 3-day meal plan. I will give you EXACT ingredient templates for Day 1 - you must follow them precisely, then create similar meals for Days 2 and 3.
+    # Only generate Day 1, then programmatically create Days 2 and 3
+    prompt = f"""Create a SINGLE day meal plan (Day 1 only). I need 4 meals that together hit these targets:
 
-DAILY TARGETS: {calories} cal, {protein}g protein, {carbs}g carbs, {fats}g fats
+DAILY TARGETS: ~{calories} calories, ~{protein}g protein, ~{carbs}g carbs, ~{fats}g fats
+
+MEAL STRUCTURE:
+- Breakfast (~{breakfast_cals} cal): Use ~50g oats + 200ml milk + fruit + 25g nuts
+- Lunch (~{lunch_cals} cal): Use ~180g protein (chicken/beef) + ~200g carbs (rice/potato) + vegetables + 14g oil
+- Dinner (~{dinner_cals} cal): Use ~180g protein (fish/meat) + ~200g carbs (potato/rice) + vegetables + 14g oil
+- Snack (~{snack_cals} cal): Use ~200g greek yogurt + protein powder or nuts
 
 USER PREFERENCES:
 - Food Style: {request.food_preferences}
 - {cuisine_str}
 - Allergies: {', '.join(request.allergies) if request.allergies else 'None'}
 
-=== DAY 1 TEMPLATE (use these EXACT portions) ===
-
-BREAKFAST (~{breakfast_cals} cal, ~{breakfast_p}g P, ~{breakfast_c}g C, ~{breakfast_f}g F):
-- 50g oats (dry) = 188 cal, 6g P, 34g C, 3g F
-- 200ml milk = 84 cal, 7g P, 10g C, 2g F
-- 100g banana = 89 cal, 1g P, 23g C, 0g F
-- 25g almonds = 145 cal, 5g P, 5g C, 13g F
-Total: ~506 cal, 19g P, 72g C, 18g F
-
-LUNCH (~{lunch_cals} cal, ~{lunch_p}g P, ~{lunch_c}g C, ~{lunch_f}g F):
-- 180g chicken breast = 297 cal, 56g P, 0g C, 6g F
-- 200g brown rice (cooked) = 224 cal, 5g P, 48g C, 2g F
-- 100g broccoli = 34 cal, 3g P, 7g C, 0g F
-- 14g olive oil (1 tbsp) = 124 cal, 0g P, 0g C, 14g F
-Total: ~679 cal, 64g P, 55g C, 22g F
-
-DINNER (~{dinner_cals} cal, ~{dinner_p}g P, ~{dinner_c}g C, ~{dinner_f}g F):
-- 180g salmon = 374 cal, 36g P, 0g C, 23g F
-- 250g sweet potato = 225 cal, 5g P, 53g C, 0g F
-- 150g asparagus = 30 cal, 3g P, 6g C, 0g F
-- 14g olive oil (1 tbsp) = 124 cal, 0g P, 0g C, 14g F
-Total: ~753 cal, 44g P, 59g C, 37g F
-
-SNACK (~{snack_cals} cal, ~{snack_p}g P, ~{snack_c}g C, ~{snack_f}g F):
-- 250g greek yogurt = 148 cal, 25g P, 10g C, 1g F
-- 100g berries = 45 cal, 1g P, 11g C, 0g F
-- 30g whey protein = 120 cal, 24g P, 3g C, 1g F
-Total: ~313 cal, 50g P, 24g C, 2g F
-
-DAY 1 GRAND TOTAL: ~2251 cal, 177g P, 210g C, 79g F
-
-=== INSTRUCTIONS ===
-1. For Day 1: Use the EXACT ingredients and portions from the template above
-2. For Days 2 and 3: Create different meals but with VERY SIMILAR portion sizes
-   - Swap chicken for ground beef or turkey (same 180g)
-   - Swap salmon for tilapia or tuna (same 180g)
-   - Swap brown rice for quinoa or pasta (same 200g)
-   - Swap oats for eggs (3 eggs = similar calories)
-3. Keep ALL protein portions at 180g for main meals
-4. Keep ALL carb portions at 200-250g for main meals
-5. Keep ALL fat portions at 14g oil per meal
-
-Return ONLY this JSON:
+Return ONLY this JSON for Day 1:
 {{"name": "{request.food_preferences.replace('_', ' ').title()} 3-Day Meal Plan", "meal_days": [
   {{"day": "Day 1", "meals": [
-    {{"id": "d1m1", "name": "Oatmeal with Banana and Almonds", "meal_type": "breakfast", "ingredients": ["50g oats", "200ml milk", "100g banana", "25g almonds"], "instructions": "Cook oats with milk, top with sliced banana and almonds", "prep_time_minutes": 10}},
-    {{"id": "d1m2", "name": "Grilled Chicken with Brown Rice", "meal_type": "lunch", "ingredients": ["180g chicken breast", "200g brown rice", "100g broccoli", "14g olive oil"], "instructions": "Grill chicken, serve with rice and steamed broccoli drizzled with olive oil", "prep_time_minutes": 25}},
-    {{"id": "d1m3", "name": "Baked Salmon with Sweet Potato", "meal_type": "dinner", "ingredients": ["180g salmon", "250g sweet potato", "150g asparagus", "14g olive oil"], "instructions": "Bake salmon, roast sweet potato and asparagus with olive oil", "prep_time_minutes": 30}},
-    {{"id": "d1m4", "name": "Protein Yogurt Bowl", "meal_type": "snack", "ingredients": ["250g greek yogurt", "100g berries", "30g whey protein"], "instructions": "Mix protein powder into yogurt, top with berries", "prep_time_minutes": 5}}
-  ]}},
-  {{"day": "Day 2", "meals": [DIFFERENT meals but SAME portion sizes as Day 1]}},
-  {{"day": "Day 3", "meals": [DIFFERENT meals but SAME portion sizes as Day 1]}}
+    {{"id": "d1m1", "name": "Oatmeal with Fruit and Almonds", "meal_type": "breakfast", "ingredients": ["50g oats", "200ml milk", "100g banana", "25g almonds"], "instructions": "Cook oats with milk, top with sliced banana and almonds", "prep_time_minutes": 10}},
+    {{"id": "d1m2", "name": "Grilled Chicken with Brown Rice", "meal_type": "lunch", "ingredients": ["180g chicken breast", "200g brown rice", "100g broccoli", "14g olive oil"], "instructions": "Grill chicken, serve with rice and steamed broccoli", "prep_time_minutes": 25}},
+    {{"id": "d1m3", "name": "Baked Salmon with Sweet Potato", "meal_type": "dinner", "ingredients": ["180g salmon", "200g sweet potato", "100g asparagus", "14g olive oil"], "instructions": "Bake salmon, roast sweet potato and asparagus", "prep_time_minutes": 30}},
+    {{"id": "d1m4", "name": "Protein Yogurt Bowl", "meal_type": "snack", "ingredients": ["200g greek yogurt", "100g berries", "30g whey protein"], "instructions": "Mix protein into yogurt, top with berries", "prep_time_minutes": 5}}
+  ]}}
 ]}}
 
-CRITICAL: The key to hitting macro targets is keeping portion sizes IDENTICAL across all 3 days!"""
+IMPORTANT: Use EXACTLY these portion sizes. The macros will be calculated from these ingredients."""
 
     try:
         response = openai.chat.completions.create(
@@ -1741,7 +1687,92 @@ CRITICAL: The key to hitting macro targets is keeping portion sizes IDENTICAL ac
         
         meal_data = json.loads(content)
         
-        # PHASE 2: Calculate macros programmatically from ingredients
+        # PHASE 2: Programmatically create Days 2 and 3 by copying Day 1 with ingredient swaps
+        if len(meal_data.get("meal_days", [])) == 1:
+            day1 = meal_data["meal_days"][0]
+            
+            # Ingredient swap mappings for variety
+            swaps_day2 = {
+                "chicken breast": "ground turkey",
+                "salmon": "tilapia",
+                "brown rice": "quinoa", 
+                "sweet potato": "white potato",
+                "oats": "oats",  # keep same
+                "greek yogurt": "cottage cheese",
+                "banana": "apple",
+                "berries": "orange",
+                "broccoli": "spinach",
+                "asparagus": "zucchini",
+                "almonds": "walnuts",
+            }
+            
+            swaps_day3 = {
+                "chicken breast": "ground beef 90% lean",
+                "salmon": "shrimp",
+                "brown rice": "white rice",
+                "sweet potato": "pasta",
+                "oats": "egg",  # 3 eggs
+                "greek yogurt": "greek yogurt",  # keep same
+                "banana": "berries",
+                "berries": "banana",
+                "broccoli": "bell pepper",
+                "asparagus": "carrots",
+                "almonds": "peanut butter",
+            }
+            
+            def swap_ingredients(meals, swaps):
+                import copy
+                new_meals = copy.deepcopy(meals)
+                for meal in new_meals:
+                    new_ingredients = []
+                    for ing in meal.get("ingredients", []):
+                        ing_lower = ing.lower()
+                        swapped = False
+                        for old, new in swaps.items():
+                            if old in ing_lower:
+                                # Keep the same gram amount, just swap the ingredient name
+                                import re
+                                match = re.match(r'(\d+(?:\.\d+)?)(g|ml)\s+(.+)', ing)
+                                if match:
+                                    amount = match.group(1)
+                                    unit = match.group(2)
+                                    # Special case for egg swap
+                                    if new == "egg" and "oats" in old:
+                                        new_ingredients.append("3 eggs (150g)")
+                                    elif new == "peanut butter" and "almonds" in old:
+                                        new_ingredients.append("32g peanut butter")
+                                    else:
+                                        new_ingredients.append(f"{amount}{unit} {new}")
+                                else:
+                                    new_ingredients.append(ing.replace(old, new))
+                                swapped = True
+                                break
+                        if not swapped:
+                            new_ingredients.append(ing)
+                    meal["ingredients"] = new_ingredients
+                    # Update meal name slightly
+                    for old, new in swaps.items():
+                        if old in meal.get("name", "").lower():
+                            meal["name"] = meal["name"].replace(old.title(), new.title())
+                            meal["name"] = meal["name"].replace(old.capitalize(), new.capitalize())
+                return new_meals
+            
+            # Create Day 2
+            day2_meals = swap_ingredients(day1.get("meals", []), swaps_day2)
+            for i, meal in enumerate(day2_meals):
+                meal["id"] = f"d2m{i+1}"
+            day2 = {"day": "Day 2", "meals": day2_meals}
+            
+            # Create Day 3
+            day3_meals = swap_ingredients(day1.get("meals", []), swaps_day3)
+            for i, meal in enumerate(day3_meals):
+                meal["id"] = f"d3m{i+1}"
+            day3 = {"day": "Day 3", "meals": day3_meals}
+            
+            meal_data["meal_days"].append(day2)
+            meal_data["meal_days"].append(day3)
+        
+        # PHASE 3: Calculate macros programmatically from ingredients for ALL days
         for day in meal_data.get("meal_days", []):
             day_totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
             
