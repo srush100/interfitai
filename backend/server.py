@@ -1466,7 +1466,7 @@ async def get_exercise_gif(exercise_id: str, resolution: str = "360"):
 
 @api_router.post("/mealplans/generate", response_model=MealPlan)
 async def generate_meal_plan(request: MealPlanGenerateRequest):
-    """Generate AI-powered meal plan based on user's macros"""
+    """Generate AI-powered meal plan with PROGRAMMATICALLY CALCULATED macros from ingredient database"""
     profile = await db.profiles.find_one({"id": request.user_id})
     if not profile or not profile.get("calculated_macros"):
         raise HTTPException(status_code=404, detail="User profile with macros not found. Please set up your profile first.")
@@ -1477,98 +1477,215 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     carbs = macros['carbs']
     fats = macros['fats']
     
-    # Calculate per-meal targets (4 meals: breakfast 25%, lunch 30%, dinner 35%, snack 10%)
-    # Use exact integer division to ensure totals add up
-    breakfast_cals = round(calories * 0.25)
-    lunch_cals = round(calories * 0.30)
-    dinner_cals = round(calories * 0.35)
-    snack_cals = calories - breakfast_cals - lunch_cals - dinner_cals  # Ensure exact total
-    
-    breakfast_protein = round(protein * 0.25)
-    lunch_protein = round(protein * 0.30)
-    dinner_protein = round(protein * 0.35)
-    snack_protein = protein - breakfast_protein - lunch_protein - dinner_protein
-    
-    breakfast_carbs = round(carbs * 0.25)
-    lunch_carbs = round(carbs * 0.30)
-    dinner_carbs = round(carbs * 0.35)
-    snack_carbs = carbs - breakfast_carbs - lunch_carbs - dinner_carbs
-    
-    breakfast_fats = round(fats * 0.25)
-    lunch_fats = round(fats * 0.30)
-    dinner_fats = round(fats * 0.35)
-    snack_fats = fats - breakfast_fats - lunch_fats - dinner_fats
-    
-    # Build supplements string including custom text
-    supplements_str = ', '.join(request.supplements) if request.supplements else 'None'
-    if request.supplements_custom:
-        supplements_str += f", {request.supplements_custom}"
-    
     # Cuisine preference
     cuisine_str = f"Preferred Cuisine: {request.cuisine_preference}" if request.cuisine_preference else "No specific cuisine preference"
     
-    prompt = f"""You are a precision nutrition calculator. Create a 3-day meal plan.
+    # Ingredient database with accurate USDA macros - used for PROGRAMMATIC calculation
+    # Format: "key": (calories, protein, carbs, fats, unit_grams)
+    INGREDIENT_DB = {
+        # PROTEINS (per 100g unless noted)
+        "chicken breast": (165, 31, 0, 3.6, 100),
+        "chicken thigh": (209, 26, 0, 11, 100),
+        "ground beef 90% lean": (176, 26, 0, 8, 100),
+        "ground beef 80% lean": (254, 26, 0, 17, 100),
+        "ground turkey": (170, 21, 0, 9, 100),
+        "salmon": (208, 20, 0, 13, 100),
+        "tilapia": (128, 26, 0, 2.7, 100),
+        "shrimp": (99, 24, 0, 0.3, 100),
+        "tuna": (116, 26, 0, 0.8, 100),
+        "egg": (144, 12, 0.8, 10, 100),  # per 100g (about 2 eggs)
+        "egg white": (52, 11, 0.7, 0.2, 100),
+        "tofu": (144, 17, 3, 8, 100),
+        "greek yogurt": (59, 10, 4, 0.4, 100),
+        "cottage cheese": (84, 11, 4, 2.5, 100),
+        
+        # CARBS (per 100g cooked)
+        "white rice": (130, 2.7, 28, 0.3, 100),
+        "brown rice": (112, 2.6, 24, 0.9, 100),
+        "quinoa": (120, 4.4, 21, 1.9, 100),
+        "oatmeal": (71, 2.5, 12, 1.5, 100),
+        "oats": (375, 12.5, 67.5, 6.25, 100),  # dry
+        "sweet potato": (90, 2, 21, 0.1, 100),
+        "white potato": (93, 2.5, 21, 0.1, 100),
+        "whole wheat bread": (270, 13, 47, 3.3, 100),
+        "pasta": (131, 5, 25, 1.1, 100),
+        "black beans": (132, 8.9, 24, 0.5, 100),
+        "chickpeas": (164, 9, 27, 2.6, 100),
+        "lentils": (116, 9, 20, 0.4, 100),
+        "banana": (89, 1.1, 23, 0.3, 100),
+        "apple": (52, 0.3, 14, 0.2, 100),
+        "berries": (45, 0.8, 11, 0.3, 100),
+        "orange": (47, 0.9, 12, 0.1, 100),
+        
+        # FATS (per 100g or noted)
+        "olive oil": (884, 0, 0, 100, 100),
+        "avocado": (160, 2, 9, 15, 100),
+        "almonds": (579, 21, 22, 50, 100),
+        "walnuts": (654, 15, 14, 65, 100),
+        "peanut butter": (588, 25, 19, 50, 100),
+        "almond butter": (614, 21, 19, 56, 100),
+        "cheese": (402, 25, 1.3, 33, 100),
+        "butter": (717, 0.9, 0.1, 81, 100),
+        
+        # VEGETABLES (per 100g)
+        "broccoli": (34, 2.8, 7, 0.4, 100),
+        "spinach": (23, 2.9, 3.6, 0.4, 100),
+        "mixed greens": (20, 2, 3, 0.3, 100),
+        "bell pepper": (31, 1, 6, 0.3, 100),
+        "tomato": (18, 0.9, 4, 0.2, 100),
+        "cucumber": (15, 0.7, 4, 0.1, 100),
+        "zucchini": (17, 1.2, 3, 0.3, 100),
+        "asparagus": (20, 2.2, 4, 0.1, 100),
+        "carrots": (41, 0.9, 10, 0.2, 100),
+        "mushrooms": (22, 3.1, 3, 0.3, 100),
+        "onion": (40, 1.1, 9, 0.1, 100),
+        
+        # DAIRY
+        "milk": (42, 3.4, 5, 1, 100),
+        "almond milk": (13, 0.4, 0.3, 1.1, 100),
+        "whey protein": (400, 80, 10, 3.3, 100),
+        
+        # EXTRAS
+        "honey": (304, 0.3, 82, 0, 100),
+        "hummus": (166, 8, 14, 10, 100),
+    }
+    
+    def parse_ingredient_amount(ingredient_str):
+        """Parse ingredient string to extract amount in grams and ingredient name"""
+        import re
+        ingredient_str = ingredient_str.lower().strip()
+        
+        # Common patterns: "150g chicken breast", "200g of brown rice", "1 tbsp olive oil"
+        # Try to extract number and unit
+        patterns = [
+            r'(\d+(?:\.\d+)?)\s*g\s+(?:of\s+)?(.+)',  # 150g chicken breast
+            r'(\d+(?:\.\d+)?)\s*(?:grams?)\s+(?:of\s+)?(.+)',  # 150 grams chicken
+            r'(\d+(?:\.\d+)?)\s*(?:tbsp|tablespoons?)\s+(?:of\s+)?(.+)',  # 1 tbsp olive oil (14g)
+            r'(\d+(?:\.\d+)?)\s*(?:tsp|teaspoons?)\s+(?:of\s+)?(.+)',  # 1 tsp (5g)
+            r'(\d+(?:\.\d+)?)\s*(?:cup|cups)\s+(?:of\s+)?(.+)',  # 1 cup (varies)
+            r'(\d+(?:\.\d+)?)\s*(?:oz|ounces?)\s+(?:of\s+)?(.+)',  # 4oz (113g)
+            r'(\d+(?:\.\d+)?)\s*(?:ml)\s+(?:of\s+)?(.+)',  # 240ml milk
+            r'(\d+(?:\.\d+)?)\s+(?:large\s+)?(?:medium\s+)?(.+)',  # 2 eggs
+        ]
+        
+        for pattern in patterns:
+            match = re.match(pattern, ingredient_str)
+            if match:
+                amount = float(match.group(1))
+                name = match.group(2).strip()
+                
+                # Convert units to grams
+                if 'tbsp' in ingredient_str or 'tablespoon' in ingredient_str:
+                    amount = amount * 14  # 1 tbsp ≈ 14g
+                elif 'tsp' in ingredient_str or 'teaspoon' in ingredient_str:
+                    amount = amount * 5  # 1 tsp ≈ 5g
+                elif 'cup' in ingredient_str:
+                    if 'rice' in name or 'quinoa' in name or 'oatmeal' in name:
+                        amount = amount * 185  # cooked grains
+                    elif 'milk' in name:
+                        amount = amount * 240
+                    elif 'greens' in name or 'spinach' in name:
+                        amount = amount * 30
+                    else:
+                        amount = amount * 150  # default cup
+                elif 'oz' in ingredient_str or 'ounce' in ingredient_str:
+                    amount = amount * 28.35
+                elif 'ml' in ingredient_str:
+                    amount = amount * 1  # ml ≈ g for most liquids
+                elif 'egg' in name and amount <= 6:  # likely count, not grams
+                    amount = amount * 50  # 1 egg ≈ 50g
+                
+                return amount, name
+        
+        # Fallback: assume 100g if no amount found
+        return 100, ingredient_str
+    
+    def calculate_ingredient_macros(ingredient_str, db):
+        """Calculate macros for an ingredient using the database"""
+        amount_g, name = parse_ingredient_amount(ingredient_str)
+        
+        # Find matching ingredient in database
+        best_match = None
+        for key in db.keys():
+            if key in name or name in key:
+                best_match = key
+                break
+            # Partial matching
+            key_words = key.split()
+            name_words = name.split()
+            if any(kw in name for kw in key_words) or any(nw in key for nw in name_words):
+                best_match = key
+                break
+        
+        if best_match:
+            cal, pro, carb, fat, base_amount = db[best_match]
+            multiplier = amount_g / base_amount
+            return {
+                "calories": round(cal * multiplier),
+                "protein": round(pro * multiplier, 1),
+                "carbs": round(carb * multiplier, 1),
+                "fats": round(fat * multiplier, 1),
+                "matched": best_match,
+                "amount_g": amount_g
+            }
+        
+        # Default fallback for unmatched ingredients (vegetables, spices, etc.)
+        return {"calories": 20, "protein": 1, "carbs": 3, "fats": 0.5, "matched": None, "amount_g": amount_g}
+    
+    # Calculate per-meal targets for AI guidance
+    breakfast_cals = round(calories * 0.25)
+    lunch_cals = round(calories * 0.30)
+    dinner_cals = round(calories * 0.35)
+    snack_cals = round(calories * 0.10)
 
-EXACT DAILY MACRO TARGETS - THESE NUMBERS MUST BE HIT PRECISELY:
-- Calories: {calories} kcal (tolerance: ±0)
-- Protein: {protein}g (tolerance: ±0)
-- Carbs: {carbs}g (tolerance: ±0)
-- Fats: {fats}g (tolerance: ±0)
+    prompt = f"""Create a 3-day meal plan. Focus on creating delicious, realistic meals with specific ingredient quantities.
 
-MEAL BREAKDOWN (must sum to daily totals):
-- Breakfast: {breakfast_cals} cal, {breakfast_protein}g P, {breakfast_carbs}g C, {breakfast_fats}g F
-- Lunch: {lunch_cals} cal, {lunch_protein}g P, {lunch_carbs}g C, {lunch_fats}g F
-- Dinner: {dinner_cals} cal, {dinner_protein}g P, {dinner_carbs}g C, {dinner_fats}g F
-- Snack: {snack_cals} cal, {snack_protein}g P, {snack_carbs}g C, {snack_fats}g F
+USER'S DAILY TARGETS (approximate):
+- Calories: {calories} kcal
+- Protein: {protein}g  
+- Carbs: {carbs}g
+- Fats: {fats}g
 
-VERIFICATION CHECK:
-{breakfast_cals} + {lunch_cals} + {dinner_cals} + {snack_cals} = {calories} ✓
-{breakfast_protein} + {lunch_protein} + {dinner_protein} + {snack_protein} = {protein} ✓
-{breakfast_carbs} + {lunch_carbs} + {dinner_carbs} + {snack_carbs} = {carbs} ✓
-{breakfast_fats} + {lunch_fats} + {dinner_fats} + {snack_fats} = {fats} ✓
+MEAL SIZE GUIDANCE:
+- Breakfast: ~{breakfast_cals} calories
+- Lunch: ~{lunch_cals} calories
+- Dinner: ~{dinner_cals} calories
+- Snack: ~{snack_cals} calories
 
 USER PREFERENCES:
 - Food Style: {request.food_preferences}
 - {cuisine_str}
 - Allergies: {', '.join(request.allergies) if request.allergies else 'None'}
 
-INSTRUCTIONS:
-1. Use the EXACT macro numbers provided for each meal - DO NOT deviate
-2. Choose realistic foods that naturally fit these macro targets
-3. Include specific quantities (e.g., "150g chicken breast", "1 cup cooked rice")
-4. Vary meals across 3 days
+IMPORTANT INSTRUCTIONS:
+1. Use common whole foods: chicken, beef, fish, eggs, rice, potatoes, oats, vegetables, olive oil, etc.
+2. Specify EXACT gram amounts for all ingredients (e.g., "150g chicken breast", "200g brown rice")
+3. Use realistic portion sizes
+4. DO NOT include macro numbers - I will calculate them from the ingredients
 
-Return ONLY this JSON structure with the EXACT macros specified:
+Return ONLY this JSON (macros will be calculated automatically):
 {{"name": "{request.food_preferences.replace('_', ' ').title()} 3-Day Meal Plan", "meal_days": [
-  {{"day": "Day 1", "total_calories": {calories}, "total_protein": {protein}, "total_carbs": {carbs}, "total_fats": {fats}, "meals": [
-    {{"id": "d1m1", "name": "Breakfast Name", "meal_type": "breakfast", "ingredients": ["ingredient with qty"], "instructions": "Steps", "calories": {breakfast_cals}, "protein": {breakfast_protein}, "carbs": {breakfast_carbs}, "fats": {breakfast_fats}, "prep_time_minutes": 10}},
-    {{"id": "d1m2", "name": "Lunch Name", "meal_type": "lunch", "ingredients": ["ingredient with qty"], "instructions": "Steps", "calories": {lunch_cals}, "protein": {lunch_protein}, "carbs": {lunch_carbs}, "fats": {lunch_fats}, "prep_time_minutes": 15}},
-    {{"id": "d1m3", "name": "Dinner Name", "meal_type": "dinner", "ingredients": ["ingredient with qty"], "instructions": "Steps", "calories": {dinner_cals}, "protein": {dinner_protein}, "carbs": {dinner_carbs}, "fats": {dinner_fats}, "prep_time_minutes": 25}},
-    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["ingredient with qty"], "instructions": "Steps", "calories": {snack_cals}, "protein": {snack_protein}, "carbs": {snack_carbs}, "fats": {snack_fats}, "prep_time_minutes": 5}}
+  {{"day": "Day 1", "meals": [
+    {{"id": "d1m1", "name": "Breakfast Name", "meal_type": "breakfast", "ingredients": ["40g oats", "240ml milk", "100g berries", "30g almonds"], "instructions": "Cooking steps", "prep_time_minutes": 10}},
+    {{"id": "d1m2", "name": "Lunch Name", "meal_type": "lunch", "ingredients": ["200g chicken breast", "200g brown rice", "100g broccoli", "15g olive oil"], "instructions": "Steps", "prep_time_minutes": 20}},
+    {{"id": "d1m3", "name": "Dinner Name", "meal_type": "dinner", "ingredients": ["180g salmon", "200g sweet potato", "150g asparagus", "15g butter"], "instructions": "Steps", "prep_time_minutes": 25}},
+    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["200g greek yogurt", "50g banana", "20g honey"], "instructions": "Steps", "prep_time_minutes": 5}}
   ]}},
-  {{"day": "Day 2", "total_calories": {calories}, "total_protein": {protein}, "total_carbs": {carbs}, "total_fats": {fats}, "meals": [
-    {{"id": "d2m1", "name": "Different Breakfast", "meal_type": "breakfast", "ingredients": ["..."], "instructions": "...", "calories": {breakfast_cals}, "protein": {breakfast_protein}, "carbs": {breakfast_carbs}, "fats": {breakfast_fats}, "prep_time_minutes": 10}},
-    {{"id": "d2m2", "name": "Different Lunch", "meal_type": "lunch", "ingredients": ["..."], "instructions": "...", "calories": {lunch_cals}, "protein": {lunch_protein}, "carbs": {lunch_carbs}, "fats": {lunch_fats}, "prep_time_minutes": 15}},
-    {{"id": "d2m3", "name": "Different Dinner", "meal_type": "dinner", "ingredients": ["..."], "instructions": "...", "calories": {dinner_cals}, "protein": {dinner_protein}, "carbs": {dinner_carbs}, "fats": {dinner_fats}, "prep_time_minutes": 25}},
-    {{"id": "d2m4", "name": "Different Snack", "meal_type": "snack", "ingredients": ["..."], "instructions": "...", "calories": {snack_cals}, "protein": {snack_protein}, "carbs": {snack_carbs}, "fats": {snack_fats}, "prep_time_minutes": 5}}
-  ]}},
-  {{"day": "Day 3", "total_calories": {calories}, "total_protein": {protein}, "total_carbs": {carbs}, "total_fats": {fats}, "meals": [
-    {{"id": "d3m1", "name": "Another Breakfast", "meal_type": "breakfast", "ingredients": ["..."], "instructions": "...", "calories": {breakfast_cals}, "protein": {breakfast_protein}, "carbs": {breakfast_carbs}, "fats": {breakfast_fats}, "prep_time_minutes": 10}},
-    {{"id": "d3m2", "name": "Another Lunch", "meal_type": "lunch", "ingredients": ["..."], "instructions": "...", "calories": {lunch_cals}, "protein": {lunch_protein}, "carbs": {lunch_carbs}, "fats": {lunch_fats}, "prep_time_minutes": 15}},
-    {{"id": "d3m3", "name": "Another Dinner", "meal_type": "dinner", "ingredients": ["..."], "instructions": "...", "calories": {dinner_cals}, "protein": {dinner_protein}, "carbs": {dinner_carbs}, "fats": {dinner_fats}, "prep_time_minutes": 25}},
-    {{"id": "d3m4", "name": "Another Snack", "meal_type": "snack", "ingredients": ["..."], "instructions": "...", "calories": {snack_cals}, "protein": {snack_protein}, "carbs": {snack_carbs}, "fats": {snack_fats}, "prep_time_minutes": 5}}
-  ]}}
-]}}"""
+  {{"day": "Day 2", "meals": [...]}},
+  {{"day": "Day 3", "meals": [...]}}
+]}}
+
+Remember: Use gram measurements (e.g., 150g, 200g) for ALL ingredients. Vary meals across days."""
 
     try:
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a precision nutrition AI. You MUST use the EXACT macro numbers provided in the template. Do not calculate or estimate macros - copy the exact numbers from the prompt into your JSON response. The macros have already been calculated; your job is to create realistic meals that fit those exact numbers."},
+                {"role": "system", "content": "You are a meal planning assistant. Create realistic meals with specific gram amounts for all ingredients. Do NOT include calorie or macro numbers - they will be calculated separately. Focus on variety and taste."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,  # Lower temperature for more precise output
-            max_tokens=8000
+            temperature=0.7,
+            max_tokens=6000
         )
         
         content = response.choices[0].message.content
@@ -1581,36 +1698,39 @@ Return ONLY this JSON structure with the EXACT macros specified:
         
         meal_data = json.loads(content)
         
-        # POST-PROCESSING: Force exact macro targets by adjusting the last meal of each day
-        target_macros = {"calories": calories, "protein": protein, "carbs": carbs, "fats": fats}
-        
+        # PHASE 2: Calculate macros programmatically from ingredients
         for day in meal_data.get("meal_days", []):
-            meals = day.get("meals", [])
-            if len(meals) >= 4:
-                # Sum first 3 meals
-                sum_cals = sum(m.get("calories", 0) for m in meals[:3])
-                sum_pro = sum(m.get("protein", 0) for m in meals[:3])
-                sum_carbs = sum(m.get("carbs", 0) for m in meals[:3])
-                sum_fats = sum(m.get("fats", 0) for m in meals[:3])
+            day_totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
+            
+            for meal in day.get("meals", []):
+                meal_macros = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
                 
-                # Adjust 4th meal (snack) to hit exact targets
-                meals[3]["calories"] = calories - sum_cals
-                meals[3]["protein"] = protein - sum_pro
-                meals[3]["carbs"] = carbs - sum_carbs
-                meals[3]["fats"] = fats - sum_fats
+                for ingredient in meal.get("ingredients", []):
+                    ing_macros = calculate_ingredient_macros(ingredient, INGREDIENT_DB)
+                    meal_macros["calories"] += ing_macros["calories"]
+                    meal_macros["protein"] += ing_macros["protein"]
+                    meal_macros["carbs"] += ing_macros["carbs"]
+                    meal_macros["fats"] += ing_macros["fats"]
+                
+                # Set calculated macros on meal
+                meal["calories"] = round(meal_macros["calories"])
+                meal["protein"] = round(meal_macros["protein"])
+                meal["carbs"] = round(meal_macros["carbs"])
+                meal["fats"] = round(meal_macros["fats"])
+                
+                # Add to day totals
+                day_totals["calories"] += meal["calories"]
+                day_totals["protein"] += meal["protein"]
+                day_totals["carbs"] += meal["carbs"]
+                day_totals["fats"] += meal["fats"]
             
-            # Recalculate and set day totals to exact targets
-            day["total_calories"] = calories
-            day["total_protein"] = protein
-            day["total_carbs"] = carbs
-            day["total_fats"] = fats
+            # Set day totals
+            day["total_calories"] = day_totals["calories"]
+            day["total_protein"] = round(day_totals["protein"])
+            day["total_carbs"] = round(day_totals["carbs"])
+            day["total_fats"] = round(day_totals["fats"])
             
-            # Log actual meal totals for debugging
-            actual_cal = sum(m.get("calories", 0) for m in meals)
-            actual_pro = sum(m.get("protein", 0) for m in meals)
-            actual_carb = sum(m.get("carbs", 0) for m in meals)
-            actual_fat = sum(m.get("fats", 0) for m in meals)
-            logger.info(f"{day.get('day')}: {actual_cal} cal, {actual_pro}g P, {actual_carb}g C, {actual_fat}g F (target: {calories}/{protein}/{carbs}/{fats})")
+            logger.info(f"{day.get('day')}: {day_totals['calories']} cal, {day_totals['protein']}g P, {day_totals['carbs']}g C, {day_totals['fats']}g F (target: {calories}/{protein}/{carbs}/{fats})")
         
         meal_plan = MealPlan(
             user_id=request.user_id,
