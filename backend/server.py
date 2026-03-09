@@ -1472,6 +1472,31 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         raise HTTPException(status_code=404, detail="User profile with macros not found. Please set up your profile first.")
     
     macros = profile["calculated_macros"]
+    calories = macros['calories']
+    protein = macros['protein']
+    carbs = macros['carbs']
+    fats = macros['fats']
+    
+    # Calculate per-meal targets (4 meals: breakfast 25%, lunch 30%, dinner 35%, snack 10%)
+    breakfast_cals = int(calories * 0.25)
+    lunch_cals = int(calories * 0.30)
+    dinner_cals = int(calories * 0.35)
+    snack_cals = int(calories * 0.10)
+    
+    breakfast_protein = int(protein * 0.25)
+    lunch_protein = int(protein * 0.30)
+    dinner_protein = int(protein * 0.35)
+    snack_protein = int(protein * 0.10)
+    
+    breakfast_carbs = int(carbs * 0.25)
+    lunch_carbs = int(carbs * 0.30)
+    dinner_carbs = int(carbs * 0.35)
+    snack_carbs = int(carbs * 0.10)
+    
+    breakfast_fats = int(fats * 0.25)
+    lunch_fats = int(fats * 0.30)
+    dinner_fats = int(fats * 0.35)
+    snack_fats = int(fats * 0.10)
     
     # Build supplements string including custom text
     supplements_str = ', '.join(request.supplements) if request.supplements else 'None'
@@ -1481,27 +1506,50 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     # Cuisine preference
     cuisine_str = f"Preferred Cuisine: {request.cuisine_preference}" if request.cuisine_preference else "No specific cuisine preference"
     
-    prompt = f"""Create a 3-day meal plan with these macros:
-- Calories: {macros['calories']} kcal, Protein: {macros['protein']}g, Carbs: {macros['carbs']}g, Fats: {macros['fats']}g
+    prompt = f"""Create a 3-day meal plan with EXACT daily macro targets:
 
-Preferences: {request.food_preferences}
+DAILY TARGETS (MUST MATCH EXACTLY):
+- Total Calories: {calories} kcal
+- Total Protein: {protein}g
+- Total Carbs: {carbs}g
+- Total Fats: {fats}g
+
+MEAL DISTRIBUTION (4 meals per day):
+1. Breakfast (~25%): {breakfast_cals} cal, {breakfast_protein}g protein, {breakfast_carbs}g carbs, {breakfast_fats}g fats
+2. Lunch (~30%): {lunch_cals} cal, {lunch_protein}g protein, {lunch_carbs}g carbs, {lunch_fats}g fats  
+3. Dinner (~35%): {dinner_cals} cal, {dinner_protein}g protein, {dinner_carbs}g carbs, {dinner_fats}g fats
+4. Snack (~10%): {snack_cals} cal, {snack_protein}g protein, {snack_carbs}g carbs, {snack_fats}g fats
+
+CRITICAL REQUIREMENTS:
+- Each day's meals MUST add up to EXACTLY {calories} calories, {protein}g protein, {carbs}g carbs, {fats}g fats
+- Double-check your math before responding
+- If meals don't add up exactly, adjust portion sizes or ingredients
+
+Food Preferences: {request.food_preferences}
 {cuisine_str}
 Allergies: {', '.join(request.allergies) if request.allergies else 'None'}
 
-Return JSON only:
-{{"name": "Plan Name", "meal_days": [{{"day": "Day 1", "total_calories": {macros['calories']}, "total_protein": {macros['protein']}, "total_carbs": {macros['carbs']}, "total_fats": {macros['fats']}, "meals": [{{"id": "m1", "name": "Meal", "meal_type": "breakfast", "ingredients": ["item"], "instructions": "steps", "calories": 400, "protein": 30, "carbs": 40, "fats": 15, "prep_time_minutes": 10}}]}}]}}
+Return ONLY valid JSON:
+{{"name": "{request.food_preferences.title()} Meal Plan", "meal_days": [
+  {{"day": "Day 1", "total_calories": {calories}, "total_protein": {protein}, "total_carbs": {carbs}, "total_fats": {fats}, "meals": [
+    {{"id": "d1m1", "name": "Breakfast Name", "meal_type": "breakfast", "ingredients": ["ingredient with quantity"], "instructions": "Clear cooking steps", "calories": {breakfast_cals}, "protein": {breakfast_protein}, "carbs": {breakfast_carbs}, "fats": {breakfast_fats}, "prep_time_minutes": 10}},
+    {{"id": "d1m2", "name": "Lunch Name", "meal_type": "lunch", "ingredients": ["ingredient with quantity"], "instructions": "Steps", "calories": {lunch_cals}, "protein": {lunch_protein}, "carbs": {lunch_carbs}, "fats": {lunch_fats}, "prep_time_minutes": 15}},
+    {{"id": "d1m3", "name": "Dinner Name", "meal_type": "dinner", "ingredients": ["ingredient with quantity"], "instructions": "Steps", "calories": {dinner_cals}, "protein": {dinner_protein}, "carbs": {dinner_carbs}, "fats": {dinner_fats}, "prep_time_minutes": 20}},
+    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["ingredient"], "instructions": "Steps", "calories": {snack_cals}, "protein": {snack_protein}, "carbs": {snack_carbs}, "fats": {snack_fats}, "prep_time_minutes": 5}}
+  ]}}
+]}}
 
-Include 4 meals per day (breakfast, lunch, dinner, snack). Match macros within 10%."""
+Include ingredient quantities (e.g., "200g chicken breast", "1 cup rice"). Vary meals across the 3 days."""
 
     try:
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are an expert nutritionist. Create meal plans in valid JSON format only."},
+                {"role": "system", "content": "You are an expert nutritionist and macro calculator. Create meal plans with PRECISE macro calculations. Every meal's macros must add up exactly to the daily targets. Double-check all math before responding."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=4000
+            temperature=0.5,
+            max_tokens=6000
         )
         
         content = response.choices[0].message.content
@@ -1514,6 +1562,21 @@ Include 4 meals per day (breakfast, lunch, dinner, snack). Match macros within 1
         
         meal_data = json.loads(content)
         
+        # Validate and adjust macros if needed
+        for day in meal_data.get("meal_days", []):
+            total_cal = sum(m.get("calories", 0) for m in day.get("meals", []))
+            total_pro = sum(m.get("protein", 0) for m in day.get("meals", []))
+            total_carb = sum(m.get("carbs", 0) for m in day.get("meals", []))
+            total_fat = sum(m.get("fats", 0) for m in day.get("meals", []))
+            
+            # Update day totals to reflect actual meal totals
+            day["total_calories"] = total_cal
+            day["total_protein"] = total_pro
+            day["total_carbs"] = total_carb
+            day["total_fats"] = total_fat
+            
+            logger.info(f"{day.get('day')}: {total_cal} cal, {total_pro}g P, {total_carb}g C, {total_fat}g F")
+        
         meal_plan = MealPlan(
             user_id=request.user_id,
             name=meal_data.get("name", "Custom Meal Plan"),
@@ -1522,10 +1585,10 @@ Include 4 meals per day (breakfast, lunch, dinner, snack). Match macros within 1
             supplements_custom=request.supplements_custom,
             allergies=request.allergies,
             cuisine_preference=request.cuisine_preference,
-            target_calories=macros['calories'],
-            target_protein=macros['protein'],
-            target_carbs=macros['carbs'],
-            target_fats=macros['fats'],
+            target_calories=calories,
+            target_protein=protein,
+            target_carbs=carbs,
+            target_fats=fats,
             meal_days=[MealDay(**day) for day in meal_data.get("meal_days", [])]
         )
         
@@ -2359,63 +2422,81 @@ async def search_foods(query: str):
 
 @api_router.get("/mealplan/{meal_plan_id}/grocery-list")
 async def generate_grocery_list(meal_plan_id: str, days: int = 7):
-    """Generate a grocery list from a meal plan"""
+    """Generate a comprehensive grocery list from a meal plan"""
     plan = await db.mealplans.find_one({"id": meal_plan_id})
     if not plan:
         raise HTTPException(status_code=404, detail="Meal plan not found")
     
-    # Collect all ingredients from the meal plan
+    # Collect all ingredients from the meal plan with quantities
     ingredients_by_category = {
         "Proteins": [],
-        "Produce": [],
+        "Produce (Fresh)": [],
         "Dairy & Eggs": [],
         "Grains & Bread": [],
-        "Pantry Items": [],
+        "Pantry Staples": [],
+        "Oils & Condiments": [],
         "Frozen": [],
         "Other": []
     }
     
-    # Category keywords for classification
+    # Category keywords for better classification
     category_keywords = {
-        "Proteins": ["chicken", "beef", "pork", "fish", "salmon", "tuna", "shrimp", "turkey", "lamb", "tofu", "tempeh", "protein"],
-        "Produce": ["apple", "banana", "orange", "lettuce", "tomato", "spinach", "broccoli", "carrot", "onion", "garlic", "pepper", "cucumber", "avocado", "lemon", "lime", "berries", "fruit", "vegetable", "greens", "kale", "celery", "mushroom"],
-        "Dairy & Eggs": ["milk", "cheese", "yogurt", "egg", "butter", "cream", "cottage", "sour cream", "parmesan", "mozzarella"],
-        "Grains & Bread": ["bread", "rice", "pasta", "oat", "quinoa", "tortilla", "bagel", "cereal", "flour", "noodle", "wrap"],
-        "Pantry Items": ["oil", "vinegar", "sauce", "spice", "salt", "pepper", "sugar", "honey", "syrup", "peanut butter", "almond butter", "nuts", "seeds", "canned"],
+        "Proteins": ["chicken", "beef", "pork", "fish", "salmon", "tuna", "shrimp", "turkey", "lamb", "tofu", "tempeh", "protein", "steak", "ground", "bacon", "sausage", "ham", "cod", "tilapia", "lobster", "crab"],
+        "Produce (Fresh)": ["apple", "banana", "orange", "lettuce", "tomato", "spinach", "broccoli", "carrot", "onion", "garlic", "pepper", "cucumber", "avocado", "lemon", "lime", "berries", "fruit", "vegetable", "greens", "kale", "celery", "mushroom", "zucchini", "asparagus", "potato", "sweet potato", "corn", "peas", "beans", "cabbage", "cauliflower", "ginger", "cilantro", "parsley", "basil"],
+        "Dairy & Eggs": ["milk", "cheese", "yogurt", "egg", "butter", "cream", "cottage", "sour cream", "parmesan", "mozzarella", "cheddar", "feta", "ricotta"],
+        "Grains & Bread": ["bread", "rice", "pasta", "oat", "quinoa", "tortilla", "bagel", "cereal", "flour", "noodle", "wrap", "couscous", "barley", "crackers"],
+        "Pantry Staples": ["salt", "pepper", "sugar", "honey", "syrup", "peanut butter", "almond butter", "nuts", "seeds", "canned", "beans", "lentils", "chickpeas", "stock", "broth", "tomato paste", "tomato sauce"],
+        "Oils & Condiments": ["oil", "olive oil", "vinegar", "sauce", "soy sauce", "mustard", "ketchup", "mayo", "dressing", "marinade", "seasoning", "spice"],
         "Frozen": ["frozen", "ice cream"]
     }
     
-    all_ingredients = set()
+    all_ingredients = {}  # Use dict to track quantities
     
     # Get ingredients from specified number of days
-    for day_idx, day in enumerate(plan.get("meal_days", [])[:days]):
+    days_to_process = min(days, len(plan.get("meal_days", [])))
+    
+    for day_idx in range(days_to_process):
+        day = plan.get("meal_days", [])[day_idx]
         for meal in day.get("meals", []):
             for ingredient in meal.get("ingredients", []):
-                all_ingredients.add(ingredient.strip())
+                ingredient_clean = ingredient.strip()
+                ingredient_lower = ingredient_clean.lower()
+                
+                # Track ingredient (combine duplicates)
+                if ingredient_lower in all_ingredients:
+                    all_ingredients[ingredient_lower]["count"] += 1
+                else:
+                    all_ingredients[ingredient_lower] = {
+                        "name": ingredient_clean,
+                        "count": 1
+                    }
     
     # Categorize ingredients
-    for ingredient in all_ingredients:
-        ingredient_lower = ingredient.lower()
-        categorized = False
+    for ingredient_lower, data in all_ingredients.items():
+        display_name = data["name"]
+        if data["count"] > 1:
+            display_name = f"{data['name']} (x{data['count']})"
         
+        categorized = False
         for category, keywords in category_keywords.items():
             if any(keyword in ingredient_lower for keyword in keywords):
-                ingredients_by_category[category].append(ingredient)
+                ingredients_by_category[category].append(display_name)
                 categorized = True
                 break
         
         if not categorized:
-            ingredients_by_category["Other"].append(ingredient)
+            ingredients_by_category["Other"].append(display_name)
     
-    # Sort each category and remove empty ones
+    # Sort each category alphabetically and remove empty ones
     result = {}
     for category, items in ingredients_by_category.items():
         if items:
-            result[category] = sorted(items)
+            result[category] = sorted(items, key=lambda x: x.lower())
     
     return {
         "meal_plan_id": meal_plan_id,
-        "days_covered": min(days, len(plan.get("meal_days", []))),
+        "meal_plan_name": plan.get("name", "Meal Plan"),
+        "days_covered": days_to_process,
         "total_items": len(all_ingredients),
         "grocery_list": result
     }
