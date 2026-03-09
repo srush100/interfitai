@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -67,6 +68,17 @@ export default function MealDetail() {
   const [favoriteMeals, setFavoriteMeals] = useState<Set<string>>(new Set());
   const [savingFavorite, setSavingFavorite] = useState<string | null>(null);
   const [loggingMeal, setLoggingMeal] = useState<string | null>(null);
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [swapMealTarget, setSwapMealTarget] = useState<{dayIndex: number, mealIndex: number} | null>(null);
+
+  const swapOptions = [
+    { id: 'similar', label: 'Similar Macros', icon: 'swap-horizontal', description: 'Same calories & protein' },
+    { id: 'higher_protein', label: 'Higher Protein', icon: 'fitness', description: 'More protein for muscle' },
+    { id: 'lower_calories', label: 'Lower Calories', icon: 'trending-down', description: 'Lighter option' },
+    { id: 'quick_prep', label: 'Quick Prep', icon: 'time', description: 'Under 15 minutes' },
+    { id: 'vegetarian', label: 'Vegetarian', icon: 'leaf', description: 'Plant-based option' },
+    { id: 'budget', label: 'Budget Friendly', icon: 'wallet', description: 'Cheaper ingredients' },
+  ];
 
   useEffect(() => {
     loadMealPlan();
@@ -165,11 +177,12 @@ export default function MealDetail() {
     }
   };
 
-  const generateAlternateMeal = async (dayIndex: number, mealIndex: number) => {
+  const generateAlternateMeal = async (dayIndex: number, mealIndex: number, swapPreference: string = 'similar') => {
     if (!profile?.id || !mealPlan) return;
     
     const mealKey = `${dayIndex}-${mealIndex}`;
     setGeneratingAlternate(mealKey);
+    setShowSwapModal(false);
     
     try {
       const response = await api.post('/mealplan/alternate', {
@@ -177,6 +190,7 @@ export default function MealDetail() {
         meal_plan_id: mealPlan.id,
         day_index: dayIndex,
         meal_index: mealIndex,
+        swap_preference: swapPreference,
       });
       
       const newMeal = response.data.alternate_meal;
@@ -335,6 +349,21 @@ export default function MealDetail() {
           </Text>
         </View>
 
+        {/* Grocery List Button */}
+        <TouchableOpacity
+          style={styles.groceryButton}
+          onPress={() => router.push(`/grocery-list?mealPlanId=${mealPlan.id}`)}
+        >
+          <View style={styles.groceryButtonIcon}>
+            <Ionicons name="cart" size={22} color={colors.primary} />
+          </View>
+          <View style={styles.groceryButtonContent}>
+            <Text style={styles.groceryButtonTitle}>Generate Grocery List</Text>
+            <Text style={styles.groceryButtonDesc}>Get all ingredients organized by category</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+
         {/* Day Selector */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayTabs}>
           {mealPlan.meal_days.map((day, idx) => (
@@ -480,7 +509,10 @@ export default function MealDetail() {
                   {/* Generate Alternate Button */}
                   <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={() => generateAlternateMeal(selectedDay, mealIdx)}
+                    onPress={() => {
+                      setSwapMealTarget({ dayIndex: selectedDay, mealIndex: mealIdx });
+                      setShowSwapModal(true);
+                    }}
                     disabled={generatingAlternate === `${selectedDay}-${mealIdx}`}
                   >
                     {generatingAlternate === `${selectedDay}-${mealIdx}` ? (
@@ -498,6 +530,49 @@ export default function MealDetail() {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {/* Smart Swap Modal */}
+      <Modal
+        visible={showSwapModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSwapModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.swapModal}>
+            <View style={styles.swapModalHeader}>
+              <Text style={styles.swapModalTitle}>Swap Meal</Text>
+              <TouchableOpacity onPress={() => setShowSwapModal(false)}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.swapModalSubtitle}>What kind of alternative do you want?</Text>
+            
+            <ScrollView style={styles.swapOptions}>
+              {swapOptions.map((option) => (
+                <TouchableOpacity
+                  key={option.id}
+                  style={styles.swapOption}
+                  onPress={() => {
+                    if (swapMealTarget) {
+                      generateAlternateMeal(swapMealTarget.dayIndex, swapMealTarget.mealIndex, option.id);
+                    }
+                  }}
+                >
+                  <View style={styles.swapOptionIcon}>
+                    <Ionicons name={option.icon as any} size={22} color={colors.primary} />
+                  </View>
+                  <View style={styles.swapOptionContent}>
+                    <Text style={styles.swapOptionLabel}>{option.label}</Text>
+                    <Text style={styles.swapOptionDesc}>{option.description}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -626,6 +701,39 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     lineHeight: 20,
+  },
+  // Grocery List Button
+  groceryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  groceryButtonIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  groceryButtonContent: {
+    flex: 1,
+  },
+  groceryButtonTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  groceryButtonDesc: {
+    fontSize: 13,
+    color: colors.textSecondary,
   },
   infoCard: {
     backgroundColor: colors.surface,
@@ -824,5 +932,67 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.primary,
+  },
+  // Smart Swap Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  swapModal: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '70%',
+  },
+  swapModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  swapModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  swapModalSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 20,
+  },
+  swapOptions: {
+    marginBottom: 20,
+  },
+  swapOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+  },
+  swapOptionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  swapOptionContent: {
+    flex: 1,
+  },
+  swapOptionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  swapOptionDesc: {
+    fontSize: 13,
+    color: colors.textSecondary,
   },
 });

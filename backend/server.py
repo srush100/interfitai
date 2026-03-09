@@ -772,6 +772,7 @@ class AlternateMealRequest(BaseModel):
     day_index: int
     meal_index: int
     preferences: Optional[str] = None
+    swap_preference: Optional[str] = "similar"  # similar, higher_protein, lower_calories, quick_prep, vegetarian, budget
 
 # Food Logging Models
 class FoodEntry(BaseModel):
@@ -1586,15 +1587,28 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     profile = await db.profiles.find_one({"id": request.user_id})
     macros = profile.get("calculated_macros", {}) if profile else {}
     
+    # Build swap-specific instructions based on preference
+    swap_instructions = {
+        "similar": "Keep similar macros (calories, protein, carbs, fats)",
+        "higher_protein": f"Increase protein significantly (aim for {int(current_meal.get('protein', 30) * 1.3)}g+), can reduce carbs to compensate",
+        "lower_calories": f"Reduce calories by 20-30% (aim for {int(current_meal.get('calories', 400) * 0.75)} cal), prioritize protein",
+        "quick_prep": "Must be ready in under 15 minutes. Prefer no-cook or minimal cooking options",
+        "vegetarian": "Must be 100% vegetarian (no meat, fish, poultry). Use plant proteins like tofu, legumes, eggs, dairy",
+        "budget": "Use affordable, common ingredients. Avoid expensive items like seafood or specialty products",
+    }
+    
+    swap_instruction = swap_instructions.get(request.swap_preference, swap_instructions["similar"])
+    
     prompt = f"""Generate an alternate meal to replace this one:
 Current Meal: {current_meal.get('name')} ({current_meal.get('meal_type')})
-Target Macros: {current_meal.get('calories')} cal, {current_meal.get('protein')}g protein, {current_meal.get('carbs')}g carbs, {current_meal.get('fats')}g fats
+Current Macros: {current_meal.get('calories')} cal, {current_meal.get('protein')}g protein, {current_meal.get('carbs')}g carbs, {current_meal.get('fats')}g fats
 Food Preferences: {plan.get('food_preferences', 'none')}
 Allergies: {', '.join(plan.get('allergies', [])) or 'None'}
-Additional preferences: {request.preferences or 'None'}
+
+SWAP REQUIREMENT: {swap_instruction}
 
 Respond with valid JSON only:
-{{"id": "unique_id", "name": "Meal Name", "meal_type": "{current_meal.get('meal_type')}", "ingredients": ["ingredient 1", "ingredient 2"], "instructions": "How to prepare", "calories": {current_meal.get('calories', 400)}, "protein": {current_meal.get('protein', 30)}, "carbs": {current_meal.get('carbs', 40)}, "fats": {current_meal.get('fats', 15)}, "prep_time_minutes": 15}}"""
+{{"id": "unique_id", "name": "Meal Name", "meal_type": "{current_meal.get('meal_type')}", "ingredients": ["ingredient 1", "ingredient 2"], "instructions": "How to prepare", "calories": number, "protein": number, "carbs": number, "fats": number, "prep_time_minutes": number}}"""
 
     try:
         response = openai.chat.completions.create(
@@ -1648,7 +1662,7 @@ async def add_favorite_meal(user_id: str, meal_name: str, calories: int, protein
 
 @api_router.get("/food/favorites/{user_id}", response_model=List[FavoriteMeal])
 async def get_favorite_meals(user_id: str):
-    """Get user's favorite meals"""
+    """Get user favorite meals"""
     favorites = await db.favorite_meals.find({"user_id": user_id}).sort("created_at", -1).to_list(100)
     return [FavoriteMeal(**fav) for fav in favorites]
 
@@ -2304,7 +2318,13 @@ async def search_foods(query: str):
     ]
     
     # STEP 1: Always search local database first for specific items
-    local_results = [food for food in local_foods if query_lower in food["name"].lower()]
+    # Normalize query for better matching (handle spaces, hyphens, etc.)
+    query_normalized = query_lower.replace('-', ' ').replace("'", "").replace("'", "")
+    local_results = []
+    for food in local_foods:
+        food_name_normalized = food["name"].lower().replace('-', ' ').replace("'", "").replace("'", "")
+        if query_normalized in food_name_normalized or query_lower in food["name"].lower():
+            local_results.append(food)
     logger.info(f"Local database returned {len(local_results)} results for '{query}'")
     
     # STEP 2: Try to get API results to supplement
@@ -2334,6 +2354,71 @@ async def search_foods(query: str):
     
     logger.info(f"Returning {len(combined_results)} combined results (local: {len(local_results)}, api: {len(api_results)})")
     return combined_results[:50]
+
+# ==================== GROCERY LIST ENDPOINTS ====================
+
+@api_router.get("/mealplan/{meal_plan_id}/grocery-list")
+async def generate_grocery_list(meal_plan_id: str, days: int = 7):
+    """Generate a grocery list from a meal plan"""
+    plan = await db.mealplans.find_one({"id": meal_plan_id})
+    if not plan:
+        raise HTTPException(status_code=404, detail="Meal plan not found")
+    
+    # Collect all ingredients from the meal plan
+    ingredients_by_category = {
+        "Proteins": [],
+        "Produce": [],
+        "Dairy & Eggs": [],
+        "Grains & Bread": [],
+        "Pantry Items": [],
+        "Frozen": [],
+        "Other": []
+    }
+    
+    # Category keywords for classification
+    category_keywords = {
+        "Proteins": ["chicken", "beef", "pork", "fish", "salmon", "tuna", "shrimp", "turkey", "lamb", "tofu", "tempeh", "protein"],
+        "Produce": ["apple", "banana", "orange", "lettuce", "tomato", "spinach", "broccoli", "carrot", "onion", "garlic", "pepper", "cucumber", "avocado", "lemon", "lime", "berries", "fruit", "vegetable", "greens", "kale", "celery", "mushroom"],
+        "Dairy & Eggs": ["milk", "cheese", "yogurt", "egg", "butter", "cream", "cottage", "sour cream", "parmesan", "mozzarella"],
+        "Grains & Bread": ["bread", "rice", "pasta", "oat", "quinoa", "tortilla", "bagel", "cereal", "flour", "noodle", "wrap"],
+        "Pantry Items": ["oil", "vinegar", "sauce", "spice", "salt", "pepper", "sugar", "honey", "syrup", "peanut butter", "almond butter", "nuts", "seeds", "canned"],
+        "Frozen": ["frozen", "ice cream"]
+    }
+    
+    all_ingredients = set()
+    
+    # Get ingredients from specified number of days
+    for day_idx, day in enumerate(plan.get("meal_days", [])[:days]):
+        for meal in day.get("meals", []):
+            for ingredient in meal.get("ingredients", []):
+                all_ingredients.add(ingredient.strip())
+    
+    # Categorize ingredients
+    for ingredient in all_ingredients:
+        ingredient_lower = ingredient.lower()
+        categorized = False
+        
+        for category, keywords in category_keywords.items():
+            if any(keyword in ingredient_lower for keyword in keywords):
+                ingredients_by_category[category].append(ingredient)
+                categorized = True
+                break
+        
+        if not categorized:
+            ingredients_by_category["Other"].append(ingredient)
+    
+    # Sort each category and remove empty ones
+    result = {}
+    for category, items in ingredients_by_category.items():
+        if items:
+            result[category] = sorted(items)
+    
+    return {
+        "meal_plan_id": meal_plan_id,
+        "days_covered": min(days, len(plan.get("meal_days", []))),
+        "total_items": len(all_ingredients),
+        "grocery_list": result
+    }
 
 # ==================== ASK INTERFITAI CHAT ENDPOINTS ====================
 
