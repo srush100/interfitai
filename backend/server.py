@@ -1840,27 +1840,12 @@ async def delete_food_log(log_id: str):
 
 @api_router.get("/food/search")
 async def search_foods(query: str):
-    """Search food database - tries FatSecret first, then USDA FoodData Central"""
+    """Search food database - combines local database with API results for best coverage"""
     logger.info(f"Searching food database for: {query}")
+    query_lower = query.lower()
     
-    # Try FatSecret first (if IP whitelist is working)
-    results = await search_fatsecret(query, max_results=50)
-    
-    if results:
-        logger.info(f"FatSecret returned {len(results)} results")
-        return results
-    
-    # Try USDA FoodData Central (free, no IP restrictions)
-    logger.info("Trying USDA FoodData Central...")
-    results = await search_usda(query, max_results=50)
-    
-    if results:
-        logger.info(f"USDA returned {len(results)} results")
-        return results
-    
-    # Fallback to comprehensive local database if all APIs fail
-    logger.warning("All food APIs failed, falling back to local database")
-    common_foods = [
+    # Comprehensive local database with specific restaurant items
+    local_foods = [
         # ==================== PROTEINS ====================
         {"name": "Chicken Breast, Grilled (100g)", "calories": 165, "protein": 31, "carbs": 0, "fats": 3.6},
         {"name": "Chicken Breast, Baked (100g)", "calories": 165, "protein": 31, "carbs": 0, "fats": 3.6},
@@ -2318,9 +2303,37 @@ async def search_foods(query: str):
         {"name": "BBQ Ribs (4 bones)", "calories": 480, "protein": 30, "carbs": 12, "fats": 35},
     ]
     
-    query_lower = query.lower()
-    results = [food for food in common_foods if query_lower in food["name"].lower()]
-    return results[:30]
+    # STEP 1: Always search local database first for specific items
+    local_results = [food for food in local_foods if query_lower in food["name"].lower()]
+    logger.info(f"Local database returned {len(local_results)} results for '{query}'")
+    
+    # STEP 2: Try to get API results to supplement
+    api_results = []
+    
+    # Try FatSecret first
+    fatsecret_results = await search_fatsecret(query, max_results=30)
+    if fatsecret_results:
+        logger.info(f"FatSecret returned {len(fatsecret_results)} results")
+        api_results = fatsecret_results
+    else:
+        # Try USDA as backup
+        logger.info("Trying USDA FoodData Central...")
+        usda_results = await search_usda(query, max_results=30)
+        if usda_results:
+            logger.info(f"USDA returned {len(usda_results)} results")
+            api_results = usda_results
+    
+    # STEP 3: Combine results - local first (specific items), then API results
+    # Avoid duplicates by checking names
+    combined_results = local_results.copy()
+    local_names_lower = {food["name"].lower() for food in local_results}
+    
+    for api_food in api_results:
+        if api_food["name"].lower() not in local_names_lower:
+            combined_results.append(api_food)
+    
+    logger.info(f"Returning {len(combined_results)} combined results (local: {len(local_results)}, api: {len(api_results)})")
+    return combined_results[:50]
 
 # ==================== ASK INTERFITAI CHAT ENDPOINTS ====================
 
