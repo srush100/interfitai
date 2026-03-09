@@ -8,6 +8,8 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -16,26 +18,16 @@ import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 
-const FOOD_PREFERENCES = [
-  { id: 'whole_foods', label: 'Whole Foods', desc: 'Natural, unprocessed foods' },
+const EATING_STYLES = [
+  { id: 'balanced', label: 'Balanced', desc: 'Well-rounded nutrition' },
   { id: 'high_protein', label: 'High Protein', desc: 'Protein-focused meals' },
+  { id: 'whole_foods', label: 'Whole Foods', desc: 'Natural, unprocessed' },
+  { id: 'vegetarian', label: 'Vegetarian', desc: 'No meat or fish' },
   { id: 'vegan', label: 'Vegan', desc: 'Plant-based only' },
-  { id: 'vegetarian', label: 'Vegetarian', desc: 'No meat, fish allowed' },
   { id: 'keto', label: 'Keto', desc: 'Low carb, high fat' },
   { id: 'paleo', label: 'Paleo', desc: 'Ancestral eating' },
+  { id: 'carnivore', label: 'Carnivore', desc: 'Meat-based diet' },
   { id: 'none', label: 'No Preference', desc: 'Flexible eating' },
-];
-
-const SUPPLEMENTS = [
-  { id: 'whey_protein', label: 'Whey Protein' },
-  { id: 'casein', label: 'Casein' },
-  { id: 'creatine', label: 'Creatine' },
-  { id: 'pre_workout', label: 'Pre-Workout' },
-  { id: 'bcaa', label: 'BCAAs' },
-  { id: 'multivitamin', label: 'Multivitamin' },
-  { id: 'omega3', label: 'Omega-3' },
-  { id: 'vitamin_d', label: 'Vitamin D' },
-  { id: 'none', label: 'No Supplements' },
 ];
 
 const ALLERGIES = [
@@ -49,20 +41,6 @@ const ALLERGIES = [
   { id: 'none', label: 'No Allergies' },
 ];
 
-const CUISINES = [
-  { id: 'japanese', label: 'Japanese', emoji: '🍱' },
-  { id: 'thai', label: 'Thai', emoji: '🍜' },
-  { id: 'brazilian', label: 'Brazilian', emoji: '🥩' },
-  { id: 'italian', label: 'Italian', emoji: '🍝' },
-  { id: 'mexican', label: 'Mexican', emoji: '🌮' },
-  { id: 'indian', label: 'Indian', emoji: '🍛' },
-  { id: 'mediterranean', label: 'Mediterranean', emoji: '🥗' },
-  { id: 'korean', label: 'Korean', emoji: '🥘' },
-  { id: 'american', label: 'American', emoji: '🍔' },
-  { id: 'chinese', label: 'Chinese', emoji: '🥡' },
-  { id: 'none', label: 'No Preference', emoji: '🌍' },
-];
-
 export default function MealQuestionnaire() {
   const router = useRouter();
   const { profile } = useUserStore();
@@ -70,23 +48,22 @@ export default function MealQuestionnaire() {
   const [loading, setLoading] = useState(false);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
   const [formData, setFormData] = useState({
-    food_preferences: 'whole_foods',
-    supplements: [] as string[],
-    supplements_custom: '',
+    eating_style: 'balanced',
+    preferred_foods: '',
+    foods_to_avoid: '',
     allergies: [] as string[],
-    cuisine_preference: '',
   });
 
-  const toggleSelection = (field: 'supplements' | 'allergies', value: string) => {
-    const current = formData[field];
+  const toggleAllergy = (value: string) => {
+    const current = formData.allergies;
     if (value === 'none') {
-      setFormData({ ...formData, [field]: ['none'] });
+      setFormData({ ...formData, allergies: ['none'] });
     } else {
       const filtered = current.filter((v) => v !== 'none');
       if (filtered.includes(value)) {
-        setFormData({ ...formData, [field]: filtered.filter((v) => v !== value) });
+        setFormData({ ...formData, allergies: filtered.filter((v) => v !== value) });
       } else {
-        setFormData({ ...formData, [field]: [...filtered, value] });
+        setFormData({ ...formData, allergies: [...filtered, value] });
       }
     }
   };
@@ -108,7 +85,6 @@ export default function MealQuestionnaire() {
       const subResponse = await api.get(`/subscription/check/${profile.id}`);
       if (!subResponse.data.has_access) {
         setCheckingSubscription(false);
-        // Redirect to subscription page
         Alert.alert(
           'Subscription Required',
           'Start your free trial to generate personalized AI meal plans!',
@@ -121,7 +97,6 @@ export default function MealQuestionnaire() {
       }
     } catch (error) {
       console.log('Subscription check error:', error);
-      // Allow generation if subscription check fails (failsafe)
     } finally {
       setCheckingSubscription(false);
     }
@@ -130,11 +105,10 @@ export default function MealQuestionnaire() {
     try {
       const response = await api.post('/mealplans/generate', {
         user_id: profile.id,
-        food_preferences: formData.food_preferences,
-        supplements: formData.supplements.filter((s) => s !== 'none'),
-        supplements_custom: formData.supplements_custom || null,
+        food_preferences: formData.eating_style,
+        preferred_foods: formData.preferred_foods || null,
+        foods_to_avoid: formData.foods_to_avoid || null,
         allergies: formData.allergies.filter((a) => a !== 'none'),
-        cuisine_preference: formData.cuisine_preference || null,
       });
 
       router.replace(`/meal-detail?id=${response.data.id}`);
@@ -145,25 +119,26 @@ export default function MealQuestionnaire() {
     }
   };
 
+  // Step 1: Eating Style
   const renderStep1 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Food Preferences</Text>
+      <Text style={styles.stepTitle}>Eating Style</Text>
       <Text style={styles.stepSubtitle}>What type of eating style do you prefer?</Text>
       
       <ScrollView showsVerticalScrollIndicator={false}>
-        {FOOD_PREFERENCES.map((pref) => (
+        {EATING_STYLES.map((style) => (
           <TouchableOpacity
-            key={pref.id}
-            style={[styles.optionCard, formData.food_preferences === pref.id && styles.optionCardActive]}
-            onPress={() => setFormData({ ...formData, food_preferences: pref.id })}
+            key={style.id}
+            style={[styles.optionCard, formData.eating_style === style.id && styles.optionCardActive]}
+            onPress={() => setFormData({ ...formData, eating_style: style.id })}
           >
             <View style={styles.optionContent}>
-              <Text style={[styles.optionTitle, formData.food_preferences === pref.id && styles.optionTitleActive]}>
-                {pref.label}
+              <Text style={[styles.optionTitle, formData.eating_style === style.id && styles.optionTitleActive]}>
+                {style.label}
               </Text>
-              <Text style={styles.optionDesc}>{pref.desc}</Text>
+              <Text style={styles.optionDesc}>{style.desc}</Text>
             </View>
-            {formData.food_preferences === pref.id && (
+            {formData.eating_style === style.id && (
               <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
             )}
           </TouchableOpacity>
@@ -172,77 +147,59 @@ export default function MealQuestionnaire() {
     </View>
   );
 
+  // Step 2: Preferred Foods (Optional)
   const renderStep2 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Preferred Cuisine</Text>
-      <Text style={styles.stepSubtitle}>Select your favorite cuisine style (optional)</Text>
+      <Text style={styles.stepTitle}>Preferred Foods</Text>
+      <Text style={styles.stepSubtitle}>Foods you'd like included in your plan (optional)</Text>
       
-      <View style={styles.cuisineGrid}>
-        {CUISINES.map((cuisine) => (
-          <TouchableOpacity
-            key={cuisine.id}
-            style={[
-              styles.cuisineCard,
-              formData.cuisine_preference === cuisine.id && styles.cuisineCardActive,
-            ]}
-            onPress={() => setFormData({ 
-              ...formData, 
-              cuisine_preference: formData.cuisine_preference === cuisine.id ? '' : cuisine.id 
-            })}
-          >
-            <Text style={styles.cuisineEmoji}>{cuisine.emoji}</Text>
-            <Text style={[
-              styles.cuisineLabel, 
-              formData.cuisine_preference === cuisine.id && styles.cuisineLabelActive
-            ]}>
-              {cuisine.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.textInputSection}>
+        <TextInput
+          style={styles.textAreaInput}
+          placeholder="e.g. potatoes, steak, eggs, rice, berries, wraps"
+          placeholderTextColor={colors.textMuted}
+          value={formData.preferred_foods}
+          onChangeText={(text) => setFormData({ ...formData, preferred_foods: text })}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+        />
+        <Text style={styles.inputHint}>
+          Type any foods you enjoy and want to see in your meal plan
+        </Text>
       </View>
     </View>
   );
 
+  // Step 3: Foods to Avoid (Optional)
   const renderStep3 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Supplements</Text>
-      <Text style={styles.stepSubtitle}>Do you use any supplements?</Text>
+      <Text style={styles.stepTitle}>Foods to Avoid</Text>
+      <Text style={styles.stepSubtitle}>Foods you don't want in your plan (optional)</Text>
       
-      <View style={styles.chipContainer}>
-        {SUPPLEMENTS.map((supp) => (
-          <TouchableOpacity
-            key={supp.id}
-            style={[
-              styles.chip,
-              formData.supplements.includes(supp.id) && styles.chipActive,
-            ]}
-            onPress={() => toggleSelection('supplements', supp.id)}
-          >
-            <Text style={[styles.chipText, formData.supplements.includes(supp.id) && styles.chipTextActive]}>
-              {supp.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <View style={styles.customInputSection}>
-        <Text style={styles.customInputLabel}>Other supplements (optional)</Text>
+      <View style={styles.textInputSection}>
         <TextInput
-          style={styles.customInput}
-          placeholder="e.g., Ashwagandha, Zinc, Magnesium..."
+          style={styles.textAreaInput}
+          placeholder="e.g. mushrooms, tuna, olives, seafood"
           placeholderTextColor={colors.textMuted}
-          value={formData.supplements_custom}
-          onChangeText={(text) => setFormData({ ...formData, supplements_custom: text })}
+          value={formData.foods_to_avoid}
+          onChangeText={(text) => setFormData({ ...formData, foods_to_avoid: text })}
           multiline
+          numberOfLines={4}
+          textAlignVertical="top"
         />
+        <Text style={styles.inputHint}>
+          These foods will be excluded from your meal plan
+        </Text>
       </View>
     </View>
   );
 
+  // Step 4: Allergies & Summary
   const renderStep4 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Food Allergies</Text>
-      <Text style={styles.stepSubtitle}>Any food allergies or sensitivities?</Text>
+      <Text style={styles.stepTitle}>Allergies & Sensitivities</Text>
+      <Text style={styles.stepSubtitle}>Any food allergies we should know about?</Text>
       
       <View style={styles.chipContainer}>
         {ALLERGIES.map((allergy) => (
@@ -252,7 +209,7 @@ export default function MealQuestionnaire() {
               styles.chip,
               formData.allergies.includes(allergy.id) && styles.chipActive,
             ]}
-            onPress={() => toggleSelection('allergies', allergy.id)}
+            onPress={() => toggleAllergy(allergy.id)}
           >
             <Text style={[styles.chipText, formData.allergies.includes(allergy.id) && styles.chipTextActive]}>
               {allergy.label}
@@ -279,14 +236,22 @@ export default function MealQuestionnaire() {
         <View style={styles.summaryRow}>
           <Ionicons name="leaf" size={18} color={colors.carbs} />
           <Text style={styles.summaryText}>
-            {formData.food_preferences.replace(/_/g, ' ')} diet
+            {EATING_STYLES.find(s => s.id === formData.eating_style)?.label || 'Balanced'} eating style
           </Text>
         </View>
-        {formData.cuisine_preference && (
+        {formData.preferred_foods && (
           <View style={styles.summaryRow}>
-            <Ionicons name="restaurant" size={18} color={colors.primary} />
-            <Text style={styles.summaryText}>
-              {formData.cuisine_preference} cuisine focus
+            <Ionicons name="heart" size={18} color={colors.primary} />
+            <Text style={styles.summaryText} numberOfLines={1}>
+              Preferred: {formData.preferred_foods}
+            </Text>
+          </View>
+        )}
+        {formData.foods_to_avoid && (
+          <View style={styles.summaryRow}>
+            <Ionicons name="close-circle" size={18} color={colors.error} />
+            <Text style={styles.summaryText} numberOfLines={1}>
+              Avoiding: {formData.foods_to_avoid}
             </Text>
           </View>
         )}
@@ -298,53 +263,67 @@ export default function MealQuestionnaire() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="close" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Meal Plan</Text>
-        <View style={styles.backBtn} />
-      </View>
-
-      {/* Progress */}
-      <View style={styles.progressContainer}>
-        {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
-          <View key={s} style={[styles.progressDot, s <= step && styles.progressDotActive]} />
-        ))}
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {step === 1 && renderStep1()}
-        {step === 2 && renderStep2()}
-        {step === 3 && renderStep3()}
-        {step === 4 && renderStep4()}
-      </ScrollView>
-
-      {/* Navigation */}
-      <View style={styles.navContainer}>
-        {step > 1 && (
-          <TouchableOpacity style={styles.navBackBtn} onPress={() => setStep(step - 1)}>
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="close" size={24} color={colors.text} />
           </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={[styles.navNextBtn, loading && styles.btnDisabled]}
-          onPress={step < totalSteps ? () => setStep(step + 1) : handleGenerate}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color={colors.textOnPrimary} />
-          ) : (
-            <>
-              <Text style={styles.navNextText}>
-                {step < totalSteps ? 'Continue' : 'Generate Plan'}
-              </Text>
-              <Ionicons name={step < totalSteps ? "arrow-forward" : "sparkles"} size={20} color={colors.textOnPrimary} />
-            </>
+          <Text style={styles.headerTitle}>Create Meal Plan</Text>
+          <View style={styles.backBtn} />
+        </View>
+
+        {/* Progress */}
+        <View style={styles.progressContainer}>
+          {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
+            <View key={s} style={[styles.progressDot, s <= step && styles.progressDotActive]} />
+          ))}
+        </View>
+
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {step === 1 && renderStep1()}
+          {step === 2 && renderStep2()}
+          {step === 3 && renderStep3()}
+          {step === 4 && renderStep4()}
+        </ScrollView>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          {step > 1 && (
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setStep(step - 1)}>
+              <Text style={styles.secondaryBtnText}>Back</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
-      </View>
+          
+          {step < totalSteps ? (
+            <TouchableOpacity 
+              style={[styles.primaryBtn, step === 1 && { flex: 1 }]} 
+              onPress={() => setStep(step + 1)}
+            >
+              <Text style={styles.primaryBtnText}>Continue</Text>
+              <Ionicons name="arrow-forward" size={20} color="#000" />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity 
+              style={[styles.primaryBtn, styles.generateBtn]} 
+              onPress={handleGenerate}
+              disabled={loading || checkingSubscription}
+            >
+              {loading || checkingSubscription ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <>
+                  <Ionicons name="sparkles" size={20} color="#000" />
+                  <Text style={styles.primaryBtnText}>Generate Plan</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -356,13 +335,16 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   backBtn: {
     width: 40,
     height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -381,15 +363,16 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.surface,
   },
   progressDotActive: {
     backgroundColor: colors.primary,
-    width: 20,
+    width: 24,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    flexGrow: 1,
   },
   stepContent: {
     flex: 1,
@@ -408,12 +391,12 @@ const styles = StyleSheet.create({
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     padding: 16,
-    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
     marginBottom: 10,
     borderWidth: 2,
-    borderColor: colors.border,
+    borderColor: 'transparent',
   },
   optionCardActive: {
     borderColor: colors.primary,
@@ -426,149 +409,121 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.text,
+    marginBottom: 2,
   },
   optionTitleActive: {
     color: colors.primary,
   },
   optionDesc: {
     fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 4,
+    color: colors.textMuted,
   },
-  cuisineGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'space-between',
+  textInputSection: {
+    marginTop: 8,
   },
-  cuisineCard: {
-    width: '31%',
+  textAreaInput: {
     backgroundColor: colors.surface,
+    borderRadius: 12,
     padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 2,
+    fontSize: 16,
+    color: colors.text,
+    minHeight: 120,
+    borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: 10,
   },
-  cuisineCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + '15',
-  },
-  cuisineEmoji: {
-    fontSize: 28,
-    marginBottom: 6,
-  },
-  cuisineLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  cuisineLabelActive: {
-    color: colors.primary,
-    fontWeight: '600',
+  inputHint: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: 8,
+    paddingHorizontal: 4,
   },
   chipContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+    marginBottom: 24,
   },
   chip: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 20,
     backgroundColor: colors.surface,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.border,
   },
   chipActive: {
-    backgroundColor: colors.primary + '20',
+    backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
   chipText: {
     fontSize: 14,
+    color: colors.text,
     fontWeight: '500',
-    color: colors.textSecondary,
   },
   chipTextActive: {
-    color: colors.primary,
-  },
-  customInputSection: {
-    marginTop: 24,
-  },
-  customInputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 10,
-  },
-  customInput: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 60,
-    textAlignVertical: 'top',
+    color: '#000',
   },
   summaryCard: {
     backgroundColor: colors.surface,
-    padding: 20,
     borderRadius: 16,
-    marginTop: 28,
+    padding: 20,
     borderWidth: 1,
-    borderColor: colors.primary + '30',
+    borderColor: colors.border,
   },
   summaryTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text,
     marginBottom: 16,
   },
   summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   summaryText: {
+    marginLeft: 10,
     fontSize: 14,
-    color: colors.text,
+    color: colors.textSecondary,
     flex: 1,
-    textTransform: 'capitalize',
   },
-  navContainer: {
+  footer: {
     flexDirection: 'row',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  navBackBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  secondaryBtn: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     backgroundColor: colors.surface,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  navNextBtn: {
+  secondaryBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  primaryBtn: {
     flex: 1,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
     flexDirection: 'row',
+    paddingVertical: 16,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
   },
-  navNextText: {
+  primaryBtnText: {
     fontSize: 16,
-    fontWeight: '700',
-    color: colors.textOnPrimary,
+    fontWeight: '600',
+    color: '#000',
   },
-  btnDisabled: {
-    opacity: 0.7,
+  generateBtn: {
+    backgroundColor: colors.primary,
   },
 });

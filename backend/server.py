@@ -738,10 +738,11 @@ class MealPlan(BaseModel):
     user_id: str
     name: str
     food_preferences: str
+    preferred_foods: Optional[str] = None  # User's preferred foods
+    foods_to_avoid: Optional[str] = None  # Foods user wants excluded
     supplements: List[str]
     supplements_custom: Optional[str] = None  # Custom supplement text
     allergies: List[str]
-    cuisine_preference: Optional[str] = None  # Preferred cuisine
     target_calories: int
     target_protein: float
     target_carbs: float
@@ -752,11 +753,12 @@ class MealPlan(BaseModel):
 
 class MealPlanGenerateRequest(BaseModel):
     user_id: str
-    food_preferences: str = "whole_foods"  # whole_foods, vegan, vegetarian, keto, none
+    food_preferences: str = "balanced"  # balanced, high_protein, whole_foods, vegetarian, vegan, keto, paleo, carnivore, none
+    preferred_foods: Optional[str] = None  # Free text: "potatoes, steak, eggs, rice"
+    foods_to_avoid: Optional[str] = None  # Free text: "mushrooms, tuna, olives"
     supplements: List[str] = []  # whey_protein, creatine, none
     supplements_custom: Optional[str] = None  # Custom supplement text input
     allergies: List[str] = []  # gluten, nuts, dairy, none
-    cuisine_preference: Optional[str] = None  # japanese, thai, brazilian, italian, mexican, indian, american, mediterranean
 
 # Favorite Meals Model
 class FavoriteMeal(BaseModel):
@@ -1466,7 +1468,7 @@ async def get_exercise_gif(exercise_id: str, resolution: str = "360"):
 
 @api_router.post("/mealplans/generate", response_model=MealPlan)
 async def generate_meal_plan(request: MealPlanGenerateRequest):
-    """Generate meal plan using PRE-CALCULATED templates scaled to user's macro targets"""
+    """Generate meal plan using DIET-SPECIFIC templates scaled to user's targets"""
     profile = await db.profiles.find_one({"id": request.user_id})
     if not profile or not profile.get("calculated_macros"):
         raise HTTPException(status_code=404, detail="User profile with macros not found. Please set up your profile first.")
@@ -1477,11 +1479,839 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     target_carb = macros['carbs']
     target_fat = macros['fats']
     
-    # Pre-calculated meal templates with VERIFIED accurate macros
-    # Each template is designed for ~2000 calories baseline, will be scaled
-    # Format: {ingredient: (grams, cal, protein, carbs, fats)}
+    eating_style = request.food_preferences.lower()
     
-    MEAL_TEMPLATES = {
+    # Diet-specific template selection
+    # For Keto/Carnivore/Paleo: Override to high protein/fat, minimal carbs
+    # Each template: {ingredient: (grams, cal, protein, carbs, fats)}
+    
+    # ===== KETO TEMPLATES (Very low carb, high fat) =====
+    KETO_TEMPLATES = {
+        "day1": {
+            "breakfast": {
+                "name": "Keto Egg & Bacon Plate",
+                "ingredients": {
+                    "eggs": (150, 216, 18, 1, 15),
+                    "bacon": (60, 258, 12, 0, 24),
+                    "avocado": (100, 160, 2, 9, 15),
+                    "butter": (15, 107, 0, 0, 12),
+                },
+                "instructions": "Fry eggs in butter, crisp bacon, serve with fresh avocado slices",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Grilled Salmon with Greens",
+                "ingredients": {
+                    "salmon": (200, 416, 40, 0, 26),
+                    "olive oil": (20, 177, 0, 0, 20),
+                    "spinach": (100, 23, 3, 4, 0),
+                    "cheese": (30, 121, 8, 0, 10),
+                },
+                "instructions": "Grill salmon, serve on bed of sautéed spinach with melted cheese",
+                "prep_time": 20
+            },
+            "dinner": {
+                "name": "Ribeye Steak with Asparagus",
+                "ingredients": {
+                    "ribeye steak": (250, 625, 50, 0, 46),
+                    "asparagus": (150, 30, 3, 6, 0),
+                    "butter": (20, 143, 0, 0, 16),
+                },
+                "instructions": "Pan-sear ribeye to preference, serve with butter-grilled asparagus",
+                "prep_time": 25
+            },
+            "snack": {
+                "name": "Cheese & Nut Plate",
+                "ingredients": {
+                    "cheddar cheese": (50, 201, 12, 1, 17),
+                    "macadamia nuts": (30, 216, 2, 4, 23),
+                },
+                "instructions": "Arrange cheese slices with macadamia nuts",
+                "prep_time": 5
+            }
+        },
+        "day2": {
+            "breakfast": {
+                "name": "Keto Omelette",
+                "ingredients": {
+                    "eggs": (200, 288, 24, 1, 20),
+                    "cheese": (40, 161, 10, 1, 13),
+                    "mushrooms": (50, 11, 2, 2, 0),
+                    "butter": (15, 107, 0, 0, 12),
+                },
+                "instructions": "Make fluffy omelette with cheese and sautéed mushrooms",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Chicken Thighs with Caesar Salad",
+                "ingredients": {
+                    "chicken thighs": (200, 418, 52, 0, 22),
+                    "romaine lettuce": (100, 17, 1, 3, 0),
+                    "parmesan": (30, 121, 11, 1, 8),
+                    "olive oil": (20, 177, 0, 0, 20),
+                },
+                "instructions": "Grill chicken thighs, serve over romaine with parmesan and olive oil dressing",
+                "prep_time": 25
+            },
+            "dinner": {
+                "name": "Bunless Burger with Cheese",
+                "ingredients": {
+                    "ground beef 80% lean": (200, 508, 52, 0, 34),
+                    "cheese": (40, 161, 10, 1, 13),
+                    "avocado": (80, 128, 2, 7, 12),
+                    "lettuce wrap": (50, 8, 1, 2, 0),
+                },
+                "instructions": "Form patty, grill to preference, top with cheese and avocado in lettuce wrap",
+                "prep_time": 20
+            },
+            "snack": {
+                "name": "Cream Cheese Celery",
+                "ingredients": {
+                    "cream cheese": (60, 199, 3, 2, 20),
+                    "celery": (100, 16, 1, 3, 0),
+                    "pecans": (20, 139, 2, 3, 14),
+                },
+                "instructions": "Fill celery stalks with cream cheese, top with pecans",
+                "prep_time": 5
+            }
+        },
+        "day3": {
+            "breakfast": {
+                "name": "Smoked Salmon & Eggs",
+                "ingredients": {
+                    "smoked salmon": (100, 117, 23, 0, 2),
+                    "eggs": (150, 216, 18, 1, 15),
+                    "cream cheese": (40, 133, 2, 1, 13),
+                    "capers": (10, 2, 0, 0, 0),
+                },
+                "instructions": "Scramble eggs, serve with smoked salmon, cream cheese, and capers",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Tuna Salad Avocado Boats",
+                "ingredients": {
+                    "tuna": (150, 174, 39, 0, 1),
+                    "avocado": (200, 320, 4, 18, 30),
+                    "mayonnaise": (30, 203, 0, 0, 22),
+                    "celery": (30, 5, 0, 1, 0),
+                },
+                "instructions": "Mix tuna with mayo and celery, serve in halved avocados",
+                "prep_time": 10
+            },
+            "dinner": {
+                "name": "Pork Chops with Broccoli",
+                "ingredients": {
+                    "pork chops": (200, 330, 50, 0, 14),
+                    "broccoli": (150, 51, 4, 11, 1),
+                    "butter": (25, 179, 0, 0, 20),
+                    "garlic": (5, 7, 0, 2, 0),
+                },
+                "instructions": "Pan-fry pork chops in butter with garlic, serve with steamed broccoli",
+                "prep_time": 25
+            },
+            "snack": {
+                "name": "String Cheese & Almonds",
+                "ingredients": {
+                    "mozzarella string cheese": (56, 160, 14, 2, 10),
+                    "almonds": (30, 174, 6, 6, 15),
+                },
+                "instructions": "Simple snack plate",
+                "prep_time": 2
+            }
+        }
+    }
+    
+    # ===== CARNIVORE TEMPLATES (Meat only, zero carbs) =====
+    CARNIVORE_TEMPLATES = {
+        "day1": {
+            "breakfast": {
+                "name": "Steak and Eggs",
+                "ingredients": {
+                    "ribeye steak": (200, 500, 40, 0, 37),
+                    "eggs": (150, 216, 18, 1, 15),
+                    "butter": (20, 143, 0, 0, 16),
+                },
+                "instructions": "Pan-sear steak in butter, fry eggs to preference",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Ground Beef Patties",
+                "ingredients": {
+                    "ground beef 80% lean": (300, 762, 78, 0, 51),
+                    "butter": (15, 107, 0, 0, 12),
+                    "salt": (2, 0, 0, 0, 0),
+                },
+                "instructions": "Form patties, cook in butter, season with salt",
+                "prep_time": 15
+            },
+            "dinner": {
+                "name": "Roasted Chicken Thighs",
+                "ingredients": {
+                    "chicken thighs": (350, 731, 91, 0, 39),
+                    "chicken fat": (20, 180, 0, 0, 20),
+                },
+                "instructions": "Roast chicken thighs with rendered fat until crispy",
+                "prep_time": 40
+            },
+            "snack": {
+                "name": "Beef Jerky",
+                "ingredients": {
+                    "beef jerky": (50, 116, 23, 3, 1),
+                    "pork rinds": (30, 154, 17, 0, 9),
+                },
+                "instructions": "Simple meat-based snack",
+                "prep_time": 0
+            }
+        },
+        "day2": {
+            "breakfast": {
+                "name": "Bacon and Eggs Feast",
+                "ingredients": {
+                    "bacon": (100, 430, 20, 0, 40),
+                    "eggs": (200, 288, 24, 1, 20),
+                    "butter": (10, 72, 0, 0, 8),
+                },
+                "instructions": "Crisp bacon, scramble eggs in bacon fat and butter",
+                "prep_time": 20
+            },
+            "lunch": {
+                "name": "Lamb Chops",
+                "ingredients": {
+                    "lamb chops": (300, 639, 60, 0, 45),
+                    "butter": (15, 107, 0, 0, 12),
+                },
+                "instructions": "Pan-sear lamb chops in butter to medium-rare",
+                "prep_time": 20
+            },
+            "dinner": {
+                "name": "Prime Rib Roast",
+                "ingredients": {
+                    "prime rib": (350, 875, 70, 0, 66),
+                    "beef tallow": (15, 135, 0, 0, 15),
+                },
+                "instructions": "Roast prime rib with beef tallow coating",
+                "prep_time": 90
+            },
+            "snack": {
+                "name": "Sardines",
+                "ingredients": {
+                    "sardines in oil": (100, 208, 25, 0, 11),
+                },
+                "instructions": "Eat straight from the can",
+                "prep_time": 0
+            }
+        },
+        "day3": {
+            "breakfast": {
+                "name": "Sausage and Eggs",
+                "ingredients": {
+                    "pork sausage": (150, 420, 18, 0, 39),
+                    "eggs": (150, 216, 18, 1, 15),
+                    "butter": (15, 107, 0, 0, 12),
+                },
+                "instructions": "Pan-fry sausages, cook eggs in remaining fat",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Bison Burgers",
+                "ingredients": {
+                    "ground bison": (300, 486, 66, 0, 24),
+                    "beef tallow": (20, 180, 0, 0, 20),
+                },
+                "instructions": "Form patties, cook in beef tallow",
+                "prep_time": 15
+            },
+            "dinner": {
+                "name": "Salmon Steaks",
+                "ingredients": {
+                    "salmon steaks": (300, 624, 60, 0, 39),
+                    "butter": (25, 179, 0, 0, 20),
+                },
+                "instructions": "Pan-sear salmon steaks in butter",
+                "prep_time": 20
+            },
+            "snack": {
+                "name": "Bone Broth",
+                "ingredients": {
+                    "bone broth": (400, 52, 12, 0, 0),
+                    "butter": (15, 107, 0, 0, 12),
+                },
+                "instructions": "Heat bone broth, add butter for fat",
+                "prep_time": 5
+            }
+        }
+    }
+    
+    # ===== PALEO TEMPLATES (No grains/dairy, whole foods) =====
+    PALEO_TEMPLATES = {
+        "day1": {
+            "breakfast": {
+                "name": "Sweet Potato Hash with Eggs",
+                "ingredients": {
+                    "sweet potato": (150, 135, 3, 32, 0),
+                    "eggs": (150, 216, 18, 1, 15),
+                    "coconut oil": (15, 130, 0, 0, 14),
+                    "bell peppers": (50, 16, 1, 3, 0),
+                },
+                "instructions": "Cube and fry sweet potato in coconut oil, add peppers, top with eggs",
+                "prep_time": 20
+            },
+            "lunch": {
+                "name": "Grilled Chicken with Roasted Vegetables",
+                "ingredients": {
+                    "chicken breast": (200, 330, 62, 0, 7),
+                    "zucchini": (100, 17, 1, 3, 0),
+                    "carrots": (80, 33, 1, 8, 0),
+                    "olive oil": (20, 177, 0, 0, 20),
+                },
+                "instructions": "Grill chicken, roast vegetables with olive oil",
+                "prep_time": 30
+            },
+            "dinner": {
+                "name": "Grass-Fed Steak with Salad",
+                "ingredients": {
+                    "sirloin steak": (220, 396, 55, 0, 19),
+                    "mixed greens": (100, 20, 2, 3, 0),
+                    "avocado": (100, 160, 2, 9, 15),
+                    "olive oil": (15, 133, 0, 0, 15),
+                },
+                "instructions": "Grill steak, serve with fresh salad and avocado",
+                "prep_time": 25
+            },
+            "snack": {
+                "name": "Fruit and Nuts",
+                "ingredients": {
+                    "apple": (150, 78, 0, 21, 0),
+                    "almonds": (30, 174, 6, 6, 15),
+                    "walnuts": (20, 131, 3, 3, 13),
+                },
+                "instructions": "Simple paleo snack plate",
+                "prep_time": 2
+            }
+        },
+        "day2": {
+            "breakfast": {
+                "name": "Banana Egg Pancakes",
+                "ingredients": {
+                    "banana": (150, 134, 2, 35, 0),
+                    "eggs": (150, 216, 18, 1, 15),
+                    "almond butter": (30, 184, 7, 6, 17),
+                    "coconut oil": (10, 87, 0, 0, 10),
+                },
+                "instructions": "Blend banana and eggs, cook as pancakes, top with almond butter",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Turkey Lettuce Wraps",
+                "ingredients": {
+                    "ground turkey": (200, 340, 42, 0, 18),
+                    "lettuce": (80, 10, 1, 2, 0),
+                    "tomato": (80, 14, 1, 3, 0),
+                    "avocado": (80, 128, 2, 7, 12),
+                },
+                "instructions": "Cook seasoned turkey, serve in lettuce cups with toppings",
+                "prep_time": 20
+            },
+            "dinner": {
+                "name": "Baked Salmon with Asparagus",
+                "ingredients": {
+                    "salmon": (200, 416, 40, 0, 26),
+                    "asparagus": (150, 30, 3, 6, 0),
+                    "lemon": (30, 9, 0, 3, 0),
+                    "olive oil": (15, 133, 0, 0, 15),
+                },
+                "instructions": "Bake salmon with lemon, roast asparagus in olive oil",
+                "prep_time": 25
+            },
+            "snack": {
+                "name": "Berries and Coconut",
+                "ingredients": {
+                    "mixed berries": (150, 68, 1, 17, 0),
+                    "coconut flakes": (30, 187, 2, 6, 18),
+                },
+                "instructions": "Mix berries with unsweetened coconut flakes",
+                "prep_time": 2
+            }
+        },
+        "day3": {
+            "breakfast": {
+                "name": "Veggie Omelette",
+                "ingredients": {
+                    "eggs": (200, 288, 24, 1, 20),
+                    "spinach": (50, 12, 1, 2, 0),
+                    "tomato": (50, 9, 0, 2, 0),
+                    "coconut oil": (15, 130, 0, 0, 14),
+                    "avocado": (80, 128, 2, 7, 12),
+                },
+                "instructions": "Make omelette with veggies, serve with avocado",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Shrimp Stir Fry",
+                "ingredients": {
+                    "shrimp": (200, 198, 48, 0, 1),
+                    "broccoli": (100, 34, 3, 7, 0),
+                    "bell pepper": (80, 25, 1, 5, 0),
+                    "coconut aminos": (15, 15, 0, 3, 0),
+                    "coconut oil": (15, 130, 0, 0, 14),
+                },
+                "instructions": "Stir fry shrimp and vegetables in coconut oil with coconut aminos",
+                "prep_time": 20
+            },
+            "dinner": {
+                "name": "Pork Tenderloin with Sweet Potato",
+                "ingredients": {
+                    "pork tenderloin": (200, 290, 50, 0, 10),
+                    "sweet potato": (200, 180, 4, 42, 0),
+                    "olive oil": (15, 133, 0, 0, 15),
+                    "rosemary": (2, 1, 0, 0, 0),
+                },
+                "instructions": "Roast pork with rosemary, bake sweet potato",
+                "prep_time": 35
+            },
+            "snack": {
+                "name": "Guacamole with Veggies",
+                "ingredients": {
+                    "avocado": (100, 160, 2, 9, 15),
+                    "cucumber": (100, 15, 1, 4, 0),
+                    "carrots": (50, 21, 0, 5, 0),
+                },
+                "instructions": "Mash avocado for guac, serve with veggie sticks",
+                "prep_time": 5
+            }
+        }
+    }
+    
+    # ===== VEGAN TEMPLATES =====
+    VEGAN_TEMPLATES = {
+        "day1": {
+            "breakfast": {
+                "name": "Tofu Scramble with Vegetables",
+                "ingredients": {
+                    "tofu": (200, 288, 34, 6, 16),
+                    "spinach": (50, 12, 1, 2, 0),
+                    "tomato": (80, 14, 1, 3, 0),
+                    "nutritional yeast": (15, 45, 6, 4, 0),
+                    "olive oil": (15, 133, 0, 0, 15),
+                },
+                "instructions": "Crumble and sauté tofu with veggies, add nutritional yeast for cheesy flavor",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Chickpea Buddha Bowl",
+                "ingredients": {
+                    "chickpeas": (200, 328, 18, 54, 5),
+                    "quinoa": (150, 180, 7, 32, 3),
+                    "kale": (80, 39, 3, 7, 1),
+                    "tahini": (30, 178, 5, 6, 16),
+                    "lemon": (20, 6, 0, 2, 0),
+                },
+                "instructions": "Roast chickpeas, serve over quinoa with massaged kale and tahini dressing",
+                "prep_time": 30
+            },
+            "dinner": {
+                "name": "Lentil Curry with Rice",
+                "ingredients": {
+                    "red lentils": (150, 174, 14, 30, 1),
+                    "brown rice": (200, 224, 5, 48, 2),
+                    "coconut milk": (100, 197, 2, 4, 20),
+                    "spinach": (50, 12, 1, 2, 0),
+                },
+                "instructions": "Simmer lentils in coconut milk with curry spices, add spinach, serve over rice",
+                "prep_time": 35
+            },
+            "snack": {
+                "name": "Hummus with Veggies",
+                "ingredients": {
+                    "hummus": (100, 166, 8, 14, 10),
+                    "carrots": (100, 41, 1, 10, 0),
+                    "cucumber": (100, 15, 1, 4, 0),
+                },
+                "instructions": "Serve hummus with fresh vegetable sticks",
+                "prep_time": 5
+            }
+        },
+        "day2": {
+            "breakfast": {
+                "name": "Overnight Oats with Berries",
+                "ingredients": {
+                    "oats": (60, 225, 8, 41, 4),
+                    "almond milk": (200, 26, 1, 1, 2),
+                    "chia seeds": (20, 97, 3, 8, 6),
+                    "berries": (100, 45, 1, 11, 0),
+                    "maple syrup": (15, 39, 0, 10, 0),
+                },
+                "instructions": "Mix oats with milk and chia overnight, top with berries and maple syrup",
+                "prep_time": 5
+            },
+            "lunch": {
+                "name": "Black Bean Tacos",
+                "ingredients": {
+                    "black beans": (200, 264, 18, 48, 1),
+                    "corn tortillas": (60, 130, 3, 27, 2),
+                    "avocado": (100, 160, 2, 9, 15),
+                    "salsa": (60, 20, 1, 4, 0),
+                },
+                "instructions": "Warm beans, serve in tortillas with avocado and salsa",
+                "prep_time": 15
+            },
+            "dinner": {
+                "name": "Tempeh Stir Fry",
+                "ingredients": {
+                    "tempeh": (200, 384, 40, 16, 22),
+                    "brown rice": (150, 168, 4, 36, 1),
+                    "broccoli": (100, 34, 3, 7, 0),
+                    "soy sauce": (15, 9, 1, 1, 0),
+                    "sesame oil": (10, 88, 0, 0, 10),
+                },
+                "instructions": "Cube and fry tempeh, stir fry with broccoli and soy sauce",
+                "prep_time": 25
+            },
+            "snack": {
+                "name": "Nut Butter Apple",
+                "ingredients": {
+                    "apple": (180, 94, 0, 25, 0),
+                    "almond butter": (30, 184, 7, 6, 17),
+                },
+                "instructions": "Slice apple, serve with almond butter for dipping",
+                "prep_time": 3
+            }
+        },
+        "day3": {
+            "breakfast": {
+                "name": "Smoothie Bowl",
+                "ingredients": {
+                    "banana": (150, 134, 2, 35, 0),
+                    "pea protein": (30, 120, 24, 2, 1),
+                    "almond milk": (150, 20, 1, 1, 2),
+                    "peanut butter": (25, 147, 7, 5, 13),
+                    "spinach": (30, 7, 1, 1, 0),
+                },
+                "instructions": "Blend all ingredients thick, serve in bowl",
+                "prep_time": 10
+            },
+            "lunch": {
+                "name": "Falafel Wrap",
+                "ingredients": {
+                    "falafel": (150, 333, 13, 31, 18),
+                    "whole wheat wrap": (60, 140, 5, 24, 3),
+                    "hummus": (50, 83, 4, 7, 5),
+                    "tomato": (60, 11, 1, 2, 0),
+                    "lettuce": (40, 5, 0, 1, 0),
+                },
+                "instructions": "Warm falafel, wrap with hummus and fresh vegetables",
+                "prep_time": 15
+            },
+            "dinner": {
+                "name": "Vegetable Pasta Primavera",
+                "ingredients": {
+                    "whole wheat pasta": (150, 186, 8, 38, 1),
+                    "zucchini": (100, 17, 1, 3, 0),
+                    "tomato": (100, 18, 1, 4, 0),
+                    "olive oil": (20, 177, 0, 0, 20),
+                    "nutritional yeast": (15, 45, 6, 4, 0),
+                },
+                "instructions": "Cook pasta, sauté vegetables, toss together with olive oil",
+                "prep_time": 25
+            },
+            "snack": {
+                "name": "Trail Mix",
+                "ingredients": {
+                    "almonds": (25, 145, 5, 5, 13),
+                    "walnuts": (20, 131, 3, 3, 13),
+                    "dried cranberries": (20, 65, 0, 17, 0),
+                },
+                "instructions": "Mix nuts and dried fruit",
+                "prep_time": 2
+            }
+        }
+    }
+    
+    # ===== VEGETARIAN TEMPLATES =====
+    VEGETARIAN_TEMPLATES = {
+        "day1": {
+            "breakfast": {
+                "name": "Greek Yogurt Parfait",
+                "ingredients": {
+                    "greek yogurt": (250, 148, 25, 10, 1),
+                    "granola": (40, 176, 4, 29, 6),
+                    "berries": (100, 45, 1, 11, 0),
+                    "honey": (15, 46, 0, 12, 0),
+                },
+                "instructions": "Layer yogurt with granola, berries, and honey drizzle",
+                "prep_time": 5
+            },
+            "lunch": {
+                "name": "Caprese Panini",
+                "ingredients": {
+                    "mozzarella": (100, 257, 25, 3, 16),
+                    "ciabatta bread": (80, 200, 7, 38, 2),
+                    "tomato": (100, 18, 1, 4, 0),
+                    "pesto": (20, 106, 2, 1, 10),
+                    "olive oil": (10, 88, 0, 0, 10),
+                },
+                "instructions": "Layer mozzarella and tomato with pesto on bread, grill until melted",
+                "prep_time": 15
+            },
+            "dinner": {
+                "name": "Vegetable Stir Fry with Tofu",
+                "ingredients": {
+                    "tofu": (200, 288, 34, 6, 16),
+                    "brown rice": (200, 224, 5, 48, 2),
+                    "broccoli": (100, 34, 3, 7, 0),
+                    "bell pepper": (80, 25, 1, 5, 0),
+                    "soy sauce": (15, 9, 1, 1, 0),
+                    "sesame oil": (10, 88, 0, 0, 10),
+                },
+                "instructions": "Crisp tofu, stir fry with vegetables, serve over rice",
+                "prep_time": 25
+            },
+            "snack": {
+                "name": "Cottage Cheese & Fruit",
+                "ingredients": {
+                    "cottage cheese": (150, 126, 17, 6, 4),
+                    "peach": (150, 59, 1, 14, 0),
+                },
+                "instructions": "Top cottage cheese with sliced peach",
+                "prep_time": 3
+            }
+        },
+        "day2": {
+            "breakfast": {
+                "name": "Veggie Omelette",
+                "ingredients": {
+                    "eggs": (150, 216, 18, 1, 15),
+                    "cheese": (30, 121, 8, 0, 10),
+                    "spinach": (50, 12, 1, 2, 0),
+                    "mushrooms": (50, 11, 2, 2, 0),
+                    "butter": (10, 72, 0, 0, 8),
+                },
+                "instructions": "Make fluffy omelette with veggies and cheese",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Quinoa Salad Bowl",
+                "ingredients": {
+                    "quinoa": (200, 240, 9, 42, 4),
+                    "feta cheese": (50, 132, 7, 2, 11),
+                    "cucumber": (100, 15, 1, 4, 0),
+                    "tomato": (100, 18, 1, 4, 0),
+                    "olive oil": (15, 133, 0, 0, 15),
+                },
+                "instructions": "Toss cooked quinoa with vegetables and feta",
+                "prep_time": 25
+            },
+            "dinner": {
+                "name": "Eggplant Parmesan",
+                "ingredients": {
+                    "eggplant": (200, 50, 2, 12, 0),
+                    "mozzarella": (80, 206, 20, 2, 13),
+                    "parmesan": (30, 121, 11, 1, 8),
+                    "marinara sauce": (100, 65, 2, 10, 2),
+                    "olive oil": (15, 133, 0, 0, 15),
+                },
+                "instructions": "Bread and bake eggplant, top with sauce and cheese",
+                "prep_time": 40
+            },
+            "snack": {
+                "name": "Cheese and Crackers",
+                "ingredients": {
+                    "cheddar cheese": (40, 161, 10, 1, 13),
+                    "whole grain crackers": (30, 120, 3, 19, 4),
+                },
+                "instructions": "Simple snack plate",
+                "prep_time": 2
+            }
+        },
+        "day3": {
+            "breakfast": {
+                "name": "Avocado Toast with Eggs",
+                "ingredients": {
+                    "whole wheat bread": (60, 162, 8, 28, 2),
+                    "avocado": (100, 160, 2, 9, 15),
+                    "eggs": (100, 144, 12, 1, 10),
+                    "olive oil": (5, 44, 0, 0, 5),
+                },
+                "instructions": "Toast bread, top with mashed avocado and poached eggs",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Lentil Soup with Bread",
+                "ingredients": {
+                    "lentils": (150, 174, 14, 30, 1),
+                    "carrots": (50, 21, 0, 5, 0),
+                    "celery": (30, 5, 0, 1, 0),
+                    "crusty bread": (60, 156, 5, 30, 1),
+                    "olive oil": (15, 133, 0, 0, 15),
+                },
+                "instructions": "Simmer lentils with vegetables, serve with bread",
+                "prep_time": 35
+            },
+            "dinner": {
+                "name": "Mushroom Risotto",
+                "ingredients": {
+                    "arborio rice": (150, 525, 10, 115, 1),
+                    "mushrooms": (150, 33, 5, 5, 1),
+                    "parmesan": (40, 161, 14, 1, 11),
+                    "butter": (20, 143, 0, 0, 16),
+                    "vegetable broth": (200, 10, 0, 2, 0),
+                },
+                "instructions": "Cook risotto with mushrooms, finish with butter and parmesan",
+                "prep_time": 30
+            },
+            "snack": {
+                "name": "Hummus and Pita",
+                "ingredients": {
+                    "hummus": (80, 133, 6, 11, 8),
+                    "pita bread": (40, 106, 4, 21, 1),
+                },
+                "instructions": "Serve hummus with warm pita triangles",
+                "prep_time": 3
+            }
+        }
+    }
+    
+    # ===== HIGH PROTEIN TEMPLATES =====
+    HIGH_PROTEIN_TEMPLATES = {
+        "day1": {
+            "breakfast": {
+                "name": "Protein Oatmeal",
+                "ingredients": {
+                    "oats": (50, 188, 6, 34, 3),
+                    "whey protein": (30, 120, 24, 3, 1),
+                    "milk": (200, 84, 7, 10, 2),
+                    "banana": (80, 71, 1, 18, 0),
+                },
+                "instructions": "Cook oats with milk, stir in protein powder, top with banana",
+                "prep_time": 10
+            },
+            "lunch": {
+                "name": "Double Chicken Breast",
+                "ingredients": {
+                    "chicken breast": (250, 413, 78, 0, 9),
+                    "brown rice": (150, 168, 4, 36, 1),
+                    "broccoli": (100, 34, 3, 7, 0),
+                    "olive oil": (10, 88, 0, 0, 10),
+                },
+                "instructions": "Grill extra-large chicken breast, serve with rice and broccoli",
+                "prep_time": 25
+            },
+            "dinner": {
+                "name": "Lean Steak with Potato",
+                "ingredients": {
+                    "sirloin steak": (250, 450, 63, 0, 22),
+                    "white potato": (200, 186, 5, 42, 0),
+                    "asparagus": (100, 20, 2, 4, 0),
+                    "olive oil": (10, 88, 0, 0, 10),
+                },
+                "instructions": "Grill lean steak, bake potato, roast asparagus",
+                "prep_time": 30
+            },
+            "snack": {
+                "name": "Protein Shake",
+                "ingredients": {
+                    "whey protein": (40, 160, 32, 4, 1),
+                    "milk": (300, 126, 11, 15, 3),
+                    "banana": (100, 89, 1, 23, 0),
+                },
+                "instructions": "Blend protein with milk and banana",
+                "prep_time": 5
+            }
+        },
+        "day2": {
+            "breakfast": {
+                "name": "Egg White Scramble",
+                "ingredients": {
+                    "egg whites": (200, 104, 22, 1, 0),
+                    "whole eggs": (100, 144, 12, 1, 10),
+                    "turkey bacon": (50, 90, 10, 0, 5),
+                    "whole wheat toast": (40, 108, 5, 19, 1),
+                },
+                "instructions": "Scramble egg whites with whole eggs, serve with turkey bacon and toast",
+                "prep_time": 15
+            },
+            "lunch": {
+                "name": "Tuna Steak Salad",
+                "ingredients": {
+                    "tuna steak": (200, 232, 52, 0, 2),
+                    "mixed greens": (100, 20, 2, 3, 0),
+                    "quinoa": (100, 120, 4, 21, 2),
+                    "olive oil": (15, 133, 0, 0, 15),
+                },
+                "instructions": "Sear tuna steak, serve over greens and quinoa",
+                "prep_time": 20
+            },
+            "dinner": {
+                "name": "Turkey Meatballs with Pasta",
+                "ingredients": {
+                    "ground turkey": (250, 425, 53, 0, 23),
+                    "whole wheat pasta": (150, 186, 8, 38, 1),
+                    "marinara": (100, 65, 2, 10, 2),
+                    "parmesan": (20, 81, 7, 1, 5),
+                },
+                "instructions": "Form and bake turkey meatballs, serve over pasta with sauce",
+                "prep_time": 35
+            },
+            "snack": {
+                "name": "Greek Yogurt Protein Bowl",
+                "ingredients": {
+                    "greek yogurt": (250, 148, 25, 10, 1),
+                    "whey protein": (15, 60, 12, 2, 0),
+                    "almonds": (20, 116, 4, 4, 10),
+                },
+                "instructions": "Mix protein into yogurt, top with almonds",
+                "prep_time": 5
+            }
+        },
+        "day3": {
+            "breakfast": {
+                "name": "Cottage Cheese Pancakes",
+                "ingredients": {
+                    "cottage cheese": (200, 168, 22, 8, 5),
+                    "eggs": (100, 144, 12, 1, 10),
+                    "oats": (30, 113, 4, 20, 2),
+                    "berries": (80, 36, 1, 9, 0),
+                },
+                "instructions": "Blend cottage cheese with eggs and oats, cook as pancakes, top with berries",
+                "prep_time": 20
+            },
+            "lunch": {
+                "name": "Salmon Power Bowl",
+                "ingredients": {
+                    "salmon": (200, 416, 40, 0, 26),
+                    "brown rice": (150, 168, 4, 36, 1),
+                    "edamame": (80, 100, 9, 8, 4),
+                    "cucumber": (60, 9, 0, 2, 0),
+                },
+                "instructions": "Bake salmon, serve over rice with edamame and cucumber",
+                "prep_time": 25
+            },
+            "dinner": {
+                "name": "Chicken & Egg Fried Rice",
+                "ingredients": {
+                    "chicken breast": (180, 297, 56, 0, 6),
+                    "eggs": (100, 144, 12, 1, 10),
+                    "brown rice": (200, 224, 5, 48, 2),
+                    "vegetables": (100, 30, 2, 6, 0),
+                    "soy sauce": (10, 6, 1, 1, 0),
+                },
+                "instructions": "Stir fry chicken and eggs with rice and vegetables",
+                "prep_time": 25
+            },
+            "snack": {
+                "name": "Protein Cottage Cheese",
+                "ingredients": {
+                    "cottage cheese": (200, 168, 22, 8, 5),
+                    "pineapple": (100, 50, 1, 13, 0),
+                },
+                "instructions": "Top cottage cheese with pineapple chunks",
+                "prep_time": 3
+            }
+        }
+    }
+    
+    # ===== BALANCED / WHOLE FOODS TEMPLATES =====
+    BALANCED_TEMPLATES = {
         "day1": {
             "breakfast": {
                 "name": "Oatmeal Power Bowl",
@@ -1531,7 +2361,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
             "breakfast": {
                 "name": "Scrambled Eggs with Toast",
                 "ingredients": {
-                    "egg": (150, 216, 18, 1, 15),  # 3 eggs
+                    "egg": (150, 216, 18, 1, 15),
                     "whole wheat bread": (60, 162, 8, 28, 2),
                     "butter": (10, 72, 0, 0, 8),
                     "orange": (150, 71, 1, 18, 0),
@@ -1619,6 +2449,29 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         }
     }
     
+    # Select templates based on eating style
+    if eating_style in ['keto']:
+        MEAL_TEMPLATES = KETO_TEMPLATES
+        plan_name = "Keto"
+    elif eating_style in ['carnivore']:
+        MEAL_TEMPLATES = CARNIVORE_TEMPLATES
+        plan_name = "Carnivore"
+    elif eating_style in ['paleo']:
+        MEAL_TEMPLATES = PALEO_TEMPLATES
+        plan_name = "Paleo"
+    elif eating_style in ['vegan']:
+        MEAL_TEMPLATES = VEGAN_TEMPLATES
+        plan_name = "Vegan"
+    elif eating_style in ['vegetarian']:
+        MEAL_TEMPLATES = VEGETARIAN_TEMPLATES
+        plan_name = "Vegetarian"
+    elif eating_style in ['high_protein']:
+        MEAL_TEMPLATES = HIGH_PROTEIN_TEMPLATES
+        plan_name = "High Protein"
+    else:  # balanced, whole_foods, none, or any other
+        MEAL_TEMPLATES = BALANCED_TEMPLATES
+        plan_name = "Balanced"
+    
     # Calculate base totals for template (before scaling)
     def calc_day_totals(day_template):
         totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
@@ -1630,8 +2483,8 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
                 totals["fats"] += fat
         return totals
     
-    # Scale a day's meals to hit target macros
-    def scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat):
+    # Scale a day's meals to hit target calories
+    def scale_day_to_targets(day_template, target_cal):
         base = calc_day_totals(day_template)
         
         # Calculate scale factor based on calories (primary constraint)
@@ -1684,7 +2537,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     meal_days = []
     for day_num, day_key in enumerate(["day1", "day2", "day3"], 1):
         day_template = MEAL_TEMPLATES[day_key]
-        scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat)
+        scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal)
         
         # Update meal IDs for the day
         for i, meal in enumerate(scaled_meals):
@@ -1704,12 +2557,13 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     try:
         meal_plan = MealPlan(
             user_id=request.user_id,
-            name=f"{request.food_preferences.replace('_', ' ').title()} 3-Day Meal Plan",
+            name=f"{plan_name} 3-Day Meal Plan",
             food_preferences=request.food_preferences,
+            preferred_foods=request.preferred_foods,
+            foods_to_avoid=request.foods_to_avoid,
             supplements=request.supplements,
             supplements_custom=request.supplements_custom,
             allergies=request.allergies,
-            cuisine_preference=request.cuisine_preference,
             target_calories=target_cal,
             target_protein=target_pro,
             target_carbs=target_carb,
@@ -1723,6 +2577,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     except Exception as e:
         logger.error(f"Meal plan generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate meal plan: {str(e)}")
+
 @api_router.get("/mealplans/{user_id}", response_model=List[MealPlan])
 async def get_user_meal_plans(user_id: str):
     """Get all meal plans for a user"""

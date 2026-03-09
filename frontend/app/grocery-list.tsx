@@ -14,51 +14,118 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 
-interface GroceryList {
-  meal_plan_id: string;
-  days_covered: number;
-  total_items: number;
-  grocery_list: { [category: string]: string[] };
+interface MealPlan {
+  id: string;
+  name: string;
+  meal_days: {
+    day: string;
+    meals: {
+      id: string;
+      name: string;
+      meal_type: string;
+      ingredients: string[];
+      calories: number;
+      protein: number;
+    }[];
+  }[];
 }
 
-const categoryIcons: { [key: string]: string } = {
-  'Proteins': 'fish',
-  'Produce': 'leaf',
-  'Dairy & Eggs': 'water',
-  'Grains & Bread': 'nutrition',
-  'Pantry Items': 'cube',
-  'Frozen': 'snow',
-  'Other': 'ellipsis-horizontal',
-};
+interface SelectedMeal {
+  dayIndex: number;
+  mealIndex: number;
+  quantity: number;
+}
 
 export default function GroceryListScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const mealPlanId = params.mealPlanId as string;
+  
   const [loading, setLoading] = useState(true);
-  const [groceryData, setGroceryData] = useState<GroceryList | null>(null);
+  const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
+  const [selectedMeals, setSelectedMeals] = useState<Map<string, SelectedMeal>>(new Map());
+  const [groceryList, setGroceryList] = useState<Map<string, number>>(new Map());
+  const [showGroceryList, setShowGroceryList] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
-  const [selectedDays, setSelectedDays] = useState(7);
 
   useEffect(() => {
     if (mealPlanId) {
-      loadGroceryList();
+      loadMealPlan();
     }
-  }, [mealPlanId, selectedDays]);
+  }, [mealPlanId]);
 
-  const loadGroceryList = async () => {
+  const loadMealPlan = async () => {
     setLoading(true);
     try {
-      const response = await api.get(`/mealplan/${mealPlanId}/grocery-list?days=${selectedDays}`);
-      setGroceryData(response.data);
+      const response = await api.get(`/mealplan/${mealPlanId}`);
+      setMealPlan(response.data);
     } catch (error) {
-      console.error('Failed to load grocery list:', error);
+      console.error('Failed to load meal plan:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleItem = (item: string) => {
+  const getMealKey = (dayIndex: number, mealIndex: number) => `${dayIndex}-${mealIndex}`;
+
+  const toggleMealSelection = (dayIndex: number, mealIndex: number) => {
+    const key = getMealKey(dayIndex, mealIndex);
+    const newSelected = new Map(selectedMeals);
+    
+    if (newSelected.has(key)) {
+      newSelected.delete(key);
+    } else {
+      newSelected.set(key, { dayIndex, mealIndex, quantity: 1 });
+    }
+    
+    setSelectedMeals(newSelected);
+  };
+
+  const updateMealQuantity = (dayIndex: number, mealIndex: number, delta: number) => {
+    const key = getMealKey(dayIndex, mealIndex);
+    const newSelected = new Map(selectedMeals);
+    const current = newSelected.get(key);
+    
+    if (current) {
+      const newQty = Math.max(1, Math.min(10, current.quantity + delta));
+      newSelected.set(key, { ...current, quantity: newQty });
+      setSelectedMeals(newSelected);
+    }
+  };
+
+  const generateGroceryList = () => {
+    if (!mealPlan) return;
+    
+    const ingredients = new Map<string, number>();
+    
+    selectedMeals.forEach((selection) => {
+      const { dayIndex, mealIndex, quantity } = selection;
+      const meal = mealPlan.meal_days[dayIndex]?.meals[mealIndex];
+      
+      if (meal) {
+        meal.ingredients.forEach((ing) => {
+          // Parse ingredient to extract quantity and name
+          const match = ing.match(/^(\d+)g?\s+(.+)$/);
+          if (match) {
+            const amount = parseInt(match[1]) * quantity;
+            const name = match[2].trim();
+            const existing = ingredients.get(name) || 0;
+            ingredients.set(name, existing + amount);
+          } else {
+            // If no quantity found, just add the ingredient
+            const existing = ingredients.get(ing) || 0;
+            ingredients.set(ing, existing + quantity);
+          }
+        });
+      }
+    });
+    
+    setGroceryList(ingredients);
+    setShowGroceryList(true);
+    setCheckedItems(new Set());
+  };
+
+  const toggleCheckItem = (item: string) => {
     const newChecked = new Set(checkedItems);
     if (newChecked.has(item)) {
       newChecked.delete(item);
@@ -69,17 +136,11 @@ export default function GroceryListScreen() {
   };
 
   const shareList = async () => {
-    if (!groceryData) return;
+    let listText = `🛒 Grocery List\n\n`;
     
-    let listText = `🛒 Grocery List (${groceryData.days_covered} days)\n\n`;
-    
-    Object.entries(groceryData.grocery_list).forEach(([category, items]) => {
-      listText += `📦 ${category}\n`;
-      items.forEach(item => {
-        const checked = checkedItems.has(item);
-        listText += `${checked ? '✅' : '○'} ${item}\n`;
-      });
-      listText += '\n';
+    groceryList.forEach((amount, item) => {
+      const checked = checkedItems.has(item);
+      listText += `${checked ? '✅' : '○'} ${amount}g ${item}\n`;
     });
     
     listText += `\nGenerated by InterFitAI`;
@@ -94,14 +155,10 @@ export default function GroceryListScreen() {
     }
   };
 
-  const getTotalChecked = () => {
-    if (!groceryData) return 0;
+  const getTotalSelected = () => selectedMeals.size;
+  const getTotalServings = () => {
     let total = 0;
-    Object.values(groceryData.grocery_list).forEach(items => {
-      items.forEach(item => {
-        if (checkedItems.has(item)) total++;
-      });
-    });
+    selectedMeals.forEach((m) => total += m.quantity);
     return total;
   };
 
@@ -110,13 +167,13 @@ export default function GroceryListScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Generating grocery list...</Text>
+          <Text style={styles.loadingText}>Loading meal plan...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  if (!groceryData) {
+  if (!mealPlan) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
@@ -128,99 +185,165 @@ export default function GroceryListScreen() {
         </View>
         <View style={styles.emptyContainer}>
           <Ionicons name="cart-outline" size={64} color={colors.textMuted} />
-          <Text style={styles.emptyText}>Unable to generate grocery list</Text>
+          <Text style={styles.emptyText}>Unable to load meal plan</Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  // Show grocery list view
+  if (showGroceryList) {
+    const totalItems = groceryList.size;
+    const checkedCount = checkedItems.size;
+    
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => setShowGroceryList(false)} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Grocery List</Text>
+          <TouchableOpacity onPress={shareList} style={styles.shareBtn}>
+            <Ionicons name="share-outline" size={24} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Progress */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressInfo}>
+            <Text style={styles.progressText}>{checkedCount} of {totalItems} items</Text>
+            <Text style={styles.progressPercent}>
+              {totalItems > 0 ? Math.round((checkedCount / totalItems) * 100) : 0}%
+            </Text>
+          </View>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${totalItems > 0 ? (checkedCount / totalItems) * 100 : 0}%` }]} />
+          </View>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.groceryScrollContent}>
+          <View style={styles.selectedSummary}>
+            <Text style={styles.summaryLabel}>
+              {getTotalSelected()} meals selected • {getTotalServings()} servings
+            </Text>
+          </View>
+          
+          {Array.from(groceryList.entries()).map(([item, amount]) => (
+            <TouchableOpacity
+              key={item}
+              style={styles.groceryItem}
+              onPress={() => toggleCheckItem(item)}
+            >
+              <View style={[styles.checkbox, checkedItems.has(item) && styles.checkboxChecked]}>
+                {checkedItems.has(item) && (
+                  <Ionicons name="checkmark" size={16} color="#000" />
+                )}
+              </View>
+              <Text style={[styles.groceryItemText, checkedItems.has(item) && styles.groceryItemChecked]}>
+                {amount}g {item}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          
+          <View style={styles.tipContainer}>
+            <Ionicons name="information-circle" size={20} color={colors.textMuted} />
+            <Text style={styles.tipText}>Tap items to check them off as you shop</Text>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Show meal selection view
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>Grocery List</Text>
-        <TouchableOpacity onPress={shareList} style={styles.shareBtn}>
-          <Ionicons name="share-outline" size={24} color={colors.primary} />
-        </TouchableOpacity>
+        <Text style={styles.title}>Select Meals</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* Day Selector */}
-      <View style={styles.daySelector}>
-        {[3, 5, 7].map(days => (
-          <TouchableOpacity
-            key={days}
-            style={[styles.dayOption, selectedDays === days && styles.dayOptionActive]}
-            onPress={() => setSelectedDays(days)}
-          >
-            <Text style={[styles.dayOptionText, selectedDays === days && styles.dayOptionTextActive]}>
-              {days} Days
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.instructionBanner}>
+        <Ionicons name="cart" size={20} color={colors.primary} />
+        <Text style={styles.instructionText}>
+          Select the meals you want to shop for
+        </Text>
       </View>
 
-      {/* Progress Bar */}
-      <View style={styles.progressContainer}>
-        <View style={styles.progressInfo}>
-          <Text style={styles.progressText}>
-            {getTotalChecked()} of {groceryData.total_items} items
-          </Text>
-          <Text style={styles.progressPercent}>
-            {Math.round((getTotalChecked() / groceryData.total_items) * 100)}%
-          </Text>
-        </View>
-        <View style={styles.progressBar}>
-          <View 
-            style={[
-              styles.progressFill, 
-              { width: `${(getTotalChecked() / groceryData.total_items) * 100}%` }
-            ]} 
-          />
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {Object.entries(groceryData.grocery_list).map(([category, items]) => (
-          <View key={category} style={styles.categorySection}>
-            <View style={styles.categoryHeader}>
-              <View style={styles.categoryIconWrap}>
-                <Ionicons 
-                  name={(categoryIcons[category] || 'ellipsis-horizontal') as any} 
-                  size={20} 
-                  color={colors.primary} 
-                />
-              </View>
-              <Text style={styles.categoryTitle}>{category}</Text>
-              <Text style={styles.categoryCount}>{items.length}</Text>
-            </View>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {mealPlan.meal_days.map((day, dayIndex) => (
+          <View key={day.day} style={styles.daySection}>
+            <Text style={styles.dayTitle}>{day.day}</Text>
             
-            {items.map((item, index) => (
-              <TouchableOpacity
-                key={`${category}-${index}`}
-                style={styles.itemRow}
-                onPress={() => toggleItem(item)}
-              >
-                <View style={[styles.checkbox, checkedItems.has(item) && styles.checkboxChecked]}>
-                  {checkedItems.has(item) && (
-                    <Ionicons name="checkmark" size={16} color="#fff" />
+            {day.meals.map((meal, mealIndex) => {
+              const key = getMealKey(dayIndex, mealIndex);
+              const isSelected = selectedMeals.has(key);
+              const selection = selectedMeals.get(key);
+              
+              return (
+                <View key={meal.id} style={[styles.mealCard, isSelected && styles.mealCardSelected]}>
+                  <TouchableOpacity 
+                    style={styles.mealHeader}
+                    onPress={() => toggleMealSelection(dayIndex, mealIndex)}
+                  >
+                    <View style={[styles.mealCheckbox, isSelected && styles.mealCheckboxSelected]}>
+                      {isSelected && <Ionicons name="checkmark" size={16} color="#000" />}
+                    </View>
+                    <View style={styles.mealInfo}>
+                      <Text style={styles.mealType}>{meal.meal_type.toUpperCase()}</Text>
+                      <Text style={styles.mealName}>{meal.name}</Text>
+                      <Text style={styles.mealMacros}>
+                        {meal.calories} cal • {meal.protein}g protein
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                  
+                  {isSelected && (
+                    <View style={styles.quantityRow}>
+                      <Text style={styles.quantityLabel}>Servings:</Text>
+                      <View style={styles.quantityControls}>
+                        <TouchableOpacity 
+                          style={styles.quantityBtn}
+                          onPress={() => updateMealQuantity(dayIndex, mealIndex, -1)}
+                        >
+                          <Ionicons name="remove" size={20} color={colors.text} />
+                        </TouchableOpacity>
+                        <Text style={styles.quantityValue}>{selection?.quantity || 1}x</Text>
+                        <TouchableOpacity 
+                          style={styles.quantityBtn}
+                          onPress={() => updateMealQuantity(dayIndex, mealIndex, 1)}
+                        >
+                          <Ionicons name="add" size={20} color={colors.text} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                   )}
                 </View>
-                <Text style={[styles.itemText, checkedItems.has(item) && styles.itemTextChecked]}>
-                  {item}
-                </Text>
-              </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
         ))}
-        
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Tap items to check them off as you shop
-          </Text>
-        </View>
       </ScrollView>
+
+      {/* Footer with Generate Button */}
+      <View style={styles.footer}>
+        <View style={styles.selectionInfo}>
+          <Text style={styles.selectionCount}>{getTotalSelected()} meals</Text>
+          <Text style={styles.selectionServings}>{getTotalServings()} servings total</Text>
+        </View>
+        <TouchableOpacity 
+          style={[styles.generateBtn, getTotalSelected() === 0 && styles.generateBtnDisabled]}
+          onPress={generateGroceryList}
+          disabled={getTotalSelected() === 0}
+        >
+          <Ionicons name="cart" size={20} color={getTotalSelected() === 0 ? colors.textMuted : '#000'} />
+          <Text style={[styles.generateBtnText, getTotalSelected() === 0 && styles.generateBtnTextDisabled]}>
+            Generate List
+          </Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -268,30 +391,180 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  daySelector: {
+  instructionBanner: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 10,
+    alignItems: 'center',
+    backgroundColor: colors.primary + '15',
+    marginHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     marginBottom: 16,
+    gap: 10,
   },
-  dayOption: {
+  instructionText: {
+    fontSize: 14,
+    color: colors.text,
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 120,
+  },
+  daySection: {
+    marginBottom: 24,
+  },
+  dayTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  mealCard: {
     backgroundColor: colors.surface,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    overflow: 'hidden',
+  },
+  mealCardSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '08',
+  },
+  mealHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+  },
+  mealCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.border,
+    marginRight: 12,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  dayOptionActive: {
+  mealCheckboxSelected: {
     backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
-  dayOptionText: {
-    fontSize: 14,
+  mealInfo: {
+    flex: 1,
+  },
+  mealType: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  mealName: {
+    fontSize: 15,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.text,
+    marginBottom: 2,
   },
-  dayOptionTextActive: {
+  mealMacros: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  quantityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: colors.primary + '10',
+    borderTopWidth: 1,
+    borderTopColor: colors.primary + '20',
+  },
+  quantityLabel: {
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  quantityControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  quantityBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quantityValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.primary,
+    minWidth: 30,
+    textAlign: 'center',
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: 16,
+  },
+  selectionInfo: {
+    flex: 1,
+  },
+  selectionCount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  selectionServings: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  generateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    gap: 8,
+  },
+  generateBtnDisabled: {
+    backgroundColor: colors.surface,
+  },
+  generateBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
     color: '#000',
   },
+  generateBtnTextDisabled: {
+    color: colors.textMuted,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.textMuted,
+  },
+  // Grocery list styles
   progressContainer: {
     paddingHorizontal: 20,
     marginBottom: 16,
@@ -321,49 +594,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: 4,
   },
-  scrollContent: {
+  groceryScrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  categorySection: {
-    marginBottom: 24,
-  },
-  categoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  categoryIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.primary + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  categoryTitle: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  categoryCount: {
-    fontSize: 14,
-    color: colors.textMuted,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  selectedSummary: {
+    backgroundColor: colors.primary + '15',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: 10,
+    marginBottom: 16,
   },
-  itemRow: {
+  summaryLabel: {
+    fontSize: 14,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  groceryItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     backgroundColor: colors.surface,
     borderRadius: 10,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   checkbox: {
     width: 24,
@@ -379,30 +633,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
-  itemText: {
+  groceryItemText: {
     flex: 1,
     fontSize: 15,
     color: colors.text,
   },
-  itemTextChecked: {
+  groceryItemChecked: {
     textDecorationLine: 'line-through',
     color: colors.textMuted,
   },
-  emptyContainer: {
-    flex: 1,
+  tipContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: colors.textMuted,
-  },
-  footer: {
-    alignItems: 'center',
     paddingVertical: 20,
+    gap: 8,
   },
-  footerText: {
+  tipText: {
     fontSize: 13,
     color: colors.textMuted,
   },

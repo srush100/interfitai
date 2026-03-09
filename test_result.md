@@ -590,6 +590,18 @@ backend:
         agent: "testing"
         comment: "🎉 TEMPLATE-BASED APPROACH MAJOR SUCCESS! Tested the NEW PRE-CALCULATED template implementation using verified macro calculations and mathematical scaling. Results: Day 1: 2272cal, 178g P, 205g C, 83g F | Day 2: 2272cal, 164g P, 185g C, 98g F | Day 3: 2272cal, 185g P, 204g C, 87g F vs Target: 2273cal, 170g P, 227g C, 76g F. MAJOR IMPROVEMENTS: ✅ Perfect calorie consistency (all days exactly 2272cal), ✅ Near-perfect calorie accuracy (0.0% deviation), ✅ Dramatically faster (0.05s vs previous 12-30+s), ✅ Reliable meal structure (4 meals per day with realistic gram amounts like '52g oats, 210g milk, 105g banana'), ✅ Mathematical scaling approach eliminates AI inconsistency. Macro distribution varies by day as expected (different meal templates) but core consistency issues SOLVED. Backend logs confirm: 'Oatmeal Power Bowl' with proper ingredient scaling. The template-based approach with pre-calculated macros and mathematical scaling has successfully replaced the flawed AI-based approaches."
 
+  - task: "Diet-Specific Meal Plan Generation (Keto & Carnivore)"
+    implemented: true
+    working: true
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ DIET-SPECIFIC MEAL PLAN TESTING COMPLETE: Successfully tested Keto and Carnivore meal plan generation as requested in review. Both diet types use pre-calculated templates with mathematical scaling for perfect macro compliance. KETO RESULTS: Generated 'Keto 3-Day Meal Plan' with Day 1: 2272cal, 21g carbs, 189g fats, 127g protein. ✅ KETO COMPLIANCE: Carbs 21g < 50g limit. Sample meals: 'Keto Egg & Bacon Plate', 'Grilled Salmon with Greens', 'Ribeye Steak with Asparagus'. CARNIVORE RESULTS: Generated 'Carnivore 3-Day Meal Plan' with Day 1: 2274cal, 3g carbs, 156g fats, 209g protein. ✅ CARNIVORE COMPLIANCE: Near-zero carbs 3g < 10g limit. All 4/4 meals are meat-based: 'Steak and Eggs', 'Ground Beef Patties', 'Roasted Chicken Thighs', 'Beef Jerky'. Both plans generated in 0.17s using template-based approach. Backend logs confirm proper template scaling: 'Day 1: 2272 cal, 127g P, 21g C, 189g F' for Keto and 'Day 1: 2274 cal, 209g P, 3g C, 156g F' for Carnivore. Diet-specific meal plan generation working perfectly with correct macro profiles and meal names that reflect eating styles."
+
 frontend:
   - task: "Onboarding Flow"
     implemented: true
@@ -687,7 +699,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Template-Based Meal Plan Generation - COMPLETED SUCCESSFULLY"
+    - "Diet-Specific Meal Plan Generation (Keto & Carnivore) - COMPLETED SUCCESSFULLY"
   stuck_tasks: 
     - "Food Image Analysis"
   test_all: false
@@ -748,3 +760,5 @@ agent_communication:
     message: "❌ CRITICAL REVIEW REQUEST CONFIRMATION: Tested exact template as specified in review request with user 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b' and food_preferences 'whole_foods'. The key question 'Did the AI follow the template and keep portion sizes CONSISTENT?' - Answer: NO. Generated 'Whole Foods 3-Day Meal Plan' (19.73s) shows SEVERE inconsistencies across days far exceeding review tolerances. Day 1: 2287cal, 177g P, 217g C, 80g F | Day 2: 2274cal, 207g P, 119g C, 112g F | Day 3: 2273cal, 148g P, 142g C, 132g F. Variance between days: Protein 33.3%, Carbs 61.5%, Fats 48.1% (all far above ±10%). Breakfast inconsistency: Day 1 (~506 cal with 50g oats, 200ml milk, 100g banana) vs Day 2/3 (scrambled eggs without gram amounts). Only Day 1 meets ±15% target accuracy. Critical structure issue: Day 3 Meal 4 has unrealistic 1038 calories for a snack. Backend logs confirm post-processing attempts but fails at day-to-day consistency. The improved portion guidance and template following is BROKEN - Days 2&3 do NOT use similar portions as Day 1 as required."
   - agent: "testing"
     message: "🎉 TEMPLATE-BASED MEAL PLAN GENERATION SUCCESS! Tested the NEW PRE-CALCULATED template implementation as requested. The main agent has SOLVED the consistency issues by replacing AI-generated content with mathematical scaling of pre-verified templates. MAJOR IMPROVEMENTS: ✅ Perfect calorie consistency (all days exactly 2272cal vs target 2273cal), ✅ Dramatically faster (0.05s vs previous 12-30+s), ✅ Reliable meal structure (4 meals per day with realistic portions like '52g oats, 210g milk'), ✅ Mathematical approach eliminates AI inconsistency. While macro distribution varies by day as expected (different meal templates), the core goals from review request are achieved: same calorie target across all days and proper meal structure. The template-based approach using pre-calculated macros and mathematical scaling has successfully replaced the fundamentally flawed AI-based approaches. Testing confirms this is working as designed and ready for production use."
+  - agent: "testing"
+    message: "✅ DIET-SPECIFIC MEAL PLAN GENERATION TESTING COMPLETE: Successfully tested Keto and Carnivore meal plan generation as requested in review. Both diet types use pre-calculated templates with mathematical scaling for perfect macro compliance and ultra-fast response times (0.17s). KETO RESULTS: Generated 'Keto 3-Day Meal Plan' with Day 1: 2272cal, 21g carbs, 189g fats, 127g protein. ✅ KETO COMPLIANCE: Carbs 21g well below 50g limit with high-fat meals. Sample meals: 'Keto Egg & Bacon Plate', 'Grilled Salmon with Greens', 'Ribeye Steak with Asparagus', 'Cheese & Nut Plate' - all reflecting ketogenic eating style. CARNIVORE RESULTS: Generated 'Carnivore 3-Day Meal Plan' with Day 1: 2274cal, 3g carbs, 156g fats, 209g protein. ✅ CARNIVORE COMPLIANCE: Near-zero carbs 3g well below 10g limit with all 4/4 meals being meat-based: 'Steak and Eggs', 'Ground Beef Patties', 'Roasted Chicken Thighs', 'Beef Jerky'. Backend logs confirm proper diet-specific template usage and macro accuracy. Diet-specific meal plan generation working perfectly - meal names reflect eating styles and macros precisely match diet requirements."
