@@ -673,11 +673,15 @@ frontend:
 
   - task: "Nutrition Screen"
     implemented: true
-    working: NA
+    working: true
     file: "app/(tabs)/nutrition.tsx"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Nutrition Screen working perfectly! UI displays correctly with proper navigation tabs, 'Create Meal Plan' button is visible and functional, 'Snap Food' and 'Search Food' quick actions work. The screen layout is mobile-responsive and matches the mobile-first design. The Create Meal Plan card with dashed border is prominent and clickable. Navigation to meal questionnaire works correctly. The issue is not with the Nutrition screen itself but with the meal plan generation process in the questionnaire."
 
   - task: "Ask AI Screen"
     implemented: true
@@ -705,11 +709,15 @@ frontend:
 
   - task: "Meal Questionnaire"
     implemented: true
-    working: NA
+    working: false
     file: "app/meal-questionnaire.tsx"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL ISSUE: Meal plan questionnaire frontend is implemented correctly with proper 4-step flow (eating style, preferred foods, foods to avoid, allergies) and UI works perfectly. However, the 'Generate Plan' button click does not trigger any API calls to the backend. Network monitoring shows 0 requests made when clicking generate. This suggests either: 1) User profile not properly created with required calculated_macros, 2) Missing user ID in userStore, or 3) Subscription check failing silently. The handleGenerate function requires profile?.id and profile?.calculated_macros to proceed. UI/UX is fully functional but backend integration is broken."
 
   - task: "Food Log Screen"
     implemented: true
@@ -735,7 +743,8 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Food Image Analysis"
+    - "Meal Questionnaire"
+    - "Nutrition Screen"
   stuck_tasks: 
     - "Food Image Analysis"
   test_all: false
