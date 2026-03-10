@@ -2586,11 +2586,18 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
             
             meal_data = json.loads(content)
             
-            # Ingredient database for accurate macro calculation (per 100g unless noted)
+            # Ingredient database for accurate macro calculation (per 100g)
+            # Format: (calories, protein, carbs, fat)
             INGREDIENT_MACROS = {
-                # Proteins
+                # Proteins - Poultry
                 "chicken breast": (165, 31, 0, 3.6),
+                "chicken": (165, 31, 0, 3.6),  # default to breast
                 "chicken thigh": (209, 26, 0, 11),
+                "chicken thighs": (209, 26, 0, 11),
+                "turkey breast": (135, 30, 0, 1),
+                "turkey": (170, 21, 0, 9),
+                "ground turkey": (170, 21, 0, 9),
+                # Proteins - Beef
                 "sirloin steak": (180, 26, 0, 8),
                 "sirloin": (180, 26, 0, 8),
                 "ribeye steak": (250, 25, 0, 17),
@@ -2600,101 +2607,267 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
                 "steak": (180, 26, 0, 8),  # default to sirloin
                 "ground beef": (250, 26, 0, 17),
                 "beef mince": (250, 26, 0, 17),
+                "beef": (180, 26, 0, 8),
                 "extra lean beef": (175, 26, 0, 7),
                 "lean beef": (175, 26, 0, 7),
+                # Proteins - Fish/Seafood
                 "salmon": (208, 20, 0, 13),
                 "tilapia": (128, 26, 0, 2.7),
                 "tuna": (116, 26, 0, 0.8),
                 "shrimp": (99, 24, 0, 0.3),
+                "cod": (82, 18, 0, 0.7),
+                "fish": (100, 20, 0, 2),  # generic fish
+                # Proteins - Eggs/Dairy
                 "egg": (155, 13, 1.1, 11),  # per 100g (about 2 eggs)
                 "eggs": (155, 13, 1.1, 11),
+                "whole eggs": (155, 13, 1.1, 11),
+                "large eggs": (155, 13, 1.1, 11),
                 "egg white": (52, 11, 0.7, 0.2),
+                "egg whites": (52, 11, 0.7, 0.2),
                 "greek yogurt": (59, 10, 4, 0.4),
+                "yogurt": (59, 10, 4, 0.4),
                 "cottage cheese": (84, 11, 4, 2.5),
+                # Proteins - Other
                 "tofu": (144, 17, 3, 8),
-                "turkey": (170, 21, 0, 9),
-                "turkey breast": (135, 30, 0, 1),
+                "tempeh": (192, 20, 8, 11),
                 "pork": (242, 27, 0, 14),
+                "pork chop": (231, 27, 0, 13),
                 "bacon": (417, 13, 1.4, 40),
-                # Carbs
+                "ham": (145, 21, 1, 6),
+                # Carbs - Grains
                 "rice": (130, 2.7, 28, 0.3),
                 "white rice": (130, 2.7, 28, 0.3),
                 "brown rice": (112, 2.6, 24, 0.9),
-                "sweet potato": (86, 1.6, 20, 0.1),
-                "potato": (77, 2, 17, 0.1),
-                "potatoes": (77, 2, 17, 0.1),
                 "oats": (389, 17, 66, 7),
                 "oatmeal": (68, 2.4, 12, 1.4),
                 "quinoa": (120, 4.4, 21, 1.9),
                 "pasta": (131, 5, 25, 1.1),
+                "whole wheat pasta": (131, 5, 25, 1.1),
                 "bread": (265, 9, 49, 3.2),
+                "whole wheat bread": (247, 10, 41, 3.4),
+                "wrap": (310, 8, 52, 8),
+                "whole wheat wrap": (310, 8, 52, 8),
+                "tortilla": (312, 8, 52, 8),
+                # Carbs - Starchy Vegetables
+                "sweet potato": (86, 1.6, 20, 0.1),
+                "potato": (77, 2, 17, 0.1),
+                "potatoes": (77, 2, 17, 0.1),
+                "corn": (86, 3.2, 19, 1.2),
+                # Carbs - Fruits
                 "banana": (89, 1.1, 23, 0.3),
+                "bananas": (89, 1.1, 23, 0.3),
                 "apple": (52, 0.3, 14, 0.2),
+                "apples": (52, 0.3, 14, 0.2),
                 "berries": (43, 1, 10, 0.3),
+                "mixed berries": (43, 1, 10, 0.3),
                 "orange": (47, 0.9, 12, 0.1),
-                # Vegetables
-                "broccoli": (34, 2.8, 7, 0.4),
+                "oranges": (47, 0.9, 12, 0.1),
+                "grapes": (67, 0.6, 17, 0.4),
+                "mango": (60, 0.8, 15, 0.4),
+                "pineapple": (50, 0.5, 13, 0.1),
+                # Vegetables - Leafy Greens
                 "spinach": (23, 2.9, 3.6, 0.4),
+                "kale": (49, 4.3, 9, 0.9),
+                "lettuce": (15, 1.4, 2.9, 0.2),
+                "greens": (20, 2, 3.5, 0.3),  # generic greens
+                "mixed greens": (20, 2, 3.5, 0.3),
+                "salad greens": (20, 2, 3.5, 0.3),
+                "romaine": (17, 1.2, 3.3, 0.3),
+                "arugula": (25, 2.6, 3.7, 0.7),
+                # Vegetables - Cruciferous
+                "broccoli": (34, 2.8, 7, 0.4),
+                "cauliflower": (25, 1.9, 5, 0.3),
+                "cabbage": (25, 1.3, 6, 0.1),
+                "brussels sprouts": (43, 3.4, 9, 0.3),
+                # Vegetables - Other
                 "asparagus": (20, 2.2, 4, 0.1),
                 "zucchini": (17, 1.2, 3.1, 0.3),
                 "bell pepper": (31, 1, 6, 0.3),
+                "pepper": (31, 1, 6, 0.3),
+                "peppers": (31, 1, 6, 0.3),
                 "tomato": (18, 0.9, 3.9, 0.2),
-                "lettuce": (15, 1.4, 2.9, 0.2),
+                "tomatoes": (18, 0.9, 3.9, 0.2),
+                "cherry tomatoes": (18, 0.9, 3.9, 0.2),
                 "cucumber": (15, 0.7, 3.6, 0.1),
                 "carrots": (41, 0.9, 10, 0.2),
+                "carrot": (41, 0.9, 10, 0.2),
                 "onion": (40, 1.1, 9, 0.1),
+                "onions": (40, 1.1, 9, 0.1),
                 "mushroom": (22, 3.1, 3.3, 0.3),
-                "kale": (49, 4.3, 9, 0.9),
+                "mushrooms": (22, 3.1, 3.3, 0.3),
                 "avocado": (160, 2, 9, 15),
-                # Fats/oils
+                "celery": (16, 0.7, 3, 0.2),
+                "green beans": (31, 1.8, 7, 0.1),
+                "peas": (81, 5.4, 14, 0.4),
+                "mixed vegetables": (50, 2.5, 10, 0.3),
+                "vegetables": (50, 2.5, 10, 0.3),
+                # Fats/Oils
                 "olive oil": (884, 0, 0, 100),
+                "coconut oil": (862, 0, 0, 100),
+                "vegetable oil": (884, 0, 0, 100),
                 "butter": (717, 0.9, 0.1, 81),
+                # Nuts and Seeds
                 "almond": (579, 21, 22, 50),
                 "almonds": (579, 21, 22, 50),
                 "peanut butter": (588, 25, 20, 50),
+                "almond butter": (614, 21, 19, 56),
                 "walnut": (654, 15, 14, 65),
                 "walnuts": (654, 15, 14, 65),
-                "cheese": (403, 25, 1.3, 33),
+                "cashews": (553, 18, 30, 44),
+                "peanuts": (567, 26, 16, 49),
+                "seeds": (534, 18, 23, 45),  # average seeds
+                "chia seeds": (486, 17, 42, 31),
+                "flax seeds": (534, 18, 29, 42),
                 # Dairy
                 "milk": (42, 3.4, 5, 1),
+                "whole milk": (61, 3.2, 4.8, 3.3),
+                "almond milk": (17, 0.6, 1.4, 1.1),
+                "cheese": (403, 25, 1.3, 33),
+                "cheddar": (403, 25, 1.3, 33),
+                "mozzarella": (280, 28, 3, 17),
+                "parmesan": (431, 38, 4, 29),
+                "feta": (264, 14, 4, 21),
+                "cream cheese": (342, 6, 4, 34),
+                # Protein Supplements
                 "whey protein": (400, 80, 10, 3.3),
                 "protein powder": (400, 80, 10, 3.3),
+                "protein": (400, 80, 10, 3.3),
+                # Condiments/Spreads
+                "hummus": (166, 8, 14, 10),
+                "salsa": (36, 2, 8, 0.2),
+                "mayo": (680, 1, 0, 75),
+                "mayonnaise": (680, 1, 0, 75),
+                "mustard": (66, 4, 5, 4),
+                "honey": (304, 0.3, 82, 0),
+                "maple syrup": (260, 0, 67, 0),
+                # Legumes
+                "black beans": (132, 9, 24, 0.5),
+                "chickpeas": (164, 9, 27, 2.6),
+                "lentils": (116, 9, 20, 0.4),
+                "kidney beans": (127, 9, 23, 0.5),
             }
             
             def calculate_ingredient_macros(ingredient_str):
-                """Calculate macros from ingredient string like '250g sweet potato'"""
+                """Calculate macros from ingredient string like '250g sweet potato' or '3 large eggs'"""
                 import re
                 ingredient_str = ingredient_str.lower().strip()
                 
-                # Extract amount and unit
-                match = re.match(r'(\d+(?:\.\d+)?)\s*(g|ml|tbsp|tsp)?\s*(.+)', ingredient_str)
-                if not match:
-                    return None
-                    
-                amount = float(match.group(1))
-                unit = match.group(2) or 'g'
-                food_name = match.group(3).strip()
+                # Standard unit conversions to grams
+                UNIT_TO_GRAMS = {
+                    # Weight units
+                    'g': 1, 'gram': 1, 'grams': 1,
+                    'kg': 1000, 'oz': 28.35, 'lb': 453.6,
+                    # Volume units (approximate)
+                    'ml': 1, 'cup': 240, 'cups': 240,
+                    'tbsp': 14, 'tablespoon': 14, 'tablespoons': 14,
+                    'tsp': 5, 'teaspoon': 5, 'teaspoons': 5,
+                    # Count units for common items
+                    'large': 1, 'medium': 1, 'small': 1,
+                    'whole': 1, 'slice': 1, 'slices': 1,
+                    'piece': 1, 'pieces': 1, 'serving': 1, 'scoop': 1,
+                }
                 
-                # Convert units to grams
-                if unit == 'tbsp':
-                    amount = amount * 14
-                elif unit == 'tsp':
-                    amount = amount * 5
-                elif unit == 'ml':
-                    amount = amount  # assume ml ≈ g for liquids
+                # Weight per item for count-based ingredients (in grams)
+                ITEM_WEIGHTS = {
+                    'egg': 50, 'eggs': 50, 'large egg': 50, 'whole egg': 50,
+                    'banana': 120, 'bananas': 120,
+                    'apple': 180, 'apples': 180,
+                    'orange': 130, 'oranges': 130,
+                    'slice bread': 30, 'slice of bread': 30,
+                    'chicken breast': 175, 'breast': 175,
+                    'steak': 225,
+                }
+                
+                # Try pattern: "food (Xg)" like "chicken breast (200g)"
+                pattern_parens = re.match(r'(.+?)\s*\((\d+(?:\.\d+)?)\s*(g|gram|grams|ml)?\)', ingredient_str)
+                # Try pattern: "Xg food" or "X g food" - REQUIRES a unit
+                pattern_with_unit = re.match(r'(\d+(?:\.\d+)?)\s*(g|gram|grams|kg|oz|lb|ml|cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons)\s+(.+)', ingredient_str)
+                # Try pattern: "X modifier food" (count-based like "3 large eggs", "3 whole eggs")
+                pattern_count_modifier = re.match(r'(\d+(?:\.\d+)?)\s+(large|medium|small|whole|slice|slices|piece|pieces|serving|scoop)\s+(.+)', ingredient_str)
+                # Try pattern: "X food" (count-based like "3 eggs", "2 bananas")
+                pattern_count_simple = re.match(r'(\d+(?:\.\d+)?)\s+([a-z]+.*)', ingredient_str)
+                
+                amount = 0
+                food_name = ""
+                is_count_based = False
+                
+                if pattern_parens:  # "chicken breast (200g)"
+                    food_name = pattern_parens.group(1).strip()
+                    amount = float(pattern_parens.group(2))
+                    unit = pattern_parens.group(3) or 'g'
+                    if unit in UNIT_TO_GRAMS:
+                        amount *= UNIT_TO_GRAMS[unit]
+                elif pattern_with_unit:  # "200g chicken breast"
+                    amount = float(pattern_with_unit.group(1))
+                    unit = pattern_with_unit.group(2)
+                    food_name = pattern_with_unit.group(3).strip()
+                    if unit in UNIT_TO_GRAMS:
+                        amount *= UNIT_TO_GRAMS[unit]
+                elif pattern_count_modifier:  # "3 large eggs" or "3 whole eggs"
+                    amount = float(pattern_count_modifier.group(1))
+                    modifier = pattern_count_modifier.group(2)
+                    food_name = pattern_count_modifier.group(3).strip()
+                    is_count_based = True
+                    # Combine modifier with food name for lookup
+                    food_name = f"{modifier} {food_name}"
+                elif pattern_count_simple:  # "3 eggs"
+                    amount = float(pattern_count_simple.group(1))
+                    food_name = pattern_count_simple.group(2).strip()
+                    is_count_based = True
+                else:
+                    return None
+                
+                # Clean food name
+                food_name = re.sub(r'\s+', ' ', food_name).strip()
+                # Remove common descriptors
+                for desc in ['grilled', 'baked', 'fried', 'steamed', 'roasted', 'boiled', 'cooked', 'raw', 'fresh', 'dried', 'mixed']:
+                    food_name = food_name.replace(desc, '').strip()
                 
                 # Find matching ingredient in database
                 best_match = None
+                best_score = 0
+                
                 for key in INGREDIENT_MACROS.keys():
-                    if key in food_name or food_name in key:
-                        best_match = key
-                        break
-                    # Check for partial word match
-                    if any(word in food_name for word in key.split()):
+                    score = 0
+                    # Exact match
+                    if key == food_name or food_name == key:
+                        score = 100
+                    # Key is in food name (e.g., "egg" in "eggs")
+                    elif key in food_name:
+                        score = 80 - len(food_name) + len(key)
+                    # Food name is in key
+                    elif food_name in key:
+                        score = 70 - len(key) + len(food_name)
+                    else:
+                        # Word-level matching
+                        food_words = set(food_name.split())
+                        key_words = set(key.split())
+                        common = food_words & key_words
+                        if common:
+                            score = len(common) * 30
+                    
+                    if score > best_score:
+                        best_score = score
                         best_match = key
                 
-                if best_match:
+                if best_match and best_score >= 20:
                     cal, pro, carb, fat = INGREDIENT_MACROS[best_match]
+                    
+                    # For count-based ingredients, convert to grams
+                    if is_count_based:
+                        # Check if we have a weight for this item
+                        item_weight = None
+                        for item_key, weight in ITEM_WEIGHTS.items():
+                            if item_key in food_name or food_name in item_key or best_match in item_key or item_key in best_match:
+                                item_weight = weight
+                                break
+                        
+                        if item_weight:
+                            amount = amount * item_weight  # Convert count to grams
+                        else:
+                            # Default assumption for unknown count items
+                            amount = amount * 100  # Assume 100g per item
+                    
                     multiplier = amount / 100  # database is per 100g
                     return {
                         "calories": round(cal * multiplier),
@@ -2703,12 +2876,15 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
                         "fats": round(fat * multiplier, 1)
                     }
                 
+                # If no match found, log it for debugging
+                logger.warning(f"Could not find ingredient match for: '{ingredient_str}' (parsed as: '{food_name}')")
                 return None
             
-            # POST-PROCESSING: Calculate REAL macros from ingredients
+            # POST-PROCESSING: Calculate REAL macros from ingredients, then scale to targets
             for day in meal_data.get("meal_days", []):
                 day_totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
                 
+                # First pass: Calculate actual macros from ingredients
                 for meal in day.get("meals", []):
                     meal_macros = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
                     
@@ -2720,25 +2896,70 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
                             meal_macros["carbs"] += ing_macros["carbs"]
                             meal_macros["fats"] += ing_macros["fats"]
                     
-                    # Update meal with calculated macros
-                    meal["calories"] = round(meal_macros["calories"])
-                    meal["protein"] = round(meal_macros["protein"])
-                    meal["carbs"] = round(meal_macros["carbs"])
-                    meal["fats"] = round(meal_macros["fats"])
+                    # Store raw calculated macros
+                    meal["_raw_calories"] = meal_macros["calories"]
+                    meal["_raw_protein"] = meal_macros["protein"]
+                    meal["_raw_carbs"] = meal_macros["carbs"]
+                    meal["_raw_fats"] = meal_macros["fats"]
+                    day_totals["calories"] += meal_macros["calories"]
+                    day_totals["protein"] += meal_macros["protein"]
+                    day_totals["carbs"] += meal_macros["carbs"]
+                    day_totals["fats"] += meal_macros["fats"]
+                
+                # Calculate scale factor to hit target calories
+                if day_totals["calories"] > 0:
+                    scale_factor = target_cal / day_totals["calories"]
+                    # Limit scale factor to reasonable range (0.7 to 1.5)
+                    scale_factor = max(0.7, min(1.5, scale_factor))
+                else:
+                    scale_factor = 1.0
+                
+                logger.info(f"{day.get('day')}: Raw total {day_totals['calories']} cal, scaling by {scale_factor:.2f}x to hit {target_cal} cal")
+                
+                # Second pass: Scale ingredients and recalculate macros
+                scaled_day_totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
+                
+                for meal in day.get("meals", []):
+                    # Scale ingredients
+                    scaled_ingredients = []
+                    for ing_str in meal.get("ingredients", []):
+                        # Extract amount from ingredient string
+                        import re
+                        match = re.match(r'(\d+(?:\.\d+)?)\s*(g|ml|kg|oz)?\s*(.+)', ing_str.lower())
+                        if match:
+                            amount = float(match.group(1))
+                            unit = match.group(2) or 'g'
+                            food = match.group(3)
+                            new_amount = round(amount * scale_factor)
+                            scaled_ingredients.append(f"{new_amount}{unit} {food}")
+                        else:
+                            scaled_ingredients.append(ing_str)
                     
-                    # Add to day totals
-                    day_totals["calories"] += meal["calories"]
-                    day_totals["protein"] += meal["protein"]
-                    day_totals["carbs"] += meal["carbs"]
-                    day_totals["fats"] += meal["fats"]
+                    meal["ingredients"] = scaled_ingredients
+                    
+                    # Scale macros
+                    raw_cal = meal.pop("_raw_calories", 0)
+                    raw_pro = meal.pop("_raw_protein", 0)
+                    raw_carb = meal.pop("_raw_carbs", 0)
+                    raw_fat = meal.pop("_raw_fats", 0)
+                    
+                    meal["calories"] = round(raw_cal * scale_factor)
+                    meal["protein"] = round(raw_pro * scale_factor)
+                    meal["carbs"] = round(raw_carb * scale_factor)
+                    meal["fats"] = round(raw_fat * scale_factor)
+                    
+                    scaled_day_totals["calories"] += meal["calories"]
+                    scaled_day_totals["protein"] += meal["protein"]
+                    scaled_day_totals["carbs"] += meal["carbs"]
+                    scaled_day_totals["fats"] += meal["fats"]
                 
-                # Update day totals with calculated values
-                day["total_calories"] = day_totals["calories"]
-                day["total_protein"] = round(day_totals["protein"])
-                day["total_carbs"] = round(day_totals["carbs"])
-                day["total_fats"] = round(day_totals["fats"])
+                # Update day totals with scaled values
+                day["total_calories"] = scaled_day_totals["calories"]
+                day["total_protein"] = round(scaled_day_totals["protein"])
+                day["total_carbs"] = round(scaled_day_totals["carbs"])
+                day["total_fats"] = round(scaled_day_totals["fats"])
                 
-                logger.info(f"{day.get('day')}: {day_totals['calories']} cal, {day_totals['protein']}g P, {day_totals['carbs']}g C, {day_totals['fats']}g F (calculated from ingredients)")
+                logger.info(f"{day.get('day')}: Final {scaled_day_totals['calories']} cal, {scaled_day_totals['protein']}g P, {scaled_day_totals['carbs']}g C, {scaled_day_totals['fats']}g F (target: {target_cal}/{target_pro}/{target_carb}/{target_fat})")
             
             meal_plan = MealPlan(
                 user_id=request.user_id,
