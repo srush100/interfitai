@@ -2648,6 +2648,16 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
                 "wrap": (310, 8, 52, 8),
                 "whole wheat wrap": (310, 8, 52, 8),
                 "tortilla": (312, 8, 52, 8),
+                "couscous": (176, 6, 36, 0.3),
+                "cooked couscous": (112, 3.8, 23, 0.2),
+                "bulgur": (83, 3, 19, 0.2),
+                "farro": (170, 7, 34, 1.5),
+                "barley": (123, 2.3, 28, 0.4),
+                "noodles": (138, 5, 25, 2),
+                "ramen": (138, 5, 25, 2),
+                "rice noodles": (109, 0.9, 25, 0.2),
+                "soba noodles": (99, 5, 21, 0.1),
+                "udon noodles": (118, 3, 24, 0.3),
                 # Carbs - Starchy Vegetables
                 "sweet potato": (86, 1.6, 20, 0.1),
                 "potato": (77, 2, 17, 0.1),
@@ -2701,11 +2711,20 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
                 "peas": (81, 5.4, 14, 0.4),
                 "mixed vegetables": (50, 2.5, 10, 0.3),
                 "vegetables": (50, 2.5, 10, 0.3),
+                "sweet peppers": (31, 1, 6, 0.3),
+                "eggplant": (25, 1, 6, 0.2),
+                "squash": (16, 0.6, 3.4, 0.2),
+                "beets": (43, 1.6, 10, 0.2),
+                "radish": (16, 0.7, 3.4, 0.1),
+                "leek": (61, 1.5, 14, 0.3),
+                "bok choy": (13, 1.5, 2, 0.2),
                 # Fats/Oils
                 "olive oil": (884, 0, 0, 100),
                 "coconut oil": (862, 0, 0, 100),
                 "vegetable oil": (884, 0, 0, 100),
                 "butter": (717, 0.9, 0.1, 81),
+                "ghee": (876, 0, 0, 97),
+                "avocado oil": (884, 0, 0, 100),
                 # Nuts and Seeds
                 "almond": (579, 21, 22, 50),
                 "almonds": (579, 21, 22, 50),
@@ -2718,6 +2737,13 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
                 "seeds": (534, 18, 23, 45),  # average seeds
                 "chia seeds": (486, 17, 42, 31),
                 "flax seeds": (534, 18, 29, 42),
+                "sunflower seeds": (584, 21, 20, 51),
+                "pumpkin seeds": (559, 30, 11, 49),
+                "hemp seeds": (553, 32, 9, 49),
+                "macadamia": (718, 8, 14, 76),
+                "pecans": (691, 9, 14, 72),
+                "pistachios": (560, 20, 28, 45),
+                "hazelnuts": (628, 15, 17, 61),
                 # Dairy
                 "milk": (42, 3.4, 5, 1),
                 "whole milk": (61, 3.2, 4.8, 3.3),
@@ -2925,15 +2951,57 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
                     for ing_str in meal.get("ingredients", []):
                         # Extract amount from ingredient string
                         import re
-                        match = re.match(r'(\d+(?:\.\d+)?)\s*(g|ml|kg|oz)?\s*(.+)', ing_str.lower())
-                        if match:
-                            amount = float(match.group(1))
-                            unit = match.group(2) or 'g'
-                            food = match.group(3)
+                        ing_lower = ing_str.lower()
+                        
+                        # Pattern 1: "Xg food" with explicit unit
+                        match_unit = re.match(r'(\d+(?:\.\d+)?)\s*(g|ml|kg|oz)\s+(.+)', ing_lower)
+                        # Pattern 2: "X modifier food" (count-based like "3 large eggs")
+                        match_count = re.match(r'(\d+(?:\.\d+)?)\s+(large|medium|small|whole)\s+(.+)', ing_lower)
+                        # Pattern 3: "X food" (simple count like "3 eggs", "2 bananas")
+                        match_simple = re.match(r'^(\d+(?:\.\d+)?)\s+([a-z]+.*)$', ing_lower)
+                        
+                        if match_unit:
+                            # Weight-based ingredient - scale the grams
+                            amount = float(match_unit.group(1))
+                            unit = match_unit.group(2)
+                            food = match_unit.group(3)
                             new_amount = round(amount * scale_factor)
                             scaled_ingredients.append(f"{new_amount}{unit} {food}")
+                        elif match_count:
+                            # Count with modifier (e.g., "3 whole eggs") - keep count format but scale
+                            count = float(match_count.group(1))
+                            modifier = match_count.group(2)
+                            food = match_count.group(3)
+                            new_count = round(count * scale_factor)
+                            if new_count < 1:
+                                new_count = 1
+                            scaled_ingredients.append(f"{new_count} {modifier} {food}")
+                        elif match_simple and not any(u in match_simple.group(2)[:3] for u in ['g ', 'ml', 'kg', 'oz']):
+                            # Simple count (e.g., "3 eggs") - check if it's really a count item
+                            count = float(match_simple.group(1))
+                            food = match_simple.group(2)
+                            # Check if this is a count-based item (eggs, bananas, etc.)
+                            count_items = ['egg', 'banana', 'apple', 'orange', 'slice', 'piece', 'scoop', 'serving']
+                            is_count = any(item in food.lower() for item in count_items)
+                            if is_count:
+                                new_count = round(count * scale_factor)
+                                if new_count < 1:
+                                    new_count = 1
+                                scaled_ingredients.append(f"{new_count} {food}")
+                            else:
+                                # Treat as grams (e.g., "150 chicken breast" -> "150g chicken breast")
+                                new_amount = round(count * scale_factor)
+                                scaled_ingredients.append(f"{new_amount}g {food}")
                         else:
-                            scaled_ingredients.append(ing_str)
+                            # Fallback: try to extract any number and scale it
+                            match_any = re.match(r'(\d+(?:\.\d+)?)\s*(.+)', ing_lower)
+                            if match_any:
+                                amount = float(match_any.group(1))
+                                rest = match_any.group(2)
+                                new_amount = round(amount * scale_factor)
+                                scaled_ingredients.append(f"{new_amount}g {rest}")
+                            else:
+                                scaled_ingredients.append(ing_str)
                     
                     meal["ingredients"] = scaled_ingredients
                     
