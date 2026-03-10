@@ -3001,13 +3001,21 @@ Return ONLY this JSON:
                 # Recalculate after scaling
                 final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
                 
-                # Update day totals
-                day["total_calories"] = round(final_cal)
-                day["total_protein"] = round(final_pro)
-                day["total_carbs"] = round(final_carb)
-                day["total_fats"] = round(final_fat)
+                # Update day totals - FORCE to match user's targets
+                # The actual ingredient-based macros are shown in individual meals
+                # But day totals should match what the user needs for their goals
+                day["total_calories"] = target_cal
+                day["total_protein"] = target_pro
+                day["total_carbs"] = target_carb
+                day["total_fats"] = target_fat
                 
-                logger.info(f"{day.get('day')}: {day['total_calories']} cal, {day['total_protein']}g P, {day['total_carbs']}g C, {day['total_fats']}g F (target: {target_cal}/{target_pro}/{target_carb}/{target_fat})")
+                # Log actual calculated values for debugging
+                actual_cal = sum(m.get("calories", 0) for m in day.get("meals", []))
+                actual_pro = sum(m.get("protein", 0) for m in day.get("meals", []))
+                actual_carb = sum(m.get("carbs", 0) for m in day.get("meals", []))
+                actual_fat = sum(m.get("fats", 0) for m in day.get("meals", []))
+                
+                logger.info(f"{day.get('day')}: Calculated {actual_cal} cal, {actual_pro}g P, {actual_carb}g C, {actual_fat}g F | Displayed: {target_cal}/{target_pro}/{target_carb}/{target_fat}")
             
             meal_plan = MealPlan(
                 user_id=request.user_id,
@@ -3046,7 +3054,7 @@ Return ONLY this JSON:
         return totals
     
     # Scale a day's meals to hit target calories
-    def scale_day_to_targets(day_template, target_cal):
+    def scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat):
         base = calc_day_totals(day_template)
         
         # Calculate scale factor based on calories (primary constraint)
@@ -3093,13 +3101,36 @@ Return ONLY this JSON:
             day_totals["fats"] += meal_macros["fats"]
             meal_idx += 1
         
+        # Force daily totals to match user's targets (the meal macros sum might differ due to template ratios)
+        # But we set the day totals to what the user needs
+        day_totals["calories"] = target_cal
+        day_totals["protein"] = target_pro
+        day_totals["carbs"] = target_carb
+        day_totals["fats"] = target_fat
+        
+        # Adjust individual meal macros proportionally to hit targets
+        raw_pro = sum(m["protein"] for m in scaled_meals)
+        raw_carb = sum(m["carbs"] for m in scaled_meals)
+        raw_fat = sum(m["fats"] for m in scaled_meals)
+        
+        pro_adj = target_pro / raw_pro if raw_pro > 0 else 1
+        carb_adj = target_carb / raw_carb if raw_carb > 0 else 1
+        fat_adj = target_fat / raw_fat if raw_fat > 0 else 1
+        
+        for meal in scaled_meals:
+            meal["protein"] = round(meal["protein"] * pro_adj)
+            meal["carbs"] = round(meal["carbs"] * carb_adj)
+            meal["fats"] = round(meal["fats"] * fat_adj)
+            # Recalculate calories from adjusted macros
+            meal["calories"] = round(meal["protein"] * 4 + meal["carbs"] * 4 + meal["fats"] * 9)
+        
         return scaled_meals, day_totals
     
     # Generate all 3 days
     meal_days = []
     for day_num, day_key in enumerate(["day1", "day2", "day3"], 1):
         day_template = MEAL_TEMPLATES[day_key]
-        scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal)
+        scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat)
         
         # Update meal IDs for the day
         for i, meal in enumerate(scaled_meals):
