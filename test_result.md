@@ -554,9 +554,9 @@ backend:
 
   - task: "Meal Plan Macro Accuracy Validation"
     implemented: true
-    working: true
+    working: false
     file: "server.py"
-    stuck_count: 1
+    stuck_count: 2
     priority: "high"
     needs_retesting: false
     status_history:
@@ -575,6 +575,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ REVIEW REQUEST TESTING COMPLETE - MEAL PLAN MACRO ACCURACY PERFECT: Tested exact parameters from review request with user 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b' and preferred_foods 'chicken, rice, eggs'. Generated meal plan achieves PERFECT macro accuracy with Day 1 totals: 2273cal, 170g P, 227g C, 76g F vs targets: 2273cal, 170g P, 227g C, 76g F - ZERO deviation on all macros! Response time: 21.20s. Post-processing system working flawlessly. Ingredient specificity excellent with examples like '3 large eggs (150g)', '200g grilled chicken breast', etc. Backend logs confirm: 'Day 1: 2273 cal, 170g P, 227g C, 76g F' matching targets exactly. The meal plan generation system is now delivering perfect macro accuracy as requested in the review."
+      - working: false
+        agent: "testing"
+        comment: "❌ COMPREHENSIVE MACRO ACCURACY TESTING FAILED: Tested exact review request scenarios with user cbd82a69-3a37-48c2-88e8-0fe95081fa4b (target: 2273cal, 170g P, 227g C, 76g F). ALL THREE TESTS FAILED acceptance criteria. TEST 1 (Balanced + preferred foods 'chicken breast, rice, broccoli'): Calories 0.1% dev ✅, Protein 15.3% dev ❌ (>15%), Carbs 25.6% dev ❌ (>15%), Fats 13.2% dev ✅ - AI generation with preferred foods produces inconsistent macros. TEST 2 (Template-based high_protein): Calories 0.1% dev ✅, Protein 38.8% dev ❌ (>10%), Carbs 14.1% dev ❌ (>10%), Fats 18.4% dev ❌ (>15%) - Template-based generation shows extreme protein deviation (236g vs 170g target). TEST 3 (Keto): Calories 0.0% dev ✅, Protein 25.3% dev ❌ (>15%), Carbs 90.7% dev ❌ (>20%), Fats 148.7% dev ❌ (>20%) - While keto compliant (21g carbs <50g), macros severely deviate from user's balanced profile targets. ROOT ISSUE: System uses diet-specific macro ratios instead of user's profile targets, and AI generation lacks accuracy enforcement. Backend logs show missing ingredient matches (vinaigrette, caesar dressing, granola, meatballs) affecting calculations."
   - task: "Improved Portion Guidance & Consistency Testing"
     implemented: true
     working: true
@@ -729,9 +732,10 @@ metadata:
 
 test_plan:
   current_focus:
-    - "COMPREHENSIVE MEAL PLAN MACRO ACCURACY TEST - COMPLETED SUCCESSFULLY"
+    - "Meal Plan Macro Accuracy Validation - CRITICAL TESTING FAILURE"
   stuck_tasks: 
     - "Food Image Analysis"
+    - "Meal Plan Macro Accuracy Validation"
   test_all: false
   test_priority: "high_first"
 
@@ -804,3 +808,5 @@ agent_communication:
     message: "🎯 COMPREHENSIVE MEAL PLAN MACRO ACCURACY TEST COMPLETED SUCCESSFULLY: Executed the exact review request parameters for comprehensive meal plan testing. TEST 1 (steak, rice, eggs): All 3 days achieved PERFECT macro accuracy - Day 1: 2273 cal, 170g P, 227g C, 76g F | Day 2: 2273 cal, 170g P, 227g C, 76g F | Day 3: 2273 cal, 170g P, 227g C, 76g F vs targets: 2273/170/227/76. ✅ ZERO deviation on ALL macros. ✅ Steak specificity confirmed: Found '100g sirloin steak' (not generic steak). TEST 2 (chicken breast, brown rice): All 3 days PERFECT accuracy - same exact target hits. ✅ Chicken breast specificity confirmed: Found '150g chicken breast' usage. INDIVIDUAL MEAL VERIFICATION: Each meal's macros sum correctly to daily totals. Example Day 1: Breakfast (568 cal, 42g P), Lunch (682 cal, 51g P), Dinner (796 cal, 59g P), Snack (227 cal, 18g P) = 2273 cal, 170g P total. Post-processing system working flawlessly with backend logs showing 'Day X: 2273 cal, 170g P, 227g C, 76g F (forced to target)'. Response times: 15.79s and 13.57s. ALL meal plans hit EXACT targets with proper food specificity. The meal plan macro accuracy system is PERFECT and ready for production use."
   - agent: "main"
     message: "MAJOR MACRO ACCURACY FIX IMPLEMENTED: Fixed critical issue where meal macros were not mathematically accurate. The issue was that 'X whole eggs' or 'X eggs' was being parsed as 'X grams' instead of 'X count'. CHANGES MADE: 1) Improved ingredient parsing with better regex patterns to distinguish 'Xg food' from 'X count food'. 2) Added ITEM_WEIGHTS dictionary for count-based ingredients (eggs=50g each, banana=120g, etc.). 3) Expanded INGREDIENT_MACROS database from ~40 to ~130 ingredients including mixed greens, green beans, hummus, wraps, etc. 4) Added proportional scaling: After calculating actual macros, scale portions to hit target calories. 5) Fixed ingredient display scaling to properly show count-based items (e.g., '4 whole eggs' instead of '4g whole eggs'). VERIFICATION: 222g sweet potato: 86*2.22=191cal,20*2.22=44g C; 4 eggs (200g): 155*2=310cal,13*2=26g P. Total: 501cal close to displayed 533cal (scaling factor applied). Day totals hit calorie targets within 1 cal. TESTING COMPLETE."
+  - agent: "testing"
+    message: "❌ CRITICAL COMPREHENSIVE MACRO ACCURACY TESTING FAILURE: Tested exact review request scenarios with user cbd82a69-3a37-48c2-88e8-0fe95081fa4b using defined acceptance criteria. ALL THREE TESTS FAILED: TEST 1 - Balanced meal plan with preferred foods 'chicken breast, rice, broccoli': ❌ Protein 15.3% deviation (>15% limit), ❌ Carbs 25.6% deviation (>15% limit). TEST 2 - Template-based high_protein: ❌ Protein 38.8% deviation (>10% limit), ❌ Carbs 14.1% deviation (>10% limit), ❌ Fats 18.4% deviation (>15% limit). TEST 3 - Keto meal plan: ❌ Protein 25.3% deviation (>15% limit), ❌ Carbs 90.7% deviation (>20% limit), ❌ Fats 148.7% deviation (>20% limit). ROOT CAUSES: 1) AI generation with preferred_foods switches to inconsistent OpenAI-based generation instead of accurate template-based system. 2) Diet-specific templates (keto, high_protein) use their own macro ratios instead of respecting user's profile targets. 3) Missing ingredients in database (granola, meatballs, vinaigrette) cause calculation errors. 4) Post-processing system not enforcing user's actual macro targets. Backend functional but macro accuracy system broken for review requirements. RECOMMENDATION: Use websearch tool to research meal plan macro accuracy algorithms and template-vs-AI generation approaches."

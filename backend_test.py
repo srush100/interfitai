@@ -1,367 +1,349 @@
 #!/usr/bin/env python3
 """
-Comprehensive Backend Test for Meal Plan Macro Accuracy Fix
-Testing programmatic macro calculation with proportional scaling as requested in review.
+Comprehensive Backend Testing for InterFitAI - Meal Plan Macro Accuracy
+Testing Agent for backend API endpoints validation
 """
 
 import requests
 import json
 import time
-import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Any
+import sys
+import os
 
-# Get the backend URL from environment
+# Backend URL configuration
 BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
 
-# INGREDIENT_MACROS from the backend - per 100g values for manual verification
-INGREDIENT_MACROS = {
-    # Key ingredients mentioned in the review request
-    "chicken breast": (165, 31, 0, 3.6),
-    "sweet potato": (86, 1.6, 20, 0.1), 
-    "eggs": (155, 13, 1.1, 11),  # per 100g (about 2 eggs, so 50g per egg)
-    "large eggs": (155, 13, 1.1, 11),  # same as regular eggs
-    "whole eggs": (155, 13, 1.1, 11),  # same as regular eggs
-    "broccoli": (34, 2.8, 7, 0.4),
-    "olive oil": (884, 0, 0, 100),
-    # Additional common ingredients
-    "rice": (130, 2.7, 28, 0.3),
-    "oats": (389, 17, 66, 7),
-    # Dairy products
-    "cheddar cheese": (403, 25, 1.3, 33),
-    "cheese": (403, 25, 1.3, 33),
-    "greek yogurt": (59, 10, 4, 0.4),
-    "cottage cheese": (84, 11, 4, 2.5),
-    # Proteins
-    "steak": (180, 26, 0, 8),
-    "salmon": (208, 20, 0, 13),
-    "tuna": (116, 26, 0, 0.8),
-    # Vegetables  
-    "spinach": (23, 2.9, 3.6, 0.4),
-    "avocado": (160, 2, 9, 15),
-    "tomato": (18, 0.9, 3.9, 0.2),
-    "carrot": (41, 0.9, 10, 0.2),
-    # Grains
-    "quinoa": (120, 4.4, 21, 1.9),
-    "bread": (265, 9, 49, 3.2),
-    "pasta": (131, 5, 25, 1.1),
-}
+# Test user ID from review request
+TEST_USER_ID = "cbd82a69-3a37-48c2-88e8-0fe95081fa4b"
 
-def test_health_check():
-    """Test basic health check endpoint"""
-    print("\n=== TESTING HEALTH CHECK ===")
-    start_time = time.time()
-    response = requests.get(f"{BACKEND_URL}/health")
-    response_time = time.time() - start_time
-    
-    print(f"Status Code: {response.status_code}")
-    print(f"Response Time: {response_time:.2f}s")
-    
-    if response.status_code == 200:
-        print("✅ Health check PASSED")
-        return True
-    else:
-        print("❌ Health check FAILED")
-        return False
-
-def calculate_manual_macros(ingredient_name: str, grams: float) -> Tuple[float, float, float, float]:
-    """Calculate macros manually using the same logic as backend"""
-    if ingredient_name.lower() in INGREDIENT_MACROS:
-        cal_per_100g, pro_per_100g, carb_per_100g, fat_per_100g = INGREDIENT_MACROS[ingredient_name.lower()]
+class MealPlanMacroAccuracyTester:
+    def __init__(self):
+        self.backend_url = BACKEND_URL
+        self.test_user_id = TEST_USER_ID
+        self.results = []
         
-        # Calculate for the specified grams
-        multiplier = grams / 100
-        calories = cal_per_100g * multiplier
-        protein = pro_per_100g * multiplier
-        carbs = carb_per_100g * multiplier
-        fats = fat_per_100g * multiplier
+    def log_result(self, test_name: str, passed: bool, details: str, response_time: float = 0):
+        """Log test result"""
+        result = {
+            "test": test_name,
+            "passed": passed,
+            "details": details,
+            "response_time": f"{response_time:.2f}s"
+        }
+        self.results.append(result)
+        status = "✅ PASS" if passed else "❌ FAIL"
+        print(f"{status} - {test_name}: {details} ({response_time:.2f}s)")
         
-        return calories, protein, carbs, fats
-    else:
-        print(f"⚠️ Ingredient '{ingredient_name}' not found in manual database")
-        return 0, 0, 0, 0
-
-def parse_ingredient_amounts(ingredients_list: List[str]) -> Dict[str, float]:
-    """Parse ingredient strings to extract amounts in grams"""
-    ingredients_dict = {}
+    def calculate_macro_deviation(self, actual: Dict[str, float], target: Dict[str, float]) -> Dict[str, float]:
+        """Calculate percentage deviation from target macros"""
+        deviations = {}
+        for macro in ['calories', 'protein', 'carbs', 'fats']:
+            if target.get(macro, 0) > 0:
+                deviation = abs(actual[macro] - target[macro]) / target[macro] * 100
+                deviations[macro] = deviation
+            else:
+                deviations[macro] = 0
+        return deviations
     
-    for ingredient in ingredients_list:
-        # Parse formats like "174g chicken breast", "231g sweet potato", "3 eggs", "4 large eggs"
-        ingredient = ingredient.lower().strip()
+    def validate_macro_accuracy(self, daily_totals: Dict[str, float], target_macros: Dict[str, float], 
+                              criteria: Dict[str, float]) -> tuple[bool, str]:
+        """Validate macro accuracy against acceptance criteria"""
+        deviations = self.calculate_macro_deviation(daily_totals, target_macros)
         
-        # Handle eggs specially (count-based or weight-based)
-        if 'egg' in ingredient and any(char.isdigit() for char in ingredient):
-            # First check for count-based patterns like "3 eggs", "4 large eggs"  
-            egg_count_match = re.search(r'(\d+)\s+(?:large\s+)?eggs?', ingredient)
-            if egg_count_match:
-                egg_count = int(egg_count_match.group(1))
-                # Backend assumes 50g per egg for count-based
-                grams = egg_count * 50
-                ingredients_dict['eggs'] = grams
-                continue
+        validation_results = []
+        passed = True
+        
+        for macro, tolerance in criteria.items():
+            deviation = deviations.get(macro, 0)
+            macro_passed = deviation <= tolerance
+            passed = passed and macro_passed
             
-            # Then check for weight-based patterns like "4g large eggs", "150g eggs"
-            egg_weight_match = re.search(r'(\d+)g\s+(?:large\s+)?eggs?', ingredient)
-            if egg_weight_match:
-                grams = float(egg_weight_match.group(1))
-                ingredients_dict['eggs'] = grams
-                continue
+            actual = daily_totals.get(macro, 0)
+            target = target_macros.get(macro, 0)
+            diff = actual - target
+            
+            validation_results.append(
+                f"{macro.title()}: {actual:.1f} vs {target:.1f} "
+                f"({diff:+.1f}, {deviation:.1f}% dev, ≤{tolerance}% req) "
+                f"{'✅' if macro_passed else '❌'}"
+            )
         
-        # Handle gram-based ingredients - match patterns like "209g sweet potato"
-        gram_match = re.search(r'(\d+(?:\.\d+)?)g\s+(.+)', ingredient)
-        if gram_match:
-            try:
-                grams = float(gram_match.group(1))
-                ingredient_name = gram_match.group(2).strip()
-                ingredients_dict[ingredient_name] = grams
-            except ValueError:
-                continue
+        details = " | ".join(validation_results)
+        return passed, details
     
-    return ingredients_dict
-
-def verify_meal_macros(meal_data: Dict) -> bool:
-    """Manually verify macro calculations for a meal"""
-    print(f"\n--- Manual Verification for: {meal_data.get('name', 'Unknown')} ---")
+    def extract_daily_totals(self, meal_plan: Dict[str, Any], day_index: int = 0) -> Dict[str, float]:
+        """Extract daily macro totals from meal plan response"""
+        try:
+            meal_days = meal_plan.get('meal_days', [])
+            if day_index >= len(meal_days):
+                return {'calories': 0, 'protein': 0, 'carbs': 0, 'fats': 0}
+            
+            day = meal_days[day_index]
+            return {
+                'calories': day.get('total_calories', 0),
+                'protein': day.get('total_protein', 0),
+                'carbs': day.get('total_carbs', 0),
+                'fats': day.get('total_fats', 0)
+            }
+        except Exception as e:
+            print(f"Error extracting daily totals: {e}")
+            return {'calories': 0, 'protein': 0, 'carbs': 0, 'fats': 0}
     
-    ingredients_list = meal_data.get('ingredients', [])
-    api_calories = meal_data.get('calories', 0)
-    api_protein = meal_data.get('protein', 0)
-    api_carbs = meal_data.get('carbs', 0) 
-    api_fats = meal_data.get('fats', 0)
+    def get_user_profile(self) -> Dict[str, Any]:
+        """Get user profile to extract target macros"""
+        start_time = time.time()
+        try:
+            response = requests.get(f"{self.backend_url}/profile/{self.test_user_id}", timeout=30)
+            response_time = time.time() - start_time
+            
+            if response.status_code == 200:
+                profile = response.json()
+                macros = profile.get('calculated_macros', {})
+                self.log_result("Get User Profile", True, 
+                              f"Retrieved profile with macros: {macros.get('calories')}cal, "
+                              f"{macros.get('protein')}g P, {macros.get('carbs')}g C, {macros.get('fats')}g F", 
+                              response_time)
+                return profile
+            else:
+                self.log_result("Get User Profile", False, 
+                              f"Failed to get profile: {response.status_code} - {response.text}", 
+                              response_time)
+                return {}
+        except Exception as e:
+            response_time = time.time() - start_time
+            self.log_result("Get User Profile", False, f"Exception: {str(e)}", response_time)
+            return {}
     
-    print(f"Ingredients: {ingredients_list}")
-    print(f"API Result: {api_calories}cal, {api_protein}g P, {api_carbs}g C, {api_fats}g F")
-    
-    # Parse ingredients to get amounts
-    ingredients_dict = parse_ingredient_amounts(ingredients_list)
-    print(f"Parsed ingredients: {ingredients_dict}")
-    
-    # Calculate manual totals
-    manual_cal = manual_pro = manual_carb = manual_fat = 0
-    
-    for ingredient_name, grams in ingredients_dict.items():
-        cal, pro, carb, fat = calculate_manual_macros(ingredient_name, grams)
-        manual_cal += cal
-        manual_pro += pro
-        manual_carb += carb
-        manual_fat += fat
-        print(f"  {ingredient_name} ({grams}g): {cal:.1f}cal, {pro:.1f}g P, {carb:.1f}g C, {fat:.1f}g F")
-    
-    print(f"Manual Total: {manual_cal:.1f}cal, {manual_pro:.1f}g P, {manual_carb:.1f}g C, {manual_fat:.1f}g F")
-    
-    # Compare with ±5% tolerance as specified in review
-    tolerance = 0.05  # 5%
-    
-    cal_diff = abs(manual_cal - api_calories) / max(manual_cal, api_calories) if max(manual_cal, api_calories) > 0 else 0
-    pro_diff = abs(manual_pro - api_protein) / max(manual_pro, api_protein) if max(manual_pro, api_protein) > 0 else 0
-    carb_diff = abs(manual_carb - api_carbs) / max(manual_carb, api_carbs) if max(manual_carb, api_carbs) > 0 else 0
-    fat_diff = abs(manual_fat - api_fats) / max(manual_fat, api_fats) if max(manual_fat, api_fats) > 0 else 0
-    
-    print(f"Differences: Cal {cal_diff*100:.1f}%, Pro {pro_diff*100:.1f}%, Carb {carb_diff*100:.1f}%, Fat {fat_diff*100:.1f}%")
-    
-    if cal_diff <= tolerance and pro_diff <= tolerance and carb_diff <= tolerance and fat_diff <= tolerance:
-        print("✅ Manual verification PASSED - Macros match within ±5% tolerance")
-        return True
-    else:
-        print("❌ Manual verification FAILED - Macros exceed ±5% tolerance")
-        return False
-
-def test_meal_plan_generation_with_preferred_foods():
-    """TEST 1: Generate meal plan with preferred foods - CRITICAL MACRO ACCURACY TEST"""
-    print("\n=== TEST 1: MEAL PLAN WITH PREFERRED FOODS - MACRO ACCURACY ===")
-    
-    request_data = {
-        "user_id": "cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
-        "food_preferences": "balanced",
-        "preferred_foods": "sweet potato, broccoli, eggs",
-        "allergies": []
-    }
-    
-    print(f"Request: {json.dumps(request_data, indent=2)}")
-    
-    start_time = time.time()
-    response = requests.post(f"{BACKEND_URL}/mealplans/generate", json=request_data)
-    response_time = time.time() - start_time
-    
-    print(f"Status Code: {response.status_code}")
-    print(f"Response Time: {response_time:.2f}s")
-    
-    if response.status_code != 200:
-        print(f"❌ TEST 1 FAILED - API Error: {response.text}")
-        return False
-    
-    meal_plan = response.json()
-    print(f"Generated: {meal_plan.get('name', 'Unknown Plan')}")
-    
-    # Get user's target macros
-    target_calories = meal_plan.get('target_calories', 0)
-    target_protein = meal_plan.get('target_protein', 0)
-    target_carbs = meal_plan.get('target_carbs', 0)
-    target_fats = meal_plan.get('target_fats', 0)
-    
-    print(f"Target Macros: {target_calories}cal, {target_protein}g P, {target_carbs}g C, {target_fats}g F")
-    
-    # VERIFICATION STEP 1: Check daily calorie totals are within ±10 of target
-    daily_totals_pass = True
-    meal_verification_pass = True
-    
-    for day_idx, day in enumerate(meal_plan.get('meal_days', [])):
-        day_cal = day.get('total_calories', 0)
-        day_pro = day.get('total_protein', 0)
-        day_carb = day.get('total_carbs', 0)
-        day_fat = day.get('total_fats', 0)
+    def test_balanced_meal_plan_with_preferred_foods(self, target_macros: Dict[str, float]):
+        """TEST 1: Balanced meal plan with preferred foods"""
+        print("\n" + "="*80)
+        print("TEST 1: Balanced meal plan with preferred foods")
+        print("="*80)
         
-        cal_diff = abs(day_cal - target_calories)
+        payload = {
+            "user_id": self.test_user_id,
+            "food_preferences": "balanced",
+            "preferred_foods": "chicken breast, rice, broccoli",
+            "allergies": []
+        }
         
-        print(f"\nDay {day_idx + 1}: {day_cal}cal, {day_pro}g P, {day_carb}g C, {day_fat}g F")
-        print(f"Calorie difference from target: {cal_diff} (target ±10)")
+        start_time = time.time()
+        try:
+            response = requests.post(f"{self.backend_url}/mealplans/generate", 
+                                   json=payload, timeout=60)
+            response_time = time.time() - start_time
+            
+            if response.status_code == 200:
+                meal_plan = response.json()
+                daily_totals = self.extract_daily_totals(meal_plan, 0)  # Day 1
+                
+                # Acceptance criteria for balanced meal plan
+                criteria = {
+                    'calories': 10,  # ±10%
+                    'protein': 15,   # ±15%
+                    'carbs': 15,     # ±15%
+                    'fats': 20       # ±20%
+                }
+                
+                passed, details = self.validate_macro_accuracy(daily_totals, target_macros, criteria)
+                
+                # Check for preferred foods presence
+                plan_text = json.dumps(meal_plan).lower()
+                preferred_found = []
+                for food in ["chicken", "rice", "broccoli"]:
+                    if food in plan_text:
+                        preferred_found.append(food)
+                
+                preferred_details = f" | Preferred foods found: {', '.join(preferred_found) if preferred_found else 'none'}"
+                
+                self.log_result("TEST 1: Balanced + Preferred Foods", passed,
+                              f"{details}{preferred_details}", response_time)
+                
+                return meal_plan, passed
+                
+            else:
+                self.log_result("TEST 1: Balanced + Preferred Foods", False,
+                              f"API Error: {response.status_code} - {response.text}", response_time)
+                return {}, False
+                
+        except Exception as e:
+            response_time = time.time() - start_time
+            self.log_result("TEST 1: Balanced + Preferred Foods", False,
+                          f"Exception: {str(e)}", response_time)
+            return {}, False
+    
+    def test_template_based_meal_plan(self, target_macros: Dict[str, float]):
+        """TEST 2: Template-based meal plan (no preferred foods)"""
+        print("\n" + "="*80)
+        print("TEST 2: Template-based meal plan (no preferred foods)")
+        print("="*80)
         
-        if cal_diff > 10:
-            print(f"❌ Day {day_idx + 1} calorie total exceeds ±10 tolerance")
-            daily_totals_pass = False
+        payload = {
+            "user_id": self.test_user_id,
+            "food_preferences": "high_protein",
+            "allergies": []
+        }
+        
+        start_time = time.time()
+        try:
+            response = requests.post(f"{self.backend_url}/mealplans/generate", 
+                                   json=payload, timeout=60)
+            response_time = time.time() - start_time
+            
+            if response.status_code == 200:
+                meal_plan = response.json()
+                daily_totals = self.extract_daily_totals(meal_plan, 0)  # Day 1
+                
+                # Template-based should be more accurate - stricter criteria
+                criteria = {
+                    'calories': 5,   # ±5% (should be more accurate)
+                    'protein': 10,   # ±10%
+                    'carbs': 10,     # ±10%
+                    'fats': 15       # ±15%
+                }
+                
+                passed, details = self.validate_macro_accuracy(daily_totals, target_macros, criteria)
+                
+                template_info = f" | Template-based generation (higher accuracy expected)"
+                
+                self.log_result("TEST 2: Template-based High Protein", passed,
+                              f"{details}{template_info}", response_time)
+                
+                return meal_plan, passed
+                
+            else:
+                self.log_result("TEST 2: Template-based High Protein", False,
+                              f"API Error: {response.status_code} - {response.text}", response_time)
+                return {}, False
+                
+        except Exception as e:
+            response_time = time.time() - start_time
+            self.log_result("TEST 2: Template-based High Protein", False,
+                          f"Exception: {str(e)}", response_time)
+            return {}, False
+    
+    def test_keto_meal_plan(self, target_macros: Dict[str, float]):
+        """TEST 3: Keto meal plan"""
+        print("\n" + "="*80)
+        print("TEST 3: Keto meal plan")
+        print("="*80)
+        
+        payload = {
+            "user_id": self.test_user_id,
+            "food_preferences": "keto",
+            "allergies": []
+        }
+        
+        start_time = time.time()
+        try:
+            response = requests.post(f"{self.backend_url}/mealplans/generate", 
+                                   json=payload, timeout=60)
+            response_time = time.time() - start_time
+            
+            if response.status_code == 200:
+                meal_plan = response.json()
+                daily_totals = self.extract_daily_totals(meal_plan, 0)  # Day 1
+                
+                # Keto compliance check: carbs should be under 50g
+                carbs = daily_totals.get('carbs', 0)
+                keto_compliant = carbs < 50
+                
+                # Standard macro accuracy criteria
+                criteria = {
+                    'calories': 10,  # ±10%
+                    'protein': 15,   # ±15%
+                    'carbs': 20,     # ±20% (but absolute limit more important)
+                    'fats': 20       # ±20%
+                }
+                
+                macro_passed, macro_details = self.validate_macro_accuracy(daily_totals, target_macros, criteria)
+                
+                # Overall pass requires both macro accuracy AND keto compliance
+                passed = macro_passed and keto_compliant
+                
+                keto_details = f" | Keto compliance: {carbs:.1f}g carbs {'✅ <50g' if keto_compliant else '❌ ≥50g'}"
+                
+                self.log_result("TEST 3: Keto Meal Plan", passed,
+                              f"{macro_details}{keto_details}", response_time)
+                
+                return meal_plan, passed
+                
+            else:
+                self.log_result("TEST 3: Keto Meal Plan", False,
+                              f"API Error: {response.status_code} - {response.text}", response_time)
+                return {}, False
+                
+        except Exception as e:
+            response_time = time.time() - start_time
+            self.log_result("TEST 3: Keto Meal Plan", False,
+                          f"Exception: {str(e)}", response_time)
+            return {}, False
+    
+    def run_comprehensive_tests(self):
+        """Run all comprehensive macro accuracy tests"""
+        print("🧪 COMPREHENSIVE MEAL PLAN MACRO ACCURACY TESTING")
+        print("=" * 80)
+        print(f"Backend URL: {self.backend_url}")
+        print(f"Test User ID: {self.test_user_id}")
+        
+        # Get user profile for target macros
+        profile = self.get_user_profile()
+        if not profile:
+            print("❌ CRITICAL: Cannot proceed without user profile")
+            return False
+        
+        calculated_macros = profile.get('calculated_macros', {})
+        if not calculated_macros:
+            print("❌ CRITICAL: No calculated macros in profile")
+            return False
+        
+        target_macros = {
+            'calories': calculated_macros.get('calories', 0),
+            'protein': calculated_macros.get('protein', 0),
+            'carbs': calculated_macros.get('carbs', 0),
+            'fats': calculated_macros.get('fats', 0)
+        }
+        
+        print(f"\n📊 TARGET MACROS from profile:")
+        print(f"   Calories: {target_macros['calories']}")
+        print(f"   Protein: {target_macros['protein']}g")
+        print(f"   Carbs: {target_macros['carbs']}g")
+        print(f"   Fats: {target_macros['fats']}g")
+        
+        # Run all tests
+        test1_plan, test1_passed = self.test_balanced_meal_plan_with_preferred_foods(target_macros)
+        test2_plan, test2_passed = self.test_template_based_meal_plan(target_macros)
+        test3_plan, test3_passed = self.test_keto_meal_plan(target_macros)
+        
+        # Overall results
+        all_passed = test1_passed and test2_passed and test3_passed
+        passed_count = sum([test1_passed, test2_passed, test3_passed])
+        
+        print("\n" + "="*80)
+        print("🏁 COMPREHENSIVE TEST RESULTS SUMMARY")
+        print("="*80)
+        
+        print(f"✅ TEST 1 - Balanced + Preferred Foods: {'PASS' if test1_passed else 'FAIL'}")
+        print(f"✅ TEST 2 - Template-based High Protein: {'PASS' if test2_passed else 'FAIL'}")
+        print(f"✅ TEST 3 - Keto Meal Plan: {'PASS' if test3_passed else 'FAIL'}")
+        
+        print(f"\n📈 OVERALL RESULT: {passed_count}/3 tests passed")
+        
+        if all_passed:
+            print("🎉 ALL TESTS PASSED - Meal plan macro accuracy is WORKING PERFECTLY!")
         else:
-            print(f"✅ Day {day_idx + 1} calorie total within ±10 tolerance")
+            print("⚠️  SOME TESTS FAILED - Meal plan macro accuracy needs attention")
         
-        # VERIFICATION STEP 2: Manual verify macros for ONE meal (Day 1, first meal)
-        if day_idx == 0 and len(day.get('meals', [])) > 0:
-            first_meal = day['meals'][0]
-            print(f"\n🔍 MANUAL MACRO VERIFICATION - {first_meal.get('name', 'Unknown')}")
-            meal_pass = verify_meal_macros(first_meal)
-            if not meal_pass:
-                meal_verification_pass = False
-        
-        # VERIFICATION STEP 3: Verify daily totals = sum of meal macros
-        meals = day.get('meals', [])
-        calculated_cal = sum(meal.get('calories', 0) for meal in meals)
-        calculated_pro = sum(meal.get('protein', 0) for meal in meals)
-        calculated_carb = sum(meal.get('carbs', 0) for meal in meals)
-        calculated_fat = sum(meal.get('fats', 0) for meal in meals)
-        
-        print(f"\nCalculated from meals: {calculated_cal}cal, {calculated_pro}g P, {calculated_carb}g C, {calculated_fat}g F")
-        print(f"Day totals from API:   {day_cal}cal, {day_pro}g P, {day_carb}g C, {day_fat}g F")
-        
-        # Check if sums match (within 1 unit for rounding)
-        sum_match = (abs(calculated_cal - day_cal) <= 1 and 
-                    abs(calculated_pro - day_pro) <= 1 and
-                    abs(calculated_carb - day_carb) <= 1 and 
-                    abs(calculated_fat - day_fat) <= 1)
-        
-        if sum_match:
-            print("✅ Daily totals match sum of meal macros")
-        else:
-            print("❌ Daily totals do NOT match sum of meal macros")
-            daily_totals_pass = False
-    
-    # Overall result
-    if daily_totals_pass and meal_verification_pass:
-        print("\n🎉 TEST 1 PASSED - All macro accuracy checks successful!")
-        return True
-    else:
-        print("\n❌ TEST 1 FAILED - Macro accuracy issues detected")
-        return False
-
-def test_keto_meal_plan_generation():
-    """TEST 2: Generate Keto meal plan (template-based) - DIET COMPLIANCE TEST"""
-    print("\n=== TEST 2: KETO MEAL PLAN - TEMPLATE-BASED SCALING ===")
-    
-    request_data = {
-        "user_id": "cbd82a69-3a37-48c2-88e8-0fe95081fa4b", 
-        "food_preferences": "keto",
-        "allergies": []
-    }
-    
-    print(f"Request: {json.dumps(request_data, indent=2)}")
-    
-    start_time = time.time()
-    response = requests.post(f"{BACKEND_URL}/mealplans/generate", json=request_data)
-    response_time = time.time() - start_time
-    
-    print(f"Status Code: {response.status_code}")
-    print(f"Response Time: {response_time:.2f}s")
-    
-    if response.status_code != 200:
-        print(f"❌ TEST 2 FAILED - API Error: {response.text}")
-        return False
-    
-    meal_plan = response.json()
-    print(f"Generated: {meal_plan.get('name', 'Unknown Plan')}")
-    
-    target_calories = meal_plan.get('target_calories', 0)
-    print(f"Target Calories: {target_calories}")
-    
-    # KETO COMPLIANCE: Verify carbs are < 50g per day
-    keto_compliance = True
-    calorie_accuracy = True
-    
-    for day_idx, day in enumerate(meal_plan.get('meal_days', [])):
-        day_cal = day.get('total_calories', 0)
-        day_carb = day.get('total_carbs', 0)
-        
-        print(f"\nDay {day_idx + 1}: {day_cal}cal, {day_carb}g carbs")
-        
-        # Check keto compliance (< 50g carbs)
-        if day_carb >= 50:
-            print(f"❌ Day {day_idx + 1} carbs {day_carb}g >= 50g - NOT KETO COMPLIANT")
-            keto_compliance = False
-        else:
-            print(f"✅ Day {day_idx + 1} carbs {day_carb}g < 50g - KETO COMPLIANT")
-        
-        # Check calorie scaling accuracy (within ±10)
-        cal_diff = abs(day_cal - target_calories)
-        if cal_diff > 10:
-            print(f"❌ Day {day_idx + 1} calories off by {cal_diff} (target ±10)")
-            calorie_accuracy = False
-        else:
-            print(f"✅ Day {day_idx + 1} calories within ±10 tolerance")
-    
-    # Overall result
-    if keto_compliance and calorie_accuracy:
-        print("\n🎉 TEST 2 PASSED - Keto diet compliance and calorie scaling successful!")
-        return True
-    else:
-        print("\n❌ TEST 2 FAILED - Issues with keto compliance or calorie scaling")
-        return False
+        return all_passed
 
 def main():
-    """Run comprehensive meal plan macro accuracy tests"""
-    print("="*80)
-    print("COMPREHENSIVE MEAL PLAN MACRO ACCURACY TESTING")
-    print("Testing programmatic macro calculation with proportional scaling")
-    print("="*80)
+    """Main test execution"""
+    tester = MealPlanMacroAccuracyTester()
+    success = tester.run_comprehensive_tests()
     
-    # Track test results
-    results = []
-    
-    # Test 1: Health Check
-    results.append(("Health Check", test_health_check()))
-    
-    # Test 2: Meal Plan with Preferred Foods (CRITICAL TEST)
-    results.append(("Meal Plan with Preferred Foods - MACRO ACCURACY", test_meal_plan_generation_with_preferred_foods()))
-    
-    # Test 3: Keto Meal Plan (Template-based)
-    results.append(("Keto Meal Plan - DIET COMPLIANCE", test_keto_meal_plan_generation()))
-    
-    # Final Summary
-    print("\n" + "="*80)
-    print("FINAL TEST SUMMARY")
-    print("="*80)
-    
-    passed = 0
-    total = len(results)
-    
-    for test_name, result in results:
-        status = "✅ PASSED" if result else "❌ FAILED"
-        print(f"{test_name}: {status}")
-        if result:
-            passed += 1
-    
-    print(f"\nOverall: {passed}/{total} tests passed ({passed/total*100:.1f}%)")
-    
-    if passed == total:
-        print("🎉 ALL TESTS PASSED - Meal plan macro accuracy fix is working correctly!")
-        return True
-    else:
-        print("❌ SOME TESTS FAILED - Meal plan macro accuracy needs attention")
-        return False
+    # Exit with appropriate code
+    sys.exit(0 if success else 1)
 
 if __name__ == "__main__":
     main()

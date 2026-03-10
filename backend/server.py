@@ -2527,7 +2527,18 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         if request.foods_to_avoid and request.foods_to_avoid.strip():
             avoid_instructions = f"⚠️ STRICTLY AVOID: {request.foods_to_avoid}. Do NOT include these in ANY meal."
         
-        prompt = f"""Create a 3-day meal plan. You MUST hit the EXACT macro targets for each meal.
+        # Calculate macro percentages to guide AI
+        protein_pct = round((target_pro * 4 / target_cal) * 100) if target_cal > 0 else 30
+        carb_pct = round((target_carb * 4 / target_cal) * 100) if target_cal > 0 else 40
+        fat_pct = round((target_fat * 9 / target_cal) * 100) if target_cal > 0 else 30
+        
+        # Calculate approximate grams of each macro source needed per meal
+        # Protein: ~31g protein per 100g chicken = need ~(target_pro/4) * 100/31 = grams chicken per meal
+        protein_grams_per_meal = round(target_pro / 4 / 31 * 100)  # Approx grams of protein source per meal
+        carb_grams_per_meal = round(target_carb / 4 / 28 * 100)    # Approx grams of rice/carb per meal
+        
+        prompt = f"""Create a 3-day meal plan that hits these EXACT daily targets:
+{target_cal} cal | {target_pro}g protein ({protein_pct}%) | {target_carb}g carbs ({carb_pct}%) | {target_fat}g fats ({fat_pct}%)
 
 PREFERRED FOODS: {request.preferred_foods}
 {protein_guidance}
@@ -2535,26 +2546,33 @@ PREFERRED FOODS: {request.preferred_foods}
 {diet_instructions}
 ALLERGIES: {allergies_str}
 
-EXACT DAILY TARGETS: {target_cal} cal | {target_pro}g protein | {target_carb}g carbs | {target_fat}g fats
+⚠️ CRITICAL MACRO BALANCE INSTRUCTIONS:
+- Your meal plan MUST achieve ~{protein_pct}% protein, ~{carb_pct}% carbs, ~{fat_pct}% fat
+- Approximate per-meal targets: {round(target_pro/4)}g protein, {round(target_carb/4)}g carbs, {round(target_fat/4)}g fat
+- If preferred foods are high-protein (chicken, eggs), you MUST add substantial carb sources
+- Example balanced meal: 150g chicken (~50g P) + 200g rice (~56g C) + veggies + 10g oil (~10g F)
 
-EXACT MEAL TARGETS (YOU MUST HIT THESE):
+MEAL TARGETS:
 - Breakfast: {breakfast_cal} cal, {breakfast_pro}g P, {breakfast_carb}g C, {breakfast_fat}g F
-- Lunch: {lunch_cal} cal, {lunch_pro}g P, {lunch_carb}g C, {lunch_fat}g F
+- Lunch: {lunch_cal} cal, {lunch_pro}g P, {lunch_carb}g C, {lunch_fat}g F  
 - Dinner: {dinner_cal} cal, {dinner_pro}g P, {dinner_carb}g C, {dinner_fat}g F
 - Snack: {snack_cal} cal, {snack_pro}g P, {snack_carb}g C, {snack_fat}g F
 
-VERIFICATION: {breakfast_cal}+{lunch_cal}+{dinner_cal}+{snack_cal} = {target_cal} ✓
-              {breakfast_pro}+{lunch_pro}+{dinner_pro}+{snack_pro} = {target_pro} ✓
-              {breakfast_carb}+{lunch_carb}+{dinner_carb}+{snack_carb} = {target_carb} ✓
-              {breakfast_fat}+{lunch_fat}+{dinner_fat}+{snack_fat} = {target_fat} ✓
+INGREDIENT REFERENCE (per 100g):
+- Chicken breast: 165 cal, 31g P, 0g C, 3.6g F
+- Rice (cooked): 130 cal, 2.7g P, 28g C, 0.3g F  
+- Eggs (100g = 2 eggs): 155 cal, 13g P, 1g C, 11g F
+- Sweet potato: 86 cal, 1.6g P, 20g C, 0.1g F
+- Olive oil (1 tbsp = 14g): 124 cal, 0g P, 0g C, 14g F
+- Greek yogurt: 59 cal, 10g P, 4g C, 0.4g F
+- Oats: 389 cal, 17g P, 66g C, 7g F
 
 RULES:
-1. Use SPECIFIC gram amounts: "200g chicken breast" not "chicken"
-2. Each meal's macros MUST match the targets above EXACTLY
-3. Use the preferred foods: {request.preferred_foods}
-4. Copy the EXACT numbers I gave you into the JSON
+1. Use SPECIFIC gram amounts: "200g chicken breast", "150g rice"
+2. Balance each meal to hit ~{protein_pct}% P / ~{carb_pct}% C / ~{fat_pct}% F
+3. Include the preferred foods but ADD carbs/fats as needed to balance
 
-Return ONLY this JSON (use the EXACT macro numbers from above):
+Return ONLY this JSON:
 {{"name": "{plan_name} Custom Meal Plan", "meal_days": [
   {{"day": "Day 1", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [
     {{"id": "d1m1", "name": "Breakfast Name", "meal_type": "breakfast", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {breakfast_cal}, "protein": {breakfast_pro}, "carbs": {breakfast_carb}, "fats": {breakfast_fat}, "prep_time_minutes": 10}},
@@ -2562,8 +2580,8 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
     {{"id": "d1m3", "name": "Dinner Name", "meal_type": "dinner", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {dinner_cal}, "protein": {dinner_pro}, "carbs": {dinner_carb}, "fats": {dinner_fat}, "prep_time_minutes": 25}},
     {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {snack_cal}, "protein": {snack_pro}, "carbs": {snack_carb}, "fats": {snack_fat}, "prep_time_minutes": 5}}
   ]}},
-  {{"day": "Day 2", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [SAME EXACT macros as Day 1 but DIFFERENT foods]}},
-  {{"day": "Day 3", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [SAME EXACT macros as Day 1 but DIFFERENT foods]}}
+  {{"day": "Day 2", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [SAME macros, DIFFERENT foods]}},
+  {{"day": "Day 3", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [SAME macros, DIFFERENT foods]}}
 ]}}"""
 
         try:
@@ -2906,128 +2924,90 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
                 logger.warning(f"Could not find ingredient match for: '{ingredient_str}' (parsed as: '{food_name}')")
                 return None
             
-            # POST-PROCESSING: Calculate REAL macros from ingredients, then scale to targets
+            # POST-PROCESSING: Iteratively adjust ingredient quantities to get close to targets
+            # Since ingredients have fixed macro ratios, we can only get approximate matches
+            
             for day in meal_data.get("meal_days", []):
-                day_totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
+                # Calculate current day macros from ingredients
+                def recalc_day_macros(day_data):
+                    total_cal, total_pro, total_carb, total_fat = 0, 0, 0, 0
+                    for meal in day_data.get("meals", []):
+                        meal_cal, meal_pro, meal_carb, meal_fat = 0, 0, 0, 0
+                        for ing in meal.get("ingredients", []):
+                            macros = calculate_ingredient_macros(ing)
+                            if macros:
+                                meal_cal += macros["calories"]
+                                meal_pro += macros["protein"]
+                                meal_carb += macros["carbs"]
+                                meal_fat += macros["fats"]
+                        meal["calories"] = round(meal_cal)
+                        meal["protein"] = round(meal_pro)
+                        meal["carbs"] = round(meal_carb)
+                        meal["fats"] = round(meal_fat)
+                        total_cal += meal_cal
+                        total_pro += meal_pro
+                        total_carb += meal_carb
+                        total_fat += meal_fat
+                    return total_cal, total_pro, total_carb, total_fat
                 
-                # First pass: Calculate actual macros from ingredients
-                for meal in day.get("meals", []):
-                    meal_macros = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
-                    
-                    for ingredient in meal.get("ingredients", []):
-                        ing_macros = calculate_ingredient_macros(ingredient)
-                        if ing_macros:
-                            meal_macros["calories"] += ing_macros["calories"]
-                            meal_macros["protein"] += ing_macros["protein"]
-                            meal_macros["carbs"] += ing_macros["carbs"]
-                            meal_macros["fats"] += ing_macros["fats"]
-                    
-                    # Store raw calculated macros
-                    meal["_raw_calories"] = meal_macros["calories"]
-                    meal["_raw_protein"] = meal_macros["protein"]
-                    meal["_raw_carbs"] = meal_macros["carbs"]
-                    meal["_raw_fats"] = meal_macros["fats"]
-                    day_totals["calories"] += meal_macros["calories"]
-                    day_totals["protein"] += meal_macros["protein"]
-                    day_totals["carbs"] += meal_macros["carbs"]
-                    day_totals["fats"] += meal_macros["fats"]
+                # Initial calculation
+                current_cal, current_pro, current_carb, current_fat = recalc_day_macros(day)
                 
-                # Calculate scale factor to hit target calories
-                if day_totals["calories"] > 0:
-                    scale_factor = target_cal / day_totals["calories"]
-                    # Limit scale factor to reasonable range (0.7 to 1.5)
-                    scale_factor = max(0.7, min(1.5, scale_factor))
+                # Calculate calorie-based scale factor
+                if current_cal > 0:
+                    cal_scale = target_cal / current_cal
+                    cal_scale = max(0.6, min(1.5, cal_scale))
                 else:
-                    scale_factor = 1.0
+                    cal_scale = 1.0
                 
-                logger.info(f"{day.get('day')}: Raw total {day_totals['calories']} cal, scaling by {scale_factor:.2f}x to hit {target_cal} cal")
-                
-                # Second pass: Scale ingredients and recalculate macros
-                scaled_day_totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
-                
+                # Scale all ingredients to hit calorie target
                 for meal in day.get("meals", []):
-                    # Scale ingredients
                     scaled_ingredients = []
                     for ing_str in meal.get("ingredients", []):
-                        # Extract amount from ingredient string
-                        import re
                         ing_lower = ing_str.lower()
+                        import re
                         
-                        # Pattern 1: "Xg food" with explicit unit
                         match_unit = re.match(r'(\d+(?:\.\d+)?)\s*(g|ml|kg|oz)\s+(.+)', ing_lower)
-                        # Pattern 2: "X modifier food" (count-based like "3 large eggs")
                         match_count = re.match(r'(\d+(?:\.\d+)?)\s+(large|medium|small|whole)\s+(.+)', ing_lower)
-                        # Pattern 3: "X food" (simple count like "3 eggs", "2 bananas")
                         match_simple = re.match(r'^(\d+(?:\.\d+)?)\s+([a-z]+.*)$', ing_lower)
                         
                         if match_unit:
-                            # Weight-based ingredient - scale the grams
                             amount = float(match_unit.group(1))
                             unit = match_unit.group(2)
                             food = match_unit.group(3)
-                            new_amount = round(amount * scale_factor)
+                            new_amount = round(amount * cal_scale)
                             scaled_ingredients.append(f"{new_amount}{unit} {food}")
                         elif match_count:
-                            # Count with modifier (e.g., "3 whole eggs") - keep count format but scale
                             count = float(match_count.group(1))
                             modifier = match_count.group(2)
                             food = match_count.group(3)
-                            new_count = round(count * scale_factor)
-                            if new_count < 1:
-                                new_count = 1
+                            new_count = max(1, round(count * cal_scale))
                             scaled_ingredients.append(f"{new_count} {modifier} {food}")
-                        elif match_simple and not any(u in match_simple.group(2)[:3] for u in ['g ', 'ml', 'kg', 'oz']):
-                            # Simple count (e.g., "3 eggs") - check if it's really a count item
+                        elif match_simple:
                             count = float(match_simple.group(1))
                             food = match_simple.group(2)
-                            # Check if this is a count-based item (eggs, bananas, etc.)
                             count_items = ['egg', 'banana', 'apple', 'orange', 'slice', 'piece', 'scoop', 'serving']
                             is_count = any(item in food.lower() for item in count_items)
                             if is_count:
-                                new_count = round(count * scale_factor)
-                                if new_count < 1:
-                                    new_count = 1
+                                new_count = max(1, round(count * cal_scale))
                                 scaled_ingredients.append(f"{new_count} {food}")
                             else:
-                                # Treat as grams (e.g., "150 chicken breast" -> "150g chicken breast")
-                                new_amount = round(count * scale_factor)
+                                new_amount = round(count * cal_scale)
                                 scaled_ingredients.append(f"{new_amount}g {food}")
                         else:
-                            # Fallback: try to extract any number and scale it
-                            match_any = re.match(r'(\d+(?:\.\d+)?)\s*(.+)', ing_lower)
-                            if match_any:
-                                amount = float(match_any.group(1))
-                                rest = match_any.group(2)
-                                new_amount = round(amount * scale_factor)
-                                scaled_ingredients.append(f"{new_amount}g {rest}")
-                            else:
-                                scaled_ingredients.append(ing_str)
-                    
+                            scaled_ingredients.append(ing_str)
                     meal["ingredients"] = scaled_ingredients
-                    
-                    # Scale macros
-                    raw_cal = meal.pop("_raw_calories", 0)
-                    raw_pro = meal.pop("_raw_protein", 0)
-                    raw_carb = meal.pop("_raw_carbs", 0)
-                    raw_fat = meal.pop("_raw_fats", 0)
-                    
-                    meal["calories"] = round(raw_cal * scale_factor)
-                    meal["protein"] = round(raw_pro * scale_factor)
-                    meal["carbs"] = round(raw_carb * scale_factor)
-                    meal["fats"] = round(raw_fat * scale_factor)
-                    
-                    scaled_day_totals["calories"] += meal["calories"]
-                    scaled_day_totals["protein"] += meal["protein"]
-                    scaled_day_totals["carbs"] += meal["carbs"]
-                    scaled_day_totals["fats"] += meal["fats"]
                 
-                # Update day totals with scaled values
-                day["total_calories"] = scaled_day_totals["calories"]
-                day["total_protein"] = round(scaled_day_totals["protein"])
-                day["total_carbs"] = round(scaled_day_totals["carbs"])
-                day["total_fats"] = round(scaled_day_totals["fats"])
+                # Recalculate after scaling
+                final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
                 
-                logger.info(f"{day.get('day')}: Final {scaled_day_totals['calories']} cal, {scaled_day_totals['protein']}g P, {scaled_day_totals['carbs']}g C, {scaled_day_totals['fats']}g F (target: {target_cal}/{target_pro}/{target_carb}/{target_fat})")
+                # Update day totals
+                day["total_calories"] = round(final_cal)
+                day["total_protein"] = round(final_pro)
+                day["total_carbs"] = round(final_carb)
+                day["total_fats"] = round(final_fat)
+                
+                logger.info(f"{day.get('day')}: {day['total_calories']} cal, {day['total_protein']}g P, {day['total_carbs']}g C, {day['total_fats']}g F (target: {target_cal}/{target_pro}/{target_carb}/{target_fat})")
             
             meal_plan = MealPlan(
                 user_id=request.user_id,
