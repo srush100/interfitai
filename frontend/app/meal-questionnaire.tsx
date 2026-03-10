@@ -69,20 +69,31 @@ export default function MealQuestionnaire() {
   };
 
   const handleGenerate = async () => {
+    console.log('Generate button pressed');
+    console.log('Profile:', profile);
+    console.log('Profile ID:', profile?.id);
+    console.log('Calculated Macros:', profile?.calculated_macros);
+    
     if (!profile?.id) {
-      Alert.alert('Error', 'Please complete your profile first');
+      Alert.alert('Profile Required', 'Please complete the onboarding to set up your profile first.', [
+        { text: 'OK', onPress: () => router.push('/onboarding') }
+      ]);
       return;
     }
 
     if (!profile?.calculated_macros) {
-      Alert.alert('Error', 'Please set up your profile with body stats to calculate macros');
+      Alert.alert('Profile Incomplete', 'Please complete your profile with body stats to calculate your macros.', [
+        { text: 'OK', onPress: () => router.push('/onboarding') }
+      ]);
       return;
     }
 
     // Check subscription status before generating
     setCheckingSubscription(true);
     try {
+      console.log('Checking subscription for:', profile.id);
       const subResponse = await api.get(`/subscription/check/${profile.id}`);
+      console.log('Subscription response:', subResponse.data);
       if (!subResponse.data.has_access) {
         setCheckingSubscription(false);
         Alert.alert(
@@ -101,18 +112,24 @@ export default function MealQuestionnaire() {
       setCheckingSubscription(false);
     }
 
+    console.log('Starting meal plan generation...');
     setLoading(true);
     try {
-      const response = await api.post('/mealplans/generate', {
+      const requestData = {
         user_id: profile.id,
         food_preferences: formData.eating_style,
         preferred_foods: formData.preferred_foods || null,
         foods_to_avoid: formData.foods_to_avoid || null,
         allergies: formData.allergies.filter((a) => a !== 'none'),
-      });
+      };
+      console.log('Request data:', requestData);
+      
+      const response = await api.post('/mealplans/generate', requestData);
+      console.log('Meal plan generated:', response.data.id);
 
       router.replace(`/meal-detail?id=${response.data.id}`);
     } catch (error: any) {
+      console.error('Generation error:', error);
       Alert.alert('Error', error.response?.data?.detail || 'Failed to generate meal plan. Please try again.');
     } finally {
       setLoading(false);
