@@ -2586,31 +2586,159 @@ Return ONLY this JSON (use the EXACT macro numbers from above):
             
             meal_data = json.loads(content)
             
-            # POST-PROCESSING: Force exact macro targets
+            # Ingredient database for accurate macro calculation (per 100g unless noted)
+            INGREDIENT_MACROS = {
+                # Proteins
+                "chicken breast": (165, 31, 0, 3.6),
+                "chicken thigh": (209, 26, 0, 11),
+                "sirloin steak": (180, 26, 0, 8),
+                "sirloin": (180, 26, 0, 8),
+                "ribeye steak": (250, 25, 0, 17),
+                "ribeye": (250, 25, 0, 17),
+                "rump steak": (175, 27, 0, 7),
+                "rump": (175, 27, 0, 7),
+                "steak": (180, 26, 0, 8),  # default to sirloin
+                "ground beef": (250, 26, 0, 17),
+                "beef mince": (250, 26, 0, 17),
+                "extra lean beef": (175, 26, 0, 7),
+                "lean beef": (175, 26, 0, 7),
+                "salmon": (208, 20, 0, 13),
+                "tilapia": (128, 26, 0, 2.7),
+                "tuna": (116, 26, 0, 0.8),
+                "shrimp": (99, 24, 0, 0.3),
+                "egg": (155, 13, 1.1, 11),  # per 100g (about 2 eggs)
+                "eggs": (155, 13, 1.1, 11),
+                "egg white": (52, 11, 0.7, 0.2),
+                "greek yogurt": (59, 10, 4, 0.4),
+                "cottage cheese": (84, 11, 4, 2.5),
+                "tofu": (144, 17, 3, 8),
+                "turkey": (170, 21, 0, 9),
+                "turkey breast": (135, 30, 0, 1),
+                "pork": (242, 27, 0, 14),
+                "bacon": (417, 13, 1.4, 40),
+                # Carbs
+                "rice": (130, 2.7, 28, 0.3),
+                "white rice": (130, 2.7, 28, 0.3),
+                "brown rice": (112, 2.6, 24, 0.9),
+                "sweet potato": (86, 1.6, 20, 0.1),
+                "potato": (77, 2, 17, 0.1),
+                "potatoes": (77, 2, 17, 0.1),
+                "oats": (389, 17, 66, 7),
+                "oatmeal": (68, 2.4, 12, 1.4),
+                "quinoa": (120, 4.4, 21, 1.9),
+                "pasta": (131, 5, 25, 1.1),
+                "bread": (265, 9, 49, 3.2),
+                "banana": (89, 1.1, 23, 0.3),
+                "apple": (52, 0.3, 14, 0.2),
+                "berries": (43, 1, 10, 0.3),
+                "orange": (47, 0.9, 12, 0.1),
+                # Vegetables
+                "broccoli": (34, 2.8, 7, 0.4),
+                "spinach": (23, 2.9, 3.6, 0.4),
+                "asparagus": (20, 2.2, 4, 0.1),
+                "zucchini": (17, 1.2, 3.1, 0.3),
+                "bell pepper": (31, 1, 6, 0.3),
+                "tomato": (18, 0.9, 3.9, 0.2),
+                "lettuce": (15, 1.4, 2.9, 0.2),
+                "cucumber": (15, 0.7, 3.6, 0.1),
+                "carrots": (41, 0.9, 10, 0.2),
+                "onion": (40, 1.1, 9, 0.1),
+                "mushroom": (22, 3.1, 3.3, 0.3),
+                "kale": (49, 4.3, 9, 0.9),
+                "avocado": (160, 2, 9, 15),
+                # Fats/oils
+                "olive oil": (884, 0, 0, 100),
+                "butter": (717, 0.9, 0.1, 81),
+                "almond": (579, 21, 22, 50),
+                "almonds": (579, 21, 22, 50),
+                "peanut butter": (588, 25, 20, 50),
+                "walnut": (654, 15, 14, 65),
+                "walnuts": (654, 15, 14, 65),
+                "cheese": (403, 25, 1.3, 33),
+                # Dairy
+                "milk": (42, 3.4, 5, 1),
+                "whey protein": (400, 80, 10, 3.3),
+                "protein powder": (400, 80, 10, 3.3),
+            }
+            
+            def calculate_ingredient_macros(ingredient_str):
+                """Calculate macros from ingredient string like '250g sweet potato'"""
+                import re
+                ingredient_str = ingredient_str.lower().strip()
+                
+                # Extract amount and unit
+                match = re.match(r'(\d+(?:\.\d+)?)\s*(g|ml|tbsp|tsp)?\s*(.+)', ingredient_str)
+                if not match:
+                    return None
+                    
+                amount = float(match.group(1))
+                unit = match.group(2) or 'g'
+                food_name = match.group(3).strip()
+                
+                # Convert units to grams
+                if unit == 'tbsp':
+                    amount = amount * 14
+                elif unit == 'tsp':
+                    amount = amount * 5
+                elif unit == 'ml':
+                    amount = amount  # assume ml ≈ g for liquids
+                
+                # Find matching ingredient in database
+                best_match = None
+                for key in INGREDIENT_MACROS.keys():
+                    if key in food_name or food_name in key:
+                        best_match = key
+                        break
+                    # Check for partial word match
+                    if any(word in food_name for word in key.split()):
+                        best_match = key
+                
+                if best_match:
+                    cal, pro, carb, fat = INGREDIENT_MACROS[best_match]
+                    multiplier = amount / 100  # database is per 100g
+                    return {
+                        "calories": round(cal * multiplier),
+                        "protein": round(pro * multiplier, 1),
+                        "carbs": round(carb * multiplier, 1),
+                        "fats": round(fat * multiplier, 1)
+                    }
+                
+                return None
+            
+            # POST-PROCESSING: Calculate REAL macros from ingredients
             for day in meal_data.get("meal_days", []):
-                meals = day.get("meals", [])
-                if len(meals) >= 4:
-                    # Set exact macros for each meal type
-                    meal_targets = [
-                        (breakfast_cal, breakfast_pro, breakfast_carb, breakfast_fat),
-                        (lunch_cal, lunch_pro, lunch_carb, lunch_fat),
-                        (dinner_cal, dinner_pro, dinner_carb, dinner_fat),
-                        (snack_cal, snack_pro, snack_carb, snack_fat),
-                    ]
-                    for i, (cal, pro, carb, fat) in enumerate(meal_targets):
-                        if i < len(meals):
-                            meals[i]["calories"] = cal
-                            meals[i]["protein"] = pro
-                            meals[i]["carbs"] = carb
-                            meals[i]["fats"] = fat
+                day_totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
                 
-                # Force day totals to exact targets
-                day["total_calories"] = target_cal
-                day["total_protein"] = target_pro
-                day["total_carbs"] = target_carb
-                day["total_fats"] = target_fat
+                for meal in day.get("meals", []):
+                    meal_macros = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
+                    
+                    for ingredient in meal.get("ingredients", []):
+                        ing_macros = calculate_ingredient_macros(ingredient)
+                        if ing_macros:
+                            meal_macros["calories"] += ing_macros["calories"]
+                            meal_macros["protein"] += ing_macros["protein"]
+                            meal_macros["carbs"] += ing_macros["carbs"]
+                            meal_macros["fats"] += ing_macros["fats"]
+                    
+                    # Update meal with calculated macros
+                    meal["calories"] = round(meal_macros["calories"])
+                    meal["protein"] = round(meal_macros["protein"])
+                    meal["carbs"] = round(meal_macros["carbs"])
+                    meal["fats"] = round(meal_macros["fats"])
+                    
+                    # Add to day totals
+                    day_totals["calories"] += meal["calories"]
+                    day_totals["protein"] += meal["protein"]
+                    day_totals["carbs"] += meal["carbs"]
+                    day_totals["fats"] += meal["fats"]
                 
-                logger.info(f"{day.get('day')}: {target_cal} cal, {target_pro}g P, {target_carb}g C, {target_fat}g F (forced to target)")
+                # Update day totals with calculated values
+                day["total_calories"] = day_totals["calories"]
+                day["total_protein"] = round(day_totals["protein"])
+                day["total_carbs"] = round(day_totals["carbs"])
+                day["total_fats"] = round(day_totals["fats"])
+                
+                logger.info(f"{day.get('day')}: {day_totals['calories']} cal, {day_totals['protein']}g P, {day_totals['carbs']}g C, {day_totals['fats']}g F (calculated from ingredients)")
             
             meal_plan = MealPlan(
                 user_id=request.user_id,
