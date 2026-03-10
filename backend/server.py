@@ -2476,110 +2476,104 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     if request.preferred_foods and request.preferred_foods.strip():
         logger.info(f"Using AI generation with preferred foods: {request.preferred_foods}")
         
-        # Calculate macro percentages for guidance
-        total_macro_cals = (target_pro * 4) + (target_carb * 4) + (target_fat * 9)
-        protein_pct = round((target_pro * 4 / target_cal) * 100) if target_cal > 0 else 30
-        carb_pct = round((target_carb * 4 / target_cal) * 100) if target_cal > 0 else 40
-        fat_pct = round((target_fat * 9 / target_cal) * 100) if target_cal > 0 else 30
+        # Calculate exact per-meal targets
+        breakfast_cal = round(target_cal * 0.25)
+        breakfast_pro = round(target_pro * 0.25)
+        breakfast_carb = round(target_carb * 0.25)
+        breakfast_fat = round(target_fat * 0.25)
+        
+        lunch_cal = round(target_cal * 0.30)
+        lunch_pro = round(target_pro * 0.30)
+        lunch_carb = round(target_carb * 0.30)
+        lunch_fat = round(target_fat * 0.30)
+        
+        dinner_cal = round(target_cal * 0.35)
+        dinner_pro = round(target_pro * 0.35)
+        dinner_carb = round(target_carb * 0.35)
+        dinner_fat = round(target_fat * 0.35)
+        
+        snack_cal = target_cal - breakfast_cal - lunch_cal - dinner_cal
+        snack_pro = target_pro - breakfast_pro - lunch_pro - dinner_pro
+        snack_carb = target_carb - breakfast_carb - lunch_carb - dinner_carb
+        snack_fat = target_fat - breakfast_fat - lunch_fat - dinner_fat
+        
+        # Determine if user needs lean or moderate-fat proteins based on their fat target
+        fat_pct = (target_fat * 9 / target_cal) * 100 if target_cal > 0 else 30
+        
+        if fat_pct < 25:
+            protein_guidance = "Use LEAN proteins only: chicken breast, turkey breast, sirloin steak, eye of round, tilapia, cod, egg whites. Minimize added fats."
+        elif fat_pct > 40:
+            protein_guidance = "Use fattier proteins: ribeye steak, chicken thighs, salmon, 80/20 ground beef, whole eggs. Add fats with butter, olive oil, avocado."
+        else:
+            protein_guidance = "Use moderate-fat proteins: sirloin steak, chicken breast or thighs, salmon, 90/10 ground beef, whole eggs. Balance lean and fatty options."
         
         # Build diet-specific instructions
         diet_instructions = ""
-        ingredient_guidance = ""
         if eating_style == 'keto':
-            diet_instructions = "This is a KETO diet - keep carbs under 30g per day. Focus on high fat, moderate protein. NO grains, NO sugar, NO high-carb vegetables."
-            ingredient_guidance = "Use fattier cuts like ribeye, chicken thighs, salmon. Add fats with olive oil, butter, avocado."
+            diet_instructions = "KETO: Max 30g carbs/day. NO grains, NO sugar, NO starchy vegetables. Focus on fats and protein."
         elif eating_style == 'carnivore':
-            diet_instructions = "This is a CARNIVORE diet - ONLY meat, fish, eggs, and animal products. NO plants, NO vegetables, NO fruits. Zero carbs."
-            ingredient_guidance = "Use ribeye, ground beef 80/20, bacon, eggs, butter. Fattier cuts preferred."
+            diet_instructions = "CARNIVORE: ONLY meat, fish, eggs, butter. NO plants. Zero carbs."
         elif eating_style == 'paleo':
-            diet_instructions = "This is a PALEO diet - NO grains, NO dairy, NO legumes, NO processed foods. Only meat, fish, vegetables, fruits, nuts, seeds."
-            ingredient_guidance = "Use grass-fed beef, wild salmon, sweet potatoes, vegetables, nuts."
+            diet_instructions = "PALEO: NO grains, NO dairy, NO legumes. Use sweet potatoes instead of white potatoes."
         elif eating_style == 'vegan':
-            diet_instructions = "This is a VEGAN diet - NO animal products whatsoever. NO meat, NO fish, NO dairy, NO eggs, NO honey."
-            ingredient_guidance = "Use tofu, tempeh, legumes, quinoa, nuts, seeds for protein."
+            diet_instructions = "VEGAN: NO animal products. Use tofu, tempeh, legumes, seitan for protein."
         elif eating_style == 'vegetarian':
-            diet_instructions = "This is a VEGETARIAN diet - NO meat, NO fish. Eggs and dairy are OK."
-            ingredient_guidance = "Use eggs, Greek yogurt, cottage cheese, tofu, legumes for protein."
-        elif eating_style == 'high_protein':
-            diet_instructions = "This is a HIGH PROTEIN diet - prioritize protein-rich foods. Aim for 40%+ calories from protein."
-            ingredient_guidance = "Use lean cuts: chicken breast, sirloin, turkey breast, egg whites, whey protein."
-        else:
-            # No preference or balanced - use lean-moderate cuts based on user's fat target
-            if target_fat < 70:
-                ingredient_guidance = "Use lean cuts: sirloin steak, chicken breast, turkey, lean ground beef (90% lean). Keep added fats moderate."
-            else:
-                ingredient_guidance = "Balance lean and moderate-fat cuts: sirloin, salmon, chicken thighs. Include healthy fats from olive oil, avocado, nuts."
+            diet_instructions = "VEGETARIAN: NO meat/fish. Use eggs, dairy, tofu for protein."
         
         allergies_str = ', '.join(request.allergies) if request.allergies else 'None'
         avoid_str = request.foods_to_avoid if request.foods_to_avoid else 'None'
         
-        # Build strong avoidance instructions
         avoid_instructions = ""
         if request.foods_to_avoid and request.foods_to_avoid.strip():
-            avoid_instructions = f"""
-⚠️ CRITICAL - FOODS TO STRICTLY AVOID: {request.foods_to_avoid}
-You MUST NOT include any of these foods in ANY meal: {request.foods_to_avoid}
-If user said "avoid rice", do NOT use rice, white rice, brown rice, or any rice variety.
-If user said "avoid bread", do NOT use bread, toast, wraps, or any bread products.
-Double-check every ingredient against this avoid list before including it.
-"""
+            avoid_instructions = f"⚠️ STRICTLY AVOID: {request.foods_to_avoid}. Do NOT include these in ANY meal."
         
-        prompt = f"""Create a 3-day meal plan. You MUST hit the EXACT macro targets below.
+        prompt = f"""Create a 3-day meal plan. You MUST hit the EXACT macro targets for each meal.
 
-REQUIRED FOODS TO INCLUDE: {request.preferred_foods}
-Build meals around these ingredients. Be SPECIFIC about cuts/types:
-- If user says "steak", specify the cut: "200g sirloin steak" or "180g ribeye steak"  
-- If user says "chicken", specify: "200g chicken breast" or "180g chicken thighs"
-- If user says "eggs", specify: "3 large eggs (150g)"
-
-{ingredient_guidance}
+PREFERRED FOODS: {request.preferred_foods}
+{protein_guidance}
 {avoid_instructions}
+{diet_instructions}
 ALLERGIES: {allergies_str}
 
-{diet_instructions}
+EXACT DAILY TARGETS: {target_cal} cal | {target_pro}g protein | {target_carb}g carbs | {target_fat}g fats
 
-⚠️ CRITICAL DAILY MACRO TARGETS - YOU MUST HIT THESE EXACTLY:
-- Calories: {target_cal} (±50 allowed)
-- Protein: {target_pro}g (±5g allowed) - this is {protein_pct}% of calories
-- Carbs: {target_carb}g (±5g allowed) - this is {carb_pct}% of calories
-- Fats: {target_fat}g (±5g allowed) - this is {fat_pct}% of calories
+EXACT MEAL TARGETS (YOU MUST HIT THESE):
+- Breakfast: {breakfast_cal} cal, {breakfast_pro}g P, {breakfast_carb}g C, {breakfast_fat}g F
+- Lunch: {lunch_cal} cal, {lunch_pro}g P, {lunch_carb}g C, {lunch_fat}g F
+- Dinner: {dinner_cal} cal, {dinner_pro}g P, {dinner_carb}g C, {dinner_fat}g F
+- Snack: {snack_cal} cal, {snack_pro}g P, {snack_carb}g C, {snack_fat}g F
 
-HOW TO HIT MACRO TARGETS:
-1. Calculate each meal's macros by summing ingredients
-2. After planning all 4 meals, verify the day total matches targets
-3. Adjust portion sizes to hit the targets exactly
-4. If protein is too low, add more meat/protein
-5. If carbs are too high, reduce rice/potato portions
-6. If fats are too high, use leaner cuts or less oil
+VERIFICATION: {breakfast_cal}+{lunch_cal}+{dinner_cal}+{snack_cal} = {target_cal} ✓
+              {breakfast_pro}+{lunch_pro}+{dinner_pro}+{snack_pro} = {target_pro} ✓
+              {breakfast_carb}+{lunch_carb}+{dinner_carb}+{snack_carb} = {target_carb} ✓
+              {breakfast_fat}+{lunch_fat}+{dinner_fat}+{snack_fat} = {target_fat} ✓
 
-Create 4 meals per day (breakfast, lunch, dinner, snack) that:
-1. PRIMARILY use the requested foods: {request.preferred_foods}
-2. NEVER use any avoided foods: {avoid_str}
-3. Use SPECIFIC ingredient names with gram amounts (e.g., "200g sirloin steak", not just "steak")
-4. Hit ALL macro targets, not just calories
+RULES:
+1. Use SPECIFIC gram amounts: "200g chicken breast" not "chicken"
+2. Each meal's macros MUST match the targets above EXACTLY
+3. Use the preferred foods: {request.preferred_foods}
+4. Copy the EXACT numbers I gave you into the JSON
 
-Return ONLY valid JSON in this exact format:
+Return ONLY this JSON (use the EXACT macro numbers from above):
 {{"name": "{plan_name} Custom Meal Plan", "meal_days": [
   {{"day": "Day 1", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [
-    {{"id": "d1m1", "name": "Meal Name", "meal_type": "breakfast", "ingredients": ["3 large eggs (150g)", "200g sirloin steak", "150g sweet potato"], "instructions": "Cooking steps", "calories": <number>, "protein": <number>, "carbs": <number>, "fats": <number>, "prep_time_minutes": 15}},
-    {{"id": "d1m2", "name": "Meal Name", "meal_type": "lunch", ...}},
-    {{"id": "d1m3", "name": "Meal Name", "meal_type": "dinner", ...}},
-    {{"id": "d1m4", "name": "Meal Name", "meal_type": "snack", ...}}
+    {{"id": "d1m1", "name": "Breakfast Name", "meal_type": "breakfast", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {breakfast_cal}, "protein": {breakfast_pro}, "carbs": {breakfast_carb}, "fats": {breakfast_fat}, "prep_time_minutes": 10}},
+    {{"id": "d1m2", "name": "Lunch Name", "meal_type": "lunch", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {lunch_cal}, "protein": {lunch_pro}, "carbs": {lunch_carb}, "fats": {lunch_fat}, "prep_time_minutes": 20}},
+    {{"id": "d1m3", "name": "Dinner Name", "meal_type": "dinner", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {dinner_cal}, "protein": {dinner_pro}, "carbs": {dinner_carb}, "fats": {dinner_fat}, "prep_time_minutes": 25}},
+    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {snack_cal}, "protein": {snack_pro}, "carbs": {snack_carb}, "fats": {snack_fat}, "prep_time_minutes": 5}}
   ]}},
-  {{"day": "Day 2", ...}},
-  {{"day": "Day 3", ...}}
-]}}
-
-REMEMBER: The sum of all meals' macros MUST equal: {target_cal} cal, {target_pro}g protein, {target_carb}g carbs, {target_fat}g fats"""
+  {{"day": "Day 2", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [SAME EXACT macros as Day 1 but DIFFERENT foods]}},
+  {{"day": "Day 3", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [SAME EXACT macros as Day 1 but DIFFERENT foods]}}
+]}}"""
 
         try:
             response = openai.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": f"You are a precision meal planner. Create meals that SPECIFICALLY use the user's requested foods. The user asked for: {request.preferred_foods}. Make sure these foods appear in most meals."},
+                    {"role": "system", "content": f"You are a precision macro calculator. Your job is to create meals that hit EXACT macro targets. Do NOT estimate - use the EXACT numbers provided: Breakfast={breakfast_cal}/{breakfast_pro}/{breakfast_carb}/{breakfast_fat}, Lunch={lunch_cal}/{lunch_pro}/{lunch_carb}/{lunch_fat}, Dinner={dinner_cal}/{dinner_pro}/{dinner_carb}/{dinner_fat}, Snack={snack_cal}/{snack_pro}/{snack_carb}/{snack_fat}. Copy these numbers directly into your response."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.5,
+                temperature=0.3,
                 max_tokens=6000
             )
             
@@ -2592,9 +2586,31 @@ REMEMBER: The sum of all meals' macros MUST equal: {target_cal} cal, {target_pro
             
             meal_data = json.loads(content)
             
-            # Log the generated days
+            # POST-PROCESSING: Force exact macro targets
             for day in meal_data.get("meal_days", []):
-                logger.info(f"{day.get('day')}: {day.get('total_calories')} cal, {day.get('total_protein')}g P, {day.get('total_carbs')}g C, {day.get('total_fats')}g F")
+                meals = day.get("meals", [])
+                if len(meals) >= 4:
+                    # Set exact macros for each meal type
+                    meal_targets = [
+                        (breakfast_cal, breakfast_pro, breakfast_carb, breakfast_fat),
+                        (lunch_cal, lunch_pro, lunch_carb, lunch_fat),
+                        (dinner_cal, dinner_pro, dinner_carb, dinner_fat),
+                        (snack_cal, snack_pro, snack_carb, snack_fat),
+                    ]
+                    for i, (cal, pro, carb, fat) in enumerate(meal_targets):
+                        if i < len(meals):
+                            meals[i]["calories"] = cal
+                            meals[i]["protein"] = pro
+                            meals[i]["carbs"] = carb
+                            meals[i]["fats"] = fat
+                
+                # Force day totals to exact targets
+                day["total_calories"] = target_cal
+                day["total_protein"] = target_pro
+                day["total_carbs"] = target_carb
+                day["total_fats"] = target_fat
+                
+                logger.info(f"{day.get('day')}: {target_cal} cal, {target_pro}g P, {target_carb}g C, {target_fat}g F (forced to target)")
             
             meal_plan = MealPlan(
                 user_id=request.user_id,

@@ -1,391 +1,276 @@
 #!/usr/bin/env python3
-"""
-Backend Testing Script for InterFitAI
-Testing meal plan macro accuracy and alternate meals as requested in review
-"""
-import requests
+
+import asyncio
+import httpx
 import json
 import time
 from datetime import datetime
 
-# Backend URL from environment
+# Configuration
 BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
-
-# Test user ID from review request
 TEST_USER_ID = "cbd82a69-3a37-48c2-88e8-0fe95081fa4b"
 
-class MealPlanTester:
-    def __init__(self):
-        self.session = requests.Session()
-        self.test_results = []
+# Target macros from the review request
+TARGET_CALORIES = 2273
+TARGET_PROTEIN = 170
+TARGET_CARBS = 227
+TARGET_FATS = 76
+
+def log_test(message):
+    """Log test messages with timestamp"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"[{timestamp}] {message}")
+
+def analyze_macro_accuracy(actual_cal, actual_pro, actual_carb, actual_fat, day_name):
+    """Analyze if macros hit EXACT targets and return results"""
+    results = {
+        'cal_diff': actual_cal - TARGET_CALORIES,
+        'pro_diff': actual_pro - TARGET_PROTEIN,
+        'carb_diff': actual_carb - TARGET_CARBS,
+        'fat_diff': actual_fat - TARGET_FATS,
+        'cal_pass': actual_cal == TARGET_CALORIES,
+        'pro_pass': actual_pro == TARGET_PROTEIN,
+        'carb_pass': actual_carb == TARGET_CARBS,
+        'fat_pass': actual_fat == TARGET_FATS
+    }
     
-    def log_test(self, test_name, status, message, response_time=None):
-        """Log test result"""
-        result = {
-            'test': test_name,
-            'status': status,  # 'PASS' or 'FAIL'
-            'message': message,
-            'response_time': response_time,
-            'timestamp': datetime.now().isoformat()
-        }
-        self.test_results.append(result)
-        status_symbol = "✅" if status == 'PASS' else "❌"
-        print(f"{status_symbol} {test_name}: {message}")
-        if response_time:
-            print(f"   Response time: {response_time:.2f}s")
+    # Check if all macros match exactly
+    results['perfect_match'] = all([results['cal_pass'], results['pro_pass'], results['carb_pass'], results['fat_pass']])
     
-    def test_meal_plan_generation_with_macro_accuracy(self):
-        """TEST 1: Meal Plan with No Preference (should hit exact macros)"""
-        print("\n" + "="*60)
-        print("TEST 1: MEAL PLAN MACRO ACCURACY")
-        print("="*60)
+    return results
+
+def check_food_specificity(meals, expected_foods):
+    """Check if meals use specific food names instead of generic ones"""
+    specificity_issues = []
+    found_foods = {}
+    
+    for meal in meals:
+        meal_name = meal.get('name', '')
+        ingredients = meal.get('ingredients', [])
         
-        # Request payload from review
-        payload = {
+        # Check for generic "steak" vs specific cuts
+        if 'steak' in expected_foods:
+            if 'steak' in meal_name.lower() and not any(cut in meal_name.lower() for cut in ['sirloin', 'ribeye', 'filet', 'strip', 'flank', 'skirt']):
+                # Check ingredients for specificity
+                steak_specific = False
+                for ingredient in ingredients:
+                    if any(cut in ingredient.lower() for cut in ['sirloin', 'ribeye', 'filet', 'strip', 'flank', 'skirt']):
+                        steak_specific = True
+                        found_foods['steak'] = ingredient
+                        break
+                
+                if not steak_specific:
+                    specificity_issues.append(f"Generic 'steak' found in '{meal_name}' - should specify cut (sirloin, ribeye, etc.)")
+        
+        # Check for chicken specificity
+        if 'chicken breast' in expected_foods:
+            for ingredient in ingredients:
+                if 'chicken' in ingredient.lower():
+                    if 'breast' in ingredient.lower():
+                        found_foods['chicken_breast'] = ingredient
+                    elif ingredient.lower().strip() == 'chicken':
+                        specificity_issues.append(f"Generic 'chicken' found - should specify 'chicken breast' in '{ingredient}'")
+    
+    return specificity_issues, found_foods
+
+async def test_meal_plan_generation():
+    """Test comprehensive meal plan macro accuracy"""
+    log_test("🧪 COMPREHENSIVE MEAL PLAN MACRO ACCURACY TEST STARTING")
+    
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        
+        # TEST 1: Generic "steak" preference (should pick appropriate cut)
+        log_test("=" * 80)
+        log_test("TEST 1: Generic 'steak' preference (should pick appropriate cut)")
+        log_test("=" * 80)
+        
+        test1_request = {
             "user_id": TEST_USER_ID,
             "food_preferences": "none",
-            "preferred_foods": "chicken, rice, eggs"
+            "preferred_foods": "steak, rice, eggs"
         }
         
+        log_test(f"Request: POST /api/mealplans/generate")
+        log_test(f"Payload: {json.dumps(test1_request, indent=2)}")
+        
         start_time = time.time()
-        try:
-            response = self.session.post(
-                f"{BACKEND_URL}/mealplans/generate",
-                json=payload,
-                timeout=120
-            )
-            response_time = time.time() - start_time
-            
-            if response.status_code != 200:
-                self.log_test(
-                    "Meal Plan Generation API",
-                    "FAIL", 
-                    f"HTTP {response.status_code}: {response.text[:200]}",
-                    response_time
-                )
-                return None
-                
-            data = response.json()
-            
-            # Get Day 1 data from meal_days structure
-            days = data.get('meal_days', [])
-            if not days:
-                self.log_test(
-                    "Meal Plan Structure",
-                    "FAIL",
-                    "No meal_days found in meal plan response",
-                    response_time
-                )
-                return None
-            
-            day_1 = days[0]
-            meals = day_1.get('meals', [])
-            
-            # Get the daily totals (post-processed for accuracy)
-            total_calories = day_1.get('total_calories', 0)
-            total_protein = day_1.get('total_protein', 0)
-            total_carbs = day_1.get('total_carbs', 0)
-            total_fats = day_1.get('total_fats', 0)
-            
-            # Check ingredients specificity and show meal breakdown
-            specific_ingredients_found = 0
-            vague_ingredients_found = 0
-            
-            print(f"\nDAY 1 MEALS BREAKDOWN:")
-            for i, meal in enumerate(meals, 1):
-                meal_name = meal.get('name', 'Unknown')
-                calories = meal.get('calories', 0)
-                protein = meal.get('protein', 0)
-                carbs = meal.get('carbs', 0)
-                fats = meal.get('fats', 0)
-                
-                print(f"Meal {i} - {meal_name}: {calories}cal, {protein}g P, {carbs}g C, {fats}g F")
-                
-                # Check ingredients specificity
-                ingredients = meal.get('ingredients', [])
-                for ingredient in ingredients:
-                    ingredient_text = ingredient.get('name', '') if isinstance(ingredient, dict) else str(ingredient)
-                    # Look for specific quantities like "200g chicken breast"
-                    if any(unit in ingredient_text.lower() for unit in ['g ', 'ml ', 'oz ', 'cup', 'tbsp']):
-                        specific_ingredients_found += 1
-                    elif ingredient_text.strip() and len(ingredient_text.split()) > 1:
-                        specific_ingredients_found += 1
-                    else:
-                        vague_ingredients_found += 1
-            
-            # Target macros from review request
-            target_calories = 2273
-            target_protein = 170
-            target_carbs = 227
-            target_fats = 76
-            
-            print(f"\nDAY 1 TOTALS (POST-PROCESSED):")
-            print(f"Actual Total: {total_calories}cal, {total_protein}g P, {total_carbs}g C, {total_fats}g F")
-            print(f"Target:      {target_calories}cal, {target_protein}g P, {target_carbs}g C, {target_fats}g F")
-            
-            # Check accuracy (±10% tolerance)
-            cal_diff = abs(total_calories - target_calories)
-            protein_diff = abs(total_protein - target_protein)
-            carbs_diff = abs(total_carbs - target_carbs)
-            fats_diff = abs(total_fats - target_fats)
-            
-            cal_tolerance = target_calories * 0.10  # ±10%
-            protein_tolerance = target_protein * 0.10  # ±10%
-            carbs_tolerance = target_carbs * 0.10  # ±10%
-            fats_tolerance = target_fats * 0.10  # ±10%
-            
-            accuracy_status = (
-                cal_diff <= cal_tolerance and
-                protein_diff <= protein_tolerance and
-                carbs_diff <= carbs_tolerance and
-                fats_diff <= fats_tolerance
-            )
-            
-            accuracy_details = []
-            if cal_diff <= cal_tolerance:
-                accuracy_details.append(f"Calories ✅ (±{cal_diff})")
-            else:
-                accuracy_details.append(f"Calories ❌ (±{cal_diff}, tolerance: ±{cal_tolerance:.1f})")
-            
-            if protein_diff <= protein_tolerance:
-                accuracy_details.append(f"Protein ✅ (±{protein_diff}g)")
-            else:
-                accuracy_details.append(f"Protein ❌ (±{protein_diff}g, tolerance: ±{protein_tolerance:.1f}g)")
-            
-            if carbs_diff <= carbs_tolerance:
-                accuracy_details.append(f"Carbs ✅ (±{carbs_diff}g)")
-            else:
-                accuracy_details.append(f"Carbs ❌ (±{carbs_diff}g, tolerance: ±{carbs_tolerance:.1f}g)")
-            
-            if fats_diff <= fats_tolerance:
-                accuracy_details.append(f"Fats ✅ (±{fats_diff}g)")
-            else:
-                accuracy_details.append(f"Fats ❌ (±{fats_diff}g, tolerance: ±{fats_tolerance:.1f}g)")
-            
-            print(f"\nACCURACY CHECK: {' | '.join(accuracy_details)}")
-            
-            # Check ingredients specificity
-            ingredients_specific = specific_ingredients_found > vague_ingredients_found
-            sample_ingredient = "N/A"
-            if meals and meals[0].get('ingredients'):
-                first_ingredient = meals[0]['ingredients'][0]
-                sample_ingredient = first_ingredient.get('name', '') if isinstance(first_ingredient, dict) else str(first_ingredient)
-            
-            print(f"\nINGREDIENT SPECIFICITY:")
-            print(f"Specific ingredients: {specific_ingredients_found}")
-            print(f"Vague ingredients: {vague_ingredients_found}")
-            print(f"Sample ingredient: '{sample_ingredient}'")
-            
-            # Log results
-            self.log_test(
-                "Meal Plan Macro Accuracy",
-                "PASS" if accuracy_status else "FAIL",
-                f"Accuracy: {'Within 10%' if accuracy_status else 'Exceeds 10%'} - " + ", ".join(accuracy_details),
-                response_time
-            )
-            
-            self.log_test(
-                "Ingredient Specificity",
-                "PASS" if ingredients_specific else "FAIL",
-                f"Sample: '{sample_ingredient[:50]}...' ({'Specific' if ingredients_specific else 'Vague'})",
-            )
-            
-            # Return meal plan ID for alternate meal test
-            return data.get('id')
-            
-        except requests.exceptions.Timeout:
-            self.log_test(
-                "Meal Plan Generation API",
-                "FAIL",
-                "Request timed out after 120 seconds"
-            )
-            return None
-        except Exception as e:
-            self.log_test(
-                "Meal Plan Generation API", 
-                "FAIL",
-                f"Exception: {str(e)[:200]}"
-            )
-            return None
-    
-    def test_alternate_meal_generation(self, meal_plan_id):
-        """TEST 2: Test Alternate Meal Generation"""
-        print("\n" + "="*60)
-        print("TEST 2: ALTERNATE MEAL GENERATION")
-        print("="*60)
+        response1 = await client.post(f"{BACKEND_URL}/mealplans/generate", json=test1_request)
+        response_time1 = time.time() - start_time
         
-        if not meal_plan_id:
-            self.log_test(
-                "Alternate Meal Generation",
-                "FAIL",
-                "No meal plan ID available from Test 1"
-            )
-            return
+        log_test(f"Response time: {response_time1:.2f}s")
+        log_test(f"Status code: {response1.status_code}")
         
-        # Request payload for alternate meal (lunch = meal_index 1)
-        payload = {
+        if response1.status_code == 200:
+            meal_plan1 = response1.json()
+            log_test(f"✅ Generated meal plan: '{meal_plan1.get('name')}'")
+            
+            # Analyze each day's macros
+            test1_results = {}
+            for i, day in enumerate(meal_plan1.get('meal_days', []), 1):
+                day_name = f"Day {i}"
+                actual_cal = day.get('total_calories', 0)
+                actual_pro = day.get('total_protein', 0)
+                actual_carb = day.get('total_carbs', 0)
+                actual_fat = day.get('total_fats', 0)
+                
+                results = analyze_macro_accuracy(actual_cal, actual_pro, actual_carb, actual_fat, day_name)
+                test1_results[day_name] = results
+                
+                # Log results
+                status = "✅" if results['perfect_match'] else "❌"
+                log_test(f"{status} {day_name}: {actual_cal} cal, {actual_pro}g P, {actual_carb}g C, {actual_fat}g F")
+                log_test(f"    Target: {TARGET_CALORIES} cal, {TARGET_PROTEIN}g P, {TARGET_CARBS}g C, {TARGET_FATS}g F")
+                if not results['perfect_match']:
+                    log_test(f"    Diff: {results['cal_diff']:+} cal, {results['pro_diff']:+}g P, {results['carb_diff']:+}g C, {results['fat_diff']:+}g F")
+            
+            # Check steak specificity
+            all_meals = []
+            for day in meal_plan1.get('meal_days', []):
+                all_meals.extend(day.get('meals', []))
+            
+            specificity_issues, found_foods = check_food_specificity(all_meals, ["steak", "rice", "eggs"])
+            
+            log_test("\n📋 STEAK SPECIFICITY CHECK:")
+            if specificity_issues:
+                for issue in specificity_issues:
+                    log_test(f"❌ {issue}")
+            else:
+                log_test("✅ All steak references are specific cuts")
+            
+            if 'steak' in found_foods:
+                log_test(f"✅ Found specific steak: {found_foods['steak']}")
+        else:
+            log_test(f"❌ FAILED - Status: {response1.status_code}")
+            log_test(f"Error: {response1.text}")
+            return False
+        
+        # TEST 2: Specific food preference
+        log_test("\n" + "=" * 80)
+        log_test("TEST 2: Specific food preference (chicken breast, brown rice)")
+        log_test("=" * 80)
+        
+        test2_request = {
             "user_id": TEST_USER_ID,
-            "meal_plan_id": meal_plan_id,
-            "day_index": 0,  # Day 1
-            "meal_index": 1,  # Lunch (2nd meal)
-            "swap_preference": "similar"
+            "food_preferences": "none",
+            "preferred_foods": "chicken breast, brown rice"
         }
         
+        log_test(f"Request: POST /api/mealplans/generate")
+        log_test(f"Payload: {json.dumps(test2_request, indent=2)}")
+        
         start_time = time.time()
-        try:
-            response = self.session.post(
-                f"{BACKEND_URL}/mealplan/alternate",
-                json=payload,
-                timeout=60
-            )
-            response_time = time.time() - start_time
+        response2 = await client.post(f"{BACKEND_URL}/mealplans/generate", json=test2_request)
+        response_time2 = time.time() - start_time
+        
+        log_test(f"Response time: {response_time2:.2f}s")
+        log_test(f"Status code: {response2.status_code}")
+        
+        if response2.status_code == 200:
+            meal_plan2 = response2.json()
+            log_test(f"✅ Generated meal plan: '{meal_plan2.get('name')}'")
             
-            if response.status_code != 200:
-                self.log_test(
-                    "Alternate Meal Generation API",
-                    "FAIL",
-                    f"HTTP {response.status_code}: {response.text[:200]}",
-                    response_time
-                )
-                return
+            # Analyze each day's macros
+            test2_results = {}
+            for i, day in enumerate(meal_plan2.get('meal_days', []), 1):
+                day_name = f"Day {i}"
+                actual_cal = day.get('total_calories', 0)
+                actual_pro = day.get('total_protein', 0)
+                actual_carb = day.get('total_carbs', 0)
+                actual_fat = day.get('total_fats', 0)
                 
-            data = response.json()
-            alternate_meal = data.get('alternate_meal', {})
-            
-            # Extract alternate meal macros
-            alt_calories = alternate_meal.get('calories', 0)
-            alt_protein = alternate_meal.get('protein', 0)
-            alt_carbs = alternate_meal.get('carbs', 0)
-            alt_fats = alternate_meal.get('fats', 0)
-            
-            # Expected lunch macros (~30% of daily target)
-            target_lunch_calories = 2273 * 0.30  # ~682 calories
-            target_lunch_protein = 170 * 0.30  # ~51g protein
-            target_lunch_carbs = 227 * 0.30  # ~68g carbs
-            target_lunch_fats = 76 * 0.30  # ~23g fats
-            
-            print(f"\nALTERNATE MEAL DETAILS:")
-            print(f"Name: {alternate_meal.get('name', 'Unknown')}")
-            print(f"Macros: {alt_calories}cal, {alt_protein}g P, {alt_carbs}g C, {alt_fats}g F")
-            print(f"Expected Lunch Target: ~{target_lunch_calories:.0f}cal, ~{target_lunch_protein:.0f}g P, ~{target_lunch_carbs:.0f}g C, ~{target_lunch_fats:.0f}g F")
-            
-            # Check if alternate meal is reasonable for lunch portion (~30% of daily)
-            # Allow wider tolerance for individual meals (±20%)
-            cal_diff = abs(alt_calories - target_lunch_calories)
-            protein_diff = abs(alt_protein - target_lunch_protein)
-            carbs_diff = abs(alt_carbs - target_lunch_carbs)
-            fats_diff = abs(alt_fats - target_lunch_fats)
-            
-            cal_tolerance = target_lunch_calories * 0.20  # ±20%
-            protein_tolerance = target_lunch_protein * 0.20
-            carbs_tolerance = target_lunch_carbs * 0.20
-            fats_tolerance = target_lunch_fats * 0.20
-            
-            matches_targets = (
-                cal_diff <= cal_tolerance and
-                protein_diff <= protein_tolerance and
-                carbs_diff <= carbs_tolerance and
-                fats_diff <= fats_tolerance
-            )
-            
-            accuracy_details = []
-            if cal_diff <= cal_tolerance:
-                accuracy_details.append(f"Calories ✅")
-            else:
-                accuracy_details.append(f"Calories ❌ (off by {cal_diff:.0f})")
+                results = analyze_macro_accuracy(actual_cal, actual_pro, actual_carb, actual_fat, day_name)
+                test2_results[day_name] = results
                 
-            if protein_diff <= protein_tolerance:
-                accuracy_details.append(f"Protein ✅")
-            else:
-                accuracy_details.append(f"Protein ❌ (off by {protein_diff:.0f}g)")
-                
-            if carbs_diff <= carbs_tolerance:
-                accuracy_details.append(f"Carbs ✅")
-            else:
-                accuracy_details.append(f"Carbs ❌ (off by {carbs_diff:.0f}g)")
-                
-            if fats_diff <= fats_tolerance:
-                accuracy_details.append(f"Fats ✅")
-            else:
-                accuracy_details.append(f"Fats ❌ (off by {fats_diff:.0f}g)")
+                # Log results
+                status = "✅" if results['perfect_match'] else "❌"
+                log_test(f"{status} {day_name}: {actual_cal} cal, {actual_pro}g P, {actual_carb}g C, {actual_fat}g F")
+                if not results['perfect_match']:
+                    log_test(f"    Diff: {results['cal_diff']:+} cal, {results['pro_diff']:+}g P, {results['carb_diff']:+}g C, {results['fat_diff']:+}g F")
             
-            print(f"\nTARGET MATCH: {' | '.join(accuracy_details)}")
+            # Check chicken breast specificity
+            all_meals2 = []
+            for day in meal_plan2.get('meal_days', []):
+                all_meals2.extend(day.get('meals', []))
             
-            self.log_test(
-                "Alternate Meal Generation",
-                "PASS" if matches_targets else "FAIL",
-                f"Lunch alternate: {alt_calories}cal, {alt_protein}g P, {alt_carbs}g C, {alt_fats}g F - {'Matches targets' if matches_targets else 'Does not match targets'}",
-                response_time
-            )
+            specificity_issues2, found_foods2 = check_food_specificity(all_meals2, ["chicken breast", "brown rice"])
             
-        except requests.exceptions.Timeout:
-            self.log_test(
-                "Alternate Meal Generation API",
-                "FAIL",
-                "Request timed out after 60 seconds"
-            )
-        except Exception as e:
-            self.log_test(
-                "Alternate Meal Generation API",
-                "FAIL", 
-                f"Exception: {str(e)[:200]}"
-            )
-    
-    def print_summary(self):
-        """Print test summary in requested format"""
-        print("\n" + "="*60)
-        print("MEAL PLAN MACRO ACCURACY AND ALTERNATE MEALS TEST RESULTS")
-        print("="*60)
+            log_test("\n📋 CHICKEN BREAST SPECIFICITY CHECK:")
+            if 'chicken_breast' in found_foods2:
+                log_test(f"✅ Uses chicken breast specifically: {found_foods2['chicken_breast']}")
+            else:
+                log_test("❌ Did not find specific 'chicken breast' usage")
+            
+            if specificity_issues2:
+                for issue in specificity_issues2:
+                    log_test(f"❌ {issue}")
+        else:
+            log_test(f"❌ FAILED - Status: {response2.status_code}")
+            log_test(f"Error: {response2.text}")
+            return False
         
-        # Format as requested in review
-        meal_plan_test = None
-        ingredient_test = None
-        alternate_test = None
+        # SUMMARY REPORT
+        log_test("\n" + "=" * 80)
+        log_test("🎯 FINAL RESULTS SUMMARY")
+        log_test("=" * 80)
         
-        for result in self.test_results:
-            if "Meal Plan Macro Accuracy" in result['test']:
-                meal_plan_test = result
-            elif "Ingredient Specificity" in result['test']:
-                ingredient_test = result
-            elif "Alternate Meal Generation" in result['test']:
-                alternate_test = result
+        # Test 1 Summary
+        test1_perfect_days = sum(1 for results in test1_results.values() if results['perfect_match'])
+        log_test(f"TEST 1 (steak, rice, eggs):")
+        for day_name, results in test1_results.items():
+            status = "✅" if results['perfect_match'] else "❌"
+            actual_cal = TARGET_CALORIES + results['cal_diff']
+            actual_pro = TARGET_PROTEIN + results['pro_diff']
+            actual_carb = TARGET_CARBS + results['carb_diff']
+            actual_fat = TARGET_FATS + results['fat_diff']
+            log_test(f"{day_name}: {actual_cal} cal, {actual_pro}g P, {actual_carb}g C, {actual_fat}g F (target: {TARGET_CALORIES}/{TARGET_PROTEIN}/{TARGET_CARBS}/{TARGET_FATS}) {status}")
         
-        print("TEST 1 - MEAL PLAN MACROS:")
-        if meal_plan_test:
-            print(f"Accuracy: {meal_plan_test['message']}")
+        if specificity_issues:
+            log_test(f"Steak specificity: ❌ Generic steak found")
+        else:
+            log_test(f"Steak specificity: ✅ Specific cuts used")
         
-        if ingredient_test:
-            print(f"Sample ingredient (specific?): {ingredient_test['message']}")
+        # Test 2 Summary  
+        test2_perfect_days = sum(1 for results in test2_results.values() if results['perfect_match'])
+        log_test(f"\nTEST 2 (chicken breast, brown rice):")
+        for day_name, results in test2_results.items():
+            status = "✅" if results['perfect_match'] else "❌"
+            actual_cal = TARGET_CALORIES + results['cal_diff']
+            actual_pro = TARGET_PROTEIN + results['pro_diff']
+            actual_carb = TARGET_CARBS + results['carb_diff']
+            actual_fat = TARGET_FATS + results['fat_diff']
+            log_test(f"{day_name}: {actual_cal} cal, {actual_pro}g P, {actual_carb}g C, {actual_fat}g F {status}")
         
-        print("\nTEST 2 - ALTERNATE MEAL:")
-        if alternate_test:
-            print(f"{alternate_test['message']}")
-            print(f"Matches targets? {'✅' if alternate_test['status'] == 'PASS' else '❌'}")
+        chicken_breast_ok = 'chicken_breast' in found_foods2
+        log_test(f"Uses chicken breast specifically? {'✅' if chicken_breast_ok else '❌'}")
         
-        # Overall status
-        all_passed = all(result['status'] == 'PASS' for result in self.test_results)
-        print(f"\nOVERALL STATUS: {'✅ ALL TESTS PASSED' if all_passed else '❌ SOME TESTS FAILED'}")
+        # Overall assessment
+        total_perfect_days = test1_perfect_days + test2_perfect_days
+        total_days = len(test1_results) + len(test2_results)
         
-        return all_passed
+        log_test(f"\n🎯 OVERALL: {total_perfect_days}/{total_days} days hit exact targets")
+        if total_perfect_days == total_days and not specificity_issues and chicken_breast_ok:
+            log_test("✅ All macros match targets perfectly AND food specificity is correct")
+            return True
+        else:
+            log_test("❌ Issues found with macro accuracy or food specificity")
+            return False
 
-def main():
-    """Run the meal plan macro accuracy tests"""
-    print("InterFitAI Backend Testing - Meal Plan Macro Accuracy & Alternate Meals")
-    print("Backend URL:", BACKEND_URL)
-    print("Test User ID:", TEST_USER_ID)
+async def main():
+    """Main test execution"""
+    log_test("🚀 Starting InterFitAI Meal Plan Macro Accuracy Testing")
     
-    tester = MealPlanTester()
-    
-    # Run Test 1: Meal Plan Generation with Macro Accuracy
-    meal_plan_id = tester.test_meal_plan_generation_with_macro_accuracy()
-    
-    # Run Test 2: Alternate Meal Generation
-    tester.test_alternate_meal_generation(meal_plan_id)
-    
-    # Print final summary
-    all_passed = tester.print_summary()
-    
-    return 0 if all_passed else 1
+    try:
+        success = await test_meal_plan_generation()
+        
+        if success:
+            log_test("\n🎉 ALL TESTS PASSED - Meal plan generation working perfectly!")
+        else:
+            log_test("\n💥 SOME TESTS FAILED - See issues above")
+            
+    except Exception as e:
+        log_test(f"💥 CRITICAL ERROR: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    exit(main())
+    asyncio.run(main())

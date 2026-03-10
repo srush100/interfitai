@@ -156,7 +156,7 @@ export default function MealQuestionnaire() {
       <View style={styles.textInputSection}>
         <TextInput
           style={styles.textAreaInput}
-          placeholder="e.g. potatoes, steak, eggs, rice, berries, wraps"
+          placeholder="e.g. chicken breast, rice, eggs, sweet potato"
           placeholderTextColor={colors.textMuted}
           value={formData.preferred_foods}
           onChangeText={(text) => setFormData({ ...formData, preferred_foods: text })}
@@ -164,9 +164,12 @@ export default function MealQuestionnaire() {
           numberOfLines={4}
           textAlignVertical="top"
         />
-        <Text style={styles.inputHint}>
-          Type any foods you enjoy and want to see in your meal plan
-        </Text>
+        <View style={styles.hintContainer}>
+          <Ionicons name="information-circle" size={16} color={colors.primary} />
+          <Text style={styles.inputHint}>
+            Be specific for better results: "sirloin steak" instead of "steak", "chicken breast" instead of "chicken"
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -435,6 +438,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     marginTop: 8,
+    paddingHorizontal: 4,
+    flex: 1,
+    marginLeft: 6,
+  },
+  hintContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 10,
     paddingHorizontal: 4,
   },
   chipContainer: {
