@@ -2494,12 +2494,22 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         allergies_str = ', '.join(request.allergies) if request.allergies else 'None'
         avoid_str = request.foods_to_avoid if request.foods_to_avoid else 'None'
         
+        # Build strong avoidance instructions
+        avoid_instructions = ""
+        if request.foods_to_avoid and request.foods_to_avoid.strip():
+            avoid_instructions = f"""
+⚠️ CRITICAL - FOODS TO STRICTLY AVOID: {request.foods_to_avoid}
+You MUST NOT include any of these foods in ANY meal: {request.foods_to_avoid}
+If user said "avoid rice", do NOT use rice, white rice, brown rice, or any rice variety.
+If user said "avoid bread", do NOT use bread, toast, wraps, or any bread products.
+Double-check every ingredient against this avoid list before including it.
+"""
+        
         prompt = f"""Create a 3-day meal plan using these SPECIFIC foods as the foundation:
 
 REQUIRED FOODS TO INCLUDE: {request.preferred_foods}
 You MUST build meals around these ingredients. Every day should feature these foods prominently.
-
-FOODS TO AVOID: {avoid_str}
+{avoid_instructions}
 ALLERGIES: {allergies_str}
 
 {diet_instructions}
@@ -2512,9 +2522,10 @@ DAILY MACRO TARGETS:
 
 Create 4 meals per day (breakfast, lunch, dinner, snack) that:
 1. PRIMARILY use the requested foods: {request.preferred_foods}
-2. Hit the calorie target closely (~{target_cal} calories per day)
-3. Follow the eating style strictly
-4. Use specific gram amounts for all ingredients
+2. NEVER use any avoided foods: {avoid_str}
+3. Hit the calorie target closely (~{target_cal} calories per day)
+4. Follow the eating style strictly
+5. Use specific gram amounts for all ingredients
 
 Return ONLY valid JSON in this exact format:
 {{"name": "{plan_name} Custom Meal Plan", "meal_days": [
@@ -2528,7 +2539,9 @@ Return ONLY valid JSON in this exact format:
   {{"day": "Day 3", ...}}
 ]}}
 
-IMPORTANT: The meals MUST feature {request.preferred_foods} prominently. Do not use generic meals."""
+IMPORTANT: 
+- The meals MUST feature {request.preferred_foods} prominently
+- NEVER include {avoid_str} in any ingredient"""
 
         try:
             response = openai.chat.completions.create(
@@ -2706,6 +2719,19 @@ async def delete_meal_plan(plan_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Meal plan not found")
     return {"message": "Meal plan deleted successfully"}
+
+
+class MealPlanRenameRequest(BaseModel):
+    name: str
+
+@api_router.put("/mealplan/{plan_id}/rename")
+async def rename_meal_plan(plan_id: str, request: MealPlanRenameRequest):
+    """Rename a meal plan"""
+    result = await db.mealplans.update_one({"id": plan_id}, {"$set": {"name": request.name}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Meal plan not found")
+    return {"message": "Meal plan renamed successfully", "name": request.name}
+
 
 @api_router.post("/mealplan/save/{plan_id}")
 async def save_meal_plan(plan_id: str):

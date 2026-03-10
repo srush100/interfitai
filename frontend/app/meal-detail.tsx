@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -70,6 +71,9 @@ export default function MealDetail() {
   const [loggingMeal, setLoggingMeal] = useState<string | null>(null);
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [swapMealTarget, setSwapMealTarget] = useState<{dayIndex: number, mealIndex: number} | null>(null);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [newPlanName, setNewPlanName] = useState('');
+  const [renamingPlan, setRenamingPlan] = useState(false);
 
   const swapOptions = [
     { id: 'similar', label: 'Similar Macros', icon: 'swap-horizontal', description: 'Same calories & protein' },
@@ -104,6 +108,30 @@ export default function MealDetail() {
       setFavoriteMeals(favoriteNames);
     } catch (error) {
       console.log('Error loading favorites:', error);
+    }
+  };
+
+  const handleRenamePlan = async () => {
+    if (!mealPlan || !newPlanName.trim()) return;
+    
+    setRenamingPlan(true);
+    try {
+      await api.put(`/mealplan/${mealPlan.id}/rename`, { name: newPlanName.trim() });
+      setMealPlan({ ...mealPlan, name: newPlanName.trim() });
+      setShowRenameModal(false);
+      setNewPlanName('');
+    } catch (error) {
+      console.log('Error renaming plan:', error);
+      Alert.alert('Error', 'Failed to rename meal plan');
+    } finally {
+      setRenamingPlan(false);
+    }
+  };
+
+  const openRenameModal = () => {
+    if (mealPlan) {
+      setNewPlanName(mealPlan.name);
+      setShowRenameModal(true);
     }
   };
 
@@ -260,7 +288,10 @@ export default function MealDetail() {
         <View style={styles.personalizationCard}>
           <View style={styles.personalizationHeader}>
             <Ionicons name="sparkles" size={20} color={colors.primary} />
-            <Text style={styles.personalizationTitle}>Your AI Meal Plan</Text>
+            <TouchableOpacity onPress={openRenameModal} style={styles.planNameContainer}>
+              <Text style={styles.personalizationTitle}>{mealPlan.name}</Text>
+              <Ionicons name="pencil" size={16} color={colors.textMuted} style={styles.editIcon} />
+            </TouchableOpacity>
           </View>
           <Text style={styles.personalizationSubtitle}>
             Built specifically for you based on your goals and preferences
@@ -570,6 +601,47 @@ export default function MealDetail() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Rename Modal */}
+      <Modal
+        visible={showRenameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRenameModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.renameModal}>
+            <Text style={styles.renameModalTitle}>Rename Meal Plan</Text>
+            <TextInput
+              style={styles.renameInput}
+              value={newPlanName}
+              onChangeText={setNewPlanName}
+              placeholder="Enter new name"
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+            />
+            <View style={styles.renameActions}>
+              <TouchableOpacity 
+                style={styles.renameCancelBtn}
+                onPress={() => setShowRenameModal(false)}
+              >
+                <Text style={styles.renameCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.renameSaveBtn, !newPlanName.trim() && styles.renameSaveBtnDisabled]}
+                onPress={handleRenamePlan}
+                disabled={!newPlanName.trim() || renamingPlan}
+              >
+                {renamingPlan ? (
+                  <ActivityIndicator size="small" color="#000" />
+                ) : (
+                  <Text style={styles.renameSaveText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -994,5 +1066,70 @@ const styles = StyleSheet.create({
   swapOptionDesc: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  // Rename modal styles
+  planNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  editIcon: {
+    marginLeft: 8,
+  },
+  renameModal: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 30,
+    width: '85%',
+    maxWidth: 350,
+  },
+  renameModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  renameInput: {
+    backgroundColor: colors.background,
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 16,
+  },
+  renameActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  renameCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    backgroundColor: colors.background,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  renameCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  renameSaveBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  renameSaveBtnDisabled: {
+    backgroundColor: colors.border,
+  },
+  renameSaveText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000',
   },
 });
