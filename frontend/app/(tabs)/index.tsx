@@ -233,15 +233,23 @@ export default function HomeScreen() {
             style={styles.logo}
             resizeMode="contain"
           />
-          <TouchableOpacity
-            style={styles.subscriptionBadge}
-            onPress={() => router.push('/subscription')}
-          >
-            <Ionicons name="diamond" size={16} color={colors.primary} />
-            <Text style={styles.subscriptionText}>
-              {profile?.subscription_status === 'free' ? 'Upgrade' : 'Premium'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.headerRightActions}>
+            <TouchableOpacity
+              style={styles.settingsBtn}
+              onPress={() => router.push('/settings')}
+            >
+              <Ionicons name="settings-outline" size={22} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.subscriptionBadge}
+              onPress={() => router.push('/subscription')}
+            >
+              <Ionicons name="diamond" size={16} color={colors.primary} />
+              <Text style={styles.subscriptionText}>
+                {profile?.subscription_status === 'free' ? 'Upgrade' : 'Premium'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Welcome Section */}
@@ -454,6 +462,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.primary,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  settingsBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   motivationCard: {
     flexDirection: 'row',

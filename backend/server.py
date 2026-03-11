@@ -3339,8 +3339,16 @@ Respond with valid JSON only:
         
         new_meal = json.loads(content)
         new_meal["id"] = str(uuid.uuid4())
+        new_meal["meal_type"] = meal_type  # Preserve meal type
         
-        logger.info(f"Alternate meal generated: {new_meal.get('name')} - {new_meal.get('calories')} cal, {new_meal.get('protein')}g P (target: {current_cal}/{current_pro})")
+        # Save the updated meal plan to the database
+        plan["meal_days"][request.day_index]["meals"][request.meal_index] = new_meal
+        await db.mealplans.update_one(
+            {"id": request.meal_plan_id},
+            {"$set": {"meal_days": plan["meal_days"]}}
+        )
+        
+        logger.info(f"Alternate meal generated and saved: {new_meal.get('name')} - {new_meal.get('calories')} cal, {new_meal.get('protein')}g P (target: {current_cal}/{current_pro})")
         
         return {"alternate_meal": new_meal}
         
