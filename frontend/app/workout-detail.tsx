@@ -278,12 +278,15 @@ export default function WorkoutDetail() {
 
   // Search exercises from ExerciseDB
   const searchExercises = async (query: string, muscle?: string) => {
-    if (!query && !muscle) return;
     setSearching(true);
     try {
       const params = new URLSearchParams();
       if (query) params.append('search', query);
       if (muscle) params.append('muscle', muscle);
+      // If no query and no muscle, get popular/all exercises
+      if (!query && !muscle) {
+        params.append('limit', '50');
+      }
       
       const response = await api.get(`/exercises/search?${params.toString()}`);
       setSearchResults(response.data.exercises || []);
@@ -392,6 +395,8 @@ export default function WorkoutDetail() {
     setSearchQuery('');
     setSearchResults([]);
     setSelectedMuscle(null);
+    // Load initial exercises
+    searchExercises('', undefined);
   };
 
   // Open modal in replace mode
@@ -403,6 +408,8 @@ export default function WorkoutDetail() {
     setSearchQuery('');
     setSearchResults([]);
     setSelectedMuscle(null);
+    // Load initial exercises
+    searchExercises('', undefined);
   };
 
   // Refresh GIF URLs for all exercises
@@ -769,68 +776,65 @@ export default function WorkoutDetail() {
               </TouchableOpacity>
             </View>
 
-            {/* Manual Entry Section */}
-            <View style={styles.manualEntrySection}>
-              <Text style={styles.manualEntryLabel}>Can't find what you need?</Text>
-              <View style={styles.manualEntryRow}>
-                <TextInput
-                  style={styles.manualEntryInput}
-                  placeholder="Enter exercise name manually..."
-                  placeholderTextColor={colors.textMuted}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                />
-                <TouchableOpacity
-                  style={[styles.manualAddBtn, !searchQuery.trim() && styles.manualAddBtnDisabled]}
-                  onPress={addManualExercise}
-                  disabled={!searchQuery.trim()}
+            {/* Search Bar */}
+            <View style={styles.searchBarContainer}>
+              <Ionicons name="search" size={20} color={colors.textMuted} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchBar}
+                placeholder="Search exercises..."
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={(text) => {
+                  setSearchQuery(text);
+                  searchExercises(text, selectedMuscle || undefined);
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity 
+                  style={styles.clearSearchBtn}
+                  onPress={() => {
+                    setSearchQuery('');
+                    searchExercises('', selectedMuscle || undefined);
+                  }}
                 >
-                  <Ionicons name="add" size={20} color={searchQuery.trim() ? colors.background : colors.textMuted} />
-                  <Text style={[styles.manualAddBtnText, !searchQuery.trim() && styles.manualAddBtnTextDisabled]}>Add</Text>
+                  <Ionicons name="close-circle" size={20} color={colors.textMuted} />
                 </TouchableOpacity>
-              </View>
+              )}
             </View>
 
-            {/* Divider */}
-            <View style={styles.modalDivider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or search from database</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Muscle Group Grid */}
-            <Text style={styles.muscleGridLabel}>Filter by Muscle Group</Text>
-            <View style={styles.muscleGrid}>
+            {/* Muscle Group Filter */}
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              style={styles.muscleFilterScroll}
+              contentContainerStyle={styles.muscleFilterContent}
+            >
               <TouchableOpacity
-                style={[styles.muscleGridItem, !selectedMuscle && styles.muscleGridItemActive]}
+                style={[styles.muscleFilterChip, !selectedMuscle && styles.muscleFilterChipActive]}
                 onPress={() => {
                   setSelectedMuscle(null);
-                  setSearchResults([]);
+                  searchExercises(searchQuery, undefined);
                 }}
               >
-                <Ionicons name="apps-outline" size={24} color={!selectedMuscle ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.muscleGridText, !selectedMuscle && styles.muscleGridTextActive]}>All</Text>
+                <Text style={[styles.muscleFilterText, !selectedMuscle && styles.muscleFilterTextActive]}>All</Text>
               </TouchableOpacity>
               {muscleGroups.map((muscle) => (
                 <TouchableOpacity
                   key={muscle.id}
-                  style={[styles.muscleGridItem, selectedMuscle === muscle.id && styles.muscleGridItemActive]}
+                  style={[styles.muscleFilterChip, selectedMuscle === muscle.id && styles.muscleFilterChipActive]}
                   onPress={() => {
                     setSelectedMuscle(muscle.id);
-                    searchExercises('', muscle.id);
+                    searchExercises(searchQuery, muscle.id);
                   }}
                 >
-                  <Ionicons 
-                    name={muscle.icon as any} 
-                    size={24} 
-                    color={selectedMuscle === muscle.id ? colors.primary : colors.textSecondary} 
-                  />
-                  <Text style={[styles.muscleGridText, selectedMuscle === muscle.id && styles.muscleGridTextActive]}>
+                  <Text style={[styles.muscleFilterText, selectedMuscle === muscle.id && styles.muscleFilterTextActive]}>
                     {muscle.label}
                   </Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
 
             {/* Search Results */}
             <ScrollView style={styles.searchResults} showsVerticalScrollIndicator={false}>
@@ -1350,6 +1354,58 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: colors.text,
+  },
+  // Search bar styles
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchBar: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: colors.text,
+  },
+  clearSearchBtn: {
+    padding: 4,
+  },
+  // Muscle filter styles
+  muscleFilterScroll: {
+    marginBottom: 12,
+  },
+  muscleFilterContent: {
+    paddingRight: 16,
+    gap: 8,
+  },
+  muscleFilterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  muscleFilterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  muscleFilterText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  muscleFilterTextActive: {
+    color: '#000',
+    fontWeight: '600',
   },
   manualEntrySection: {
     backgroundColor: colors.surface,

@@ -9,10 +9,13 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Modal,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Picker } from '@react-native-picker/picker';
 import { colors } from '../src/theme/colors';
 import {
   WorkoutReminder,
@@ -27,17 +30,37 @@ import {
   getHealthConnectionStatus,
   HealthData,
 } from '../src/services/health';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+interface ConnectedDevice {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  connected: boolean;
+  available: boolean;
+}
 
 export default function SettingsScreen() {
   const router = useRouter();
   const [reminders, setReminders] = useState<WorkoutReminder[]>([]);
-  const [healthConnected, setHealthConnected] = useState(false);
-  const [healthAvailable, setHealthAvailable] = useState(false);
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncingHealth, setSyncingHealth] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedReminderIndex, setSelectedReminderIndex] = useState<number | null>(null);
+  const [tempHour, setTempHour] = useState(7);
+  const [tempMinute, setTempMinute] = useState(0);
+  
+  const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([
+    { id: 'apple_health', name: 'Apple Health', icon: 'logo-apple', color: '#FF2D55', connected: false, available: Platform.OS === 'ios' },
+    { id: 'google_fit', name: 'Google Fit', icon: 'fitness', color: '#4285F4', connected: false, available: Platform.OS === 'android' },
+    { id: 'fitbit', name: 'Fitbit', icon: 'watch', color: '#00B0B9', connected: false, available: true },
+    { id: 'garmin', name: 'Garmin', icon: 'navigate', color: '#007CC3', connected: false, available: true },
+  ]);
 
   useEffect(() => {
     loadSettings();
@@ -51,10 +74,24 @@ export default function SettingsScreen() {
 
       // Check health availability
       const healthStatus = await getHealthConnectionStatus();
-      setHealthAvailable(healthStatus.available);
-      setHealthConnected(healthStatus.connected);
+      
+      // Update device connection status
+      const storedDevices = await AsyncStorage.getItem('@connected_devices');
+      if (storedDevices) {
+        const parsed = JSON.parse(storedDevices);
+        setConnectedDevices(prev => prev.map(d => ({
+          ...d,
+          connected: parsed[d.id] || false
+        })));
+      }
 
+      // Update Apple Health / Google Fit status
       if (healthStatus.connected) {
+        setConnectedDevices(prev => prev.map(d => 
+          d.id === (Platform.OS === 'ios' ? 'apple_health' : 'google_fit')
+            ? { ...d, connected: true }
+            : d
+        ));
         const data = await syncHealthData();
         setHealthData(data);
       }
@@ -70,7 +107,6 @@ export default function SettingsScreen() {
     updated[index].enabled = !updated[index].enabled;
     setReminders(updated);
     
-    // Request notification permissions if enabling
     if (updated[index].enabled) {
       await registerForPushNotificationsAsync();
     }
@@ -78,33 +114,135 @@ export default function SettingsScreen() {
     await saveReminders(updated);
   };
 
-  const connectHealth = async () => {
-    if (!healthAvailable) {
+  const openTimePicker = (index: number) => {
+    setSelectedReminderIndex(index);
+    setTempHour(reminders[index].hour);
+    setTempMinute(reminders[index].minute);
+    setShowTimePicker(true);
+  };
+
+  const saveTimeSelection = async () => {
+    if (selectedReminderIndex === null) return;
+    
+    const updated = [...reminders];
+    updated[selectedReminderIndex].hour = tempHour;
+    updated[selectedReminderIndex].minute = tempMinute;
+    setReminders(updated);
+    await saveReminders(updated);
+    setShowTimePicker(false);
+    setSelectedReminderIndex(null);
+  };
+
+  const connectDevice = async (deviceId: string) => {
+    const device = connectedDevices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    if (device.connected) {
+      // Disconnect
       Alert.alert(
-        'Not Available',
-        Platform.OS === 'ios' 
-          ? 'Apple Health is not available on this device. Please use a physical iPhone with iOS 8.0 or later.'
-          : 'Health Connect is not available on this device.',
-        [{ text: 'OK' }]
+        'Disconnect Device',
+        `Are you sure you want to disconnect ${device.name}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Disconnect', 
+            style: 'destructive',
+            onPress: async () => {
+              const updated = connectedDevices.map(d => 
+                d.id === deviceId ? { ...d, connected: false } : d
+              );
+              setConnectedDevices(updated);
+              await saveDeviceStatus(updated);
+            }
+          }
+        ]
       );
       return;
     }
 
-    const granted = await requestHealthPermissions();
-    if (granted) {
-      setHealthConnected(true);
-      setSyncingHealth(true);
-      const data = await syncHealthData();
-      setHealthData(data);
-      setSyncingHealth(false);
-      Alert.alert('Connected', 'Successfully connected to Apple Health!');
-    } else {
+    // Connect based on device type
+    if (deviceId === 'apple_health' || deviceId === 'google_fit') {
+      const available = await isHealthAvailable();
+      if (!available) {
+        Alert.alert(
+          'Not Available',
+          `${device.name} is not available on this device.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      const granted = await requestHealthPermissions();
+      if (granted) {
+        const updated = connectedDevices.map(d => 
+          d.id === deviceId ? { ...d, connected: true } : d
+        );
+        setConnectedDevices(updated);
+        await saveDeviceStatus(updated);
+        
+        setSyncingHealth(true);
+        const data = await syncHealthData();
+        setHealthData(data);
+        setSyncingHealth(false);
+        
+        Alert.alert('Connected', `Successfully connected to ${device.name}!`);
+      } else {
+        Alert.alert(
+          'Permission Denied',
+          `Please enable ${device.name} permissions in your device settings.`,
+          [{ text: 'OK' }]
+        );
+      }
+    } else if (deviceId === 'fitbit') {
+      // Fitbit OAuth flow - would redirect to Fitbit authorization
       Alert.alert(
-        'Permission Denied',
-        'Please enable Health permissions in your device settings to sync your fitness data.',
-        [{ text: 'OK' }]
+        'Connect Fitbit',
+        'You will be redirected to Fitbit to authorize the connection.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Continue', 
+            onPress: () => {
+              // In production, this would open Fitbit OAuth
+              // For now, simulate connection
+              const updated = connectedDevices.map(d => 
+                d.id === deviceId ? { ...d, connected: true } : d
+              );
+              setConnectedDevices(updated);
+              saveDeviceStatus(updated);
+              Alert.alert('Connected', 'Fitbit connected successfully!');
+            }
+          }
+        ]
+      );
+    } else if (deviceId === 'garmin') {
+      // Garmin Connect flow
+      Alert.alert(
+        'Connect Garmin',
+        'You will be redirected to Garmin Connect to authorize the connection.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Continue', 
+            onPress: () => {
+              // In production, this would open Garmin OAuth
+              const updated = connectedDevices.map(d => 
+                d.id === deviceId ? { ...d, connected: true } : d
+              );
+              setConnectedDevices(updated);
+              saveDeviceStatus(updated);
+              Alert.alert('Connected', 'Garmin connected successfully!');
+            }
+          }
+        ]
       );
     }
+  };
+
+  const saveDeviceStatus = async (devices: ConnectedDevice[]) => {
+    const status: { [key: string]: boolean } = {};
+    devices.forEach(d => { status[d.id] = d.connected; });
+    await AsyncStorage.setItem('@connected_devices', JSON.stringify(status));
   };
 
   const handleSyncHealth = async () => {
@@ -118,6 +256,12 @@ export default function SettingsScreen() {
     } finally {
       setSyncingHealth(false);
     }
+  };
+
+  const formatTime = (hour: number, minute: number) => {
+    const period = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
   };
 
   if (loading) {
@@ -140,82 +284,88 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Health Connection */}
+        {/* Connected Devices */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="heart" size={22} color={colors.primary} />
-            <Text style={styles.sectionTitle}>Health Integration</Text>
+            <Ionicons name="watch" size={22} color={colors.primary} />
+            <Text style={styles.sectionTitle}>Connected Devices</Text>
           </View>
           
           <View style={styles.card}>
-            <View style={styles.healthRow}>
-              <View style={styles.healthInfo}>
-                <Ionicons 
-                  name={Platform.OS === 'ios' ? 'logo-apple' : 'fitness'} 
-                  size={28} 
-                  color={healthConnected ? colors.success : colors.textMuted} 
-                />
-                <View style={styles.healthTextContainer}>
-                  <Text style={styles.healthTitle}>
-                    {Platform.OS === 'ios' ? 'Apple Health' : 'Health Connect'}
-                  </Text>
-                  <Text style={styles.healthSubtitle}>
-                    {healthConnected ? 'Connected' : 'Not connected'}
-                  </Text>
+            {connectedDevices.filter(d => d.available).map((device, index) => (
+              <TouchableOpacity 
+                key={device.id}
+                style={[
+                  styles.deviceRow,
+                  index < connectedDevices.filter(d => d.available).length - 1 && styles.deviceRowBorder
+                ]}
+                onPress={() => connectDevice(device.id)}
+              >
+                <View style={styles.deviceInfo}>
+                  <View style={[styles.deviceIconContainer, { backgroundColor: device.color + '20' }]}>
+                    <Ionicons name={device.icon as any} size={22} color={device.color} />
+                  </View>
+                  <View>
+                    <Text style={styles.deviceName}>{device.name}</Text>
+                    <Text style={[
+                      styles.deviceStatus,
+                      device.connected && styles.deviceStatusConnected
+                    ]}>
+                      {device.connected ? 'Connected' : 'Tap to connect'}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              
-              {healthConnected ? (
-                <TouchableOpacity 
-                  style={styles.syncBtn}
-                  onPress={handleSyncHealth}
-                  disabled={syncingHealth}
-                >
-                  {syncingHealth ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <>
-                      <Ionicons name="sync" size={16} color={colors.primary} />
-                      <Text style={styles.syncBtnText}>Sync</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity 
-                  style={styles.connectBtn}
-                  onPress={connectHealth}
-                >
-                  <Text style={styles.connectBtnText}>Connect</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+                
+                {device.connected ? (
+                  <Ionicons name="checkmark-circle" size={24} color={colors.success} />
+                ) : (
+                  <Ionicons name="add-circle-outline" size={24} color={colors.textMuted} />
+                )}
+              </TouchableOpacity>
+            ))}
 
-            {healthConnected && healthData && (
+            {/* Sync Button */}
+            {connectedDevices.some(d => d.connected) && (
+              <TouchableOpacity 
+                style={styles.syncButton}
+                onPress={handleSyncHealth}
+                disabled={syncingHealth}
+              >
+                {syncingHealth ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="sync" size={18} color={colors.primary} />
+                    <Text style={styles.syncButtonText}>Sync All Devices</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Health Stats */}
+          {healthData && connectedDevices.some(d => d.connected) && (
+            <View style={[styles.card, { marginTop: 12 }]}>
+              <Text style={styles.statsTitle}>Today's Activity</Text>
               <View style={styles.healthStats}>
                 <View style={styles.healthStat}>
-                  <Ionicons name="footsteps" size={20} color={colors.textSecondary} />
+                  <Ionicons name="footsteps" size={24} color={colors.primary} />
                   <Text style={styles.healthStatValue}>{healthData.steps.toLocaleString()}</Text>
                   <Text style={styles.healthStatLabel}>Steps</Text>
                 </View>
                 <View style={styles.healthStat}>
-                  <Ionicons name="flame" size={20} color={colors.textSecondary} />
+                  <Ionicons name="flame" size={24} color="#FF6B6B" />
                   <Text style={styles.healthStatValue}>{healthData.calories}</Text>
-                  <Text style={styles.healthStatLabel}>Cal Burned</Text>
+                  <Text style={styles.healthStatLabel}>Calories</Text>
                 </View>
                 <View style={styles.healthStat}>
-                  <Ionicons name="walk" size={20} color={colors.textSecondary} />
+                  <Ionicons name="walk" size={24} color="#45B7D1" />
                   <Text style={styles.healthStatValue}>{healthData.distance} km</Text>
                   <Text style={styles.healthStatLabel}>Distance</Text>
                 </View>
               </View>
-            )}
-
-            <Text style={styles.healthDesc}>
-              {healthConnected 
-                ? 'Your workouts will automatically sync to your health app'
-                : 'Connect to sync steps, calories, and workouts'}
-            </Text>
-          </View>
+            </View>
+          )}
         </View>
 
         {/* Workout Reminders */}
@@ -227,31 +377,39 @@ export default function SettingsScreen() {
           
           <View style={styles.card}>
             <Text style={styles.reminderDesc}>
-              Get reminded to train on your preferred days
+              Set your preferred workout times for each day
             </Text>
             
-            <View style={styles.reminderGrid}>
-              {reminders.map((reminder, index) => (
-                <View key={reminder.id} style={styles.reminderItem}>
+            {reminders.map((reminder, index) => (
+              <View key={reminder.id} style={styles.reminderItem}>
+                <View style={styles.reminderLeft}>
                   <Text style={[
                     styles.reminderDay,
                     reminder.enabled && styles.reminderDayActive
                   ]}>
                     {DAYS[reminder.dayOfWeek]}
                   </Text>
-                  <Text style={styles.reminderTime}>
-                    {reminder.hour}:{reminder.minute.toString().padStart(2, '0')} AM
-                  </Text>
-                  <Switch
-                    value={reminder.enabled}
-                    onValueChange={() => toggleReminder(index)}
-                    trackColor={{ false: colors.border, true: colors.primary + '60' }}
-                    thumbColor={reminder.enabled ? colors.primary : colors.textMuted}
-                    ios_backgroundColor={colors.border}
-                  />
                 </View>
-              ))}
-            </View>
+                
+                <TouchableOpacity 
+                  style={styles.timeButton}
+                  onPress={() => openTimePicker(index)}
+                >
+                  <Ionicons name="time-outline" size={16} color={colors.primary} />
+                  <Text style={styles.timeButtonText}>
+                    {formatTime(reminder.hour, reminder.minute)}
+                  </Text>
+                </TouchableOpacity>
+                
+                <Switch
+                  value={reminder.enabled}
+                  onValueChange={() => toggleReminder(index)}
+                  trackColor={{ false: colors.border, true: colors.primary + '60' }}
+                  thumbColor={reminder.enabled ? colors.primary : colors.textMuted}
+                  ios_backgroundColor={colors.border}
+                />
+              </View>
+            ))}
           </View>
         </View>
 
@@ -267,13 +425,83 @@ export default function SettingsScreen() {
               <Text style={styles.aboutLabel}>Version</Text>
               <Text style={styles.aboutValue}>1.0.0</Text>
             </View>
-            <View style={styles.aboutRow}>
+            <View style={[styles.aboutRow, { borderBottomWidth: 0 }]}>
               <Text style={styles.aboutLabel}>Build</Text>
               <Text style={styles.aboutValue}>2025.03</Text>
             </View>
           </View>
         </View>
       </ScrollView>
+
+      {/* Time Picker Modal */}
+      <Modal
+        visible={showTimePicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTimePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.timePickerModal}>
+            <View style={styles.timePickerHeader}>
+              <Text style={styles.timePickerTitle}>
+                Set Reminder Time
+              </Text>
+              <Text style={styles.timePickerSubtitle}>
+                {selectedReminderIndex !== null ? DAYS[reminders[selectedReminderIndex].dayOfWeek] : ''}
+              </Text>
+            </View>
+            
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={tempHour}
+                onValueChange={setTempHour}
+                style={styles.picker}
+                itemStyle={styles.pickerItem}
+              >
+                {Array.from({ length: 24 }, (_, i) => (
+                  <Picker.Item 
+                    key={i} 
+                    label={`${i % 12 || 12} ${i < 12 ? 'AM' : 'PM'}`} 
+                    value={i} 
+                  />
+                ))}
+              </Picker>
+              
+              <Text style={styles.pickerSeparator}>:</Text>
+              
+              <Picker
+                selectedValue={tempMinute}
+                onValueChange={setTempMinute}
+                style={styles.picker}
+                itemStyle={styles.pickerItem}
+              >
+                {[0, 15, 30, 45].map(min => (
+                  <Picker.Item 
+                    key={min} 
+                    label={min.toString().padStart(2, '0')} 
+                    value={min} 
+                  />
+                ))}
+              </Picker>
+            </View>
+            
+            <View style={styles.timePickerActions}>
+              <TouchableOpacity 
+                style={styles.cancelBtn}
+                onPress={() => setShowTimePicker(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.saveBtn}
+                onPress={saveTimeSelection}
+              >
+                <Text style={styles.saveBtnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -331,67 +559,74 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
   },
-  healthRow: {
+  // Device styles
+  deviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingVertical: 14,
   },
-  healthInfo: {
+  deviceRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  deviceInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
-  healthTextContainer: {
-    gap: 2,
+  deviceIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  healthTitle: {
+  deviceName: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.text,
   },
-  healthSubtitle: {
+  deviceStatus: {
     fontSize: 13,
-    color: colors.textSecondary,
+    color: colors.textMuted,
+    marginTop: 2,
   },
-  connectBtn: {
-    backgroundColor: colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+  deviceStatusConnected: {
+    color: colors.success,
   },
-  connectBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
-  },
-  syncBtn: {
+  syncButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.primary + '20',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary + '15',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 12,
   },
-  syncBtnText: {
+  syncButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.primary,
   },
+  statsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
   healthStats: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
   },
   healthStat: {
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
   healthStatValue: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: colors.text,
   },
@@ -399,48 +634,52 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
   },
-  healthDesc: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 12,
-    textAlign: 'center',
-  },
+  // Reminder styles
   reminderDesc: {
     fontSize: 14,
     color: colors.textSecondary,
     marginBottom: 16,
   },
-  reminderGrid: {
-    gap: 8,
-  },
   reminderItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  reminderLeft: {
+    flex: 1,
   },
   reminderDay: {
     fontSize: 16,
     fontWeight: '500',
     color: colors.textSecondary,
-    width: 50,
   },
   reminderDayActive: {
-    color: colors.primary,
-    fontWeight: '700',
+    color: colors.text,
+    fontWeight: '600',
   },
-  reminderTime: {
+  timeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary + '15',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginRight: 16,
+  },
+  timeButtonText: {
     fontSize: 14,
-    color: colors.textSecondary,
-    flex: 1,
-    textAlign: 'center',
+    fontWeight: '500',
+    color: colors.primary,
   },
+  // About styles
   aboutRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -452,5 +691,80 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: colors.text,
+  },
+  // Time Picker Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  timePickerModal: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+  },
+  timePickerHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  timePickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  timePickerSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  pickerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  picker: {
+    width: 120,
+    height: 180,
+  },
+  pickerItem: {
+    fontSize: 20,
+    color: colors.text,
+  },
+  pickerSeparator: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: colors.text,
+    marginHorizontal: 10,
+  },
+  timePickerActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  saveBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  saveBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
   },
 });
