@@ -9,6 +9,9 @@ import {
   Alert,
   Modal,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -77,10 +80,7 @@ export default function MealDetail() {
 
   const swapOptions = [
     { id: 'similar', label: 'Similar Macros', icon: 'swap-horizontal', description: 'Same calories & protein' },
-    { id: 'higher_protein', label: 'Higher Protein', icon: 'fitness', description: 'More protein for muscle' },
-    { id: 'lower_calories', label: 'Lower Calories', icon: 'trending-down', description: 'Lighter option' },
     { id: 'quick_prep', label: 'Quick Prep', icon: 'time', description: 'Under 15 minutes' },
-    { id: 'vegetarian', label: 'Vegetarian', icon: 'leaf', description: 'Plant-based option' },
     { id: 'budget', label: 'Budget Friendly', icon: 'wallet', description: 'Cheaper ingredients' },
   ];
 
@@ -620,7 +620,15 @@ export default function MealDetail() {
         animationType="fade"
         onRequestClose={() => setShowRenameModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity 
+            style={styles.modalDismissArea} 
+            activeOpacity={1} 
+            onPress={() => { Keyboard.dismiss(); setShowRenameModal(false); }}
+          />
           <View style={styles.renameModal}>
             <Text style={styles.renameModalTitle}>Rename Meal Plan</Text>
             <TextInput
@@ -630,11 +638,13 @@ export default function MealDetail() {
               placeholder="Enter new name"
               placeholderTextColor={colors.textMuted}
               autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleRenamePlan}
             />
             <View style={styles.renameActions}>
               <TouchableOpacity 
                 style={styles.renameCancelBtn}
-                onPress={() => setShowRenameModal(false)}
+                onPress={() => { Keyboard.dismiss(); setShowRenameModal(false); }}
               >
                 <Text style={styles.renameCancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -651,7 +661,7 @@ export default function MealDetail() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -1102,13 +1112,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   // Rename modal styles
-  planNameContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  modalDismissArea: {
     flex: 1,
   },
-  editIcon: {
-    marginLeft: 8,
+  planNameContainer: {
+    flex: 1,
   },
   renameModal: {
     backgroundColor: colors.surface,
@@ -1117,6 +1125,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 30,
     width: '85%',
     maxWidth: 350,
+    alignSelf: 'center',
+    marginBottom: Platform.OS === 'ios' ? 60 : 20,
   },
   renameModalTitle: {
     fontSize: 18,

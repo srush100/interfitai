@@ -22,7 +22,6 @@ import api from '../src/services/api';
 const EATING_STYLES = [
   { id: 'none', label: 'No Preference', desc: 'Flexible eating' },
   { id: 'balanced', label: 'Balanced', desc: 'Well-rounded nutrition' },
-  { id: 'high_protein', label: 'High Protein', desc: 'Protein-focused meals' },
   { id: 'whole_foods', label: 'Whole Foods', desc: 'Natural, unprocessed' },
   { id: 'keto', label: 'Keto', desc: 'Low carb, high fat' },
   { id: 'paleo', label: 'Paleo', desc: 'Ancestral eating' },
