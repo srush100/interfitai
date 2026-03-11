@@ -1894,7 +1894,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
                     "nutritional yeast": (15, 45, 6, 4, 0),
                     "olive oil": (15, 133, 0, 0, 15),
                 },
-                "instructions": "Crumble and sauté tofu with veggies, add nutritional yeast for cheesy flavor",
+                "instructions": "Crumble and sauté tofu with vegetables, add nutritional yeast for cheesy flavor",
                 "prep_time": 15
             },
             "lunch": {
@@ -1917,11 +1917,11 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
                     "coconut milk": (100, 197, 2, 4, 20),
                     "spinach": (50, 12, 1, 2, 0),
                 },
-                "instructions": "Simmer lentils in coconut milk with curry spices, add spinach, serve over rice",
+                "instructions": "Simmer lentils in coconut cream with curry spices, add spinach, serve over rice",
                 "prep_time": 35
             },
             "snack": {
-                "name": "Hummus with Veggies",
+                "name": "Hummus with Vegetables",
                 "ingredients": {
                     "hummus": (100, 166, 8, 14, 10),
                     "carrots": (100, 41, 1, 10, 0),
@@ -1941,7 +1941,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
                     "berries": (100, 45, 1, 11, 0),
                     "maple syrup": (15, 39, 0, 10, 0),
                 },
-                "instructions": "Mix oats with milk and chia overnight, top with berries and maple syrup",
+                "instructions": "Mix oats with plant milk and chia overnight, top with berries and maple syrup",
                 "prep_time": 5
             },
             "lunch": {
@@ -1973,7 +1973,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
                     "apple": (180, 94, 0, 25, 0),
                     "almond butter": (30, 184, 7, 6, 17),
                 },
-                "instructions": "Slice apple, serve with almond butter for dipping",
+                "instructions": "Slice apple, serve with nut spread for dipping",
                 "prep_time": 3
             }
         },
@@ -3054,7 +3054,7 @@ Return ONLY this JSON:
         return totals
     
     # Scale a day's meals to hit target calories
-    def scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat):
+    def scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb_diet=False):
         base = calc_day_totals(day_template)
         
         # Calculate scale factor based on calories (primary constraint)
@@ -3101,8 +3101,13 @@ Return ONLY this JSON:
             day_totals["fats"] += meal_macros["fats"]
             meal_idx += 1
         
-        # Force daily totals to match user's targets (the meal macros sum might differ due to template ratios)
-        # But we set the day totals to what the user needs
+        # For LOW-CARB diets (Keto/Carnivore), keep accurate macros from the template
+        # Don't adjust carbs to user targets since these diets are specifically designed to be low-carb
+        if is_low_carb_diet:
+            # Just return the scaled values without adjusting to user's carb target
+            return scaled_meals, day_totals
+        
+        # For other diets, force daily totals to match user's targets
         day_totals["calories"] = target_cal
         day_totals["protein"] = target_pro
         day_totals["carbs"] = target_carb
@@ -3126,11 +3131,14 @@ Return ONLY this JSON:
         
         return scaled_meals, day_totals
     
+    # Determine if this is a low-carb diet that should preserve template macros
+    is_low_carb = eating_style in ['keto', 'carnivore']
+    
     # Generate all 3 days
     meal_days = []
     for day_num, day_key in enumerate(["day1", "day2", "day3"], 1):
         day_template = MEAL_TEMPLATES[day_key]
-        scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat)
+        scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb)
         
         # Update meal IDs for the day
         for i, meal in enumerate(scaled_meals):
@@ -3147,6 +3155,18 @@ Return ONLY this JSON:
         
         logger.info(f"Day {day_num}: {round(day_totals['calories'])} cal, {round(day_totals['protein'])}g P, {round(day_totals['carbs'])}g C, {round(day_totals['fats'])}g F (target: {target_cal}/{target_pro}/{target_carb}/{target_fat})")
     
+    # For low-carb diets, update the stored targets to reflect actual diet values
+    stored_target_carbs = target_carb
+    stored_target_fats = target_fat
+    
+    if is_low_carb:
+        # Calculate actual macros from the generated meal days
+        actual_carbs = round(sum(day["total_carbs"] for day in meal_days) / 3)
+        actual_fats = round(sum(day["total_fats"] for day in meal_days) / 3)
+        stored_target_carbs = actual_carbs
+        stored_target_fats = actual_fats
+        logger.info(f"Low-carb diet: Storing actual macros - {stored_target_carbs}g C, {stored_target_fats}g F (diet-compliant)")
+    
     try:
         meal_plan = MealPlan(
             user_id=request.user_id,
@@ -3159,8 +3179,8 @@ Return ONLY this JSON:
             allergies=request.allergies,
             target_calories=target_cal,
             target_protein=target_pro,
-            target_carbs=target_carb,
-            target_fats=target_fat,
+            target_carbs=stored_target_carbs,
+            target_fats=stored_target_fats,
             meal_days=[MealDay(**day) for day in meal_days]
         )
         
@@ -3241,30 +3261,23 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     target_carb = plan.get("target_carbs", macros.get("carbs", 200))
     target_fat = plan.get("target_fats", macros.get("fats", 70))
     
-    # Calculate what percentage of daily macros this meal should be
     meal_type = current_meal.get('meal_type', 'lunch')
-    meal_percentages = {
-        'breakfast': 0.25,
-        'lunch': 0.30,
-        'dinner': 0.35,
-        'snack': 0.10
-    }
-    pct = meal_percentages.get(meal_type, 0.25)
     
-    # Target macros for this specific meal
-    meal_target_cal = round(target_cal * pct)
-    meal_target_pro = round(target_pro * pct)
-    meal_target_carb = round(target_carb * pct)
-    meal_target_fat = round(target_fat * pct)
+    # For "similar" swap, use the CURRENT meal's macros, not recalculated targets
+    # This ensures the replacement matches what the user is replacing
+    current_cal = current_meal.get('calories', 500)
+    current_pro = current_meal.get('protein', 40)
+    current_carb = current_meal.get('carbs', 50)
+    current_fat = current_meal.get('fats', 20)
     
     # Build swap-specific instructions based on preference
     swap_instructions = {
-        "similar": f"Match these target macros: ~{meal_target_cal} cal, ~{meal_target_pro}g protein, ~{meal_target_carb}g carbs, ~{meal_target_fat}g fats",
-        "higher_protein": f"Increase protein to ~{int(meal_target_pro * 1.4)}g, reduce carbs to compensate. Target: ~{meal_target_cal} cal",
-        "lower_calories": f"Reduce to ~{int(meal_target_cal * 0.75)} cal, prioritize protein (~{meal_target_pro}g minimum)",
-        "quick_prep": f"Under 15 minutes prep. Target: ~{meal_target_cal} cal, ~{meal_target_pro}g protein, ~{meal_target_carb}g carbs, ~{meal_target_fat}g fats",
-        "vegetarian": f"100% vegetarian (no meat/fish). Target: ~{meal_target_cal} cal, ~{meal_target_pro}g protein using eggs, dairy, tofu, legumes",
-        "budget": f"Affordable ingredients. Target: ~{meal_target_cal} cal, ~{meal_target_pro}g protein, ~{meal_target_carb}g carbs, ~{meal_target_fat}g fats",
+        "similar": f"Match the CURRENT meal's macros: {current_cal} cal, {current_pro}g protein, {current_carb}g carbs, {current_fat}g fats (±10% tolerance)",
+        "higher_protein": f"Increase protein to ~{int(current_pro * 1.4)}g, reduce carbs to compensate. Keep calories around {current_cal}",
+        "lower_calories": f"Reduce to ~{int(current_cal * 0.75)} cal, prioritize protein (~{current_pro}g minimum)",
+        "quick_prep": f"Under 15 minutes prep. Match: ~{current_cal} cal, ~{current_pro}g protein, ~{current_carb}g carbs, ~{current_fat}g fats",
+        "vegetarian": f"100% vegetarian (no meat/fish). Match: ~{current_cal} cal, ~{current_pro}g protein using eggs, dairy, tofu, legumes",
+        "budget": f"Affordable ingredients. Match: ~{current_cal} cal, ~{current_pro}g protein, ~{current_carb}g carbs, ~{current_fat}g fats",
     }
     
     swap_instruction = swap_instructions.get(request.swap_preference, swap_instructions["similar"])
@@ -3273,9 +3286,9 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     eating_style = plan.get('food_preferences', 'none').lower()
     diet_note = ""
     if eating_style == 'keto':
-        diet_note = "KETO DIET: Keep carbs under 10g for this meal."
+        diet_note = "KETO DIET: Keep carbs under 10g for this meal. HIGH FAT required."
     elif eating_style == 'carnivore':
-        diet_note = "CARNIVORE DIET: Only meat, fish, eggs, butter. No plants."
+        diet_note = "CARNIVORE DIET: Only meat, fish, eggs, butter allowed. ZERO carbs. No plants."
     elif eating_style == 'paleo':
         diet_note = "PALEO DIET: No grains, dairy, or processed foods."
     elif eating_style == 'vegan':
@@ -3285,28 +3298,31 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     
     prompt = f"""Generate an alternate meal to replace this one:
 Current Meal: {current_meal.get('name')} ({meal_type})
-Current Macros: {current_meal.get('calories')} cal, {current_meal.get('protein')}g protein, {current_meal.get('carbs')}g carbs, {current_meal.get('fats')}g fats
-
-USER'S DAILY TARGETS: {target_cal} cal, {target_pro}g protein, {target_carb}g carbs, {target_fat}g fats
-This {meal_type} should be ~{round(pct*100)}% of daily targets.
+Current Macros: {current_cal} cal, {current_pro}g protein, {current_carb}g carbs, {current_fat}g fats
 
 {diet_note}
 SWAP REQUIREMENT: {swap_instruction}
 Allergies: {', '.join(plan.get('allergies', [])) or 'None'}
 
+⚠️ CRITICAL: The replacement meal MUST have macros that closely match the current meal:
+- Calories: {current_cal} (±10%)
+- Protein: {current_pro}g (±15%)
+- Carbs: {current_carb}g (±15%)
+- Fats: {current_fat}g (±15%)
+
 IMPORTANT:
 - Use SPECIFIC ingredients with gram amounts (e.g., "180g sirloin steak", not just "steak")
-- The meal macros must closely match the targets above
-- Verify the macros add up correctly from the ingredients
+- The meal macros must match the current meal's macros above
+- Create a DIFFERENT meal from "{current_meal.get('name')}"
 
 Respond with valid JSON only:
-{{"id": "unique_id", "name": "Meal Name", "meal_type": "{meal_type}", "ingredients": ["180g sirloin steak", "200g brown rice", "100g broccoli"], "instructions": "How to prepare", "calories": {meal_target_cal}, "protein": {meal_target_pro}, "carbs": {meal_target_carb}, "fats": {meal_target_fat}, "prep_time_minutes": number}}"""
+{{"id": "unique_id", "name": "Meal Name", "meal_type": "{meal_type}", "ingredients": ["180g sirloin steak", "200g brown rice", "100g broccoli"], "instructions": "How to prepare", "calories": {current_cal}, "protein": {current_pro}, "carbs": {current_carb}, "fats": {current_fat}, "prep_time_minutes": number}}"""
 
     try:
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": f"You are a precision nutritionist. Generate an alternate meal that matches the target macros exactly. Use specific ingredient amounts in grams. Target: {meal_target_cal} cal, {meal_target_pro}g P, {meal_target_carb}g C, {meal_target_fat}g F."},
+                {"role": "system", "content": f"You are a precision nutritionist. Generate an alternate meal that MATCHES the current meal's macros exactly: {current_cal} cal, {current_pro}g P, {current_carb}g C, {current_fat}g F. Use specific ingredient amounts in grams."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.6,
@@ -3324,7 +3340,7 @@ Respond with valid JSON only:
         new_meal = json.loads(content)
         new_meal["id"] = str(uuid.uuid4())
         
-        logger.info(f"Alternate meal generated: {new_meal.get('name')} - {new_meal.get('calories')} cal, {new_meal.get('protein')}g P (target: {meal_target_cal}/{meal_target_pro})")
+        logger.info(f"Alternate meal generated: {new_meal.get('name')} - {new_meal.get('calories')} cal, {new_meal.get('protein')}g P (target: {current_cal}/{current_pro})")
         
         return {"alternate_meal": new_meal}
         

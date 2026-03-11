@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -47,12 +48,37 @@ export default function MealQuestionnaire() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
   const [formData, setFormData] = useState({
     eating_style: 'none',
     preferred_foods: '',
     foods_to_avoid: '',
     allergies: [] as string[],
   });
+
+  // Track keyboard visibility
+  useEffect(() => {
+    const keyboardWillShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+        // Scroll down a bit when keyboard opens to show the text input
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    const keyboardWillHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
+  }, []);
 
   const toggleAllergy = (value: string) => {
     const current = formData.allergies;
@@ -286,6 +312,7 @@ export default function MealQuestionnaire() {
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -303,46 +330,51 @@ export default function MealQuestionnaire() {
           ))}
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          ref={scrollViewRef}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: keyboardVisible ? 120 : 20 }]} 
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}
           {step === 3 && renderStep3()}
           {step === 4 && renderStep4()}
-        </ScrollView>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          {step > 1 && (
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setStep(step - 1)}>
-              <Text style={styles.secondaryBtnText}>Back</Text>
-            </TouchableOpacity>
-          )}
           
-          {step < totalSteps ? (
-            <TouchableOpacity 
-              style={[styles.primaryBtn, step === 1 && { flex: 1 }]} 
-              onPress={() => setStep(step + 1)}
-            >
-              <Text style={styles.primaryBtnText}>Continue</Text>
-              <Ionicons name="arrow-forward" size={20} color="#000" />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity 
-              style={[styles.primaryBtn, styles.generateBtn]} 
-              onPress={handleGenerate}
-              disabled={loading || checkingSubscription}
-            >
-              {loading || checkingSubscription ? (
-                <ActivityIndicator color="#000" />
-              ) : (
-                <>
-                  <Ionicons name="sparkles" size={20} color="#000" />
-                  <Text style={styles.primaryBtnText}>Generate Plan</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
+          {/* Footer - Inside ScrollView for keyboard handling */}
+          <View style={[styles.footer, keyboardVisible && styles.footerKeyboardVisible]}>
+            {step > 1 && (
+              <TouchableOpacity style={styles.secondaryBtn} onPress={() => { Keyboard.dismiss(); setStep(step - 1); }}>
+                <Text style={styles.secondaryBtnText}>Back</Text>
+              </TouchableOpacity>
+            )}
+            
+            {step < totalSteps ? (
+              <TouchableOpacity 
+                style={[styles.primaryBtn, step === 1 && { flex: 1 }]} 
+                onPress={() => { Keyboard.dismiss(); setStep(step + 1); }}
+              >
+                <Text style={styles.primaryBtnText}>Continue</Text>
+                <Ionicons name="arrow-forward" size={20} color="#000" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={[styles.primaryBtn, styles.generateBtn]} 
+                onPress={handleGenerate}
+                disabled={loading || checkingSubscription}
+              >
+                {loading || checkingSubscription ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <>
+                    <Ionicons name="sparkles" size={20} color="#000" />
+                    <Text style={styles.primaryBtnText}>Generate Plan</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -522,6 +554,12 @@ const styles = StyleSheet.create({
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    backgroundColor: colors.background,
+    marginTop: 20,
+  },
+  footerKeyboardVisible: {
+    marginTop: 10,
+    paddingBottom: 20,
   },
   secondaryBtn: {
     paddingVertical: 16,

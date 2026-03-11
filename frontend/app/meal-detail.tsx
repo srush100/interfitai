@@ -280,19 +280,27 @@ export default function MealDetail() {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Meal Plan</Text>
-        <View style={styles.backBtn} />
+        <TouchableOpacity onPress={openRenameModal} style={styles.headerEditBtn}>
+          <Ionicons name="create-outline" size={22} color={colors.primary} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Personalization Header - NEW */}
+        {/* Personalization Header */}
         <View style={styles.personalizationCard}>
           <View style={styles.personalizationHeader}>
             <Ionicons name="sparkles" size={20} color={colors.primary} />
-            <TouchableOpacity onPress={openRenameModal} style={styles.planNameContainer}>
+            <View style={styles.planNameContainer}>
               <Text style={styles.personalizationTitle}>{mealPlan.name}</Text>
-              <Ionicons name="pencil" size={16} color={colors.textMuted} style={styles.editIcon} />
-            </TouchableOpacity>
+            </View>
           </View>
+          
+          {/* Rename Button - Prominent */}
+          <TouchableOpacity onPress={openRenameModal} style={styles.renameButton}>
+            <Ionicons name="pencil" size={16} color={colors.primary} />
+            <Text style={styles.renameButtonText}>Rename Plan</Text>
+          </TouchableOpacity>
+          
           <Text style={styles.personalizationSubtitle}>
             Built specifically for you based on your goals and preferences
           </Text>
@@ -670,6 +678,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerEditBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -699,10 +713,30 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
+  planNameContainer: {
+    flex: 1,
+  },
   personalizationTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.text,
+  },
+  renameButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary + '15',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  renameButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
   },
   personalizationSubtitle: {
     fontSize: 13,
