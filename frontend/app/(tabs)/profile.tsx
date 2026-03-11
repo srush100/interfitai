@@ -515,38 +515,47 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {/* Connected Devices */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Connected Devices</Text>
-          {DEVICES.map((device) => (
-            <View key={device.id} style={styles.deviceRow}>
-              <View style={styles.deviceInfo}>
-                <Ionicons name={device.icon as any} size={24} color={colors.textSecondary} />
-                <Text style={styles.deviceName}>{device.name}</Text>
-              </View>
-              <TouchableOpacity
-                style={[
-                  styles.connectBtn,
-                  connectedDevices.includes(device.id) && styles.disconnectBtn,
-                ]}
-                onPress={() =>
-                  connectedDevices.includes(device.id)
-                    ? disconnectDevice(device.id)
-                    : connectDevice(device.id)
-                }
-              >
-                <Text
-                  style={[
-                    styles.connectBtnText,
-                    connectedDevices.includes(device.id) && styles.disconnectBtnText,
-                  ]}
-                >
-                  {connectedDevices.includes(device.id) ? 'Disconnect' : 'Connect'}
-                </Text>
-              </TouchableOpacity>
+        {/* Connected Devices - Links to Settings */}
+        <TouchableOpacity 
+          style={styles.card}
+          onPress={() => router.push('/settings')}
+          activeOpacity={0.7}
+        >
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Connected Devices</Text>
+            <View style={styles.manageLink}>
+              <Text style={styles.manageLinkText}>Manage</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.primary} />
             </View>
-          ))}
-        </View>
+          </View>
+          <Text style={styles.deviceDescription}>
+            Connect your fitness trackers to sync workouts and activity data
+          </Text>
+          <View style={styles.deviceIconsRow}>
+            {DEVICES.map((device) => (
+              <View 
+                key={device.id} 
+                style={[
+                  styles.deviceIconCircle,
+                  connectedDevices.includes(device.id) && styles.deviceIconCircleConnected
+                ]}
+              >
+                <Ionicons 
+                  name={device.icon as any} 
+                  size={22} 
+                  color={connectedDevices.includes(device.id) ? colors.primary : colors.textMuted} 
+                />
+              </View>
+            ))}
+          </View>
+          {connectedDevices.length > 0 ? (
+            <Text style={styles.connectedCount}>
+              {connectedDevices.length} device{connectedDevices.length > 1 ? 's' : ''} connected
+            </Text>
+          ) : (
+            <Text style={styles.noDevicesText}>No devices connected</Text>
+          )}
+        </TouchableOpacity>
 
         {/* Settings */}
         <View style={styles.card}>
@@ -849,6 +858,57 @@ const styles = StyleSheet.create({
   deviceName: {
     fontSize: 15,
     color: colors.text,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  manageLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  manageLinkText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '500',
+  },
+  deviceDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 16,
+  },
+  deviceIconsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginBottom: 12,
+  },
+  deviceIconCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deviceIconCircleConnected: {
+    backgroundColor: colors.primary + '20',
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  connectedCount: {
+    fontSize: 13,
+    color: colors.success,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  noDevicesText: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
   connectBtn: {
     paddingHorizontal: 16,

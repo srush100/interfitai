@@ -1368,7 +1368,7 @@ async def refresh_workout_gifs(workout_id: str):
     return {"message": "GIF URLs refreshed successfully", "updated": updated}
 
 @api_router.get("/exercises/search")
-async def search_exercises(search: str = None, muscle: str = None):
+async def search_exercises(search: str = None, muscle: str = None, limit: int = 50):
     """Search exercises from ExerciseDB"""
     import httpx
     import urllib.parse
@@ -1397,25 +1397,41 @@ async def search_exercises(search: str = None, muscle: str = None):
                 response = await client.get(
                     f"{EXERCISEDB_API_BASE}/exercises/bodyPart/{mapped_muscle}",
                     headers=headers,
-                    params={"limit": 100}
+                    params={"limit": 200}  # Get more exercises
                 )
                 if response.status_code == 200:
                     exercises = response.json()
             
             elif search:
-                # Search by name
-                encoded = urllib.parse.quote(search)
+                # Clean up search term - remove hyphens, handle common variations
+                clean_search = search.lower().replace("-", " ").replace("up", "").strip()
+                if not clean_search:
+                    clean_search = search.lower().replace("-", " ")
+                
+                encoded = urllib.parse.quote(clean_search)
                 response = await client.get(
                     f"{EXERCISEDB_API_BASE}/exercises/name/{encoded}",
                     headers=headers,
-                    params={"limit": 50}
+                    params={"limit": 100}
                 )
                 if response.status_code == 200:
                     exercises = response.json()
             
+            else:
+                # No filter - get popular exercises across all body parts
+                body_parts = ["chest", "back", "shoulders", "upper legs", "upper arms", "waist"]
+                for part in body_parts:
+                    response = await client.get(
+                        f"{EXERCISEDB_API_BASE}/exercises/bodyPart/{part}",
+                        headers=headers,
+                        params={"limit": 20}
+                    )
+                    if response.status_code == 200:
+                        exercises.extend(response.json())
+            
             # Format response - construct gifUrl using our proxy endpoint
             formatted = []
-            for ex in exercises[:100]:  # Increased limit to 100
+            for ex in exercises[:min(limit, 200)]:  # Respect limit but cap at 200
                 exercise_id = ex.get("id", "")
                 # Use our proxy endpoint to serve GIFs with proper authentication
                 gif_url = f"/api/exercises/gif/{exercise_id}" if exercise_id else None
