@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { colors } from '../src/styles/colors';
+import { colors } from '../src/theme/colors';
 import {
   WorkoutReminder,
   loadReminders,

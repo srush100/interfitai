@@ -1115,9 +1115,6 @@ const styles = StyleSheet.create({
   modalDismissArea: {
     flex: 1,
   },
-  planNameContainer: {
-    flex: 1,
-  },
   renameModal: {
     backgroundColor: colors.surface,
     borderRadius: 16,
