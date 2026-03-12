@@ -89,17 +89,17 @@ export default function WorkoutDetail() {
   const [searching, setSearching] = useState(false);
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
 
-  // Muscle groups with icons for professional UI
+  // Muscle groups with icons and emoji for professional visual UI
   const muscleGroups = [
-    { id: 'chest', label: 'Chest', icon: 'fitness-outline' },
-    { id: 'back', label: 'Back', icon: 'body-outline' },
-    { id: 'shoulders', label: 'Shoulders', icon: 'ellipse-outline' },
-    { id: 'biceps', label: 'Biceps', icon: 'barbell-outline' },
-    { id: 'triceps', label: 'Triceps', icon: 'barbell-outline' },
-    { id: 'legs', label: 'Legs', icon: 'walk-outline' },
-    { id: 'glutes', label: 'Glutes', icon: 'accessibility-outline' },
-    { id: 'abs', label: 'Core', icon: 'grid-outline' },
-    { id: 'cardio', label: 'Cardio', icon: 'heart-outline' },
+    { id: 'chest', label: 'Chest', icon: 'fitness-outline', emoji: '💪' },
+    { id: 'back', label: 'Back', icon: 'body-outline', emoji: '🦴' },
+    { id: 'shoulders', label: 'Shoulders', icon: 'ellipse-outline', emoji: '🎯' },
+    { id: 'biceps', label: 'Biceps', icon: 'barbell-outline', emoji: '💪' },
+    { id: 'triceps', label: 'Triceps', icon: 'barbell-outline', emoji: '🔱' },
+    { id: 'legs', label: 'Legs', icon: 'walk-outline', emoji: '🦵' },
+    { id: 'glutes', label: 'Glutes', icon: 'accessibility-outline', emoji: '🍑' },
+    { id: 'abs', label: 'Core', icon: 'grid-outline', emoji: '🧱' },
+    { id: 'cardio', label: 'Cardio', icon: 'heart-outline', emoji: '❤️' },
   ];
 
   useEffect(() => {
@@ -804,7 +804,7 @@ export default function WorkoutDetail() {
               )}
             </View>
 
-            {/* Muscle Group Filter */}
+            {/* Muscle Group Filter - Visual icons with labels */}
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={false} 
@@ -818,6 +818,9 @@ export default function WorkoutDetail() {
                   searchExercises(searchQuery, undefined);
                 }}
               >
+                <View style={[styles.muscleIconContainer, !selectedMuscle && styles.muscleIconContainerActive]}>
+                  <Ionicons name="apps" size={18} color={!selectedMuscle ? colors.background : colors.primary} />
+                </View>
                 <Text style={[styles.muscleFilterText, !selectedMuscle && styles.muscleFilterTextActive]}>All</Text>
               </TouchableOpacity>
               {muscleGroups.map((muscle) => (
@@ -829,6 +832,9 @@ export default function WorkoutDetail() {
                     searchExercises(searchQuery, muscle.id);
                   }}
                 >
+                  <View style={[styles.muscleIconContainer, selectedMuscle === muscle.id && styles.muscleIconContainerActive]}>
+                    <Text style={styles.muscleEmoji}>{muscle.emoji}</Text>
+                  </View>
                   <Text style={[styles.muscleFilterText, selectedMuscle === muscle.id && styles.muscleFilterTextActive]}>
                     {muscle.label}
                   </Text>
@@ -1387,25 +1393,42 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   muscleFilterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: 8,
   },
   muscleFilterChipActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
   muscleFilterText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
     color: colors.textSecondary,
   },
   muscleFilterTextActive: {
     color: '#000',
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  muscleIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  muscleIconContainerActive: {
+    backgroundColor: colors.background,
+  },
+  muscleEmoji: {
+    fontSize: 14,
   },
   manualEntrySection: {
     backgroundColor: colors.surface,

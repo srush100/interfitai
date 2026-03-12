@@ -275,15 +275,24 @@ CACHED_EXERCISE_GIFS = {
     "wide push up": "0672",
     "diamond push up": "0279",
     "decline push up": "1302",
+    "incline push up": "0671",
+    "knee push up": "0670",
     "chest dip": "0251",
     "parallel bar dip": "0251",
     "weighted dip": "0251",
+    "assisted dip": "0009",
+    "assisted chest dip": "0009",
+    "machine chest press": "0152",
+    "chest press machine": "0152",
     
     # Back exercises
     "pull up": "0652",
     "pull-up": "0652",
     "pullup": "0652",
     "wide grip pull up": "0655",
+    "assisted pull up": "0017",
+    "assisted pull-up": "0017",
+    "band assisted pull up": "0970",
     "chin up": "0253",
     "chin-up": "0253",
     "lat pulldown": "0198",
@@ -308,15 +317,18 @@ CACHED_EXERCISE_GIFS = {
     "sumo deadlift": "0118",
     
     # Shoulder exercises
-    "overhead press": "0431",
-    "shoulder press": "0431",
-    "barbell shoulder press": "0431",
-    "barbell overhead press": "0431",
-    "military press": "0431",
-    "standing military press": "0431",
+    "overhead press": "0426",  # dumbbell standing overhead press
+    "shoulder press": "0426",
+    "barbell overhead press": "0091",  # barbell seated overhead press
+    "barbell shoulder press": "0091",
+    "military press": "0091",
+    "standing military press": "0091",
+    "seated overhead press": "0091",
+    "dumbbell overhead press": "0426",
     "dumbbell shoulder press": "0405",
     "seated dumbbell press": "0405",
     "seated dumbbell shoulder press": "0405",
+    "standing overhead press": "0426",
     "arnold press": "0262",
     "dumbbell arnold press": "0262",
     "lateral raise": "0334",
@@ -371,7 +383,6 @@ CACHED_EXERCISE_GIFS = {
     "tricep kickback": "0347",
     "dumbbell kickback": "0347",
     "close grip bench press": "0031",
-    "diamond push up": "0279",
     
     # Leg exercises
     "squat": "0043",
@@ -445,9 +456,7 @@ CACHED_EXERCISE_GIFS = {
     "thruster": "2143",
     "wall ball": "2399",
     
-    # Machine exercises
-    "chest press machine": "0152",
-    "machine chest press": "0152",
+    # Machine exercises (moved from chest section to avoid duplicates)
     "pec deck": "0613",
     "machine fly": "0613",
     "shoulder press machine": "0718",
@@ -981,7 +990,7 @@ async def list_profiles():
 
 @api_router.post("/workouts/generate", response_model=WorkoutProgram)
 async def generate_workout(request: WorkoutGenerateRequest):
-    """Generate AI-powered workout program"""
+    """Generate AI-powered workout program with fitness-level appropriate exercises"""
     # Get user profile for personalization
     profile = await db.profiles.find_one({"id": request.user_id})
     session_duration = request.duration_minutes if hasattr(request, 'duration_minutes') else 60
@@ -989,23 +998,22 @@ async def generate_workout(request: WorkoutGenerateRequest):
     training_style = getattr(request, 'training_style', 'weights')
     preferred_split = getattr(request, 'preferred_split', 'ai_choose')
     
-    # Define fitness level parameters
     # Determine rest times based on goal (scientifically optimal)
     rest_times_by_goal = {
-        "strength": "180-300",  # 3-5 minutes for strength
-        "build_muscle": "90-120",  # 1.5-2 minutes for hypertrophy
-        "body_recomp": "60-90",  # Moderate rest for recomposition
-        "lose_fat": "30-60",  # Shorter rest for metabolic conditioning
+        "strength": "180-300",
+        "build_muscle": "90-120",
+        "body_recomp": "60-90",
+        "lose_fat": "30-60",
         "general_fitness": "60-90",
     }
     goal_rest = rest_times_by_goal.get(request.goal, "60-90")
     
-    # Training style descriptions
+    # Training style descriptions with specific guidelines
     style_desc = {
-        "weights": "Traditional weight training with barbells, dumbbells, and machines",
-        "calisthenics": "Bodyweight exercises - pull-ups, push-ups, dips, pistol squats, muscle-ups",
-        "hybrid": "Mix of weighted exercises and advanced bodyweight movements",
-        "functional": "Functional movements, kettlebells, medicine balls, athletic training"
+        "weights": "Traditional weight training with barbells, dumbbells, and machines. Include a good MIX of free weights AND machines for balanced development.",
+        "calisthenics": "Bodyweight exercises - pull-ups, push-ups, dips, pistol squats, muscle-ups, bodyweight rows",
+        "hybrid": "TRUE HYBRID training combining weighted strength exercises WITH cardiovascular/endurance work like HIIT circuits, rowing intervals, bike sprints, jump rope, or battle ropes",
+        "functional": "Functional movements, kettlebells, medicine balls, athletic training, agility work"
     }
     
     # Workout split descriptions
@@ -1017,12 +1025,96 @@ async def generate_workout(request: WorkoutGenerateRequest):
         "bro_split": "One major muscle group per day (chest day, back day, leg day, etc.)"
     }
     
+    # Fitness level with exercise modifications - THIS IS CRITICAL
     fitness_params = {
-        "beginner": {"sets": "2-3", "complexity": "basic compound movements, focus on form"},
-        "intermediate": {"sets": "3-4", "complexity": "mix of compound and isolation exercises"},
-        "advanced": {"sets": "4-5", "complexity": "advanced techniques, supersets, drop sets"}
+        "beginner": {
+            "sets": "2-3", 
+            "complexity": "basic movements with machine support where needed",
+            "exercise_mods": """
+CRITICAL BEGINNER MODIFICATIONS:
+- Use ASSISTED Pull-Up Machine or Lat Pulldown instead of Pull-Ups
+- Use ASSISTED Dip Machine instead of Dips
+- Use Smith Machine Squat or Leg Press before Barbell Squats
+- Use Machine Chest Press before Barbell Bench Press
+- Use Dumbbell Romanian Deadlift (lighter) before Conventional Deadlift
+- Use Cable Rows before Bent Over Barbell Rows
+- Focus on MACHINES and GUIDED movements to build proper form
+- Lighter weights, higher rep ranges (10-15 reps) for motor learning"""
+        },
+        "intermediate": {
+            "sets": "3-4", 
+            "complexity": "mix of compound and isolation exercises",
+            "exercise_mods": """
+INTERMEDIATE GUIDELINES:
+- Can include standard Pull-Ups, Dips, Barbell movements
+- Mix of free weights (60%) and machines (40%) for variety
+- Include both compound and isolation exercises
+- Standard rep ranges: 8-12 for hypertrophy, 6-8 for strength"""
+        },
+        "advanced": {
+            "sets": "4-5", 
+            "complexity": "advanced techniques, supersets, drop sets",
+            "exercise_mods": """
+ADVANCED GUIDELINES:
+- Include advanced variations: Weighted Pull-Ups, Weighted Dips
+- Primarily free weights with machines for isolation work
+- Advanced techniques like supersets, drop sets, pause reps
+- Can include Olympic lifts, plyometrics if appropriate"""
+        }
     }
     level_info = fitness_params.get(fitness_level, fitness_params["intermediate"])
+    
+    # Equipment-specific guidance
+    equipment_list = request.equipment
+    has_full_gym = 'full_gym' in equipment_list
+    has_machines = 'machines' in equipment_list or has_full_gym
+    
+    equipment_guidance = ""
+    if has_full_gym:
+        equipment_guidance = """
+FULL GYM EQUIPMENT MIX:
+- Use a balanced mix of FREE WEIGHTS and MACHINES
+- Machines are excellent for isolation work and beginners
+- Include: Lat Pulldown, Cable Rows, Leg Press, Chest Press Machine, Shoulder Press Machine
+- Free weights: Barbells, Dumbbells for compound movements
+- Don't only use dumbbells and barbells - include machine exercises!"""
+    elif has_machines:
+        equipment_guidance = "Include machine exercises where available for proper muscle isolation and safety."
+    
+    # HYBRID training specific content
+    hybrid_guidance = ""
+    if training_style == "hybrid":
+        hybrid_guidance = """
+HYBRID TRAINING REQUIREMENTS - CRITICAL:
+This is NOT just a weights program. Include CARDIOVASCULAR and CONDITIONING work:
+
+1. CARDIO INTERVALS to include in some workouts:
+   - Rowing Machine: 500m sprints with 60s rest, repeat 4-5 times
+   - Assault Bike: 30 seconds all-out / 30 seconds easy, 8-10 rounds
+   - Battle Ropes: 30 seconds work / 30 seconds rest, 6-8 rounds
+   - Jump Rope: 2 minutes continuous, rest 1 minute, repeat 3-4 times
+   - Treadmill Sprints: 30s sprint / 60s walk, 8-10 rounds
+
+2. CIRCUIT/HIIT DAYS format:
+   - Combine 4-6 exercises in a circuit
+   - Perform each for 40-60 seconds
+   - Minimal rest (15-30s) between exercises
+   - Rest 1-2 minutes between rounds
+   - Complete 3-5 rounds total
+   Example circuit: Kettlebell Swings -> Push-Ups -> Box Jumps -> Rows -> Burpees
+
+3. Day structure options:
+   - Some days: Pure strength focus
+   - Some days: Full HIIT/circuit training
+   - Some days: Strength + cardio finisher (10-15 min conditioning at end)
+
+FORMAT FOR CARDIO EXERCISES:
+When listing cardio/interval exercises, use this clear format:
+- Name: "Rowing Intervals" or "Assault Bike Sprints"
+- Sets: Number of rounds (e.g., 5)
+- Reps: Duration (e.g., "500m" or "30 sec work / 30 sec rest")
+- Rest: Time between rounds
+- Instructions: Clear, actionable description"""
     
     prompt = f"""Create a scientifically-optimized {request.days_per_week}-day per week workout program:
 
@@ -1034,17 +1126,21 @@ PROGRAM PARAMETERS:
 - Available Equipment: {', '.join(request.equipment)}
 - Injuries/Limitations: {request.injuries or 'None'}
 - Session Duration: {session_duration} minutes per workout
-- Fitness Level: {fitness_level.upper()} - {level_info['complexity']}
+- Fitness Level: {fitness_level.upper()}
+
+{level_info['exercise_mods']}
+{equipment_guidance}
+{hybrid_guidance}
 
 SCIENTIFIC GUIDELINES:
 - STRENGTH goals: Heavy weights (3-6 reps), 180-300s rest for ATP recovery
 - MUSCLE BUILDING: Moderate weights (8-12 reps), 90-120s rest for hypertrophy
 - BODY RECOMPOSITION: Mix of strength and metabolic work, 60-90s rest
 - FAT LOSS: Higher reps (12-15+), 30-60s rest for metabolic conditioning
-- Use rest time of {goal_rest} seconds based on the {request.goal} goal
+- Use rest time of {goal_rest} seconds for resistance exercises
 
-{"CALISTHENICS FOCUS: Use bodyweight exercises like pull-ups, chin-ups, dips, push-up variations, pistol squats, muscle-ups, handstand progressions" if training_style == "calisthenics" else ""}
-{"FUNCTIONAL FOCUS: Include kettlebell swings, cleans, snatches, medicine ball work, box jumps, battle ropes" if training_style == "functional" else ""}
+{"CALISTHENICS FOCUS: For beginners, use Assisted Pull-Up Machine, Assisted Dip Machine, Incline Push-Ups, Box Step-Ups" if training_style == "calisthenics" and fitness_level == "beginner" else ""}
+{"FUNCTIONAL FOCUS: Include kettlebell swings, cleans, snatches, medicine ball work, box jumps" if training_style == "functional" else ""}
 
 Provide the workout program in this JSON structure:
 {{
@@ -1052,18 +1148,18 @@ Provide the workout program in this JSON structure:
     "workout_days": [
         {{
             "day": "Day 1 - Focus Area",
-            "focus": "Primary muscle group",
+            "focus": "Primary muscle group or workout type (e.g., 'Upper Body Strength' or 'Full Body HIIT')",
             "duration_minutes": {session_duration},
-            "notes": "Tips for this day",
+            "notes": "Coaching tips for this day",
             "exercises": [
                 {{
-                    "name": "Exercise Name (use standard names: Pull-Up, Bench Press, Barbell Squat, Deadlift)",
+                    "name": "Exercise Name (use EXACT standard names: Assisted Pull-Up, Lat Pulldown, Bench Press, Leg Press, Rowing Intervals)",
                     "sets": 4,
-                    "reps": "8-12",
+                    "reps": "8-12 OR for cardio: '500m' or '30s work/30s rest'",
                     "rest_seconds": {goal_rest.split('-')[0]},
-                    "instructions": "Detailed form cues and execution tips",
+                    "instructions": "Detailed form cues. For circuits: explain the full sequence clearly.",
                     "muscle_groups": ["primary", "secondary"],
-                    "equipment": "equipment needed"
+                    "equipment": "specific equipment needed"
                 }}
             ]
         }}
@@ -1075,8 +1171,10 @@ Requirements:
 - 5-8 exercises per day depending on duration and goal
 - Compound movements first, then isolation
 - Use {level_info['sets']} sets per exercise for {fitness_level.upper()} level
-- Standard exercise names matching ExerciseDB (Pull-Up, Barbell Bench Press, etc.)
-- Include detailed form instructions for each exercise"""
+- CRITICAL: Use fitness-level appropriate exercises (no pull-ups for beginners!)
+- {"Include both machine AND free weight exercises for variety" if has_full_gym else ""}
+- Standard exercise names that match ExerciseDB database
+- Include detailed, actionable instructions for each exercise"""
 
     try:
         response = openai.chat.completions.create(
@@ -1369,7 +1467,7 @@ async def refresh_workout_gifs(workout_id: str):
 
 @api_router.get("/exercises/search")
 async def search_exercises(search: str = None, muscle: str = None, limit: int = 50):
-    """Search exercises from ExerciseDB"""
+    """Search exercises from ExerciseDB with improved search handling"""
     import httpx
     import urllib.parse
     
@@ -1385,8 +1483,9 @@ async def search_exercises(search: str = None, muscle: str = None, limit: int = 
         async with httpx.AsyncClient(timeout=15.0) as client:
             exercises = []
             
-            if muscle:
-                # Search by body part/muscle
+            # Handle search with muscle filter - combine both
+            if search and muscle:
+                # First get all exercises for the muscle group
                 muscle_map = {
                     "chest": "chest", "back": "back", "shoulders": "shoulders",
                     "biceps": "upper arms", "triceps": "upper arms",
@@ -1397,25 +1496,72 @@ async def search_exercises(search: str = None, muscle: str = None, limit: int = 
                 response = await client.get(
                     f"{EXERCISEDB_API_BASE}/exercises/bodyPart/{mapped_muscle}",
                     headers=headers,
-                    params={"limit": 200}  # Get more exercises
+                    params={"limit": 300}
+                )
+                if response.status_code == 200:
+                    all_exercises = response.json()
+                    # Filter by search term
+                    search_lower = search.lower().replace("-", " ")
+                    for ex in all_exercises:
+                        ex_name = ex.get("name", "").lower()
+                        # Match if search term is in name or name contains key words from search
+                        search_words = set(search_lower.split())
+                        if search_lower in ex_name or any(word in ex_name for word in search_words if len(word) > 2):
+                            exercises.append(ex)
+            
+            elif muscle:
+                # Search by body part/muscle only
+                muscle_map = {
+                    "chest": "chest", "back": "back", "shoulders": "shoulders",
+                    "biceps": "upper arms", "triceps": "upper arms",
+                    "legs": "upper legs", "glutes": "upper legs",
+                    "abs": "waist", "cardio": "cardio"
+                }
+                mapped_muscle = muscle_map.get(muscle.lower(), muscle.lower())
+                response = await client.get(
+                    f"{EXERCISEDB_API_BASE}/exercises/bodyPart/{mapped_muscle}",
+                    headers=headers,
+                    params={"limit": 200}
                 )
                 if response.status_code == 200:
                     exercises = response.json()
             
             elif search:
-                # Clean up search term - remove hyphens, handle common variations
-                clean_search = search.lower().replace("-", " ").replace("up", "").strip()
-                if not clean_search:
-                    clean_search = search.lower().replace("-", " ")
+                # Clean up search term - keep compound words intact
+                # Handle common variations: pull-up, pull up, pullup -> search for "pull"
+                clean_search = search.lower().strip()
                 
-                encoded = urllib.parse.quote(clean_search)
-                response = await client.get(
-                    f"{EXERCISEDB_API_BASE}/exercises/name/{encoded}",
-                    headers=headers,
-                    params={"limit": 100}
-                )
-                if response.status_code == 200:
-                    exercises = response.json()
+                # Handle hyphenated words - try both forms
+                search_terms = [clean_search]
+                if "-" in clean_search:
+                    search_terms.append(clean_search.replace("-", " "))
+                if " " in clean_search:
+                    # Also try first significant word
+                    words = clean_search.split()
+                    if len(words) >= 1 and len(words[0]) > 2:
+                        search_terms.append(words[0])
+                
+                # Try each search term
+                for term in search_terms:
+                    encoded = urllib.parse.quote(term)
+                    response = await client.get(
+                        f"{EXERCISEDB_API_BASE}/exercises/name/{encoded}",
+                        headers=headers,
+                        params={"limit": 100}
+                    )
+                    if response.status_code == 200:
+                        results = response.json()
+                        if results:
+                            # Merge unique results
+                            existing_ids = {ex.get("id") for ex in exercises}
+                            for ex in results:
+                                if ex.get("id") not in existing_ids:
+                                    exercises.append(ex)
+                                    existing_ids.add(ex.get("id"))
+                            
+                            # If we found results, break (prioritize exact matches)
+                            if len(exercises) >= 10:
+                                break
             
             else:
                 # No filter - get popular exercises across all body parts
