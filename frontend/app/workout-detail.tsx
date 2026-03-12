@@ -283,10 +283,8 @@ export default function WorkoutDetail() {
       const params = new URLSearchParams();
       if (query) params.append('search', query);
       if (muscle) params.append('muscle', muscle);
-      // If no query and no muscle, get popular/all exercises
-      if (!query && !muscle) {
-        params.append('limit', '50');
-      }
+      // Always request maximum exercises for better browsing
+      params.append('limit', '300');
       
       const response = await api.get(`/exercises/search?${params.toString()}`);
       setSearchResults(response.data.exercises || []);
@@ -1384,31 +1382,32 @@ const styles = StyleSheet.create({
   clearSearchBtn: {
     padding: 4,
   },
-  // Muscle filter styles
+  // Muscle filter styles - compact version
   muscleFilterScroll: {
-    marginBottom: 12,
+    marginBottom: 8,
+    maxHeight: 44,
   },
   muscleFilterContent: {
     paddingRight: 16,
-    gap: 8,
+    gap: 6,
   },
   muscleFilterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 8,
+    gap: 5,
   },
   muscleFilterChipActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
   muscleFilterText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
     color: colors.textSecondary,
   },
@@ -1417,9 +1416,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   muscleIconContainer: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: colors.primary + '20',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1428,7 +1427,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   muscleEmoji: {
-    fontSize: 14,
+    fontSize: 11,
   },
   manualEntrySection: {
     backgroundColor: colors.surface,
@@ -1562,22 +1561,22 @@ const styles = StyleSheet.create({
   exerciseResult: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: 8,
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    marginBottom: 10,
-    gap: 12,
+    borderRadius: 10,
+    marginBottom: 6,
+    gap: 10,
   },
   exerciseResultGif: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 8,
     backgroundColor: colors.surfaceLight,
   },
   exerciseResultPlaceholder: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 8,
     backgroundColor: colors.surfaceLight,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1586,14 +1585,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   exerciseResultName: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 4,
+    marginBottom: 2,
     textTransform: 'capitalize',
   },
   exerciseResultMuscle: {
-    fontSize: 13,
+    fontSize: 11,
     color: colors.textSecondary,
     textTransform: 'capitalize',
   },
