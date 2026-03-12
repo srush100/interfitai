@@ -1182,21 +1182,102 @@ Even when user selects "weights" training style, fat loss programs should includ
     
     elif request.goal == "build_muscle":
         goal_specific_guidance = """
-💪 MUSCLE BUILDING SPECIFIC PROGRAMMING:
-1. Progressive overload focus - track weights and aim to increase
-2. Time under tension - 3 second negatives on key exercises
-3. Volume emphasis - 10-20 sets per muscle group per week
-4. Isolation work - include targeted isolation exercises for lagging areas
-5. Rest between sets: 90-120 seconds for compounds, 60-90 for isolation"""
+💪 MUSCLE BUILDING (HYPERTROPHY) SPECIFIC PROGRAMMING - NO CARDIO PRIORITY:
+
+⚠️ IMPORTANT: This is a MUSCLE BUILDING program. DO NOT include:
+- Dedicated conditioning/HIIT days
+- Intense cardio intervals
+- Circuit training format
+- Fat loss metabolic work
+
+FOCUS EXCLUSIVELY ON:
+1. RESISTANCE TRAINING VOLUME:
+   - 10-20 sets per muscle group per week
+   - Rep ranges: 8-12 for hypertrophy (primary), 6-8 for strength phases
+   - Rest 90-120 seconds for compounds, 60-90 seconds for isolation
+   - Progressive overload is KEY - track and increase weights
+
+2. PROGRAM STRUCTURE:
+   - ALL days should be dedicated resistance training
+   - Split training to hit each muscle 2x per week
+   - Focus on compound movements + targeted isolation work
+   
+3. EXERCISE SELECTION:
+   - Heavy compounds: Bench Press, Squat, Deadlift, Rows, Overhead Press
+   - Isolation for detail: Curls, Tricep work, Lateral Raises, Leg Curls
+   - Time under tension: 3-second negatives on key exercises
+
+4. RECOVERY FOCUS:
+   - Adequate rest between sets for muscle recovery
+   - DO NOT rush between exercises
+   - Quality > Metabolic stress for muscle building"""
     
     elif request.goal == "strength":
         goal_specific_guidance = """
-🏋️ STRENGTH SPECIFIC PROGRAMMING:
-1. Heavy compound focus - Squat, Deadlift, Bench, Row, Overhead Press
-2. Low rep ranges - 3-6 reps on main lifts
-3. Longer rest - 3-5 minutes between heavy sets
-4. Progressive overload - small weight increases weekly
-5. Accessory work - support main lifts with targeted assistance exercises"""
+🏋️ STRENGTH/POWER SPECIFIC PROGRAMMING - NO CONDITIONING DAYS:
+
+⚠️ IMPORTANT: This is a PURE STRENGTH program. DO NOT include:
+- Full conditioning/HIIT days
+- Cardio intervals or finishers
+- Circuit training format
+- High rep metabolic work
+
+FOCUS EXCLUSIVELY ON:
+1. HEAVY COMPOUND LIFTS:
+   - Squat, Deadlift, Bench Press, Overhead Press, Barbell Row
+   - These are the foundation - program around them
+   - Low rep ranges: 3-6 reps on main lifts
+   - Heavy weights with FULL recovery between sets
+
+2. REST PERIODS (CRITICAL):
+   - 3-5 MINUTES between heavy compound sets
+   - This is NOT optional - ATP must fully replenish
+   - Do NOT rush - strength requires full recovery
+   
+3. PROGRAM STRUCTURE:
+   - ALL days should focus on strength development
+   - No conditioning days, no HIIT, no cardio intervals
+   - Accessory work supports main lifts (triceps for bench, hamstrings for deadlift)
+   
+4. PERIODIZATION:
+   - Week 1: 5x5 at 80% effort
+   - Week 2: 4x4 at 85% effort
+   - Week 3: 3x3 at 90% effort
+   - Week 4: Deload - lighter weights
+   
+5. ACCESSORY WORK:
+   - Support main lifts: Face pulls, Romanian Deadlifts, Close Grip Bench
+   - 3-4 sets of 6-10 reps after main lifts"""
+    
+    elif request.goal == "body_recomp":
+        goal_specific_guidance = f"""
+🔄 BODY RECOMPOSITION SPECIFIC PROGRAMMING:
+
+BALANCED APPROACH - Build muscle while losing fat:
+1. RESISTANCE TRAINING PRIMARY:
+   - Maintain/build muscle with compound movements
+   - 8-12 rep range for hypertrophy
+   - Progressive overload still important
+
+2. LIGHT METABOLIC WORK (NOT INTENSE HIIT):
+   - End 1-2 sessions per week with light cardio finisher (5-8 min)
+   - Walking incline, light cycling, steady state
+   - NOT intense sprints or circuits
+
+3. REST PERIODS:
+   - 60-90 seconds between sets
+   - Moderate pace to keep some metabolic demand"""
+
+    elif request.goal == "general_fitness":
+        goal_specific_guidance = f"""
+🎯 GENERAL FITNESS PROGRAMMING:
+
+WELL-ROUNDED APPROACH:
+1. Mix of strength, endurance, and flexibility
+2. Include variety in exercise selection
+3. Moderate intensity across all aspects
+4. 60-90 second rest periods
+5. Can include light cardio finishers if desired"""
     
     # ============= EQUIPMENT GUIDANCE =============
     equipment_list = request.equipment
@@ -1204,7 +1285,33 @@ Even when user selects "weights" training style, fat loss programs should includ
     has_machines = 'machines' in equipment_list or has_full_gym
     
     equipment_guidance = ""
-    if has_full_gym:
+    # CALISTHENICS OVERRIDES EQUIPMENT - NO WEIGHTS
+    if training_style == "calisthenics":
+        equipment_guidance = """
+🏋️ CALISTHENICS TRAINING - BODYWEIGHT ONLY:
+
+⚠️ CRITICAL: User selected CALISTHENICS training style.
+DO NOT include ANY weighted exercises, even if they have access to a full gym.
+
+ONLY USE BODYWEIGHT EXERCISES:
+- Push-Ups (all variations: wide, diamond, decline, incline, archer)
+- Pull-Ups (all variations: wide grip, close grip, chin-ups, commando)
+- Dips (parallel bar dips, bench dips)
+- Squats (bodyweight squats, pistol squats, sissy squats, jump squats)
+- Lunges (walking, reverse, jumping)
+- Core: Planks, L-sits, Leg Raises, Hollow Body Holds
+- Rows: Inverted Rows, Australian Pull-Ups
+- Advanced: Muscle-Ups, Handstand Push-Ups, Front Lever progressions
+
+FOR BEGINNERS:
+- Assisted Pull-Up Machine is acceptable to build strength
+- Incline Push-Ups instead of full push-ups
+- Box Step-Ups instead of pistol squats
+
+DO NOT USE:
+- Barbells, Dumbbells, Cables, or Machines for main exercises
+- The user wants BODYWEIGHT training, respect this choice!"""
+    elif has_full_gym:
         equipment_guidance = """
 🏋️ FULL GYM EQUIPMENT - USE VARIETY:
 - MUST include BOTH free weights AND machines in every program
@@ -1275,13 +1382,15 @@ This is NOT just weights with occasional cardio. Create a TRUE hybrid program:
 - Rest between sets: {goal_rest} seconds
 - Session duration: {session_duration} minutes
 
-🎯 CRITICAL REQUIREMENTS:
+🎯 CRITICAL REQUIREMENTS (READ CAREFULLY):
 1. EVERY exercise must be appropriate for {fitness_level.upper()} level
-2. If {fitness_level} is BEGINNER, NO advanced exercises like unassisted pull-ups, dips, heavy squats
-3. If goal is LOSE_FAT, include cardio elements even in "weights" programs
-4. Cardio intensity MUST match the {fitness_level.upper()} level specifications provided above
-5. Include variety in exercise selection - use machines AND free weights
-6. Format cardio exercises clearly with work/rest intervals specified
+2. If {fitness_level} is BEGINNER, NO advanced exercises (use Assisted Pull-Up, Leg Press, machines)
+3. {"If goal is BUILD_MUSCLE or STRENGTH: NO cardio days, NO conditioning, NO HIIT circuits - PURE resistance training only!" if request.goal in ['build_muscle', 'strength'] else ""}
+4. {"If training style is CALISTHENICS: Use ONLY bodyweight exercises - NO barbells, dumbbells, or machines!" if training_style == "calisthenics" else ""}
+5. {"If goal is LOSE_FAT: Include cardio finishers appropriate to fitness level" if request.goal == "lose_fat" else ""}
+6. {"If training style is HYBRID: Include TRUE cardio elements - rowing, assault bike, circuits" if training_style == "hybrid" else ""}
+7. Cardio intensity MUST match {fitness_level.upper()} level (not advanced cardio for beginners!)
+8. Use equipment variety where appropriate (machines + free weights for full gym)
 
 Provide the workout program in this JSON structure:
 {{

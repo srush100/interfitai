@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -88,6 +88,7 @@ export default function WorkoutDetail() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Muscle groups with icons and emoji for professional visual UI
   const muscleGroups = [
@@ -283,8 +284,8 @@ export default function WorkoutDetail() {
       const params = new URLSearchParams();
       if (query) params.append('search', query);
       if (muscle) params.append('muscle', muscle);
-      // Always request maximum exercises for better browsing
-      params.append('limit', '300');
+      // Limit to 50 to avoid API rate limiting
+      params.append('limit', '50');
       
       const response = await api.get(`/exercises/search?${params.toString()}`);
       setSearchResults(response.data.exercises || []);
@@ -295,6 +296,17 @@ export default function WorkoutDetail() {
       setSearching(false);
     }
   };
+
+  // Debounced search function to reduce API calls
+  const debouncedSearch = useCallback((query: string, muscle?: string) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    setSearching(true);
+    searchTimeoutRef.current = setTimeout(() => {
+      searchExercises(query, muscle);
+    }, 400); // 400ms debounce
+  }, []);
 
   // Replace an exercise with one from search results
   const replaceExercise = async (newExercise: any) => {
@@ -784,7 +796,7 @@ export default function WorkoutDetail() {
                 value={searchQuery}
                 onChangeText={(text) => {
                   setSearchQuery(text);
-                  searchExercises(text, selectedMuscle || undefined);
+                  debouncedSearch(text, selectedMuscle || undefined);
                 }}
                 autoCapitalize="none"
                 autoCorrect={false}
