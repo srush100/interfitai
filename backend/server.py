@@ -316,20 +316,27 @@ CACHED_EXERCISE_GIFS = {
     "stiff leg deadlift": "0116",
     "sumo deadlift": "0118",
     
-    # Shoulder exercises
-    "overhead press": "0091",  # standing barbell overhead press
-    "standing overhead press": "0091",
-    "barbell overhead press": "0091",
-    "barbell shoulder press": "0091",
-    "military press": "0091",
-    "standing military press": "0091",
-    "shoulder press": "0091",
-    "seated overhead press": "0405",
+    # Shoulder exercises - OVERHEAD PRESS is standing barbell military press
+    "overhead press": "1456",  # barbell standing close grip military press (the true standing barbell OHP)
+    "standing overhead press": "1456",
+    "barbell overhead press": "1456",
+    "barbell shoulder press": "1456",
+    "military press": "1456",
+    "standing military press": "1456",
+    "shoulder press": "1456",
+    "ohp": "1456",  # common abbreviation
+    "barbell military press": "1456",
+    "wide grip overhead press": "1457",  # barbell standing wide military press
+    "wide grip military press": "1457",
+    "seated overhead press": "0091",  # barbell seated overhead press
+    "seated barbell press": "0091",
+    "seated military press": "0086",  # barbell seated behind head military press
     "dumbbell overhead press": "0426",  # dumbbell standing overhead press
     "dumbbell shoulder press": "0405",
     "seated dumbbell press": "0405",
     "seated dumbbell shoulder press": "0405",
     "standing dumbbell overhead press": "0426",
+    "standing dumbbell shoulder press": "0426",
     "arnold press": "0262",
     "dumbbell arnold press": "0262",
     "lateral raise": "0334",
@@ -1223,11 +1230,17 @@ FOCUS EXCLUSIVELY ON:
 - High rep metabolic work
 
 FOCUS EXCLUSIVELY ON:
-1. HEAVY COMPOUND LIFTS:
-   - Squat, Deadlift, Bench Press, Overhead Press, Barbell Row
+1. HEAVY COMPOUND LIFTS (USE THESE EXACT NAMES):
+   - Barbell Squat (or Barbell Back Squat)
+   - Deadlift (Conventional or Sumo)
+   - Barbell Bench Press
+   - Barbell Military Press (standing overhead press - THE fundamental shoulder exercise)
+   - Barbell Row (Bent Over Row)
    - These are the foundation - program around them
    - Low rep ranges: 3-6 reps on main lifts
    - Heavy weights with FULL recovery between sets
+   
+   NOTE: For shoulders, use "Barbell Military Press" or "Overhead Press" - NOT dumbbell shoulder press!
 
 2. REST PERIODS (CRITICAL):
    - 3-5 MINUTES between heavy compound sets
@@ -1778,6 +1791,25 @@ async def search_exercises(search: str = None, muscle: str = None, limit: int = 
                 # Handle common variations: pull-up, pull up, pullup -> search for "pull"
                 clean_search = search.lower().strip()
                 
+                # SYNONYM MAPPING - map common terms to their ExerciseDB equivalents
+                synonyms = {
+                    "overhead press": ["military press", "overhead"],
+                    "ohp": ["military press"],
+                    "shoulder press": ["military press", "shoulder"],
+                    "pull-up": ["pull up", "pull"],
+                    "pull up": ["pull up", "pull"],
+                    "pullup": ["pull up", "pull"],
+                    "chin-up": ["chin up", "chin"],
+                    "bench": ["bench press"],
+                    "squat": ["squat"],
+                    "deadlift": ["deadlift"],
+                    "row": ["row"],
+                    "curl": ["curl"],
+                    "dip": ["dip"],
+                    "lunge": ["lunge"],
+                    "press": ["press"],
+                }
+                
                 # Handle hyphenated words - try both forms
                 search_terms = [clean_search]
                 if "-" in clean_search:
@@ -1787,6 +1819,20 @@ async def search_exercises(search: str = None, muscle: str = None, limit: int = 
                     words = clean_search.split()
                     if len(words) >= 1 and len(words[0]) > 2:
                         search_terms.append(words[0])
+                
+                # Add synonyms to search terms
+                for key, syn_list in synonyms.items():
+                    if key in clean_search or clean_search in key:
+                        search_terms.extend(syn_list)
+                
+                # Remove duplicates while preserving order
+                seen = set()
+                unique_terms = []
+                for term in search_terms:
+                    if term not in seen:
+                        seen.add(term)
+                        unique_terms.append(term)
+                search_terms = unique_terms
                 
                 # Try each search term
                 for term in search_terms:
@@ -1806,8 +1852,8 @@ async def search_exercises(search: str = None, muscle: str = None, limit: int = 
                                     exercises.append(ex)
                                     existing_ids.add(ex.get("id"))
                             
-                            # If we found results, break (prioritize exact matches)
-                            if len(exercises) >= 10:
+                            # Don't break early - gather synonyms too
+                            if len(exercises) >= 50:
                                 break
             
             else:
