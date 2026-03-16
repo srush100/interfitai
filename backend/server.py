@@ -267,8 +267,10 @@ CACHED_EXERCISE_GIFS = {
     "flat dumbbell fly": "0308",
     "incline dumbbell fly": "0316",
     "decline dumbbell fly": "0280",
-    "cable fly": "0160",
-    "cable crossover": "0160",
+    "cable fly": "0227",  # cable standing fly
+    "cable flys": "0227",
+    "cable crossover": "0227",
+    "cable chest fly": "0227",
     "push up": "0662",
     "push-up": "0662",
     "pushup": "0662",
@@ -282,8 +284,14 @@ CACHED_EXERCISE_GIFS = {
     "weighted dip": "0251",
     "assisted dip": "0009",
     "assisted chest dip": "0009",
-    "machine chest press": "0152",
-    "chest press machine": "0152",
+    "machine chest press": "0576",  # lever chest press
+    "chest press machine": "0576",
+    "chest machine press": "0576",
+    "lever chest press": "0576",
+    "incline machine press": "1299",  # lever incline chest press
+    "incline chest machine press": "1299",
+    "incline machine chest press": "1299",
+    "lever incline chest press": "1299",
     
     # Back exercises
     "pull up": "0652",
@@ -375,20 +383,24 @@ CACHED_EXERCISE_GIFS = {
     "standing dumbbell curl": "0294",
     "barbell curl": "0023",
     "standing barbell curl": "0023",
-    "ez bar curl": "0028",
+    "ez bar curl": "0447",  # ez barbell curl
+    "ez barbell curl": "0447",
+    "ez curl": "0447",
     "hammer curl": "0301",
     "dumbbell hammer curl": "0301",
-    "preacher curl": "0672",
+    "preacher curl": "0092",  # barbell preacher curl
     "concentration curl": "0274",
     "incline dumbbell curl": "0313",
     "cable curl": "0163",
     "cable bicep curl": "0163",
     
     # Arm exercises - Triceps
-    "tricep pushdown": "0242",
-    "cable pushdown": "0242",
-    "tricep rope pushdown": "0242",
-    "rope pushdown": "0242",
+    "tricep pushdown": "0241",  # cable triceps pushdown (v-bar)
+    "cable pushdown": "0201",  # cable pushdown
+    "tricep rope pushdown": "0200",  # cable pushdown (with rope attachment)
+    "rope pushdown": "0200",
+    "cable tricep pushdown": "0241",
+    "triceps pushdown": "0241",
     "tricep extension": "0860",
     "overhead tricep extension": "0860",
     "dumbbell tricep extension": "0860",
@@ -402,14 +414,16 @@ CACHED_EXERCISE_GIFS = {
     "bench dips": "0129",
     "tricep kickback": "0347",
     "dumbbell kickback": "0347",
-    "close grip bench press": "0031",
+    "close grip bench press": "0030",  # barbell close-grip bench press
+    "close grip bench": "0030",
+    "close-grip bench press": "0030",
     
     # Leg exercises
     "squat": "0043",
     "barbell squat": "0043",
     "back squat": "0043",
-    "front squat": "0037",
-    "barbell front squat": "0037",
+    "front squat": "0029",  # barbell full squat (closest to front squat form)
+    "barbell front squat": "0029",
     "goblet squat": "0441",
     "dumbbell goblet squat": "0441",
     "leg press": "0738",
@@ -424,10 +438,13 @@ CACHED_EXERCISE_GIFS = {
     "calf raise": "1373",
     "standing calf raise": "1373",
     "seated calf raise": "0720",
-    "lunge": "0333",
-    "dumbbell lunge": "0333",
-    "walking lunge": "1466",
-    "reverse lunge": "0689",
+    "lunge": "0336",  # dumbbell lunge
+    "dumbbell lunge": "0336",
+    "lunges": "0336",
+    "walking lunge": "1460",  # walking lunge
+    "walking lunges": "1460",
+    "reverse lunge": "0381",  # dumbbell rear lunge
+    "barbell lunge": "0054",  # barbell lunge
     "bulgarian split squat": "0130",
     "split squat": "0130",
     "step up": "0758",
