@@ -917,8 +917,22 @@ class DeviceConnection(BaseModel):
     user_id: str
     device_type: str  # apple_health, garmin, fitbit, google_fit
     connected: bool = False
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_expires_at: Optional[datetime] = None
     last_sync: Optional[datetime] = None
+    health_data: Optional[Dict[str, Any]] = None  # Cached health data
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# Fitbit OAuth Configuration (Register app at https://dev.fitbit.com/)
+# These would be set in production .env file
+FITBIT_CLIENT_ID = os.environ.get("FITBIT_CLIENT_ID", "")
+FITBIT_CLIENT_SECRET = os.environ.get("FITBIT_CLIENT_SECRET", "")
+FITBIT_REDIRECT_URI = os.environ.get("FITBIT_REDIRECT_URI", "")
+
+# Garmin Connect OAuth Configuration (Register at https://developer.garmin.com/)
+GARMIN_CONSUMER_KEY = os.environ.get("GARMIN_CONSUMER_KEY", "")
+GARMIN_CONSUMER_SECRET = os.environ.get("GARMIN_CONSUMER_SECRET", "")
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -4826,26 +4840,228 @@ async def set_step_goal(goal: StepGoal):
 async def get_connected_devices(user_id: str):
     """Get all device connections for a user"""
     devices = await db.device_connections.find({"user_id": user_id}).to_list(10)
-    return [DeviceConnection(**d) for d in devices]
+    # Don't expose tokens to frontend
+    safe_devices = []
+    for d in devices:
+        safe_device = {
+            "id": d.get("id"),
+            "user_id": d.get("user_id"),
+            "device_type": d.get("device_type"),
+            "connected": d.get("connected", False),
+            "last_sync": d.get("last_sync"),
+            "health_data": d.get("health_data"),
+        }
+        safe_devices.append(safe_device)
+    return safe_devices
 
 @api_router.post("/devices/connect")
 async def connect_device(user_id: str, device_type: str):
-    """Connect a fitness device (placeholder for actual device OAuth)"""
-    # In production, this would initiate OAuth flow with the device provider
-    connection = DeviceConnection(
-        user_id=user_id,
-        device_type=device_type,
-        connected=True,
-        last_sync=datetime.utcnow()
-    )
+    """Connect a fitness device (Apple Health/Google Fit handled on device, Fitbit/Garmin via OAuth)"""
     
+    # For Apple Health and Google Fit, connection is handled entirely on the device
+    # The frontend just needs to confirm the connection was successful
+    if device_type in ["apple_health", "google_fit"]:
+        connection = DeviceConnection(
+            user_id=user_id,
+            device_type=device_type,
+            connected=True,
+            last_sync=datetime.utcnow()
+        )
+        
+        await db.device_connections.update_one(
+            {"user_id": user_id, "device_type": device_type},
+            {"$set": connection.model_dump()},
+            upsert=True
+        )
+        
+        return {"message": f"{device_type} connected successfully", "connection": connection}
+    
+    # For Fitbit - return OAuth URL for user to authorize
+    elif device_type == "fitbit":
+        if not FITBIT_CLIENT_ID:
+            return {
+                "message": "Fitbit integration not configured",
+                "oauth_url": None,
+                "setup_required": True,
+                "instructions": "To enable Fitbit integration, register an app at https://dev.fitbit.com/ and add FITBIT_CLIENT_ID, FITBIT_CLIENT_SECRET, and FITBIT_REDIRECT_URI to your environment variables."
+            }
+        
+        # Generate OAuth authorization URL
+        oauth_url = (
+            f"https://www.fitbit.com/oauth2/authorize?"
+            f"response_type=code&"
+            f"client_id={FITBIT_CLIENT_ID}&"
+            f"redirect_uri={FITBIT_REDIRECT_URI}&"
+            f"scope=activity%20nutrition%20heartrate%20sleep%20weight&"
+            f"state={user_id}"
+        )
+        
+        return {
+            "message": "Redirect user to Fitbit authorization",
+            "oauth_url": oauth_url,
+            "device_type": "fitbit"
+        }
+    
+    # For Garmin - return OAuth URL
+    elif device_type == "garmin":
+        if not GARMIN_CONSUMER_KEY:
+            return {
+                "message": "Garmin integration not configured",
+                "oauth_url": None,
+                "setup_required": True,
+                "instructions": "To enable Garmin integration, register an app at https://developer.garmin.com/ and add GARMIN_CONSUMER_KEY and GARMIN_CONSUMER_SECRET to your environment variables."
+            }
+        
+        # Note: Garmin uses OAuth 1.0a which is more complex
+        # For production, use a library like garminconnect or authlib
+        return {
+            "message": "Garmin OAuth requires additional setup",
+            "oauth_url": None,
+            "setup_required": True,
+            "instructions": "Garmin Connect API requires OAuth 1.0a flow. Contact support for setup assistance."
+        }
+    
+    return {"message": f"Unknown device type: {device_type}"}
+
+@api_router.post("/devices/fitbit/callback")
+async def fitbit_oauth_callback(code: str, state: str):
+    """Handle Fitbit OAuth callback - exchange code for access token"""
+    if not FITBIT_CLIENT_ID or not FITBIT_CLIENT_SECRET:
+        raise HTTPException(status_code=400, detail="Fitbit not configured")
+    
+    user_id = state  # We passed user_id as state parameter
+    
+    # Exchange authorization code for access token
+    async with httpx.AsyncClient() as client:
+        auth_header = base64.b64encode(
+            f"{FITBIT_CLIENT_ID}:{FITBIT_CLIENT_SECRET}".encode()
+        ).decode()
+        
+        response = await client.post(
+            "https://api.fitbit.com/oauth2/token",
+            headers={
+                "Authorization": f"Basic {auth_header}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            data={
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": FITBIT_REDIRECT_URI
+            }
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Fitbit token error: {response.text}")
+            raise HTTPException(status_code=400, detail="Failed to get Fitbit access token")
+        
+        token_data = response.json()
+        
+        # Save connection with tokens
+        connection = DeviceConnection(
+            user_id=user_id,
+            device_type="fitbit",
+            connected=True,
+            access_token=token_data.get("access_token"),
+            refresh_token=token_data.get("refresh_token"),
+            token_expires_at=datetime.utcnow(),  # Would calculate from expires_in
+            last_sync=datetime.utcnow()
+        )
+        
+        await db.device_connections.update_one(
+            {"user_id": user_id, "device_type": "fitbit"},
+            {"$set": connection.model_dump()},
+            upsert=True
+        )
+        
+        return {"message": "Fitbit connected successfully!", "success": True}
+
+@api_router.get("/devices/sync/{user_id}/{device_type}")
+async def sync_device_data(user_id: str, device_type: str):
+    """Sync health data from a connected device"""
+    connection = await db.device_connections.find_one({
+        "user_id": user_id,
+        "device_type": device_type,
+        "connected": True
+    })
+    
+    if not connection:
+        raise HTTPException(status_code=404, detail=f"{device_type} not connected")
+    
+    health_data = {
+        "steps": 0,
+        "calories": 0,
+        "distance": 0,
+        "active_minutes": 0,
+        "heart_rate": None,
+        "sleep_hours": None,
+        "synced_at": datetime.utcnow().isoformat()
+    }
+    
+    # For Fitbit - fetch data using stored access token
+    if device_type == "fitbit" and connection.get("access_token"):
+        try:
+            async with httpx.AsyncClient() as client:
+                today = datetime.now().strftime("%Y-%m-%d")
+                
+                # Get activity summary
+                response = await client.get(
+                    f"https://api.fitbit.com/1/user/-/activities/date/{today}.json",
+                    headers={"Authorization": f"Bearer {connection['access_token']}"}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    summary = data.get("summary", {})
+                    health_data["steps"] = summary.get("steps", 0)
+                    health_data["calories"] = summary.get("caloriesOut", 0)
+                    health_data["distance"] = round(summary.get("distances", [{}])[0].get("distance", 0), 2)
+                    health_data["active_minutes"] = summary.get("fairlyActiveMinutes", 0) + summary.get("veryActiveMinutes", 0)
+                
+                # Get heart rate
+                hr_response = await client.get(
+                    f"https://api.fitbit.com/1/user/-/activities/heart/date/{today}/1d.json",
+                    headers={"Authorization": f"Bearer {connection['access_token']}"}
+                )
+                
+                if hr_response.status_code == 200:
+                    hr_data = hr_response.json()
+                    resting_hr = hr_data.get("activities-heart", [{}])[0].get("value", {}).get("restingHeartRate")
+                    if resting_hr:
+                        health_data["heart_rate"] = resting_hr
+                        
+        except Exception as e:
+            logger.error(f"Fitbit sync error: {e}")
+    
+    # For Apple Health / Google Fit - data comes from the device
+    # Frontend will pass the data from HealthKit/Health Connect
+    elif device_type in ["apple_health", "google_fit"]:
+        # Return last cached data or empty
+        if connection.get("health_data"):
+            health_data = connection["health_data"]
+    
+    # Update cached health data
     await db.device_connections.update_one(
         {"user_id": user_id, "device_type": device_type},
-        {"$set": connection.model_dump()},
-        upsert=True
+        {"$set": {"health_data": health_data, "last_sync": datetime.utcnow()}}
     )
     
-    return {"message": f"{device_type} connected successfully", "connection": connection}
+    return health_data
+
+@api_router.post("/devices/health-data")
+async def save_health_data(user_id: str, device_type: str, health_data: Dict[str, Any]):
+    """Save health data from device (Apple Health/Google Fit send data from device)"""
+    await db.device_connections.update_one(
+        {"user_id": user_id, "device_type": device_type},
+        {
+            "$set": {
+                "health_data": health_data,
+                "last_sync": datetime.utcnow(),
+                "connected": True
+            }
+        },
+        upsert=True
+    )
+    return {"message": "Health data saved", "success": True}
 
 @api_router.delete("/devices/disconnect")
 async def disconnect_device(user_id: str, device_type: str):

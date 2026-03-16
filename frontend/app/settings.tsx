@@ -31,6 +31,7 @@ import {
   HealthData,
 } from '../src/services/health';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from '../src/services/api';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -46,6 +47,7 @@ interface ConnectedDevice {
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const [userId, setUserId] = useState<string>('');
   const [reminders, setReminders] = useState<WorkoutReminder[]>([]);
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,6 +70,12 @@ export default function SettingsScreen() {
 
   const loadSettings = async () => {
     try {
+      // Get user ID
+      const storedUserId = await AsyncStorage.getItem('@user_id');
+      if (storedUserId) {
+        setUserId(storedUserId);
+      }
+      
       // Load reminders
       const savedReminders = await loadReminders();
       setReminders(savedReminders);
@@ -148,11 +156,17 @@ export default function SettingsScreen() {
             text: 'Disconnect', 
             style: 'destructive',
             onPress: async () => {
-              const updated = connectedDevices.map(d => 
-                d.id === deviceId ? { ...d, connected: false } : d
-              );
-              setConnectedDevices(updated);
-              await saveDeviceStatus(updated);
+              try {
+                // Call backend to disconnect
+                await api.delete(`/devices/disconnect?user_id=${userId}&device_type=${deviceId}`);
+                const updated = connectedDevices.map(d => 
+                  d.id === deviceId ? { ...d, connected: false } : d
+                );
+                setConnectedDevices(updated);
+                await saveDeviceStatus(updated);
+              } catch (error) {
+                console.error('Disconnect error:', error);
+              }
             }
           }
         ]
@@ -166,7 +180,7 @@ export default function SettingsScreen() {
       if (!available) {
         Alert.alert(
           'Not Available',
-          `${device.name} is not available on this device.`,
+          `${device.name} is not available on this device. This feature requires a physical iOS/Android device with ${device.name} installed.`,
           [{ text: 'OK' }]
         );
         return;
@@ -174,68 +188,122 @@ export default function SettingsScreen() {
 
       const granted = await requestHealthPermissions();
       if (granted) {
-        const updated = connectedDevices.map(d => 
-          d.id === deviceId ? { ...d, connected: true } : d
-        );
-        setConnectedDevices(updated);
-        await saveDeviceStatus(updated);
-        
-        setSyncingHealth(true);
-        const data = await syncHealthData();
-        setHealthData(data);
-        setSyncingHealth(false);
-        
-        Alert.alert('Connected', `Successfully connected to ${device.name}!`);
+        try {
+          // Notify backend of connection
+          await api.post(`/devices/connect?user_id=${userId}&device_type=${deviceId}`);
+          
+          const updated = connectedDevices.map(d => 
+            d.id === deviceId ? { ...d, connected: true } : d
+          );
+          setConnectedDevices(updated);
+          await saveDeviceStatus(updated);
+          
+          setSyncingHealth(true);
+          const data = await syncHealthData();
+          setHealthData(data);
+          
+          // Save health data to backend
+          await api.post(`/devices/health-data?user_id=${userId}&device_type=${deviceId}`, {
+            steps: data.steps,
+            calories: data.calories,
+            distance: data.distance,
+            active_minutes: data.activeMinutes,
+          });
+          
+          setSyncingHealth(false);
+          
+          Alert.alert('Connected', `Successfully connected to ${device.name}!`);
+        } catch (error) {
+          console.error('Connection error:', error);
+          setSyncingHealth(false);
+        }
       } else {
         Alert.alert(
           'Permission Denied',
-          `Please enable ${device.name} permissions in your device settings.`,
-          [{ text: 'OK' }]
+          `Please enable ${device.name} permissions in your device settings to sync your health data.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Open Settings', 
+              onPress: () => Linking.openSettings()
+            }
+          ]
         );
       }
     } else if (deviceId === 'fitbit') {
-      // Fitbit OAuth flow - would redirect to Fitbit authorization
-      Alert.alert(
-        'Connect Fitbit',
-        'You will be redirected to Fitbit to authorize the connection.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Continue', 
-            onPress: () => {
-              // In production, this would open Fitbit OAuth
-              // For now, simulate connection
-              const updated = connectedDevices.map(d => 
-                d.id === deviceId ? { ...d, connected: true } : d
-              );
-              setConnectedDevices(updated);
-              saveDeviceStatus(updated);
-              Alert.alert('Connected', 'Fitbit connected successfully!');
-            }
-          }
-        ]
-      );
+      // Fitbit OAuth flow
+      try {
+        const response = await api.post(`/devices/connect?user_id=${userId}&device_type=fitbit`);
+        const data = response.data;
+        
+        if (data.setup_required) {
+          Alert.alert(
+            'Fitbit Setup Required',
+            'Fitbit integration requires developer credentials. Please contact support for assistance.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        if (data.oauth_url) {
+          Alert.alert(
+            'Connect Fitbit',
+            'You will be redirected to Fitbit to authorize the connection.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Continue', 
+                onPress: async () => {
+                  // Open Fitbit OAuth URL
+                  const canOpen = await Linking.canOpenURL(data.oauth_url);
+                  if (canOpen) {
+                    await Linking.openURL(data.oauth_url);
+                  } else {
+                    Alert.alert('Error', 'Unable to open Fitbit authorization page');
+                  }
+                }
+              }
+            ]
+          );
+        }
+      } catch (error) {
+        console.error('Fitbit connect error:', error);
+        Alert.alert('Error', 'Failed to initiate Fitbit connection');
+      }
     } else if (deviceId === 'garmin') {
       // Garmin Connect flow
-      Alert.alert(
-        'Connect Garmin',
-        'You will be redirected to Garmin Connect to authorize the connection.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Continue', 
-            onPress: () => {
-              // In production, this would open Garmin OAuth
-              const updated = connectedDevices.map(d => 
-                d.id === deviceId ? { ...d, connected: true } : d
-              );
-              setConnectedDevices(updated);
-              saveDeviceStatus(updated);
-              Alert.alert('Connected', 'Garmin connected successfully!');
-            }
-          }
-        ]
-      );
+      try {
+        const response = await api.post(`/devices/connect?user_id=${userId}&device_type=garmin`);
+        const data = response.data;
+        
+        if (data.setup_required) {
+          Alert.alert(
+            'Garmin Setup Required',
+            'Garmin integration requires developer credentials. Please contact support for assistance.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        if (data.oauth_url) {
+          Alert.alert(
+            'Connect Garmin',
+            'You will be redirected to Garmin Connect to authorize.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Continue', 
+                onPress: async () => {
+                  await Linking.openURL(data.oauth_url);
+                }
+              }
+            ]
+          );
+        }
+      } catch (error) {
+        console.error('Garmin connect error:', error);
+        Alert.alert('Error', 'Failed to initiate Garmin connection');
+      }
     }
   };
 
