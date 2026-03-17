@@ -924,6 +924,36 @@ class DeviceConnection(BaseModel):
     health_data: Optional[Dict[str, Any]] = None  # Cached health data
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+# ==================== UNIFIED SUBSCRIPTION MODEL ====================
+
+class SubscriptionInfo(BaseModel):
+    """Unified subscription model for Apple, Google, and Stripe"""
+    user_id: str
+    email: str
+    subscription_source: Optional[str] = None  # apple, google, stripe, None for free
+    subscription_plan: Optional[str] = None  # monthly, quarterly, yearly
+    subscription_status: str = "free"  # free, trial, active, cancelled, expired, billing_issue
+    premium_expires_at: Optional[datetime] = None
+    bonus_month_applied: bool = False  # For yearly web subscribers (one-time 30-day bonus)
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+    revenuecat_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+# Subscription pricing constants
+SUBSCRIPTION_PRICES = {
+    "monthly": 9.99,
+    "quarterly": 29.99,
+    "yearly": 79.99,
+}
+
+# Stripe Price IDs (to be configured in Stripe Dashboard)
+STRIPE_PRICE_IDS = {
+    "quarterly": os.environ.get("STRIPE_PRICE_QUARTERLY", ""),  # With 7-day trial
+    "yearly": os.environ.get("STRIPE_PRICE_YEARLY", ""),  # Includes 30-day bonus
+}
+
 # Fitbit OAuth Configuration (Register app at https://dev.fitbit.com/)
 # These would be set in production .env file
 FITBIT_CLIENT_ID = os.environ.get("FITBIT_CLIENT_ID", "")
@@ -5581,7 +5611,7 @@ async def handle_revenuecat_webhook(request: Request):
 
 @api_router.get("/subscription/status/{user_id}")
 async def get_subscription_status(user_id: str):
-    """Get subscription status for a user"""
+    """Get subscription status for a user - unified across Apple, Google, and Stripe"""
     profile = await db.profiles.find_one({"id": user_id})
     
     if not profile:
@@ -5592,13 +5622,317 @@ async def get_subscription_status(user_id: str):
         }
     
     status = profile.get("subscription_status", "free")
-    is_premium = status in ["premium", "trial", "cancelled"]  # Cancelled still has access until expiration
+    premium_expires_at = profile.get("premium_expires_at")
+    
+    # Check if subscription has expired
+    if premium_expires_at and datetime.utcnow() > premium_expires_at:
+        status = "expired"
+        # Update in database
+        await db.profiles.update_one(
+            {"id": user_id},
+            {"$set": {"subscription_status": "expired"}}
+        )
+    
+    is_premium = status in ["premium", "active", "trial", "cancelled"]  # Cancelled still has access until expiration
     
     return {
         "is_premium": is_premium,
         "status": status,
-        "updated_at": profile.get("subscription_updated_at"),
+        "subscription_source": profile.get("subscription_source"),
+        "subscription_plan": profile.get("subscription_plan"),
+        "premium_expires_at": premium_expires_at.isoformat() if premium_expires_at else None,
+        "bonus_month_applied": profile.get("bonus_month_applied", False),
     }
+
+# ==================== STRIPE WEBSITE SUBSCRIPTION ENDPOINTS ====================
+
+@api_router.post("/stripe/create-checkout-session")
+async def create_stripe_checkout_session(
+    user_id: str,
+    plan: str,  # quarterly or yearly
+    success_url: str,
+    cancel_url: str
+):
+    """
+    Create a Stripe Checkout session for website subscriptions.
+    - Quarterly: $29.99 with 7-day free trial
+    - Yearly: $79.99 with 30-day bonus (applied after payment)
+    """
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    
+    if plan not in ["quarterly", "yearly"]:
+        raise HTTPException(status_code=400, detail="Invalid plan. Choose 'quarterly' or 'yearly'")
+    
+    # Get user profile
+    profile = await db.profiles.find_one({"id": user_id})
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    email = profile.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="User email required for Stripe subscription")
+    
+    try:
+        stripe.api_key = STRIPE_SECRET_KEY
+        
+        # Create or get Stripe customer
+        existing_customer_id = profile.get("stripe_customer_id")
+        
+        if existing_customer_id:
+            customer = stripe.Customer.retrieve(existing_customer_id)
+        else:
+            customer = stripe.Customer.create(
+                email=email,
+                name=profile.get("name", ""),
+                metadata={"user_id": user_id}
+            )
+            # Save customer ID to profile
+            await db.profiles.update_one(
+                {"id": user_id},
+                {"$set": {"stripe_customer_id": customer.id}}
+            )
+        
+        # Build checkout session parameters
+        checkout_params = {
+            "customer": customer.id,
+            "payment_method_types": ["card"],
+            "mode": "subscription",
+            "success_url": f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}",
+            "cancel_url": cancel_url,
+            "metadata": {
+                "user_id": user_id,
+                "plan": plan,
+            },
+            "allow_promotion_codes": True,
+        }
+        
+        # Configure pricing based on plan
+        if plan == "quarterly":
+            # Quarterly with 7-day free trial
+            checkout_params["line_items"] = [{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {
+                        "name": "InterFitAI Premium - Quarterly",
+                        "description": "Full access to all InterFitAI features",
+                    },
+                    "unit_amount": 2999,  # $29.99 in cents
+                    "recurring": {"interval": "month", "interval_count": 3},
+                },
+                "quantity": 1,
+            }]
+            checkout_params["subscription_data"] = {
+                "trial_period_days": 7,
+                "metadata": {"user_id": user_id, "plan": "quarterly"},
+            }
+            
+        elif plan == "yearly":
+            # Yearly - no trial, but 30-day bonus applied after payment
+            checkout_params["line_items"] = [{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {
+                        "name": "InterFitAI Premium - Annual",
+                        "description": "Full access to all InterFitAI features + 1 bonus month",
+                    },
+                    "unit_amount": 7999,  # $79.99 in cents
+                    "recurring": {"interval": "year"},
+                },
+                "quantity": 1,
+            }]
+            checkout_params["subscription_data"] = {
+                "metadata": {"user_id": user_id, "plan": "yearly", "apply_bonus": "true"},
+            }
+        
+        session = stripe.checkout.Session.create(**checkout_params)
+        
+        return {
+            "checkout_url": session.url,
+            "session_id": session.id,
+        }
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.post("/stripe/webhook")
+async def handle_stripe_webhook(request: Request):
+    """
+    Handle Stripe webhook events for subscription lifecycle.
+    Key events:
+    - checkout.session.completed: Initial payment/trial start
+    - invoice.paid: Subscription renewed
+    - customer.subscription.deleted: Subscription cancelled
+    - customer.subscription.updated: Plan changed
+    """
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    
+    # In production, verify webhook signature
+    # event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    
+    try:
+        event = json.loads(payload)
+        event_type = event.get("type", "")
+        data = event.get("data", {}).get("object", {})
+        
+        logger.info(f"Stripe webhook received: {event_type}")
+        
+        if event_type == "checkout.session.completed":
+            # Initial subscription created
+            user_id = data.get("metadata", {}).get("user_id")
+            plan = data.get("metadata", {}).get("plan", "quarterly")
+            subscription_id = data.get("subscription")
+            
+            if user_id:
+                # Calculate expiration
+                if plan == "yearly":
+                    expires_at = datetime.utcnow() + timedelta(days=365)
+                    # Check if bonus should be applied
+                    profile = await db.profiles.find_one({"id": user_id})
+                    apply_bonus = not profile.get("bonus_month_applied", False)
+                    if apply_bonus:
+                        expires_at += timedelta(days=30)  # Add 30-day bonus
+                else:
+                    expires_at = datetime.utcnow() + timedelta(days=90)  # Quarterly
+                
+                # Update user subscription
+                update_data = {
+                    "subscription_source": "stripe",
+                    "subscription_plan": plan,
+                    "subscription_status": "active" if plan == "yearly" else "trial",
+                    "premium_expires_at": expires_at,
+                    "stripe_subscription_id": subscription_id,
+                    "subscription_updated_at": datetime.utcnow(),
+                }
+                
+                if plan == "yearly" and apply_bonus:
+                    update_data["bonus_month_applied"] = True
+                
+                await db.profiles.update_one(
+                    {"id": user_id},
+                    {"$set": update_data}
+                )
+                logger.info(f"Stripe subscription activated for user {user_id}: {plan}")
+        
+        elif event_type == "invoice.paid":
+            # Subscription renewed
+            subscription_id = data.get("subscription")
+            if subscription_id:
+                # Find user by subscription ID
+                profile = await db.profiles.find_one({"stripe_subscription_id": subscription_id})
+                if profile:
+                    plan = profile.get("subscription_plan", "quarterly")
+                    if plan == "yearly":
+                        expires_at = datetime.utcnow() + timedelta(days=365)
+                    else:
+                        expires_at = datetime.utcnow() + timedelta(days=90)
+                    
+                    await db.profiles.update_one(
+                        {"stripe_subscription_id": subscription_id},
+                        {
+                            "$set": {
+                                "subscription_status": "active",
+                                "premium_expires_at": expires_at,
+                                "subscription_updated_at": datetime.utcnow(),
+                            }
+                        }
+                    )
+                    logger.info(f"Stripe subscription renewed for user {profile.get('id')}")
+        
+        elif event_type == "customer.subscription.deleted":
+            # Subscription cancelled/expired
+            subscription_id = data.get("id")
+            if subscription_id:
+                await db.profiles.update_one(
+                    {"stripe_subscription_id": subscription_id},
+                    {
+                        "$set": {
+                            "subscription_status": "expired",
+                            "subscription_updated_at": datetime.utcnow(),
+                        }
+                    }
+                )
+                logger.info(f"Stripe subscription cancelled: {subscription_id}")
+        
+        elif event_type == "customer.subscription.trial_will_end":
+            # Trial ending soon - could send notification
+            subscription_id = data.get("id")
+            logger.info(f"Trial ending soon for subscription: {subscription_id}")
+        
+        return {"received": True}
+        
+    except Exception as e:
+        logger.error(f"Stripe webhook error: {e}")
+        return {"received": True, "error": str(e)}
+
+@api_router.post("/stripe/cancel-subscription")
+async def cancel_stripe_subscription(user_id: str):
+    """Cancel a Stripe subscription"""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    
+    profile = await db.profiles.find_one({"id": user_id})
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    subscription_id = profile.get("stripe_subscription_id")
+    if not subscription_id:
+        raise HTTPException(status_code=400, detail="No active Stripe subscription")
+    
+    try:
+        stripe.api_key = STRIPE_SECRET_KEY
+        subscription = stripe.Subscription.modify(
+            subscription_id,
+            cancel_at_period_end=True
+        )
+        
+        await db.profiles.update_one(
+            {"id": user_id},
+            {
+                "$set": {
+                    "subscription_status": "cancelled",
+                    "subscription_updated_at": datetime.utcnow(),
+                }
+            }
+        )
+        
+        return {
+            "message": "Subscription will cancel at end of billing period",
+            "cancel_at": subscription.cancel_at,
+        }
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe cancellation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.get("/stripe/customer-portal")
+async def get_stripe_customer_portal(user_id: str, return_url: str):
+    """Get Stripe Customer Portal URL for managing subscription"""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    
+    profile = await db.profiles.find_one({"id": user_id})
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    customer_id = profile.get("stripe_customer_id")
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="No Stripe customer found")
+    
+    try:
+        stripe.api_key = STRIPE_SECRET_KEY
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+        )
+        
+        return {"portal_url": session.url}
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe portal error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 # ==================== HEALTH CHECK ====================
 

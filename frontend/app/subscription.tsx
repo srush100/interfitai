@@ -58,21 +58,33 @@ const PREMIUM_FEATURES = [
 ];
 
 // Fallback plans for web or when RevenueCat offerings aren't available
+// These match RevenueCat products configured in App Store Connect / Google Play Console
 const FALLBACK_PLANS = [
   {
     id: 'monthly',
     name: 'Monthly',
     price: '$9.99',
     period: '/month',
+    isMonthly: true,
     isYearly: false,
+  },
+  {
+    id: 'quarterly',
+    name: 'Quarterly',
+    price: '$29.99',
+    period: '/quarter',
+    isMonthly: false,
+    isYearly: false,
+    subtext: '3 months',
   },
   {
     id: 'yearly',
     name: 'Annual',
-    price: '$59.99',
+    price: '$79.99',
     period: '/year',
+    isMonthly: false,
     isYearly: true,
-    savings: 'Save 50%',
+    savings: 'Best Value',
   },
 ];
 

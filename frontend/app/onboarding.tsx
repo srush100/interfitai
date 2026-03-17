@@ -137,7 +137,7 @@ export default function Onboarding() {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Email (optional)</Text>
+        <Text style={styles.label}>Email</Text>
         <TextInput
           style={styles.input}
           placeholder="Enter your email"
