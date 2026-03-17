@@ -15,9 +15,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
+import usePremium from '../../src/hooks/usePremium';
 
 interface Message {
   id: string;
@@ -38,6 +40,8 @@ interface SavedNote {
 
 export default function AskAIScreen() {
   const { profile } = useUserStore();
+  const router = useRouter();
+  const { requirePremium } = usePremium();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -119,6 +123,10 @@ export default function AskAIScreen() {
 
   const sendMessage = async () => {
     if (!input.trim() || loading || !profile?.id) return;
+
+    // Check premium before sending message
+    const hasPremium = await requirePremium('Ask InterFitAI');
+    if (!hasPremium) return;
 
     const userMessage = input.trim();
     setInput('');

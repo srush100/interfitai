@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
+import usePremium from '../src/hooks/usePremium';
 
 // Step 1: Goals
 const GOALS = [

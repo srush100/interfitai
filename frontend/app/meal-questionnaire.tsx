@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
+import usePremium from '../src/hooks/usePremium';
 
 const EATING_STYLES = [
   { id: 'none', label: 'No Preference', desc: 'Flexible eating' },
@@ -44,6 +45,7 @@ const ALLERGIES = [
 export default function MealQuestionnaire() {
   const router = useRouter();
   const { profile } = useUserStore();
+  const { requirePremium } = usePremium();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
@@ -94,6 +96,10 @@ export default function MealQuestionnaire() {
   };
 
   const handleGenerate = async () => {
+    // Check premium before generating
+    const hasPremium = await requirePremium('AI Meal Plans');
+    if (!hasPremium) return;
+    
     console.log('Generate button pressed');
     console.log('Profile:', profile);
     console.log('Profile ID:', profile?.id);
