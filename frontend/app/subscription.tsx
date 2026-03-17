@@ -8,228 +8,401 @@ import {
   ActivityIndicator,
   Linking,
   Alert,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Constants from 'expo-constants';
+import { LinearGradient } from 'expo-linear-gradient';
+import { PurchasesPackage } from 'react-native-purchases';
 import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
-import api from '../src/services/api';
+import useSubscription from '../src/hooks/useSubscription';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-interface Plan {
-  id: string;
-  name: string;
-  price: number;
-  duration: string;
-  perMonth: number;
-  savings?: string;
-  features: string[];
-  popular?: boolean;
-}
+const { width } = Dimensions.get('window');
 
-const PLANS: Plan[] = [
+// Premium features list
+const PREMIUM_FEATURES = [
+  {
+    icon: 'nutrition',
+    title: 'AI Meal Plans',
+    description: 'Personalized meal plans with exact macros',
+  },
+  {
+    icon: 'barbell',
+    title: 'Custom Workouts',
+    description: 'AI-generated workout programs',
+  },
+  {
+    icon: 'body',
+    title: 'Body Analysis',
+    description: 'Track progress with AI body composition',
+  },
+  {
+    icon: 'chatbubbles',
+    title: 'Ask InterFitAI',
+    description: 'Unlimited AI fitness coaching',
+  },
+  {
+    icon: 'analytics',
+    title: 'Advanced Analytics',
+    description: 'Detailed insights and progress tracking',
+  },
+  {
+    icon: 'cloud-download',
+    title: 'Offline Access',
+    description: 'Download plans for offline use',
+  },
+];
+
+// Fallback plans for web or when RevenueCat offerings aren't available
+const FALLBACK_PLANS = [
   {
     id: 'monthly',
     name: 'Monthly',
-    price: 9.99,
-    duration: '1 month',
-    perMonth: 9.99,
-    features: [
-      'AI Workout Programs',
-      'AI Meal Plans',
-      'Food Tracking & Analysis',
-      'Ask InterFitAI',
-      'Step Tracking',
-    ],
-  },
-  {
-    id: 'quarterly',
-    name: 'Quarterly',
-    price: 24.99,
-    duration: '3 months',
-    perMonth: 8.33,
-    savings: 'Save 17%',
-    popular: true,
-    features: [
-      'AI Workout Programs',
-      'AI Meal Plans',
-      'Food Tracking & Analysis',
-      'Ask InterFitAI',
-      'Step Tracking',
-      'Priority Support',
-    ],
+    price: '$9.99',
+    period: '/month',
+    isYearly: false,
   },
   {
     id: 'yearly',
-    name: 'Yearly',
-    price: 79.99,
-    duration: '12 months',
-    perMonth: 6.67,
-    savings: 'Save 33%',
-    features: [
-      'AI Workout Programs',
-      'AI Meal Plans',
-      'Food Tracking & Analysis',
-      'Ask InterFitAI',
-      'Step Tracking',
-      'Priority Support',
-      'Exclusive Content',
-    ],
+    name: 'Annual',
+    price: '$59.99',
+    period: '/year',
+    isYearly: true,
+    savings: 'Save 50%',
   },
 ];
 
 export default function Subscription() {
   const router = useRouter();
-  const { profile, loadProfile } = useUserStore();
-  const [selectedPlan, setSelectedPlan] = useState('quarterly');
-  const [loading, setLoading] = useState(false);
+  const { profile } = useUserStore();
+  
+  // RevenueCat subscription hook
+  const {
+    isLoading,
+    isPremium,
+    offerings,
+    error,
+    initialize,
+    purchase,
+    restore,
+    openManagement,
+  } = useSubscription();
 
-  const handleSubscribe = async () => {
-    if (!profile?.id) {
-      Alert.alert('Error', 'Please set up your profile first');
+  const [selectedPackage, setSelectedPackage] = useState<PurchasesPackage | null>(null);
+  const [selectedFallbackPlan, setSelectedFallbackPlan] = useState<string>('yearly');
+  const [purchasing, setPurchasing] = useState(false);
+  const [initAttempted, setInitAttempted] = useState(false);
+
+  // Initialize RevenueCat on mount
+  useEffect(() => {
+    const initSubscription = async () => {
+      try {
+        const userId = await AsyncStorage.getItem('@user_id');
+        await initialize(userId || undefined);
+      } catch (err) {
+        console.log('RevenueCat init error:', err);
+      } finally {
+        setInitAttempted(true);
+      }
+    };
+    initSubscription();
+  }, [initialize]);
+
+  // Auto-select first package when offerings load
+  useEffect(() => {
+    if (offerings?.current?.availablePackages?.length && !selectedPackage) {
+      // Prefer annual/yearly package if available
+      const packages = offerings.current.availablePackages;
+      const yearlyPkg = packages.find(
+        p => p.packageType === 'ANNUAL' || 
+             p.identifier.includes('annual') || 
+             p.identifier.includes('yearly')
+      );
+      setSelectedPackage(yearlyPkg || packages[0]);
+    }
+  }, [offerings, selectedPackage]);
+
+  const handlePurchase = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert(
+        'Mobile Only',
+        'Subscriptions are available on iOS and Android. Please download the app to subscribe.',
+        [{ text: 'OK' }]
+      );
       return;
     }
 
-    setLoading(true);
-    try {
-      const backendUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL ||
-                         process.env.EXPO_PUBLIC_BACKEND_URL ||
-                         'https://ai-fitness-pro-4.preview.emergentagent.com';
-
-      const response = await api.post('/subscription/checkout', {
-        user_id: profile.id,
-        plan_id: selectedPlan,
-        origin_url: backendUrl,
-      });
-
-      if (response.data.url) {
-        // Open Stripe checkout
-        await Linking.openURL(response.data.url);
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to start checkout');
-    } finally {
-      setLoading(false);
+    if (!selectedPackage) {
+      Alert.alert('Error', 'Please select a subscription plan');
+      return;
+    }
+    
+    setPurchasing(true);
+    const success = await purchase(selectedPackage);
+    setPurchasing(false);
+    
+    if (success) {
+      router.back();
     }
   };
 
-  const isSubscribed = profile?.subscription_status && profile.subscription_status !== 'free';
+  const handleRestore = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert(
+        'Mobile Only',
+        'Please use the mobile app to restore purchases.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setPurchasing(true);
+    await restore();
+    setPurchasing(false);
+  };
+
+  // If already premium, show management screen
+  if (isPremium) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Premium</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        
+        <View style={styles.premiumActiveContainer}>
+          <LinearGradient
+            colors={[colors.primary, '#C4A000']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.premiumBadgeGradient}
+          >
+            <Ionicons name="checkmark-circle" size={50} color="#000" />
+          </LinearGradient>
+          <Text style={styles.premiumActiveTitle}>You're Premium!</Text>
+          <Text style={styles.premiumActiveSubtitle}>
+            You have full access to all InterFitAI features
+          </Text>
+          
+          <TouchableOpacity style={styles.manageBtn} onPress={openManagement}>
+            <Text style={styles.manageBtnText}>Manage Subscription</Text>
+            <Ionicons name="open-outline" size={18} color={colors.primary} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.doneBtn} 
+            onPress={() => router.back()}
+          >
+            <Text style={styles.doneBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Show loading while initializing (but only briefly)
+  if (isLoading && !initAttempted) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading subscription options...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Get packages from RevenueCat or use fallback
+  const packages = offerings?.current?.availablePackages || [];
+  const useFallback = packages.length === 0;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Premium</Text>
-        <View style={styles.backBtn} />
-      </View>
+    <SafeAreaView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="close" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={handleRestore} disabled={purchasing}>
+            <Text style={styles.restoreText}>Restore</Text>
+          </TouchableOpacity>
+        </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Hero */}
-        <View style={styles.hero}>
-          <View style={styles.heroIcon}>
-            <Ionicons name="diamond" size={48} color={colors.primary} />
-          </View>
-          <Text style={styles.heroTitle}>Unlock Your Full Potential</Text>
+        {/* Hero Section */}
+        <View style={styles.heroSection}>
+          <LinearGradient
+            colors={[colors.primary, '#C4A000']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.heroGradient}
+          >
+            <Ionicons name="diamond" size={50} color="#000" />
+          </LinearGradient>
+          <Text style={styles.heroTitle}>Unlock Premium</Text>
           <Text style={styles.heroSubtitle}>
-            Get unlimited access to AI-powered workouts, meal plans, and personalized coaching
+            Get unlimited access to all InterFitAI features
           </Text>
         </View>
 
-        {isSubscribed && (
-          <View style={styles.activeCard}>
-            <Ionicons name="checkmark-circle" size={24} color={colors.success} />
-            <View style={styles.activeInfo}>
-              <Text style={styles.activeTitle}>You're Subscribed!</Text>
-              <Text style={styles.activeText}>
-                {profile.subscription_status} plan active
-              </Text>
+        {/* Features List */}
+        <View style={styles.featuresSection}>
+          {PREMIUM_FEATURES.map((feature, index) => (
+            <View key={index} style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name={feature.icon as any} size={22} color={colors.primary} />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>{feature.title}</Text>
+                <Text style={styles.featureDescription}>{feature.description}</Text>
+              </View>
+              <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
             </View>
-          </View>
-        )}
+          ))}
+        </View>
 
-        {/* Plans */}
-        <Text style={styles.sectionTitle}>Choose Your Plan</Text>
-        {PLANS.map((plan) => (
-          <TouchableOpacity
-            key={plan.id}
-            style={[
-              styles.planCard,
-              selectedPlan === plan.id && styles.planCardActive,
-              plan.popular && styles.planCardPopular,
-            ]}
-            onPress={() => setSelectedPlan(plan.id)}
-          >
-            {plan.popular && (
-              <View style={styles.popularBadge}>
-                <Text style={styles.popularText}>Most Popular</Text>
-              </View>
-            )}
-
-            <View style={styles.planHeader}>
-              <View style={styles.planInfo}>
-                <Text style={[styles.planName, selectedPlan === plan.id && styles.planNameActive]}>
-                  {plan.name}
-                </Text>
-                <Text style={styles.planDuration}>{plan.duration}</Text>
-              </View>
-              <View style={styles.planPricing}>
-                <Text style={[styles.planPrice, selectedPlan === plan.id && styles.planPriceActive]}>
-                  ${plan.price}
-                </Text>
-                {plan.savings && (
-                  <View style={styles.savingsBadge}>
-                    <Text style={styles.savingsText}>{plan.savings}</Text>
+        {/* Subscription Options */}
+        <View style={styles.packagesSection}>
+          <Text style={styles.sectionTitle}>Choose Your Plan</Text>
+          
+          {/* RevenueCat Packages */}
+          {!useFallback && packages.map((pkg) => {
+            const isSelected = selectedPackage?.identifier === pkg.identifier;
+            const isYearly = pkg.packageType === 'ANNUAL' || 
+                            pkg.identifier.includes('annual') || 
+                            pkg.identifier.includes('yearly');
+            
+            return (
+              <TouchableOpacity
+                key={pkg.identifier}
+                style={[styles.packageCard, isSelected && styles.packageCardSelected]}
+                onPress={() => setSelectedPackage(pkg)}
+              >
+                {isYearly && (
+                  <View style={styles.saveBadge}>
+                    <Text style={styles.saveBadgeText}>BEST VALUE</Text>
                   </View>
                 )}
-              </View>
-            </View>
-
-            <Text style={styles.perMonth}>
-              ${plan.perMonth.toFixed(2)}/month
-            </Text>
-
-            {selectedPlan === plan.id && (
-              <View style={styles.planFeatures}>
-                {plan.features.map((feature, idx) => (
-                  <View key={idx} style={styles.featureRow}>
-                    <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-                    <Text style={styles.featureText}>{feature}</Text>
+                <View style={styles.packageRadio}>
+                  <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                    {isSelected && <View style={styles.radioInner} />}
                   </View>
-                ))}
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
+                </View>
+                <View style={styles.packageInfo}>
+                  <Text style={styles.packageTitle}>
+                    {isYearly ? 'Annual' : 'Monthly'}
+                  </Text>
+                  <Text style={styles.packagePrice}>
+                    {pkg.product.priceString}
+                    <Text style={styles.packagePeriod}>
+                      /{isYearly ? 'year' : 'month'}
+                    </Text>
+                  </Text>
+                  {isYearly && (
+                    <Text style={styles.packageSavings}>
+                      Save up to 50% vs monthly
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
 
-        {/* Subscribe Button */}
-        {!isSubscribed && (
-          <TouchableOpacity
-            style={[styles.subscribeBtn, loading && styles.subscribeBtnDisabled]}
-            onPress={handleSubscribe}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color={colors.background} />
-            ) : (
-              <>
-                <Text style={styles.subscribeBtnText}>Subscribe Now</Text>
-                <Ionicons name="arrow-forward" size={20} color={colors.background} />
-              </>
-            )}
-          </TouchableOpacity>
+          {/* Fallback Plans (for web or when RevenueCat unavailable) */}
+          {useFallback && FALLBACK_PLANS.map((plan) => {
+            const isSelected = selectedFallbackPlan === plan.id;
+            
+            return (
+              <TouchableOpacity
+                key={plan.id}
+                style={[styles.packageCard, isSelected && styles.packageCardSelected]}
+                onPress={() => setSelectedFallbackPlan(plan.id)}
+              >
+                {plan.isYearly && (
+                  <View style={styles.saveBadge}>
+                    <Text style={styles.saveBadgeText}>BEST VALUE</Text>
+                  </View>
+                )}
+                <View style={styles.packageRadio}>
+                  <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                    {isSelected && <View style={styles.radioInner} />}
+                  </View>
+                </View>
+                <View style={styles.packageInfo}>
+                  <Text style={styles.packageTitle}>{plan.name}</Text>
+                  <Text style={styles.packagePrice}>
+                    {plan.price}
+                    <Text style={styles.packagePeriod}>{plan.period}</Text>
+                  </Text>
+                  {plan.savings && (
+                    <Text style={styles.packageSavings}>{plan.savings}</Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Error Message */}
+        {error && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
         )}
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Cancel anytime. Payments are processed securely via Stripe.
+        {/* Web Notice */}
+        {Platform.OS === 'web' && (
+          <View style={styles.webNotice}>
+            <Ionicons name="information-circle" size={20} color={colors.primary} />
+            <Text style={styles.webNoticeText}>
+              Subscriptions are processed through the App Store or Google Play. 
+              Download the mobile app to subscribe.
+            </Text>
+          </View>
+        )}
+
+        {/* Terms */}
+        <View style={styles.termsSection}>
+          <Text style={styles.termsText}>
+            Payment will be charged to your {Platform.OS === 'ios' ? 'Apple ID' : Platform.OS === 'android' ? 'Google Play' : 'app store'} account.
+            Subscription auto-renews unless canceled at least 24 hours before the end of the current period.
           </Text>
+          <View style={styles.termsLinks}>
+            <TouchableOpacity>
+              <Text style={styles.termsLink}>Terms of Service</Text>
+            </TouchableOpacity>
+            <Text style={styles.termsDot}>•</Text>
+            <TouchableOpacity>
+              <Text style={styles.termsLink}>Privacy Policy</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
+
+      {/* Purchase Button */}
+      <View style={styles.purchaseContainer}>
+        <TouchableOpacity
+          style={[styles.purchaseBtn, purchasing && styles.purchaseBtnDisabled]}
+          onPress={handlePurchase}
+          disabled={purchasing}
+        >
+          {purchasing ? (
+            <ActivityIndicator color="#000" />
+          ) : (
+            <Text style={styles.purchaseBtnText}>
+              {Platform.OS === 'web' ? 'Download App to Subscribe' : 'Subscribe Now'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -239,11 +412,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+  },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text,
   },
   backBtn: {
     width: 40,
@@ -251,189 +440,279 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  hero: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  heroIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.primary + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heroTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: colors.text,
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  heroSubtitle: {
+  restoreText: {
+    color: colors.primary,
     fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 8,
+    fontWeight: '600',
+  },
+  heroSection: {
+    alignItems: 'center',
+    paddingVertical: 24,
     paddingHorizontal: 20,
   },
-  activeCard: {
-    flexDirection: 'row',
+  heroGradient: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.success + '20',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 24,
-    gap: 12,
-  },
-  activeInfo: {
-    flex: 1,
-  },
-  activeTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  activeText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 2,
-    textTransform: 'capitalize',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.text,
     marginBottom: 16,
   },
-  planCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  planCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + '08',
-  },
-  planCardPopular: {
-    borderColor: colors.primary,
-  },
-  popularBadge: {
-    position: 'absolute',
-    top: -10,
-    right: 16,
-    backgroundColor: colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  popularText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.background,
-  },
-  planHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  planInfo: {
-    flex: 1,
-  },
-  planName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  planNameActive: {
-    color: colors.primary,
-  },
-  planDuration: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  planPricing: {
-    alignItems: 'flex-end',
-  },
-  planPrice: {
+  heroTitle: {
     fontSize: 28,
     fontWeight: '700',
     color: colors.text,
+    marginBottom: 8,
   },
-  planPriceActive: {
-    color: colors.primary,
-  },
-  savingsBadge: {
-    backgroundColor: colors.success + '20',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  savingsText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.success,
-  },
-  perMonth: {
-    fontSize: 14,
+  heroSubtitle: {
+    fontSize: 16,
     color: colors.textSecondary,
-    marginTop: 8,
+    textAlign: 'center',
   },
-  planFeatures: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    gap: 10,
+  featuresSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
   },
-  featureRow: {
+  featureItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  featureIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   featureText: {
-    fontSize: 14,
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: 16,
+    fontWeight: '600',
     color: colors.text,
+    marginBottom: 2,
   },
-  subscribeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    padding: 18,
-    borderRadius: 28,
-    marginTop: 24,
-    gap: 8,
+  featureDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
   },
-  subscribeBtnDisabled: {
-    opacity: 0.7,
+  packagesSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
-  subscribeBtnText: {
+  sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: colors.background,
+    color: colors.text,
+    marginBottom: 16,
   },
-  footer: {
-    marginTop: 24,
+  packageCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: colors.border,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  packageCardSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '10',
+  },
+  saveBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderBottomLeftRadius: 8,
+  },
+  saveBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#000',
+  },
+  packageRadio: {
+    marginRight: 12,
+  },
+  radioOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.border,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  footerText: {
+  radioOuterSelected: {
+    borderColor: colors.primary,
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+  },
+  packageInfo: {
+    flex: 1,
+  },
+  packageTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  packagePrice: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  packagePeriod: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: colors.textSecondary,
+  },
+  packageSavings: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  errorContainer: {
+    marginHorizontal: 20,
+    padding: 12,
+    backgroundColor: '#FF375520',
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#FF3755',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  webNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginHorizontal: 20,
+    padding: 12,
+    backgroundColor: colors.primary + '15',
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 10,
+  },
+  webNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  termsSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 120,
+  },
+  termsText: {
     fontSize: 12,
     color: colors.textMuted,
     textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  termsLinks: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  termsLink: {
+    fontSize: 12,
+    color: colors.primary,
+  },
+  termsDot: {
+    color: colors.textMuted,
+    marginHorizontal: 8,
+  },
+  purchaseContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  purchaseBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  purchaseBtnDisabled: {
+    opacity: 0.6,
+  },
+  purchaseBtnText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000',
+  },
+  premiumActiveContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  premiumBadgeGradient: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  premiumActiveTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  premiumActiveSubtitle: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  manageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    marginBottom: 16,
+  },
+  manageBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  doneBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+  },
+  doneBtnText: {
+    fontSize: 16,
+    color: colors.textSecondary,
   },
 });

@@ -5486,6 +5486,120 @@ async def get_analysis_history(user_id: str):
     analyses = await db.body_analyses.find({"user_id": user_id}).sort("created_at", -1).to_list(20)
     return analyses
 
+# ==================== REVENUECAT WEBHOOKS ====================
+
+@api_router.post("/webhooks/revenuecat")
+async def handle_revenuecat_webhook(request: Request):
+    """
+    Handle RevenueCat webhook events for subscription lifecycle management.
+    
+    Event types:
+    - INITIAL_PURCHASE: New subscription started
+    - RENEWAL: Subscription renewed
+    - CANCELLATION: Subscription cancelled
+    - EXPIRATION: Subscription expired
+    - BILLING_ISSUE: Payment failed
+    - PRODUCT_CHANGE: User changed subscription tier
+    """
+    try:
+        payload = await request.json()
+        
+        event_type = payload.get('type', payload.get('event', {}).get('type', ''))
+        app_user_id = payload.get('app_user_id', payload.get('event', {}).get('app_user_id', ''))
+        
+        logger.info(f"RevenueCat webhook received: type={event_type}, user={app_user_id}")
+        
+        if not app_user_id:
+            logger.warning("No app_user_id in webhook payload")
+            return {"success": True, "message": "No user ID provided"}
+        
+        # Handle different event types
+        if event_type in ['INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION']:
+            # Grant premium access
+            await db.profiles.update_one(
+                {"id": app_user_id},
+                {
+                    "$set": {
+                        "subscription_status": "premium",
+                        "subscription_updated_at": datetime.utcnow(),
+                        "revenuecat_event": event_type,
+                    }
+                },
+                upsert=False
+            )
+            logger.info(f"Premium access granted to user {app_user_id}")
+            
+        elif event_type in ['CANCELLATION']:
+            # Mark as cancelled (still has access until expiration)
+            await db.profiles.update_one(
+                {"id": app_user_id},
+                {
+                    "$set": {
+                        "subscription_status": "cancelled",
+                        "subscription_updated_at": datetime.utcnow(),
+                        "revenuecat_event": event_type,
+                    }
+                }
+            )
+            logger.info(f"Subscription cancelled for user {app_user_id}")
+            
+        elif event_type in ['EXPIRATION']:
+            # Revoke premium access
+            await db.profiles.update_one(
+                {"id": app_user_id},
+                {
+                    "$set": {
+                        "subscription_status": "expired",
+                        "subscription_updated_at": datetime.utcnow(),
+                        "revenuecat_event": event_type,
+                    }
+                }
+            )
+            logger.info(f"Subscription expired for user {app_user_id}")
+            
+        elif event_type in ['BILLING_ISSUE']:
+            # Payment failed - mark for grace period
+            await db.profiles.update_one(
+                {"id": app_user_id},
+                {
+                    "$set": {
+                        "subscription_status": "billing_issue",
+                        "subscription_updated_at": datetime.utcnow(),
+                        "revenuecat_event": event_type,
+                    }
+                }
+            )
+            logger.info(f"Billing issue for user {app_user_id}")
+        
+        # Always return 200 to acknowledge receipt
+        return {"success": True, "event_type": event_type}
+        
+    except Exception as e:
+        logger.error(f"RevenueCat webhook error: {e}")
+        # Still return 200 to prevent retries for parsing errors
+        return {"success": False, "error": str(e)}
+
+@api_router.get("/subscription/status/{user_id}")
+async def get_subscription_status(user_id: str):
+    """Get subscription status for a user"""
+    profile = await db.profiles.find_one({"id": user_id})
+    
+    if not profile:
+        return {
+            "is_premium": False,
+            "status": "free",
+            "message": "User not found"
+        }
+    
+    status = profile.get("subscription_status", "free")
+    is_premium = status in ["premium", "trial", "cancelled"]  # Cancelled still has access until expiration
+    
+    return {
+        "is_premium": is_premium,
+        "status": status,
+        "updated_at": profile.get("subscription_updated_at"),
+    }
+
 # ==================== HEALTH CHECK ====================
 
 @api_router.get("/")
