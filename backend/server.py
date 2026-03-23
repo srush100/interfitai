@@ -1105,6 +1105,14 @@ async def list_profiles():
     profiles = await db.profiles.find().to_list(100)
     return [UserProfile(**p) for p in profiles]
 
+@api_router.get("/profile/email/{email}")
+async def get_profile_by_email(email: str):
+    """Get user profile by email - used for login with email"""
+    profile = await db.profiles.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found. Please create an account first.")
+    return UserProfile(**profile)
+
 # ==================== WORKOUT ENDPOINTS ====================
 
 @api_router.post("/workouts/generate", response_model=WorkoutProgram)
@@ -1569,12 +1577,28 @@ FINAL CHECK - Before outputting, verify:
         
         workout_data = json.loads(content)
         
+        # Helper function to parse sets value (handles "6-8 rounds" -> 6)
+        def parse_sets(sets_value):
+            """Convert sets value to integer, handling various formats"""
+            if isinstance(sets_value, int):
+                return sets_value
+            if isinstance(sets_value, str):
+                # Handle formats like "6-8 rounds", "4-5", "3 sets", etc.
+                import re
+                # Extract first number from the string
+                numbers = re.findall(r'\d+', sets_value)
+                if numbers:
+                    return int(numbers[0])
+            return 3  # Default fallback
+        
         # Add GIF URLs to exercises - fetch from ExerciseDB API
         processed_days = []
         for day in workout_data.get("workout_days", []):
             exercises_with_gifs = []
             for ex in day.get("exercises", []):
                 ex_dict = dict(ex)
+                # Parse sets to ensure it's an integer
+                ex_dict["sets"] = parse_sets(ex_dict.get("sets", 3))
                 # Fetch animated GIF from ExerciseDB API
                 gif_url = await get_exercise_gif_from_api(ex.get("name", ""))
                 ex_dict["gif_url"] = gif_url

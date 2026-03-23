@@ -38,6 +38,8 @@ interface UserState {
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
   setOnboarded: (value: boolean) => Promise<void>;
   setProfile: (profile: UserProfile) => void;
+  loginWithEmail: (email: string) => Promise<boolean>;
+  logout: () => Promise<void>;
 }
 
 export const useUserStore = create<UserState>((set, get) => ({
@@ -68,6 +70,7 @@ export const useUserStore = create<UserState>((set, get) => ({
       const response = await api.post('/profile', data);
       const profile = response.data;
       await AsyncStorage.setItem('userId', profile.id);
+      await AsyncStorage.setItem('@user_id', profile.id);
       await AsyncStorage.setItem('isOnboarded', 'true');
       set({ profile, isOnboarded: true, isLoading: false });
     } catch (error: any) {
@@ -97,5 +100,33 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   setProfile: (profile) => {
     set({ profile });
+  },
+
+  loginWithEmail: async (email: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await api.get(`/profile/email/${encodeURIComponent(email)}`);
+      const profile = response.data;
+      await AsyncStorage.setItem('userId', profile.id);
+      await AsyncStorage.setItem('@user_id', profile.id);
+      await AsyncStorage.setItem('isOnboarded', 'true');
+      set({ profile, isOnboarded: true, isLoading: false });
+      return true;
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.detail || error.message || 'Login failed';
+      set({ error: errorMsg, isLoading: false });
+      return false;
+    }
+  },
+
+  logout: async () => {
+    try {
+      await AsyncStorage.removeItem('userId');
+      await AsyncStorage.removeItem('@user_id');
+      await AsyncStorage.setItem('isOnboarded', 'false');
+      set({ profile: null, isOnboarded: false });
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   },
 }));

@@ -17,6 +17,12 @@ export const ENTITLEMENT_ID = 'premium';
 // Initialize RevenueCat SDK
 export const initializeRevenueCat = async (userId?: string): Promise<boolean> => {
   try {
+    // RevenueCat is not available on web - skip initialization
+    if (Platform.OS === 'web') {
+      console.log('RevenueCat not available on web platform - skipping initialization');
+      return false;
+    }
+
     // Enable verbose logging in development
     if (__DEV__) {
       Purchases.setLogLevel(LOG_LEVEL.VERBOSE);
@@ -64,6 +70,10 @@ export const getCustomerInfo = async (): Promise<CustomerInfo | null> => {
 // Check if user has premium access
 export const checkPremiumStatus = async (): Promise<boolean> => {
   try {
+    // RevenueCat is not available on web
+    if (Platform.OS === 'web') {
+      return false;
+    }
     const customerInfo = await Purchases.getCustomerInfo();
     return !!customerInfo.entitlements.active[ENTITLEMENT_ID];
   } catch (error) {

@@ -263,16 +263,17 @@ export default function ProfileScreen() {
 
   const handleLogout = () => {
     Alert.alert(
-      'Reset Profile',
-      'This will reset your profile. Continue?',
+      'Log Out',
+      'Are you sure you want to log out?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Reset',
+          text: 'Log Out',
           style: 'destructive',
           onPress: async () => {
-            await setOnboarded(false);
-            router.replace('/onboarding');
+            const { logout } = useUserStore.getState();
+            await logout();
+            router.replace('/login');
           },
         },
       ]
@@ -610,7 +611,7 @@ export default function ProfileScreen() {
         {/* Reset */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out" size={20} color={colors.error} />
-          <Text style={styles.logoutText}>Reset Profile</Text>
+          <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
