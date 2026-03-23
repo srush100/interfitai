@@ -3106,7 +3106,15 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         # Build diet-specific instructions
         diet_instructions = ""
         if eating_style == 'keto':
-            diet_instructions = "KETO: Max 30g carbs/day. NO grains, NO sugar, NO starchy vegetables. Focus on fats and protein."
+            diet_instructions = """STRICT KETO REQUIREMENTS:
+- TOTAL DAILY CARBS MUST BE 20-50g (ideally under 30g)
+- Each meal should have MAX 10-15g net carbs
+- NO grains, NO sugar, NO bread, NO pasta, NO rice, NO potatoes, NO starchy vegetables
+- NO fruit except small amounts of berries
+- HIGH FAT: Use butter, olive oil, avocado, coconut oil, cheese, fatty meats
+- MODERATE PROTEIN: Fatty fish, eggs, bacon, beef, pork belly, chicken thighs
+- ALLOWED CARBS: Leafy greens, broccoli, cauliflower, zucchini, asparagus, mushrooms
+- Every meal MUST be high in fat (70-80% of calories from fat)"""
         elif eating_style == 'carnivore':
             diet_instructions = "CARNIVORE: ONLY meat, fish, eggs, butter. NO plants. Zero carbs."
         elif eating_style == 'paleo':
@@ -3882,7 +3890,7 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     eating_style = plan.get('food_preferences', 'none').lower()
     diet_note = ""
     if eating_style == 'keto':
-        diet_note = "KETO DIET: Keep carbs under 10g for this meal. HIGH FAT required."
+        diet_note = "STRICT KETO DIET: This meal MUST have under 10g carbs. HIGH FAT required (use butter, olive oil, avocado, cheese). NO grains, NO sugar, NO starchy vegetables, NO fruit."
     elif eating_style == 'carnivore':
         diet_note = "CARNIVORE DIET: Only meat, fish, eggs, butter allowed. ZERO carbs. No plants."
     elif eating_style == 'paleo':

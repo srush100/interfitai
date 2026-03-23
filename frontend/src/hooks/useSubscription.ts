@@ -88,9 +88,9 @@ export const useSubscription = (): UseSubscriptionReturn => {
     }
   }, []);
 
-  // Listen for customer info updates
+  // Listen for customer info updates (only on native platforms)
   useEffect(() => {
-    if (!isInitialized) return;
+    if (!isInitialized || Platform.OS === 'web') return;
 
     const unsubscribe = addCustomerInfoUpdateListener((customerInfo: CustomerInfo) => {
       setIsPremium(!!customerInfo.entitlements.active[ENTITLEMENT_ID]);

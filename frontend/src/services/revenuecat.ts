@@ -14,15 +14,17 @@ const REVENUECAT_GOOGLE_KEY = 'goog_JeyjcBbgdxcRRybZEMfFrIPXGRo';
 // Entitlement ID - this should match what's configured in RevenueCat dashboard
 export const ENTITLEMENT_ID = 'premium';
 
+// Check if RevenueCat is available (only on native platforms)
+const isRevenueCatAvailable = Platform.OS !== 'web';
+
 // Initialize RevenueCat SDK
 export const initializeRevenueCat = async (userId?: string): Promise<boolean> => {
-  try {
-    // RevenueCat is not available on web - skip initialization
-    if (Platform.OS === 'web') {
-      console.log('RevenueCat not available on web platform - skipping initialization');
-      return false;
-    }
+  if (!isRevenueCatAvailable) {
+    console.log('RevenueCat not available on web platform');
+    return false;
+  }
 
+  try {
     // Enable verbose logging in development
     if (__DEV__) {
       Purchases.setLogLevel(LOG_LEVEL.VERBOSE);
@@ -34,7 +36,7 @@ export const initializeRevenueCat = async (userId?: string): Promise<boolean> =>
     // Configure the SDK
     await Purchases.configure({
       apiKey,
-      appUserID: userId || null, // Let RevenueCat generate anonymous ID if not provided
+      appUserID: userId || null,
     });
 
     console.log('RevenueCat initialized successfully');
@@ -47,6 +49,8 @@ export const initializeRevenueCat = async (userId?: string): Promise<boolean> =>
 
 // Set or update the user ID (call after login)
 export const identifyUser = async (userId: string): Promise<CustomerInfo | null> => {
+  if (!isRevenueCatAvailable) return null;
+  
   try {
     const { customerInfo } = await Purchases.logIn(userId);
     return customerInfo;
@@ -58,6 +62,8 @@ export const identifyUser = async (userId: string): Promise<CustomerInfo | null>
 
 // Get current customer info (subscription status)
 export const getCustomerInfo = async (): Promise<CustomerInfo | null> => {
+  if (!isRevenueCatAvailable) return null;
+  
   try {
     const customerInfo = await Purchases.getCustomerInfo();
     return customerInfo;
@@ -69,11 +75,9 @@ export const getCustomerInfo = async (): Promise<CustomerInfo | null> => {
 
 // Check if user has premium access
 export const checkPremiumStatus = async (): Promise<boolean> => {
+  if (!isRevenueCatAvailable) return false;
+  
   try {
-    // RevenueCat is not available on web
-    if (Platform.OS === 'web') {
-      return false;
-    }
     const customerInfo = await Purchases.getCustomerInfo();
     return !!customerInfo.entitlements.active[ENTITLEMENT_ID];
   } catch (error) {
@@ -84,6 +88,8 @@ export const checkPremiumStatus = async (): Promise<boolean> => {
 
 // Get available subscription offerings
 export const getOfferings = async (): Promise<PurchasesOfferings | null> => {
+  if (!isRevenueCatAvailable) return null;
+  
   try {
     const offerings = await Purchases.getOfferings();
     return offerings;
@@ -97,10 +103,12 @@ export const getOfferings = async (): Promise<PurchasesOfferings | null> => {
 export const purchasePackage = async (
   packageToPurchase: PurchasesPackage
 ): Promise<{ success: boolean; customerInfo?: CustomerInfo; error?: string }> => {
+  if (!isRevenueCatAvailable) {
+    return { success: false, error: 'Purchases not available on web' };
+  }
+  
   try {
     const { customerInfo } = await Purchases.purchasePackage(packageToPurchase);
-    
-    // Check if purchase granted premium access
     const isPremium = !!customerInfo.entitlements.active[ENTITLEMENT_ID];
     
     return {
@@ -108,7 +116,6 @@ export const purchasePackage = async (
       customerInfo,
     };
   } catch (error: any) {
-    // Handle specific error codes
     if (error.code === PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR) {
       return { success: false, error: 'cancelled' };
     }
@@ -118,7 +125,6 @@ export const purchasePackage = async (
     }
     
     if (error.code === PURCHASES_ERROR_CODE.PRODUCT_ALREADY_PURCHASED_ERROR) {
-      // User already has this - refresh their status
       const customerInfo = await Purchases.getCustomerInfo();
       return { success: true, customerInfo };
     }
@@ -130,6 +136,10 @@ export const purchasePackage = async (
 
 // Restore previous purchases
 export const restorePurchases = async (): Promise<{ success: boolean; customerInfo?: CustomerInfo; error?: string }> => {
+  if (!isRevenueCatAvailable) {
+    return { success: false, error: 'Purchases not available on web' };
+  }
+  
   try {
     const customerInfo = await Purchases.restorePurchases();
     const isPremium = !!customerInfo.entitlements.active[ENTITLEMENT_ID];
@@ -148,12 +158,28 @@ export const restorePurchases = async (): Promise<{ success: boolean; customerIn
 export const addCustomerInfoUpdateListener = (
   callback: (customerInfo: CustomerInfo) => void
 ): (() => void) => {
-  const listener = Purchases.addCustomerInfoUpdateListener(callback);
-  return () => listener.remove();
+  if (!isRevenueCatAvailable) {
+    // Return a no-op function on web
+    return () => {};
+  }
+  
+  try {
+    const listener = Purchases.addCustomerInfoUpdateListener(callback);
+    return () => {
+      if (listener && typeof listener.remove === 'function') {
+        listener.remove();
+      }
+    };
+  } catch (error) {
+    console.error('Failed to add listener:', error);
+    return () => {};
+  }
 };
 
 // Get subscription management URL (for cancellation/management)
 export const getManagementURL = async (): Promise<string | null> => {
+  if (!isRevenueCatAvailable) return null;
+  
   try {
     const customerInfo = await Purchases.getCustomerInfo();
     return customerInfo.managementURL || null;
@@ -165,6 +191,8 @@ export const getManagementURL = async (): Promise<string | null> => {
 
 // Logout current user (for switching accounts)
 export const logoutUser = async (): Promise<CustomerInfo | null> => {
+  if (!isRevenueCatAvailable) return null;
+  
   try {
     const { customerInfo } = await Purchases.logOut();
     return customerInfo;

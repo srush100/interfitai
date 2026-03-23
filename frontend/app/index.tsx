@@ -6,7 +6,12 @@ import { colors } from '../src/theme/colors';
 
 export default function SplashScreen() {
   const router = useRouter();
-  const { isOnboarded, profile } = useUserStore();
+  const { isOnboarded, profile, loadProfile } = useUserStore();
+
+  useEffect(() => {
+    // Load profile first
+    loadProfile();
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -22,7 +27,14 @@ export default function SplashScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.logoContainer}>
+      <View style={styles.logoGlow}>
+        <Image
+          source={require('../assets/logo-icon-yellow.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+      </View>
+      <View style={styles.titleContainer}>
         <Text style={styles.logoText}>INTERFIT</Text>
         <Text style={styles.logoAI}>AI</Text>
       </View>
@@ -40,18 +52,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  logoContainer: {
+  logoGlow: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 204, 0, 0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 204, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  logo: {
+    width: 70,
+    height: 70,
+  },
+  titleContainer: {
     flexDirection: 'row',
     alignItems: 'baseline',
   },
   logoText: {
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: '800',
     color: colors.text,
     letterSpacing: 2,
   },
   logoAI: {
-    fontSize: 48,
+    fontSize: 42,
     fontWeight: '800',
     color: colors.primary,
     letterSpacing: 2,
