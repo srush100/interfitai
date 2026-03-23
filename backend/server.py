@@ -3152,18 +3152,50 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
         fat_pct = round((target_fat * 9 / target_cal) * 100) if target_cal > 0 else 30
         
         # Build protein alternatives based on what's banned
-        protein_alternatives = []
-        all_protein_sources = ['chicken breast', 'beef', 'fish', 'salmon', 'tuna', 'eggs', 'tofu', 'turkey', 'pork', 'lamb', 'shrimp', 'greek yogurt', 'cottage cheese', 'whey protein']
-        for source in all_protein_sources:
-            is_banned = False
-            for banned in banned_foods_list:
-                if banned in source or source in banned:
-                    is_banned = True
-                    break
-            if not is_banned:
-                protein_alternatives.append(source)
+        # Group related foods together so banning "chicken" removes all chicken types
+        PROTEIN_GROUPS = {
+            'chicken': ['chicken breast', 'chicken thigh', 'chicken', 'grilled chicken', 'rotisserie chicken'],
+            'beef': ['beef', 'sirloin', 'ribeye', 'ground beef', 'steak', 'beef mince'],
+            'pork': ['pork', 'bacon', 'pork chop', 'ham'],
+            'turkey': ['turkey', 'turkey breast', 'ground turkey'],
+            'fish': ['fish', 'salmon', 'tuna', 'cod', 'tilapia', 'white fish'],
+            'seafood': ['shrimp', 'prawns', 'crab', 'lobster', 'scallops'],
+            'eggs': ['eggs', 'egg', 'egg whites', 'whole eggs'],
+            'dairy': ['greek yogurt', 'cottage cheese', 'cheese', 'milk', 'whey protein'],
+            'plant': ['tofu', 'tempeh', 'seitan', 'legumes', 'beans', 'lentils'],
+            'lamb': ['lamb', 'lamb chops']
+        }
         
-        protein_guidance_for_prompt = f"USE THESE PROTEIN SOURCES: {', '.join(protein_alternatives[:6])}" if protein_alternatives else ""
+        # Find which protein groups to exclude
+        excluded_groups = set()
+        for banned in banned_foods_list:
+            banned_lower = banned.lower().strip()
+            for group_name, group_foods in PROTEIN_GROUPS.items():
+                # Check if banned food matches the group or any food in the group
+                if banned_lower == group_name or any(banned_lower in food or food in banned_lower for food in group_foods):
+                    excluded_groups.add(group_name)
+        
+        # Build allowed protein sources
+        protein_alternatives = []
+        for group_name, group_foods in PROTEIN_GROUPS.items():
+            if group_name not in excluded_groups:
+                protein_alternatives.append(group_foods[0])  # Add primary food from each allowed group
+        
+        # Log what's being excluded for debugging
+        logger.info(f"Foods to avoid: {request.foods_to_avoid}")
+        logger.info(f"Banned foods list: {banned_foods_list}")
+        logger.info(f"Excluded protein groups: {excluded_groups}")
+        logger.info(f"Allowed protein sources: {protein_alternatives}")
+        
+        protein_guidance_for_prompt = ""
+        if protein_alternatives:
+            protein_guidance_for_prompt = f"ALLOWED PROTEIN SOURCES ONLY: {', '.join(protein_alternatives)}"
+        
+        # Build explicit DO NOT USE list
+        do_not_use_list = []
+        for group in excluded_groups:
+            do_not_use_list.extend(PROTEIN_GROUPS.get(group, []))
+        do_not_use_str = f"DO NOT USE: {', '.join(do_not_use_list).upper()}" if do_not_use_list else ""
         
         # Calculate approximate grams of each macro source needed per meal
         protein_grams_per_meal = round(target_pro / 4 / 31 * 100)  # Approx grams of protein source per meal
