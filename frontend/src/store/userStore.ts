@@ -72,6 +72,7 @@ export const useUserStore = create<UserState>((set, get) => ({
       await AsyncStorage.setItem('userId', profile.id);
       await AsyncStorage.setItem('@user_id', profile.id);
       await AsyncStorage.setItem('isOnboarded', 'true');
+      await AsyncStorage.setItem('hasEverOnboarded', 'true');
       set({ profile, isOnboarded: true, isLoading: false });
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
@@ -110,6 +111,7 @@ export const useUserStore = create<UserState>((set, get) => ({
       await AsyncStorage.setItem('userId', profile.id);
       await AsyncStorage.setItem('@user_id', profile.id);
       await AsyncStorage.setItem('isOnboarded', 'true');
+      await AsyncStorage.setItem('hasEverOnboarded', 'true');
       set({ profile, isOnboarded: true, isLoading: false });
       return true;
     } catch (error: any) {

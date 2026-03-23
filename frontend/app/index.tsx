@@ -1,29 +1,47 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 
 export default function SplashScreen() {
   const router = useRouter();
   const { isOnboarded, profile, loadProfile } = useUserStore();
+  const [hasChecked, setHasChecked] = useState(false);
+  const [hasEverOnboarded, setHasEverOnboarded] = useState(false);
 
   useEffect(() => {
-    // Load profile first
-    loadProfile();
+    const checkAndLoad = async () => {
+      // Check if user has ever created an account
+      const everOnboarded = await AsyncStorage.getItem('hasEverOnboarded');
+      setHasEverOnboarded(everOnboarded === 'true');
+      
+      // Load profile
+      await loadProfile();
+      setHasChecked(true);
+    };
+    checkAndLoad();
   }, []);
 
   useEffect(() => {
+    if (!hasChecked) return;
+    
     const timer = setTimeout(() => {
       if (isOnboarded && profile) {
+        // User is logged in - go to main app
         router.replace('/(tabs)');
+      } else if (hasEverOnboarded) {
+        // User has logged out but had an account before - show login
+        router.replace('/login');
       } else {
+        // New user - show onboarding
         router.replace('/onboarding');
       }
-    }, 2000);
+    }, 1500);
 
     return () => clearTimeout(timer);
-  }, [isOnboarded, profile]);
+  }, [hasChecked, isOnboarded, profile, hasEverOnboarded]);
 
   return (
     <View style={styles.container}>
