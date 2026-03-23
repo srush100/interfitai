@@ -1,329 +1,365 @@
 #!/usr/bin/env python3
 """
-Backend Test Suite for InterFitAI API - FINAL MEAL PLAN MACRO ACCURACY VERIFICATION
-
-This test suite performs comprehensive testing of the meal plan generation endpoints
-to verify that daily totals EXACTLY match user targets for all 3 days.
-
-Test focuses on:
-1. Template-based meal plan (no preferred foods)
-2. AI-generated meal plan with preferred foods  
-3. Keto meal plan
-
-Acceptance criteria: ALL daily totals (calories, protein, carbs, fats) must EXACTLY 
-match the target values for ALL 3 days.
+Backend Test Suite for InterFitAI - Meal Replacement with Foods to Avoid Testing
+Focus: Testing the MEAL REPLACEMENT endpoint (POST /api/mealplan/alternate) with foods_to_avoid filtering
 """
 
-import asyncio
-import aiohttp
+import requests
 import json
-import logging
 import time
-from typing import Dict, List, Any
-from datetime import datetime
+import sys
+from typing import Dict, Any, List
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Test configuration
+# Backend URL from frontend/.env
 BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
-TEST_USER_ID = "cbd82a69-3a37-48c2-88e8-0fe95081fa4b"  # User from review request
 
-class MealPlanMacroAccuracyTester:
+# Test user ID as specified in review request
+TEST_USER_ID = "cbd82a69-3a37-48c2-88e8-0fe95081fa4b"
+
+class MealReplacementTester:
     def __init__(self):
-        self.session = None
+        self.backend_url = BACKEND_URL
+        self.test_user_id = TEST_USER_ID
+        self.meal_plan_id = None
         self.test_results = []
         
-    async def setup(self):
-        """Initialize HTTP session"""
-        self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=60),
-            connector=aiohttp.TCPConnector(limit=10)
-        )
-        
-    async def cleanup(self):
-        """Clean up resources"""
-        if self.session:
-            await self.session.close()
-            
-    async def get_user_profile(self) -> Dict[str, Any]:
-        """Get user profile to understand target macros"""
+    def log_test(self, test_name: str, success: bool, details: str, response_time: float = 0):
+        """Log test results"""
+        status = "✅ PASS" if success else "❌ FAIL"
+        result = {
+            "test": test_name,
+            "status": status,
+            "details": details,
+            "response_time": f"{response_time:.2f}s" if response_time > 0 else "N/A"
+        }
+        self.test_results.append(result)
+        print(f"{status}: {test_name}")
+        print(f"   Details: {details}")
+        if response_time > 0:
+            print(f"   Response Time: {response_time:.2f}s")
+        print()
+
+    def test_health_check(self):
+        """Test basic health check"""
         try:
-            async with self.session.get(f"{BACKEND_URL}/profile/{TEST_USER_ID}") as response:
-                if response.status == 200:
-                    profile_data = await response.json()
-                    logger.info(f"✅ Retrieved user profile for {TEST_USER_ID}")
-                    
-                    macros = profile_data.get('calculated_macros', {})
-                    calorie_adj = profile_data.get('calorie_adjustment', 0)
-                    
-                    # Apply calorie adjustment
-                    target_calories = macros.get('calories', 0) + calorie_adj
-                    target_protein = macros.get('protein', 0)
-                    target_carbs = macros.get('carbs', 0)
-                    target_fats = macros.get('fats', 0)
-                    
-                    logger.info(f"Target macros: {target_calories} cal, {target_protein}g P, {target_carbs}g C, {target_fats}g F")
-                    
-                    return {
-                        'calories': target_calories,
-                        'protein': target_protein,
-                        'carbs': target_carbs,
-                        'fats': target_fats
-                    }
-                else:
-                    logger.error(f"❌ Failed to get user profile: {response.status}")
-                    return {}
+            start_time = time.time()
+            response = requests.get(f"{self.backend_url}/health", timeout=10)
+            response_time = time.time() - start_time
+            
+            if response.status_code == 200:
+                data = response.json()
+                self.log_test("Health Check", True, f"Backend responding. Status: {data.get('status')}", response_time)
+                return True
+            else:
+                self.log_test("Health Check", False, f"HTTP {response.status_code}: {response.text}", response_time)
+                return False
         except Exception as e:
-            logger.error(f"❌ Error getting user profile: {e}")
-            return {}
-    
-    async def analyze_meal_plan_accuracy(self, meal_plan_data: Dict[str, Any], targets: Dict[str, float], test_name: str) -> Dict[str, Any]:
-        """Analyze meal plan for macro accuracy across all 3 days"""
+            self.log_test("Health Check", False, f"Connection error: {str(e)}")
+            return False
+
+    def create_meal_plan_with_foods_to_avoid(self):
+        """Step 1: Create a meal plan with foods_to_avoid set to 'chicken'"""
         try:
-            meal_days = meal_plan_data.get('meal_days', [])
-            logger.info(f"\n=== {test_name.upper()} MEAL PLAN ANALYSIS ===")
-            logger.info(f"Target: {targets['calories']} cal, {targets['protein']}g P, {targets['carbs']}g C, {targets['fats']}g F")
+            start_time = time.time()
             
-            analysis_results = {
-                'test_name': test_name,
-                'target_macros': targets,
-                'daily_results': [],
-                'all_days_exact': True,
-                'total_deviations': {'calories': 0, 'protein': 0, 'carbs': 0, 'fats': 0}
+            payload = {
+                "user_id": self.test_user_id,
+                "food_preferences": "balanced",
+                "foods_to_avoid": "chicken",
+                "preferred_foods": "beef, rice, eggs"
             }
             
-            for i, day in enumerate(meal_days, 1):
-                day_totals = {
-                    'calories': day.get('total_calories', 0),
-                    'protein': day.get('total_protein', 0),
-                    'carbs': day.get('total_carbs', 0),
-                    'fats': day.get('total_fats', 0)
+            response = requests.post(f"{self.backend_url}/mealplans/generate", json=payload, timeout=60)
+            response_time = time.time() - start_time
+            
+            if response.status_code == 200:
+                data = response.json()
+                self.meal_plan_id = data.get("id")
+                
+                # Verify the meal plan was created with correct foods_to_avoid
+                foods_to_avoid = data.get("foods_to_avoid", "")
+                
+                # Check if any meals contain chicken (they shouldn't)
+                chicken_found = False
+                chicken_meals = []
+                
+                for day_idx, day in enumerate(data.get("meal_days", [])):
+                    for meal_idx, meal in enumerate(day.get("meals", [])):
+                        meal_name = meal.get("name", "").lower()
+                        ingredients = " ".join(meal.get("ingredients", [])).lower()
+                        
+                        if "chicken" in meal_name or "chicken" in ingredients:
+                            chicken_found = True
+                            chicken_meals.append(f"Day {day_idx+1}, Meal {meal_idx+1}: {meal.get('name')}")
+                
+                if chicken_found:
+                    self.log_test("Create Meal Plan with Foods to Avoid", False, 
+                                f"Meal plan created but contains chicken in: {chicken_meals}. foods_to_avoid: '{foods_to_avoid}'", response_time)
+                else:
+                    self.log_test("Create Meal Plan with Foods to Avoid", True, 
+                                f"Meal plan created successfully without chicken. Plan ID: {self.meal_plan_id}, foods_to_avoid: '{foods_to_avoid}'", response_time)
+                
+                return True
+            else:
+                self.log_test("Create Meal Plan with Foods to Avoid", False, 
+                            f"HTTP {response.status_code}: {response.text}", response_time)
+                return False
+                
+        except Exception as e:
+            self.log_test("Create Meal Plan with Foods to Avoid", False, f"Error: {str(e)}")
+            return False
+
+    def test_alternate_meal_with_foods_to_avoid(self):
+        """Step 2: Test the alternate meal endpoint with foods_to_avoid filtering"""
+        if not self.meal_plan_id:
+            self.log_test("Test Alternate Meal with Foods to Avoid", False, "No meal plan ID available")
+            return False
+            
+        try:
+            start_time = time.time()
+            
+            payload = {
+                "user_id": self.test_user_id,
+                "meal_plan_id": self.meal_plan_id,
+                "day_index": 0,
+                "meal_index": 1,  # lunch
+                "swap_preference": "similar"
+            }
+            
+            response = requests.post(f"{self.backend_url}/mealplan/alternate", json=payload, timeout=60)
+            response_time = time.time() - start_time
+            
+            if response.status_code == 200:
+                data = response.json()
+                alternate_meal = data.get("alternate_meal", {})
+                
+                # Check if the alternate meal contains any banned foods
+                meal_name = alternate_meal.get("name", "").lower()
+                ingredients = " ".join(alternate_meal.get("ingredients", [])).lower()
+                instructions = alternate_meal.get("instructions", "").lower()
+                
+                all_text = f"{meal_name} {ingredients} {instructions}"
+                
+                # Check for chicken and related poultry
+                banned_foods_found = []
+                poultry_terms = ["chicken", "turkey", "poultry"]
+                
+                for term in poultry_terms:
+                    if term in all_text:
+                        banned_foods_found.append(term)
+                
+                if banned_foods_found:
+                    self.log_test("Test Alternate Meal with Foods to Avoid", False, 
+                                f"Alternate meal contains banned foods: {banned_foods_found}. Meal: {alternate_meal.get('name')}, Ingredients: {alternate_meal.get('ingredients')}", response_time)
+                    return False
+                else:
+                    # Success - no banned foods found
+                    macros = f"{alternate_meal.get('calories')}cal, {alternate_meal.get('protein')}g P, {alternate_meal.get('carbs')}g C, {alternate_meal.get('fats')}g F"
+                    self.log_test("Test Alternate Meal with Foods to Avoid", True, 
+                                f"Alternate meal generated without banned foods. Meal: '{alternate_meal.get('name')}', Macros: {macros}", response_time)
+                    return True
+                    
+            else:
+                self.log_test("Test Alternate Meal with Foods to Avoid", False, 
+                            f"HTTP {response.status_code}: {response.text}", response_time)
+                return False
+                
+        except Exception as e:
+            self.log_test("Test Alternate Meal with Foods to Avoid", False, f"Error: {str(e)}")
+            return False
+
+    def test_multiple_alternate_meals(self):
+        """Step 3: Test multiple alternate meal generations to ensure consistency"""
+        if not self.meal_plan_id:
+            self.log_test("Test Multiple Alternate Meals", False, "No meal plan ID available")
+            return False
+            
+        success_count = 0
+        total_tests = 3
+        
+        for i in range(total_tests):
+            try:
+                start_time = time.time()
+                
+                payload = {
+                    "user_id": self.test_user_id,
+                    "meal_plan_id": self.meal_plan_id,
+                    "day_index": 0,
+                    "meal_index": 2,  # dinner
+                    "swap_preference": "similar"
                 }
                 
-                # Calculate deviations from targets
-                deviations = {}
-                exact_match = True
-                for macro in ['calories', 'protein', 'carbs', 'fats']:
-                    deviation = abs(day_totals[macro] - targets[macro])
-                    deviations[macro] = deviation
-                    analysis_results['total_deviations'][macro] += deviation
-                    if deviation > 0:
-                        exact_match = False
-                        analysis_results['all_days_exact'] = False
-                
-                day_result = {
-                    'day': i,
-                    'totals': day_totals,
-                    'deviations': deviations,
-                    'exact_match': exact_match
-                }
-                analysis_results['daily_results'].append(day_result)
-                
-                # Log day results
-                status = "✅ EXACT" if exact_match else "❌ DEVIATION"
-                logger.info(f"Day {i}: {day_totals['calories']:.0f}cal, {day_totals['protein']:.0f}g P, {day_totals['carbs']:.0f}g C, {day_totals['fats']:.0f}g F {status}")
-                
-                # Show deviations if any
-                if not exact_match:
-                    dev_strs = []
-                    for macro in ['calories', 'protein', 'carbs', 'fats']:
-                        if deviations[macro] > 0:
-                            dev_strs.append(f"{macro}: ±{deviations[macro]:.1f}")
-                    logger.info(f"  Deviations: {', '.join(dev_strs)}")
-            
-            # Overall summary
-            if analysis_results['all_days_exact']:
-                logger.info(f"🎉 {test_name}: ALL 3 DAYS EXACTLY MATCH TARGETS!")
-                analysis_results['status'] = 'PASS'
-            else:
-                logger.info(f"❌ {test_name}: FAILED - Daily totals do not exactly match targets")
-                analysis_results['status'] = 'FAIL'
-                
-            return analysis_results
-            
-        except Exception as e:
-            logger.error(f"❌ Error analyzing meal plan accuracy: {e}")
-            return {'test_name': test_name, 'status': 'ERROR', 'error': str(e)}
-
-    async def test_template_meal_plan(self, targets: Dict[str, float]) -> Dict[str, Any]:
-        """TEST 1: Template-based meal plan (no preferred foods)"""
-        test_name = "Template-based meal plan"
-        logger.info(f"\n🧪 TESTING: {test_name}")
-        
-        payload = {
-            "user_id": TEST_USER_ID,
-            "food_preferences": "balanced",
-            "allergies": []
-        }
-        
-        try:
-            start_time = time.time()
-            async with self.session.post(f"{BACKEND_URL}/mealplans/generate", json=payload) as response:
+                response = requests.post(f"{self.backend_url}/mealplan/alternate", json=payload, timeout=60)
                 response_time = time.time() - start_time
                 
-                if response.status == 200:
-                    meal_plan = await response.json()
-                    logger.info(f"✅ Generated meal plan: '{meal_plan.get('name', 'Unknown')}' in {response_time:.2f}s")
+                if response.status_code == 200:
+                    data = response.json()
+                    alternate_meal = data.get("alternate_meal", {})
                     
-                    # Analyze accuracy
-                    return await self.analyze_meal_plan_accuracy(meal_plan, targets, test_name)
+                    # Check for banned foods
+                    meal_name = alternate_meal.get("name", "").lower()
+                    ingredients = " ".join(alternate_meal.get("ingredients", [])).lower()
+                    instructions = alternate_meal.get("instructions", "").lower()
+                    
+                    all_text = f"{meal_name} {ingredients} {instructions}"
+                    
+                    banned_foods_found = []
+                    poultry_terms = ["chicken", "turkey", "poultry"]
+                    
+                    for term in poultry_terms:
+                        if term in all_text:
+                            banned_foods_found.append(term)
+                    
+                    if not banned_foods_found:
+                        success_count += 1
+                        print(f"   Test {i+1}/3: ✅ '{alternate_meal.get('name')}' - No banned foods ({response_time:.2f}s)")
+                    else:
+                        print(f"   Test {i+1}/3: ❌ '{alternate_meal.get('name')}' - Contains: {banned_foods_found} ({response_time:.2f}s)")
                 else:
-                    error_text = await response.text()
-                    logger.error(f"❌ {test_name} failed: {response.status} - {error_text}")
-                    return {'test_name': test_name, 'status': 'ERROR', 'error': f"{response.status}: {error_text}"}
+                    print(f"   Test {i+1}/3: ❌ HTTP {response.status_code}")
                     
-        except Exception as e:
-            logger.error(f"❌ Error in {test_name}: {e}")
-            return {'test_name': test_name, 'status': 'ERROR', 'error': str(e)}
-
-    async def test_ai_meal_plan_with_preferred_foods(self, targets: Dict[str, float]) -> Dict[str, Any]:
-        """TEST 2: AI-generated meal plan with preferred foods"""
-        test_name = "AI-generated meal plan with preferred foods"
-        logger.info(f"\n🧪 TESTING: {test_name}")
+            except Exception as e:
+                print(f"   Test {i+1}/3: ❌ Error: {str(e)}")
         
-        payload = {
-            "user_id": TEST_USER_ID,
-            "food_preferences": "balanced",
-            "preferred_foods": "chicken breast, sweet potato, eggs",
-            "allergies": []
-        }
-        
-        try:
-            start_time = time.time()
-            async with self.session.post(f"{BACKEND_URL}/mealplans/generate", json=payload) as response:
-                response_time = time.time() - start_time
-                
-                if response.status == 200:
-                    meal_plan = await response.json()
-                    logger.info(f"✅ Generated meal plan: '{meal_plan.get('name', 'Unknown')}' in {response_time:.2f}s")
-                    
-                    # Verify preferred foods are included
-                    preferred_foods = ["chicken breast", "sweet potato", "eggs"]
-                    meals_text = json.dumps(meal_plan).lower()
-                    found_foods = [food for food in preferred_foods if food.replace(" ", "") in meals_text.replace(" ", "")]
-                    logger.info(f"Preferred foods found: {found_foods}")
-                    
-                    # Analyze accuracy
-                    return await self.analyze_meal_plan_accuracy(meal_plan, targets, test_name)
-                else:
-                    error_text = await response.text()
-                    logger.error(f"❌ {test_name} failed: {response.status} - {error_text}")
-                    return {'test_name': test_name, 'status': 'ERROR', 'error': f"{response.status}: {error_text}"}
-                    
-        except Exception as e:
-            logger.error(f"❌ Error in {test_name}: {e}")
-            return {'test_name': test_name, 'status': 'ERROR', 'error': str(e)}
-
-    async def test_keto_meal_plan(self, targets: Dict[str, float]) -> Dict[str, Any]:
-        """TEST 3: Keto meal plan"""
-        test_name = "Keto meal plan"
-        logger.info(f"\n🧪 TESTING: {test_name}")
-        
-        payload = {
-            "user_id": TEST_USER_ID,
-            "food_preferences": "keto",
-            "allergies": []
-        }
-        
-        try:
-            start_time = time.time()
-            async with self.session.post(f"{BACKEND_URL}/mealplans/generate", json=payload) as response:
-                response_time = time.time() - start_time
-                
-                if response.status == 200:
-                    meal_plan = await response.json()
-                    logger.info(f"✅ Generated meal plan: '{meal_plan.get('name', 'Unknown')}' in {response_time:.2f}s")
-                    
-                    # Check keto compliance (low carbs)
-                    meal_days = meal_plan.get('meal_days', [])
-                    if meal_days:
-                        day1_carbs = meal_days[0].get('total_carbs', 0)
-                        logger.info(f"Day 1 carbs: {day1_carbs}g (keto compliance: {'✅' if day1_carbs < 50 else '❌'})")
-                    
-                    # Analyze accuracy (should still match user's actual targets, not keto-specific ones)
-                    return await self.analyze_meal_plan_accuracy(meal_plan, targets, test_name)
-                else:
-                    error_text = await response.text()
-                    logger.error(f"❌ {test_name} failed: {response.status} - {error_text}")
-                    return {'test_name': test_name, 'status': 'ERROR', 'error': f"{response.status}: {error_text}"}
-                    
-        except Exception as e:
-            logger.error(f"❌ Error in {test_name}: {e}")
-            return {'test_name': test_name, 'status': 'ERROR', 'error': str(e)}
-
-    async def run_comprehensive_test(self):
-        """Run all meal plan macro accuracy tests"""
-        logger.info("=" * 80)
-        logger.info("🧪 COMPREHENSIVE MEAL PLAN MACRO ACCURACY TEST - FINAL VERIFICATION")
-        logger.info("=" * 80)
-        
-        await self.setup()
-        
-        try:
-            # Get user targets
-            targets = await self.get_user_profile()
-            if not targets:
-                logger.error("❌ Cannot proceed without user profile targets")
-                return
-            
-            # Run all tests
-            test1_result = await self.test_template_meal_plan(targets)
-            self.test_results.append(test1_result)
-            
-            test2_result = await self.test_ai_meal_plan_with_preferred_foods(targets)
-            self.test_results.append(test2_result)
-            
-            test3_result = await self.test_keto_meal_plan(targets)
-            self.test_results.append(test3_result)
-            
-            # Final summary
-            await self.generate_final_summary()
-            
-        finally:
-            await self.cleanup()
-
-    async def generate_final_summary(self):
-        """Generate final test summary"""
-        logger.info("\n" + "=" * 80)
-        logger.info("🏁 FINAL MEAL PLAN MACRO ACCURACY TEST SUMMARY")
-        logger.info("=" * 80)
-        
-        all_pass = True
-        for result in self.test_results:
-            status = result.get('status', 'UNKNOWN')
-            test_name = result.get('test_name', 'Unknown Test')
-            
-            if status == 'PASS':
-                logger.info(f"✅ {test_name}: PASS - All daily totals exactly match targets")
-            elif status == 'FAIL':
-                logger.info(f"❌ {test_name}: FAIL - Daily totals do not exactly match targets")
-                all_pass = False
-            else:
-                logger.info(f"⚠️ {test_name}: ERROR - {result.get('error', 'Unknown error')}")
-                all_pass = False
-        
-        logger.info("\n" + "-" * 40)
-        if all_pass and len([r for r in self.test_results if r.get('status') == 'PASS']) == 3:
-            logger.info("🎉 OVERALL RESULT: PASS")
-            logger.info("All 3 tests have daily totals exactly matching targets!")
-            logger.info("✅ Template-based meal plans working perfectly")
-            logger.info("✅ AI-generated meal plans with preferred foods working perfectly")  
-            logger.info("✅ Keto meal plans working perfectly")
+        success_rate = (success_count / total_tests) * 100
+        if success_count == total_tests:
+            self.log_test("Test Multiple Alternate Meals", True, 
+                        f"All {total_tests} alternate meals generated without banned foods ({success_rate:.0f}% success rate)")
+            return True
         else:
-            logger.info("❌ OVERALL RESULT: FAIL")
-            logger.info("Not all tests achieved exact macro target matching.")
-            failed_tests = [r['test_name'] for r in self.test_results if r.get('status') != 'PASS']
-            logger.info(f"Failed tests: {', '.join(failed_tests)}")
+            self.log_test("Test Multiple Alternate Meals", False, 
+                        f"Only {success_count}/{total_tests} alternate meals were clean ({success_rate:.0f}% success rate)")
+            return False
 
-async def main():
-    """Main test runner"""
-    tester = MealPlanMacroAccuracyTester()
-    await tester.run_comprehensive_test()
+    def test_protein_groups_filtering(self):
+        """Step 4: Test that banning 'chicken' also bans 'turkey' (PROTEIN_GROUPS logic)"""
+        if not self.meal_plan_id:
+            self.log_test("Test PROTEIN_GROUPS Filtering", False, "No meal plan ID available")
+            return False
+            
+        try:
+            # Test with different meal positions to get variety
+            test_positions = [
+                {"day_index": 0, "meal_index": 0, "meal_type": "breakfast"},
+                {"day_index": 0, "meal_index": 3, "meal_type": "snack"},
+                {"day_index": 1, "meal_index": 1, "meal_type": "lunch"} if self.meal_plan_id else {"day_index": 0, "meal_index": 1, "meal_type": "lunch"}
+            ]
+            
+            all_clean = True
+            test_results = []
+            
+            for pos in test_positions[:2]:  # Test 2 positions
+                try:
+                    start_time = time.time()
+                    
+                    payload = {
+                        "user_id": self.test_user_id,
+                        "meal_plan_id": self.meal_plan_id,
+                        "day_index": pos["day_index"],
+                        "meal_index": pos["meal_index"],
+                        "swap_preference": "similar"
+                    }
+                    
+                    response = requests.post(f"{self.backend_url}/mealplan/alternate", json=payload, timeout=60)
+                    response_time = time.time() - start_time
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        alternate_meal = data.get("alternate_meal", {})
+                        
+                        # Check for ALL poultry-related terms (PROTEIN_GROUPS logic)
+                        meal_name = alternate_meal.get("name", "").lower()
+                        ingredients = " ".join(alternate_meal.get("ingredients", [])).lower()
+                        instructions = alternate_meal.get("instructions", "").lower()
+                        
+                        all_text = f"{meal_name} {ingredients} {instructions}"
+                        
+                        # Extended poultry check based on PROTEIN_GROUPS in server.py
+                        poultry_terms = [
+                            "chicken", "turkey", "poultry", "chicken breast", "chicken thigh", 
+                            "grilled chicken", "rotisserie chicken", "chicken wings", 
+                            "turkey breast", "ground turkey", "turkey bacon"
+                        ]
+                        
+                        banned_found = []
+                        for term in poultry_terms:
+                            if term in all_text:
+                                banned_found.append(term)
+                        
+                        if banned_found:
+                            all_clean = False
+                            test_results.append(f"{pos['meal_type']}: ❌ Contains {banned_found}")
+                        else:
+                            test_results.append(f"{pos['meal_type']}: ✅ Clean - '{alternate_meal.get('name')}'")
+                            
+                    else:
+                        all_clean = False
+                        test_results.append(f"{pos['meal_type']}: ❌ HTTP {response.status_code}")
+                        
+                except Exception as e:
+                    all_clean = False
+                    test_results.append(f"{pos['meal_type']}: ❌ Error: {str(e)}")
+            
+            if all_clean:
+                self.log_test("Test PROTEIN_GROUPS Filtering", True, 
+                            f"PROTEIN_GROUPS filtering working correctly. Results: {'; '.join(test_results)}")
+                return True
+            else:
+                self.log_test("Test PROTEIN_GROUPS Filtering", False, 
+                            f"PROTEIN_GROUPS filtering failed. Results: {'; '.join(test_results)}")
+                return False
+                
+        except Exception as e:
+            self.log_test("Test PROTEIN_GROUPS Filtering", False, f"Error: {str(e)}")
+            return False
+
+    def run_all_tests(self):
+        """Run all meal replacement tests"""
+        print("=" * 80)
+        print("MEAL REPLACEMENT WITH FOODS TO AVOID - BACKEND TESTING")
+        print("=" * 80)
+        print(f"Backend URL: {self.backend_url}")
+        print(f"Test User ID: {self.test_user_id}")
+        print()
+        
+        # Test sequence as specified in review request
+        tests = [
+            ("Health Check", self.test_health_check),
+            ("Create Meal Plan with Foods to Avoid", self.create_meal_plan_with_foods_to_avoid),
+            ("Test Alternate Meal with Foods to Avoid", self.test_alternate_meal_with_foods_to_avoid),
+            ("Test Multiple Alternate Meals", self.test_multiple_alternate_meals),
+            ("Test PROTEIN_GROUPS Filtering", self.test_protein_groups_filtering)
+        ]
+        
+        passed = 0
+        total = len(tests)
+        
+        for test_name, test_func in tests:
+            if test_func():
+                passed += 1
+        
+        print("=" * 80)
+        print("TEST SUMMARY")
+        print("=" * 80)
+        
+        for result in self.test_results:
+            print(f"{result['status']}: {result['test']}")
+            print(f"   {result['details']}")
+            if result['response_time'] != "N/A":
+                print(f"   Response Time: {result['response_time']}")
+            print()
+        
+        success_rate = (passed / total) * 100
+        print(f"OVERALL RESULT: {passed}/{total} tests passed ({success_rate:.0f}% success rate)")
+        
+        if passed == total:
+            print("🎉 ALL TESTS PASSED - Meal replacement with foods_to_avoid filtering is working correctly!")
+        else:
+            print("❌ SOME TESTS FAILED - Meal replacement needs attention")
+        
+        return passed == total
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    tester = MealReplacementTester()
+    success = tester.run_all_tests()
+    sys.exit(0 if success else 1)

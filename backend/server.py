@@ -3944,7 +3944,7 @@ async def get_saved_meal_plans(user_id: str):
 
 @api_router.post("/mealplan/alternate")
 async def generate_alternate_meal(request: AlternateMealRequest):
-    """Generate an alternate meal for a specific meal in a meal plan"""
+    """Generate an alternate meal for a specific meal in a meal plan - WORLD-CLASS ACCURACY"""
     plan = await db.mealplans.find_one({"id": request.meal_plan_id})
     if not plan:
         raise HTTPException(status_code=404, detail="Meal plan not found")
@@ -3957,7 +3957,7 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     profile = await db.profiles.find_one({"id": request.user_id})
     macros = profile.get("calculated_macros", {}) if profile else {}
     
-    # Get user's daily targets
+    # Get user's daily targets from the saved meal plan (most accurate)
     target_cal = plan.get("target_calories", macros.get("calories", 2000))
     target_pro = plan.get("target_protein", macros.get("protein", 150))
     target_carb = plan.get("target_carbs", macros.get("carbs", 200))
@@ -3965,8 +3965,7 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     
     meal_type = current_meal.get('meal_type', 'lunch')
     
-    # For "similar" swap, use the CURRENT meal's macros, not recalculated targets
-    # This ensures the replacement matches what the user is replacing
+    # For "similar" swap, use the CURRENT meal's macros exactly
     current_cal = current_meal.get('calories', 500)
     current_pro = current_meal.get('protein', 40)
     current_carb = current_meal.get('carbs', 50)
@@ -3974,7 +3973,7 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     
     # Build swap-specific instructions based on preference
     swap_instructions = {
-        "similar": f"Match the CURRENT meal's macros: {current_cal} cal, {current_pro}g protein, {current_carb}g carbs, {current_fat}g fats (±10% tolerance)",
+        "similar": f"Match the CURRENT meal's macros EXACTLY: {current_cal} cal, {current_pro}g protein, {current_carb}g carbs, {current_fat}g fats",
         "higher_protein": f"Increase protein to ~{int(current_pro * 1.4)}g, reduce carbs to compensate. Keep calories around {current_cal}",
         "lower_calories": f"Reduce to ~{int(current_cal * 0.75)} cal, prioritize protein (~{current_pro}g minimum)",
         "quick_prep": f"Under 15 minutes prep. Match: ~{current_cal} cal, ~{current_pro}g protein, ~{current_carb}g carbs, ~{current_fat}g fats",
@@ -3998,44 +3997,28 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     elif eating_style == 'vegetarian':
         diet_note = "VEGETARIAN DIET: No meat or fish. Can use eggs and dairy."
     
-    # Get foods to avoid from the plan
+    # ======================================================================
+    # CRITICAL: PROTEIN_GROUPS filtering - same logic as main meal generation
+    # This ensures that banning "chicken" also bans "turkey", "poultry" etc.
+    # ======================================================================
+    PROTEIN_GROUPS = {
+        'chicken': ['chicken breast', 'chicken thigh', 'chicken', 'grilled chicken', 'rotisserie chicken', 'chicken wings', 'chicken drumstick', 'chicken leg', 'fried chicken', 'baked chicken', 'poultry'],
+        'beef': ['beef', 'sirloin', 'ribeye', 'ground beef', 'steak', 'beef mince', 'brisket', 'flank steak', 'filet mignon', 'tenderloin', 'roast beef', 'corned beef'],
+        'pork': ['pork', 'bacon', 'pork chop', 'ham', 'pork loin', 'pork belly', 'sausage', 'pork tenderloin', 'pulled pork', 'ribs', 'pork ribs'],
+        'turkey': ['turkey', 'turkey breast', 'ground turkey', 'turkey bacon', 'turkey sausage', 'turkey meatballs', 'turkey deli'],
+        'fish': ['fish', 'salmon', 'tuna', 'cod', 'tilapia', 'white fish', 'sea bass', 'halibut', 'mahi mahi', 'trout', 'sardines', 'mackerel', 'anchovies', 'swordfish'],
+        'seafood': ['shrimp', 'prawns', 'crab', 'lobster', 'scallops', 'mussels', 'clams', 'oysters', 'calamari', 'squid', 'octopus'],
+        'eggs': ['eggs', 'egg', 'egg whites', 'whole eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'omelette', 'frittata'],
+        'dairy': ['greek yogurt', 'cottage cheese', 'cheese', 'milk', 'whey protein', 'cream', 'butter', 'yogurt', 'mozzarella', 'cheddar', 'parmesan', 'feta'],
+        'plant': ['tofu', 'tempeh', 'seitan', 'legumes', 'beans', 'lentils', 'chickpeas', 'edamame', 'black beans', 'kidney beans', 'pinto beans'],
+        'lamb': ['lamb', 'lamb chops', 'lamb leg', 'lamb shank', 'ground lamb', 'lamb shoulder']
+    }
+    
+    # Get foods to avoid from the saved plan
     foods_to_avoid = plan.get('foods_to_avoid', '')
-    avoid_instructions = ""
-    if foods_to_avoid and foods_to_avoid.strip():
-        avoid_instructions = f"""
-🚫 ABSOLUTELY FORBIDDEN FOODS (DO NOT USE):
-{foods_to_avoid.upper()}
-Find alternative ingredients that are NOT on this list."""
-    
     allergies_list = plan.get('allergies', [])
-    allergies_str = ', '.join(allergies_list) if allergies_list else 'None'
-    if allergies_list:
-        avoid_instructions += f"""
-🚫 ALLERGENS TO AVOID: {', '.join(allergies_list).upper()}"""
     
-    prompt = f"""Generate an alternate meal to replace this one:
-Current Meal: {current_meal.get('name')} ({meal_type})
-Current Macros: {current_cal} cal, {current_pro}g protein, {current_carb}g carbs, {current_fat}g fats
-
-{diet_note}
-{avoid_instructions}
-SWAP REQUIREMENT: {swap_instruction}
-
-⚠️ CRITICAL: The replacement meal MUST have macros that closely match the current meal:
-- Calories: {current_cal} (±10%)
-- Protein: {current_pro}g (±15%)
-- Carbs: {current_carb}g (±15%)
-- Fats: {current_fat}g (±15%)
-
-IMPORTANT:
-- Use SPECIFIC ingredients with gram amounts (e.g., "180g sirloin steak", not just "steak")
-- The meal macros must match the current meal's macros above
-- Create a DIFFERENT meal from "{current_meal.get('name')}"
-
-Respond with valid JSON only:
-{{"id": "unique_id", "name": "Meal Name", "meal_type": "{meal_type}", "ingredients": ["180g sirloin steak", "200g brown rice", "100g broccoli"], "instructions": "How to prepare", "calories": {current_cal}, "protein": {current_pro}, "carbs": {current_carb}, "fats": {current_fat}, "prep_time_minutes": number}}"""
-
-    # Build list of banned foods for validation
+    # Build comprehensive banned foods list
     banned_foods_list = []
     if foods_to_avoid and foods_to_avoid.strip():
         banned_foods_list = [f.strip().lower() for f in foods_to_avoid.split(',') if f.strip()]
@@ -4043,63 +4026,184 @@ Respond with valid JSON only:
         for allergy in allergies_list:
             banned_foods_list.append(allergy.lower())
     
-    # Build system message with strict avoid instructions
-    system_avoid_msg = ""
-    if banned_foods_list:
-        banned_upper = ', '.join([f.upper() for f in banned_foods_list])
-        system_avoid_msg = f"CRITICAL: The user CANNOT eat these foods: {banned_upper}. DO NOT include any of these ingredients. Using any banned food will harm the user."
+    # Find which protein groups to COMPLETELY exclude
+    excluded_groups = set()
+    for banned in banned_foods_list:
+        banned_lower = banned.lower().strip()
+        for group_name, group_foods in PROTEIN_GROUPS.items():
+            # Check if banned food matches the group name or any food in the group
+            if banned_lower == group_name or any(banned_lower in food or food in banned_lower for food in group_foods):
+                excluded_groups.add(group_name)
     
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": f"""You are a precision nutritionist. Generate an alternate meal that MATCHES the current meal's macros exactly: {current_cal} cal, {current_pro}g P, {current_carb}g C, {current_fat}g F. Use specific ingredient amounts in grams.
+    # Build list of ALL foods to explicitly ban (expanded from groups)
+    do_not_use_list = list(banned_foods_list)  # Start with user's original list
+    for group in excluded_groups:
+        do_not_use_list.extend(PROTEIN_GROUPS.get(group, []))
+    do_not_use_list = list(set(do_not_use_list))  # Remove duplicates
+    
+    # Build allowed protein sources (for positive guidance)
+    protein_alternatives = []
+    for group_name, group_foods in PROTEIN_GROUPS.items():
+        if group_name not in excluded_groups:
+            protein_alternatives.append(group_foods[0])  # Add primary food from each allowed group
+    
+    # Log for debugging - CRITICAL for tracking this issue
+    logger.info(f"=== MEAL REPLACEMENT REQUEST ===")
+    logger.info(f"User ID: {request.user_id}")
+    logger.info(f"Meal Plan ID: {request.meal_plan_id}")
+    logger.info(f"Foods to avoid (from plan): '{foods_to_avoid}'")
+    logger.info(f"Allergies (from plan): {allergies_list}")
+    logger.info(f"Banned foods list: {banned_foods_list}")
+    logger.info(f"Excluded protein groups: {excluded_groups}")
+    logger.info(f"All foods to ban: {do_not_use_list}")
+    logger.info(f"Allowed protein sources: {protein_alternatives}")
+    
+    # Build the avoid instructions with MAXIMUM STRICTNESS
+    avoid_instructions = ""
+    if do_not_use_list:
+        do_not_use_upper = ', '.join([f.upper() for f in do_not_use_list])
+        avoid_instructions = f"""
+🚫🚫🚫 ABSOLUTELY FORBIDDEN FOODS - DO NOT USE UNDER ANY CIRCUMSTANCES 🚫🚫🚫
+{do_not_use_upper}
+
+⛔ THESE FOODS ARE BANNED: {do_not_use_upper}
+⛔ If you include ANY of these foods, the meal is INVALID and will HARM THE USER.
+⛔ You MUST find alternatives that are NOT on this ban list.
+⛔ Check EVERY ingredient against this list before including it.
+
+✅ ALLOWED PROTEIN SOURCES ONLY: {', '.join(protein_alternatives) if protein_alternatives else 'Plant-based proteins, eggs, dairy'}"""
+    
+    if allergies_list:
+        avoid_instructions += f"""
+🚨 ALLERGENS (DANGEROUS): {', '.join(allergies_list).upper()}"""
+
+    # Build the main prompt with EXTREME clarity on banned foods
+    prompt = f"""Generate an alternate meal to replace this one:
+Current Meal: {current_meal.get('name')} ({meal_type})
+Current Macros: {current_cal} cal, {current_pro}g protein, {current_carb}g carbs, {current_fat}g fats
+
+{diet_note}
+{avoid_instructions}
+
+SWAP REQUIREMENT: {swap_instruction}
+
+⚠️ CRITICAL MACRO REQUIREMENTS (MUST MATCH):
+- Calories: {current_cal} (±10%)
+- Protein: {current_pro}g (±15%)
+- Carbs: {current_carb}g (±15%)
+- Fats: {current_fat}g (±15%)
+
+IMPORTANT RULES:
+1. Use SPECIFIC ingredients with gram amounts (e.g., "180g sirloin steak", not just "steak")
+2. Create a DIFFERENT meal from "{current_meal.get('name')}"
+3. DOUBLE-CHECK every ingredient is NOT on the banned list
+4. If you cannot think of a meal without banned foods, use ONLY plant proteins/eggs/dairy
+
+Respond with valid JSON only:
+{{"id": "unique_id", "name": "Meal Name", "meal_type": "{meal_type}", "ingredients": ["180g sirloin steak", "200g brown rice", "100g broccoli"], "instructions": "How to prepare", "calories": {current_cal}, "protein": {current_pro}, "carbs": {current_carb}, "fats": {current_fat}, "prep_time_minutes": number}}"""
+
+    # Build system message with MAXIMUM strictness
+    system_avoid_msg = ""
+    if do_not_use_list:
+        banned_upper = ', '.join([f.upper() for f in do_not_use_list])
+        system_avoid_msg = f"""CRITICAL SAFETY RULE - READ THIS FIRST:
+The user has BANNED these foods and CANNOT eat them: {banned_upper}
+
+YOU MUST NOT include ANY of these ingredients in the meal:
+{banned_upper}
+
+If you include ANY banned food, the response is INVALID and will harm the user.
+Before outputting, CHECK that EVERY ingredient is NOT on the banned list.
+Use ONLY these allowed proteins: {', '.join(protein_alternatives) if protein_alternatives else 'eggs, dairy, tofu'}"""
+
+    logger.info(f"System avoid message: {system_avoid_msg[:200]}...")
+    
+    # Attempt generation with retry logic for banned food detection
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": f"""You are a precision nutritionist. Generate an alternate meal that MATCHES the current meal's macros exactly: {current_cal} cal, {current_pro}g P, {current_carb}g C, {current_fat}g F. Use specific ingredient amounts in grams.
 
 {system_avoid_msg}"""},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.6,
-            max_tokens=600
-        )
-        
-        content = response.choices[0].message.content
-        
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-        content = content.strip()
-        
-        new_meal = json.loads(content)
-        new_meal["id"] = str(uuid.uuid4())
-        new_meal["meal_type"] = meal_type  # Preserve meal type
-        
-        # POST-VALIDATION: Remove any banned ingredients that might have slipped through
-        if banned_foods_list:
-            meal_name_lower = new_meal.get("name", "").lower()
-            ingredients_str = " ".join(new_meal.get("ingredients", [])).lower()
-            for banned in banned_foods_list:
-                if banned in meal_name_lower or banned in ingredients_str:
-                    logger.warning(f"BANNED FOOD in replacement: '{banned}' found in '{new_meal.get('name')}' - filtering")
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.4,  # Lower temperature for more consistent output
+                max_tokens=800
+            )
+            
+            content = response.choices[0].message.content
+            
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+            content = content.strip()
+            
+            new_meal = json.loads(content)
+            new_meal["id"] = str(uuid.uuid4())
+            new_meal["meal_type"] = meal_type
+            
+            # ======================================================================
+            # POST-VALIDATION: Check for ANY banned food in the generated meal
+            # ======================================================================
+            found_banned = False
+            banned_found_list = []
+            
+            if do_not_use_list:
+                meal_name_lower = new_meal.get("name", "").lower()
+                ingredients_list = new_meal.get("ingredients", [])
+                ingredients_str = " ".join(ingredients_list).lower()
+                instructions_lower = new_meal.get("instructions", "").lower()
+                
+                # Check meal name, ingredients, and instructions
+                all_text = f"{meal_name_lower} {ingredients_str} {instructions_lower}"
+                
+                for banned in do_not_use_list:
+                    banned_lower = banned.lower()
+                    if banned_lower in all_text:
+                        found_banned = True
+                        banned_found_list.append(banned)
+                        logger.warning(f"ATTEMPT {attempt+1}: BANNED FOOD DETECTED: '{banned}' found in generated meal '{new_meal.get('name')}'")
+            
+            if found_banned:
+                if attempt < max_attempts - 1:
+                    logger.warning(f"ATTEMPT {attempt+1}: Regenerating meal due to banned foods: {banned_found_list}")
+                    continue  # Try again
+                else:
+                    # Final attempt failed - strip the banned ingredients
+                    logger.error(f"FINAL ATTEMPT: Still found banned foods: {banned_found_list}. Stripping ingredients.")
                     new_meal["ingredients"] = [
                         ing for ing in new_meal.get("ingredients", [])
-                        if banned not in ing.lower()
+                        if not any(banned.lower() in ing.lower() for banned in do_not_use_list)
                     ]
-        
-        # Save the updated meal plan to the database
-        plan["meal_days"][request.day_index]["meals"][request.meal_index] = new_meal
-        await db.mealplans.update_one(
-            {"id": request.meal_plan_id},
-            {"$set": {"meal_days": plan["meal_days"]}}
-        )
-        
-        logger.info(f"Alternate meal generated and saved: {new_meal.get('name')} - {new_meal.get('calories')} cal, {new_meal.get('protein')}g P (target: {current_cal}/{current_pro})")
-        
-        return {"alternate_meal": new_meal}
-        
-    except Exception as e:
-        logger.error(f"Alternate meal generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate alternate meal: {str(e)}")
+                    # Update meal name if it contains banned food
+                    for banned in banned_found_list:
+                        if banned.lower() in new_meal.get("name", "").lower():
+                            new_meal["name"] = new_meal.get("name", "").replace(banned, "Protein").replace(banned.capitalize(), "Protein")
+            
+            # Log success
+            logger.info(f"✅ Alternate meal generated (attempt {attempt+1}): {new_meal.get('name')} - {new_meal.get('calories')} cal, {new_meal.get('protein')}g P (target: {current_cal}/{current_pro})")
+            
+            # Save the updated meal plan to the database
+            plan["meal_days"][request.day_index]["meals"][request.meal_index] = new_meal
+            await db.mealplans.update_one(
+                {"id": request.meal_plan_id},
+                {"$set": {"meal_days": plan["meal_days"]}}
+            )
+            
+            return {"alternate_meal": new_meal}
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error on attempt {attempt+1}: {e}")
+            if attempt == max_attempts - 1:
+                raise HTTPException(status_code=500, detail=f"Failed to parse AI response after {max_attempts} attempts")
+        except Exception as e:
+            logger.error(f"Alternate meal generation error on attempt {attempt+1}: {e}")
+            if attempt == max_attempts - 1:
+                raise HTTPException(status_code=500, detail=f"Failed to generate alternate meal: {str(e)}")
 
 # ==================== FAVORITE MEALS ENDPOINTS ====================
 
