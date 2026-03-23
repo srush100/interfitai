@@ -63,7 +63,6 @@ const PLANS = [
     price: 9.99,
     priceDisplay: '$9.99',
     period: '/month',
-    dailyCost: '$0.33/day',
     popular: false,
   },
   {
@@ -72,8 +71,6 @@ const PLANS = [
     price: 29.99,
     priceDisplay: '$29.99',
     period: '/3 months',
-    dailyCost: '$0.33/day',
-    savings: 'Save $0',
     popular: false,
   },
   {
@@ -256,7 +253,7 @@ export default function Subscription() {
               <View style={styles.planRight}>
                 <Text style={styles.planPrice}>{plan.priceDisplay}</Text>
                 <Text style={styles.planPeriod}>{plan.period}</Text>
-                <Text style={styles.planDaily}>{plan.dailyCost}</Text>
+                {plan.dailyCost && <Text style={styles.planDaily}>{plan.dailyCost}</Text>}
               </View>
             </TouchableOpacity>
           ))}

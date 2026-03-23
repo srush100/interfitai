@@ -3127,34 +3127,63 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         allergies_str = ', '.join(request.allergies) if request.allergies else 'None'
         avoid_str = request.foods_to_avoid if request.foods_to_avoid else 'None'
         
+        # Build stronger avoid instructions
         avoid_instructions = ""
+        banned_foods_list = []
         if request.foods_to_avoid and request.foods_to_avoid.strip():
-            avoid_instructions = f"⚠️ STRICTLY AVOID: {request.foods_to_avoid}. Do NOT include these in ANY meal."
+            banned_foods_list = [f.strip().lower() for f in request.foods_to_avoid.split(',') if f.strip()]
+            avoid_instructions = f"""
+🚫 ABSOLUTELY FORBIDDEN FOODS (DO NOT USE UNDER ANY CIRCUMSTANCES):
+{request.foods_to_avoid.upper()}
+
+This is a HARD REQUIREMENT. If you include ANY of these foods, the meal plan is INVALID.
+Find alternative protein/carb/fat sources that are NOT on this list."""
+        
+        if request.allergies:
+            for allergy in request.allergies:
+                banned_foods_list.append(allergy.lower())
+            avoid_instructions += f"""
+🚫 ALLERGENS TO AVOID:
+{', '.join(request.allergies).upper()}"""
         
         # Calculate macro percentages to guide AI
         protein_pct = round((target_pro * 4 / target_cal) * 100) if target_cal > 0 else 30
         carb_pct = round((target_carb * 4 / target_cal) * 100) if target_cal > 0 else 40
         fat_pct = round((target_fat * 9 / target_cal) * 100) if target_cal > 0 else 30
         
+        # Build protein alternatives based on what's banned
+        protein_alternatives = []
+        all_protein_sources = ['chicken breast', 'beef', 'fish', 'salmon', 'tuna', 'eggs', 'tofu', 'turkey', 'pork', 'lamb', 'shrimp', 'greek yogurt', 'cottage cheese', 'whey protein']
+        for source in all_protein_sources:
+            is_banned = False
+            for banned in banned_foods_list:
+                if banned in source or source in banned:
+                    is_banned = True
+                    break
+            if not is_banned:
+                protein_alternatives.append(source)
+        
+        protein_guidance_for_prompt = f"USE THESE PROTEIN SOURCES: {', '.join(protein_alternatives[:6])}" if protein_alternatives else ""
+        
         # Calculate approximate grams of each macro source needed per meal
-        # Protein: ~31g protein per 100g chicken = need ~(target_pro/4) * 100/31 = grams chicken per meal
         protein_grams_per_meal = round(target_pro / 4 / 31 * 100)  # Approx grams of protein source per meal
         carb_grams_per_meal = round(target_carb / 4 / 28 * 100)    # Approx grams of rice/carb per meal
         
         prompt = f"""Create a 3-day meal plan that hits these EXACT daily targets:
 {target_cal} cal | {target_pro}g protein ({protein_pct}%) | {target_carb}g carbs ({carb_pct}%) | {target_fat}g fats ({fat_pct}%)
 
-PREFERRED FOODS: {request.preferred_foods}
-{protein_guidance}
 {avoid_instructions}
-{diet_instructions}
-ALLERGIES: {allergies_str}
 
-⚠️ CRITICAL MACRO BALANCE INSTRUCTIONS:
-- Your meal plan MUST achieve ~{protein_pct}% protein, ~{carb_pct}% carbs, ~{fat_pct}% fat
-- Approximate per-meal targets: {round(target_pro/4)}g protein, {round(target_carb/4)}g carbs, {round(target_fat/4)}g fat
-- If preferred foods are high-protein (chicken, eggs), you MUST add substantial carb sources
-- Example balanced meal: 150g chicken (~50g P) + 200g rice (~56g C) + veggies + 10g oil (~10g F)
+{diet_instructions}
+
+{protein_guidance_for_prompt}
+PREFERRED FOODS: {request.preferred_foods if request.preferred_foods else 'None specified'}
+{protein_guidance}
+
+⚠️ PRIORITY ORDER FOR MACROS:
+1. PROTEIN FIRST: Hit {target_pro}g protein EXACTLY using allowed protein sources
+2. FATS: Hit {target_fat}g fats using oils, nuts, avocado, fatty fish
+3. CARBS: Fill remaining calories with carbs to hit {target_carb}g
 
 MEAL TARGETS:
 - Breakfast: {breakfast_cal} cal, {breakfast_pro}g P, {breakfast_carb}g C, {breakfast_fat}g F
@@ -3163,11 +3192,15 @@ MEAL TARGETS:
 - Snack: {snack_cal} cal, {snack_pro}g P, {snack_carb}g C, {snack_fat}g F
 
 INGREDIENT REFERENCE (per 100g):
-- Chicken breast: 165 cal, 31g P, 0g C, 3.6g F
-- Rice (cooked): 130 cal, 2.7g P, 28g C, 0.3g F  
+- Beef (lean): 250 cal, 26g P, 0g C, 15g F
+- Salmon: 208 cal, 20g P, 0g C, 13g F
 - Eggs (100g = 2 eggs): 155 cal, 13g P, 1g C, 11g F
+- Tofu: 76 cal, 8g P, 2g C, 4g F
+- Turkey breast: 135 cal, 30g P, 0g C, 1g F
+- Rice (cooked): 130 cal, 2.7g P, 28g C, 0.3g F  
 - Sweet potato: 86 cal, 1.6g P, 20g C, 0.1g F
 - Olive oil (1 tbsp = 14g): 124 cal, 0g P, 0g C, 14g F
+- Avocado (100g): 160 cal, 2g P, 9g C, 15g F
 - Greek yogurt: 59 cal, 10g P, 4g C, 0.4g F
 - Oats: 389 cal, 17g P, 66g C, 7g F
 
@@ -3896,17 +3929,32 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     elif eating_style == 'paleo':
         diet_note = "PALEO DIET: No grains, dairy, or processed foods."
     elif eating_style == 'vegan':
-        diet_note = "VEGAN DIET: No animal products."
+        diet_note = "VEGAN DIET: No animal products whatsoever - no meat, fish, eggs, dairy, honey."
     elif eating_style == 'vegetarian':
-        diet_note = "VEGETARIAN DIET: No meat or fish."
+        diet_note = "VEGETARIAN DIET: No meat or fish. Can use eggs and dairy."
+    
+    # Get foods to avoid from the plan
+    foods_to_avoid = plan.get('foods_to_avoid', '')
+    avoid_instructions = ""
+    if foods_to_avoid and foods_to_avoid.strip():
+        avoid_instructions = f"""
+🚫 ABSOLUTELY FORBIDDEN FOODS (DO NOT USE):
+{foods_to_avoid.upper()}
+Find alternative ingredients that are NOT on this list."""
+    
+    allergies_list = plan.get('allergies', [])
+    allergies_str = ', '.join(allergies_list) if allergies_list else 'None'
+    if allergies_list:
+        avoid_instructions += f"""
+🚫 ALLERGENS TO AVOID: {', '.join(allergies_list).upper()}"""
     
     prompt = f"""Generate an alternate meal to replace this one:
 Current Meal: {current_meal.get('name')} ({meal_type})
 Current Macros: {current_cal} cal, {current_pro}g protein, {current_carb}g carbs, {current_fat}g fats
 
 {diet_note}
+{avoid_instructions}
 SWAP REQUIREMENT: {swap_instruction}
-Allergies: {', '.join(plan.get('allergies', [])) or 'None'}
 
 ⚠️ CRITICAL: The replacement meal MUST have macros that closely match the current meal:
 - Calories: {current_cal} (±10%)
