@@ -608,6 +608,23 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
         </TouchableOpacity>
 
+        {/* Admin Panel - Only visible to admins */}
+        {profile?.email && ['sebastianrush5@gmail.com', 'srush@interfitai.com'].includes(profile.email.toLowerCase()) && (
+          <TouchableOpacity 
+            style={styles.adminBtn} 
+            onPress={() => router.push('/admin')}
+          >
+            <View style={styles.subscriptionInfo}>
+              <Ionicons name="shield-checkmark" size={24} color={colors.primary} />
+              <View style={styles.subscriptionText}>
+                <Text style={styles.subscriptionTitle}>Admin Panel</Text>
+                <Text style={styles.subscriptionStatus}>Manage user access</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
+          </TouchableOpacity>
+        )}
+
         {/* Reset */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out" size={20} color={colors.error} />
@@ -970,6 +987,17 @@ const styles = StyleSheet.create({
   subscriptionStatus: {
     fontSize: 13,
     color: colors.primary,
+  },
+  adminBtn: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
   },
   logoutBtn: {
     flexDirection: 'row',

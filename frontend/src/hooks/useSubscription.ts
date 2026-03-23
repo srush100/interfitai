@@ -41,10 +41,21 @@ export const useSubscription = (): UseSubscriptionReturn => {
       setIsLoading(true);
       setError(null);
 
+      // Skip RevenueCat on web - just check backend for subscription
+      if (Platform.OS === 'web') {
+        console.log('Skipping RevenueCat init on web');
+        setIsInitialized(true);
+        setIsLoading(false);
+        return;
+      }
+
       // Initialize the SDK
       const success = await initializeRevenueCat(userId);
       if (!success) {
-        setError('Failed to initialize subscription service');
+        // Don't set error - just silently fail and rely on backend check
+        console.log('RevenueCat not available, will use backend subscription check');
+        setIsInitialized(true);
+        setIsLoading(false);
         return;
       }
 
@@ -71,7 +82,7 @@ export const useSubscription = (): UseSubscriptionReturn => {
       }
     } catch (err: any) {
       console.error('Subscription initialization error:', err);
-      setError(err.message || 'Failed to initialize');
+      // Don't show error to user - just log it
     } finally {
       setIsLoading(false);
     }

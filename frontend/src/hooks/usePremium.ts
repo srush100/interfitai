@@ -47,12 +47,12 @@ export const usePremium = (): UsePremiumReturn => {
         }
       }
       
-      // Then check backend (for Stripe/cross-platform verification)
+      // Then check backend (for Stripe/cross-platform verification and admin access)
       const userId = await AsyncStorage.getItem('@user_id');
       if (userId) {
         try {
-          const response = await api.get(`/subscription/status/${userId}`);
-          const backendPremium = response.data?.is_premium || false;
+          const response = await api.get(`/subscription/check/${userId}`);
+          const backendPremium = response.data?.has_access || false;
           setIsPremium(backendPremium);
           return backendPremium;
         } catch (error) {

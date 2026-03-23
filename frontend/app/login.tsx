@@ -65,12 +65,19 @@ export default function LoginScreen() {
         style={styles.keyboardView}
       >
         <View style={styles.content}>
-          {/* Logo/Header */}
+          {/* Logo/Header - Same as Onboarding */}
           <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Ionicons name="fitness" size={60} color={colors.primary} />
+            <View style={styles.logoGlow}>
+              <Image
+                source={require('../assets/logo-icon-yellow.png')}
+                style={styles.welcomeLogo}
+                resizeMode="contain"
+              />
             </View>
-            <Text style={styles.title}>InterFitAI</Text>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>INTERFIT</Text>
+              <Text style={styles.titleAI}>AI</Text>
+            </View>
             <Text style={styles.subtitle}>Sign in to your account</Text>
           </View>
 
@@ -151,20 +158,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
   },
-  logoContainer: {
+  logoGlow: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: colors.primary + '20',
+    backgroundColor: 'rgba(255, 204, 0, 0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 204, 0, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  welcomeLogo: {
+    width: 60,
+    height: 60,
+  },
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
     color: colors.text,
-    marginBottom: 8,
+    letterSpacing: 2,
+  },
+  titleAI: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 2,
   },
   subtitle: {
     fontSize: 16,

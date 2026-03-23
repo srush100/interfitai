@@ -20,6 +20,7 @@ import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 import useSubscription from '../src/hooks/useSubscription';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from '../src/services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -92,6 +93,10 @@ export default function Subscription() {
   const router = useRouter();
   const { profile } = useUserStore();
   
+  // State for backend premium check
+  const [backendPremium, setBackendPremium] = useState(false);
+  const [backendLoading, setBackendLoading] = useState(true);
+  
   // RevenueCat subscription hook
   const {
     isLoading,
@@ -108,6 +113,26 @@ export default function Subscription() {
   const [selectedFallbackPlan, setSelectedFallbackPlan] = useState<string>('yearly');
   const [purchasing, setPurchasing] = useState(false);
   const [initAttempted, setInitAttempted] = useState(false);
+
+  // Check backend premium status (for admin/complimentary access)
+  useEffect(() => {
+    const checkBackendPremium = async () => {
+      try {
+        const userId = await AsyncStorage.getItem('@user_id');
+        if (userId) {
+          const response = await api.get(`/subscription/check/${userId}`);
+          if (response.data?.has_access) {
+            setBackendPremium(true);
+          }
+        }
+      } catch (err) {
+        console.log('Backend premium check failed:', err);
+      } finally {
+        setBackendLoading(false);
+      }
+    };
+    checkBackendPremium();
+  }, []);
 
   // Initialize RevenueCat on mount
   useEffect(() => {
@@ -177,8 +202,11 @@ export default function Subscription() {
     setPurchasing(false);
   };
 
+  // Compute if user has access (either via RevenueCat or backend/admin)
+  const hasPremiumAccess = isPremium || backendPremium;
+
   // If already premium, show management screen
-  if (isPremium) {
+  if (hasPremiumAccess) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
@@ -203,10 +231,12 @@ export default function Subscription() {
             You have full access to all InterFitAI features
           </Text>
           
-          <TouchableOpacity style={styles.manageBtn} onPress={openManagement}>
-            <Text style={styles.manageBtnText}>Manage Subscription</Text>
-            <Ionicons name="open-outline" size={18} color={colors.primary} />
-          </TouchableOpacity>
+          {Platform.OS !== 'web' && (
+            <TouchableOpacity style={styles.manageBtn} onPress={openManagement}>
+              <Text style={styles.manageBtnText}>Manage Subscription</Text>
+              <Ionicons name="open-outline" size={18} color={colors.primary} />
+            </TouchableOpacity>
+          )}
           
           <TouchableOpacity 
             style={styles.doneBtn} 
@@ -220,7 +250,7 @@ export default function Subscription() {
   }
 
   // Show loading while initializing (but only briefly)
-  if (isLoading && !initAttempted) {
+  if ((isLoading || backendLoading) && !initAttempted) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
