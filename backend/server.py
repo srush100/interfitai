@@ -325,7 +325,12 @@ CACHED_EXERCISE_GIFS = {
     "cable row": "0861",
     "seated cable row": "0861",
     "seated row": "0861",
-    "t bar row": "1356",
+    "t bar row": "0606",  # lever t bar row
+    "t-bar row": "0606",
+    "tbar row": "0606",
+    "power clean": "0648",  # power clean
+    "clean": "0648",
+    "barbell clean": "0648",
     "deadlift": "0032",
     "barbell deadlift": "0032",
     "conventional deadlift": "0032",
@@ -386,8 +391,9 @@ CACHED_EXERCISE_GIFS = {
     "ez bar curl": "0447",  # ez barbell curl
     "ez barbell curl": "0447",
     "ez curl": "0447",
-    "hammer curl": "0301",
-    "dumbbell hammer curl": "0301",
+    "hammer curl": "0313",  # dumbbell hammer curl
+    "dumbbell hammer curl": "0313",
+    "cable hammer curl": "0165",
     "preacher curl": "0092",  # barbell preacher curl
     "concentration curl": "0274",
     "incline dumbbell curl": "0313",
@@ -410,6 +416,8 @@ CACHED_EXERCISE_GIFS = {
     "tricep dip": "0814",
     "triceps dip": "0814",
     "dips": "0814",
+    "weighted dip": "1755",  # weighted tricep dips
+    "weighted dips": "1755",
     "bench dip": "0129",
     "bench dips": "0129",
     "tricep kickback": "0347",
@@ -434,7 +442,8 @@ CACHED_EXERCISE_GIFS = {
     "leg curl": "0586",
     "lying leg curl": "0586",
     "hamstring curl": "0586",
-    "seated leg curl": "0594",
+    "seated leg curl": "0599",  # lever seated leg curl
+    "lever seated leg curl": "0599",
     "calf raise": "1373",
     "standing calf raise": "1373",
     "seated calf raise": "0720",
@@ -469,13 +478,15 @@ CACHED_EXERCISE_GIFS = {
     "ab crunch": "0267",
     "bicycle crunch": "0139",
     "reverse crunch": "0690",
-    "russian twist": "0703",
+    "russian twist": "0687",  # russian twist
+    "weighted russian twist": "0846",
     "leg raise": "1472",
     "lying leg raise": "1472",
     "hanging leg raise": "1760",
     "hanging knee raise": "0485",
     "knee raise": "0485",
     "mountain climber": "0601",
+    "mountain climbers": "0601",
     "ab wheel rollout": "0001",
     "cable crunch": "0155",
     "woodchopper": "0840",
@@ -487,14 +498,39 @@ CACHED_EXERCISE_GIFS = {
     
     # Compound/Functional exercises
     "burpee": "1160",
-    "box jump": "1487",
+    "burpees": "1160",
+    "box jump": "1374",  # box jump down with one leg stabilization
+    "box jumps": "1374",
+    "jump squat": "0631",
+    "jump squats": "0631",
     "kettlebell swing": "0509",
-    "power clean": "0068",
+    "kettlebell swings": "0509",
     "clean and press": "1209",
     "clean and jerk": "1212",
     "snatch": "0104",
     "thruster": "2143",
+    "thrusters": "2143",
     "wall ball": "2399",
+    "wall balls": "2399",
+    
+    # Cardio/HIIT exercises
+    "jump rope": "2612",
+    "jumping rope": "2612",
+    "skipping rope": "2612",
+    "double unders": "2612",  # jump rope (closest equivalent)
+    "battle ropes": "0128",  # battling ropes
+    "battle rope": "0128",
+    "battling ropes": "0128",
+    "treadmill": "3666",  # walking on incline treadmill
+    "treadmill run": "3666",
+    "treadmill sprint": "3666",
+    "treadmill sprints": "3666",
+    "running": "3666",
+    "assault bike": "2612",  # jump rope (similar cardio movement - no exact match)
+    "rowing machine": "1866",
+    "rowing": "1866",
+    "row machine": "1866",
+    "rower": "1866",
     
     # Machine exercises (moved from chest section to avoid duplicates)
     "pec deck": "0613",
@@ -502,7 +538,6 @@ CACHED_EXERCISE_GIFS = {
     "shoulder press machine": "0718",
     "machine shoulder press": "0718",
     "cable lateral raise": "0175",
-    "rowing machine": "1866",
 }
 
 # Cache for exercise GIFs to avoid repeated API calls
@@ -5609,6 +5644,11 @@ async def handle_revenuecat_webhook(request: Request):
         # Still return 200 to prevent retries for parsing errors
         return {"success": False, "error": str(e)}
 
+# ==================== ADMIN EMAILS WITH COMPLIMENTARY ACCESS ====================
+ADMIN_EMAILS = [
+    "sebastianrush5@gmail.com",  # Admin with full complimentary access
+]
+
 @api_router.get("/subscription/status/{user_id}")
 async def get_subscription_status(user_id: str):
     """Get subscription status for a user - unified across Apple, Google, and Stripe"""
@@ -5619,6 +5659,31 @@ async def get_subscription_status(user_id: str):
             "is_premium": False,
             "status": "free",
             "message": "User not found"
+        }
+    
+    email = profile.get("email", "").lower()
+    
+    # Check if admin email - automatic premium access
+    if email in [e.lower() for e in ADMIN_EMAILS]:
+        return {
+            "is_premium": True,
+            "status": "admin",
+            "subscription_source": "complimentary",
+            "subscription_plan": "lifetime",
+            "premium_expires_at": None,
+            "bonus_month_applied": False,
+            "is_admin": True,
+        }
+    
+    # Check for complimentary access granted by admin
+    if profile.get("complimentary_access"):
+        return {
+            "is_premium": True,
+            "status": "complimentary",
+            "subscription_source": "complimentary",
+            "subscription_plan": "complimentary",
+            "premium_expires_at": profile.get("complimentary_expires_at"),
+            "bonus_month_applied": False,
         }
     
     status = profile.get("subscription_status", "free")
@@ -5642,6 +5707,96 @@ async def get_subscription_status(user_id: str):
         "subscription_plan": profile.get("subscription_plan"),
         "premium_expires_at": premium_expires_at.isoformat() if premium_expires_at else None,
         "bonus_month_applied": profile.get("bonus_month_applied", False),
+    }
+
+@api_router.post("/admin/grant-access")
+async def admin_grant_access(admin_email: str, target_email: str, duration_days: int = 365):
+    """
+    Admin endpoint to grant complimentary premium access to any email.
+    Only admins can call this endpoint.
+    """
+    # Verify admin
+    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+        raise HTTPException(status_code=403, detail="Unauthorized. Admin access required.")
+    
+    # Find target user by email
+    target_user = await db.profiles.find_one({"email": {"$regex": f"^{target_email}$", "$options": "i"}})
+    
+    if not target_user:
+        raise HTTPException(status_code=404, detail=f"User with email {target_email} not found")
+    
+    expires_at = datetime.utcnow() + timedelta(days=duration_days) if duration_days > 0 else None
+    
+    await db.profiles.update_one(
+        {"id": target_user["id"]},
+        {
+            "$set": {
+                "complimentary_access": True,
+                "complimentary_expires_at": expires_at,
+                "complimentary_granted_by": admin_email,
+                "complimentary_granted_at": datetime.utcnow(),
+                "subscription_status": "complimentary",
+            }
+        }
+    )
+    
+    return {
+        "success": True,
+        "message": f"Complimentary access granted to {target_email}",
+        "expires_at": expires_at.isoformat() if expires_at else "Never",
+        "user_id": target_user["id"],
+    }
+
+@api_router.post("/admin/revoke-access")
+async def admin_revoke_access(admin_email: str, target_email: str):
+    """Admin endpoint to revoke complimentary premium access."""
+    # Verify admin
+    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+        raise HTTPException(status_code=403, detail="Unauthorized. Admin access required.")
+    
+    # Find target user by email
+    target_user = await db.profiles.find_one({"email": {"$regex": f"^{target_email}$", "$options": "i"}})
+    
+    if not target_user:
+        raise HTTPException(status_code=404, detail=f"User with email {target_email} not found")
+    
+    await db.profiles.update_one(
+        {"id": target_user["id"]},
+        {
+            "$set": {
+                "complimentary_access": False,
+                "subscription_status": "free",
+            },
+            "$unset": {
+                "complimentary_expires_at": "",
+            }
+        }
+    )
+    
+    return {
+        "success": True,
+        "message": f"Complimentary access revoked from {target_email}",
+    }
+
+@api_router.get("/admin/list-complimentary")
+async def admin_list_complimentary(admin_email: str):
+    """Admin endpoint to list all users with complimentary access."""
+    # Verify admin
+    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+        raise HTTPException(status_code=403, detail="Unauthorized. Admin access required.")
+    
+    users = await db.profiles.find({"complimentary_access": True}).to_list(100)
+    
+    return {
+        "users": [
+            {
+                "email": u.get("email"),
+                "name": u.get("name"),
+                "granted_at": u.get("complimentary_granted_at"),
+                "expires_at": u.get("complimentary_expires_at"),
+            }
+            for u in users
+        ]
     }
 
 # ==================== STRIPE WEBSITE SUBSCRIPTION ENDPOINTS ====================
