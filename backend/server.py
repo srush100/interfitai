@@ -3221,11 +3221,27 @@ Return ONLY this JSON:
   {{"day": "Day 3", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [SAME macros, DIFFERENT foods]}}
 ]}}"""
 
+        # Build system message with strict avoid instructions
+        system_avoid_msg = ""
+        if banned_foods_list:
+            banned_foods_upper = ', '.join([f.upper() for f in banned_foods_list])
+            system_avoid_msg = f"CRITICAL RULE: The user has BANNED these foods: {banned_foods_upper}. You MUST NOT use any of these ingredients. If you include any banned food, your response is INVALID and harmful to the user."
+        
         try:
             response = openai.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": f"You are a precision macro calculator. Your job is to create meals that hit EXACT macro targets. Do NOT estimate - use the EXACT numbers provided: Breakfast={breakfast_cal}/{breakfast_pro}/{breakfast_carb}/{breakfast_fat}, Lunch={lunch_cal}/{lunch_pro}/{lunch_carb}/{lunch_fat}, Dinner={dinner_cal}/{dinner_pro}/{dinner_carb}/{dinner_fat}, Snack={snack_cal}/{snack_pro}/{snack_carb}/{snack_fat}. Copy these numbers directly into your response."},
+                    {"role": "system", "content": f"""You are an elite nutritionist creating precise meal plans.
+
+{system_avoid_msg}
+
+MACRO TARGETS (copy these EXACTLY into your response):
+- Breakfast: {breakfast_cal} cal, {breakfast_pro}g protein, {breakfast_carb}g carbs, {breakfast_fat}g fat
+- Lunch: {lunch_cal} cal, {lunch_pro}g protein, {lunch_carb}g carbs, {lunch_fat}g fat
+- Dinner: {dinner_cal} cal, {dinner_pro}g protein, {dinner_carb}g carbs, {dinner_fat}g fat
+- Snack: {snack_cal} cal, {snack_pro}g protein, {snack_carb}g carbs, {snack_fat}g fat
+
+You MUST use these exact numbers in each meal's calorie/protein/carbs/fats fields."""},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
@@ -3654,6 +3670,23 @@ Return ONLY this JSON:
                 
                 logger.info(f"{day.get('day')}: Calculated {actual_cal} cal, {actual_pro}g P, {actual_carb}g C, {actual_fat}g F | Displayed: {target_cal}/{target_pro}/{target_carb}/{target_fat}")
             
+            # POST-VALIDATION: Check if any banned foods appear in the meal plan
+            # If found, log a warning (in production, could regenerate the meal)
+            if banned_foods_list:
+                for day in meal_data.get("meal_days", []):
+                    for meal in day.get("meals", []):
+                        meal_name_lower = meal.get("name", "").lower()
+                        ingredients_str = " ".join(meal.get("ingredients", [])).lower()
+                        for banned in banned_foods_list:
+                            if banned in meal_name_lower or banned in ingredients_str:
+                                logger.warning(f"BANNED FOOD DETECTED: '{banned}' found in meal '{meal.get('name')}' - This should not happen!")
+                                # Attempt to remove or replace the banned ingredient
+                                # For now, just filter out ingredients containing banned food
+                                meal["ingredients"] = [
+                                    ing for ing in meal.get("ingredients", []) 
+                                    if banned not in ing.lower()
+                                ]
+            
             meal_plan = MealPlan(
                 user_id=request.user_id,
                 name=meal_data.get("name", f"{plan_name} Custom Meal Plan"),
@@ -3970,11 +4003,27 @@ IMPORTANT:
 Respond with valid JSON only:
 {{"id": "unique_id", "name": "Meal Name", "meal_type": "{meal_type}", "ingredients": ["180g sirloin steak", "200g brown rice", "100g broccoli"], "instructions": "How to prepare", "calories": {current_cal}, "protein": {current_pro}, "carbs": {current_carb}, "fats": {current_fat}, "prep_time_minutes": number}}"""
 
+    # Build list of banned foods for validation
+    banned_foods_list = []
+    if foods_to_avoid and foods_to_avoid.strip():
+        banned_foods_list = [f.strip().lower() for f in foods_to_avoid.split(',') if f.strip()]
+    if allergies_list:
+        for allergy in allergies_list:
+            banned_foods_list.append(allergy.lower())
+    
+    # Build system message with strict avoid instructions
+    system_avoid_msg = ""
+    if banned_foods_list:
+        banned_upper = ', '.join([f.upper() for f in banned_foods_list])
+        system_avoid_msg = f"CRITICAL: The user CANNOT eat these foods: {banned_upper}. DO NOT include any of these ingredients. Using any banned food will harm the user."
+    
     try:
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": f"You are a precision nutritionist. Generate an alternate meal that MATCHES the current meal's macros exactly: {current_cal} cal, {current_pro}g P, {current_carb}g C, {current_fat}g F. Use specific ingredient amounts in grams."},
+                {"role": "system", "content": f"""You are a precision nutritionist. Generate an alternate meal that MATCHES the current meal's macros exactly: {current_cal} cal, {current_pro}g P, {current_carb}g C, {current_fat}g F. Use specific ingredient amounts in grams.
+
+{system_avoid_msg}"""},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.6,
@@ -3992,6 +4041,18 @@ Respond with valid JSON only:
         new_meal = json.loads(content)
         new_meal["id"] = str(uuid.uuid4())
         new_meal["meal_type"] = meal_type  # Preserve meal type
+        
+        # POST-VALIDATION: Remove any banned ingredients that might have slipped through
+        if banned_foods_list:
+            meal_name_lower = new_meal.get("name", "").lower()
+            ingredients_str = " ".join(new_meal.get("ingredients", [])).lower()
+            for banned in banned_foods_list:
+                if banned in meal_name_lower or banned in ingredients_str:
+                    logger.warning(f"BANNED FOOD in replacement: '{banned}' found in '{new_meal.get('name')}' - filtering")
+                    new_meal["ingredients"] = [
+                        ing for ing in new_meal.get("ingredients", [])
+                        if banned not in ing.lower()
+                    ]
         
         # Save the updated meal plan to the database
         plan["meal_days"][request.day_index]["meals"][request.meal_index] = new_meal
