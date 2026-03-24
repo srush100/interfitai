@@ -845,6 +845,9 @@ metadata:
       - working: "NA"
         agent: "main"
         comment: "ROOT CAUSE FOUND: SyntaxError at line 1780 in server.py - the generate_workout function had an orphaned 'except Exception as e:' with no matching 'try:' block. Additionally, lines 1735-1778 were over-indented by 4 extra spaces (8 instead of 4). FIXED: Corrected indentation of post-processing code (parse_sets function, GIF fetching, WorkoutProgram creation) and removed the orphaned except block. Backend syntax verified clean. Backend restarted successfully."
+      - working: "NA"
+        agent: "main"
+        comment: "NEW SESSION (2026-03-24): Backend is healthy. Logs confirm that POST /api/workouts/generate returns 200 OK from localhost tests. Frontend (10.64.130.72) showed a 500 earlier but this was before the syntax fix. Test with complex payload (days_per_week=4, full_gym) needed to confirm."
 
 test_plan:
   current_focus:
@@ -857,6 +860,17 @@ test_plan:
     - "Food Image Analysis"
   test_all: false
   test_priority: "high_first"
+
+# NEW SESSION TEST INSTRUCTIONS (2026-03-24)
+# Backend is healthy (confirmed via curl). Claude Sonnet 4.5 + Haiku 4.5 hybrid model in place.
+# The SyntaxError in generate_workout was fixed - backend is running at pid 5255.
+# Test the following in order:
+# 1. POST /api/workouts/generate - complex payload: days_per_week=4, equipment=["full_gym"], goal="muscle_building". Expect 200 OK with full workout program.
+# 2. POST /api/mealplans/generate with food_preferences="vegan" - verify protein values are accurate (not inflated). Use user_id cbd82a69-3a37-48c2-88e8-0fe95081fa4b.
+# 3. POST /api/mealplan/alternate with foods_to_avoid=["chicken"] - verify no chicken in result. Use a meal_plan_id from test 2.
+# 4. POST /api/mealplans/generate with food_preferences="keto" - verify carbs < 50g per day.
+# 5. GET /api/health - sanity check.
+# Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b
 
 agent_communication:
   - agent: "main"
