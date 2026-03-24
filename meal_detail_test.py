@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 
 # Configuration
-BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
+BACKEND_URL = "https://nutrition-debug-1.preview.emergentagent.com/api"
 TEST_USER_ID = "cbd82a69-3a37-48c2-88e8-0fe95081fa4b"
 
 def log_test(message):

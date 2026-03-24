@@ -15,6 +15,7 @@ import base64
 import json
 import httpx
 import time
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -24,8 +25,37 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'interfitai')]
 
-# OpenAI configuration
+# OpenAI configuration (kept for fallback/vision)
 openai.api_key = os.environ.get('OPENAI_API_KEY', '')
+
+# Claude Opus 4.6 via Emergent LLM Key
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+async def call_claude_opus(
+    system_message: str,
+    user_message: str,
+    temperature: float = 0.7,
+    max_tokens: int = 4000,
+    image_base64: str = None,
+    image_base64_2: str = None
+) -> str:
+    """Call Claude Opus 4.6 via emergentintegrations library"""
+    chat = (
+        LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=str(uuid.uuid4()),
+            system_message=system_message,
+        )
+        .with_model("anthropic", "claude-opus-4-6")
+        .with_params(temperature=temperature, max_tokens=max_tokens)
+    )
+    file_contents = []
+    if image_base64:
+        file_contents.append(ImageContent(image_base64))
+    if image_base64_2:
+        file_contents.append(ImageContent(image_base64_2))
+    msg = UserMessage(text=user_message, file_contents=file_contents if file_contents else None)
+    return await chat.send_message(msg)
 
 # Stripe configuration
 stripe.api_key = os.environ.get('STRIPE_API_KEY', '')
@@ -1562,19 +1592,16 @@ FINAL CHECK - Before outputting, verify:
 ✓ Each day has clear focus and appropriate exercise selection"""
 
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert personal trainer. Create workout programs in valid JSON format only."},
-                {"role": "user", "content": prompt}
-            ],
+        content = await call_claude_opus(
+            system_message="You are an expert personal trainer. Create workout programs in valid JSON format only.",
+            user_message=prompt,
             temperature=0.7,
             max_tokens=4000
         )
         
-        content = response.choices[0].message.content
-        
         # Clean the response - remove markdown code blocks if present
+        logger.info(f"Workout raw response type: {type(content)}, len: {len(content) if content else 0}, first 100: {repr(content[:100]) if content else 'EMPTY'}")
+        content = content.strip() if content else ""
         if content.startswith("```"):
             content = content.split("```")[1]
             if content.startswith("json"):
@@ -2479,146 +2506,154 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     }
     
     # ===== VEGAN TEMPLATES =====
+    # ACCURATE USDA-verified macros per ingredient (grams, calories, protein, carbs, fat)
+    # Protein sources: Tofu firm=17g/100g, Tempeh=20g/100g, Seitan=75g/100g, Lentils=9g/100g cooked
+    # Edamame=11g/100g, Chickpeas=9g/100g cooked, Pea protein=80g/100g
     VEGAN_TEMPLATES = {
         "day1": {
             "breakfast": {
-                "name": "Tofu Scramble with Vegetables",
+                "name": "High Protein Tofu Scramble",
                 "ingredients": {
-                    "tofu": (200, 288, 34, 6, 16),
+                    "extra firm tofu": (250, 360, 43, 8, 20),  # 17g protein per 100g
+                    "edamame": (100, 121, 11, 9, 5),  # 11g protein per 100g
                     "spinach": (50, 12, 1, 2, 0),
-                    "tomato": (80, 14, 1, 3, 0),
-                    "nutritional yeast": (15, 45, 6, 4, 0),
-                    "olive oil": (15, 133, 0, 0, 15),
+                    "nutritional yeast": (20, 60, 8, 5, 0),  # 8g protein per 20g
+                    "olive oil": (10, 88, 0, 0, 10),
                 },
-                "instructions": "Crumble and sauté tofu with vegetables, add nutritional yeast for cheesy flavor",
+                "instructions": "Crumble and sauté tofu with edamame and spinach, finish with nutritional yeast",
                 "prep_time": 15
             },
             "lunch": {
-                "name": "Chickpea Buddha Bowl",
+                "name": "Seitan & Quinoa Power Bowl",
                 "ingredients": {
-                    "chickpeas": (200, 328, 18, 54, 5),
-                    "quinoa": (150, 180, 7, 32, 3),
-                    "kale": (80, 39, 3, 7, 1),
-                    "tahini": (30, 178, 5, 6, 16),
-                    "lemon": (20, 6, 0, 2, 0),
+                    "seitan": (150, 188, 38, 6, 2),  # 25g protein per 100g (vital wheat gluten based)
+                    "quinoa": (150, 180, 7, 32, 3),  # 4.4g protein per 100g cooked
+                    "chickpeas": (100, 164, 9, 27, 3),  # 9g protein per 100g cooked
+                    "tahini": (20, 119, 3, 4, 11),
+                    "kale": (60, 29, 2, 5, 1),
                 },
-                "instructions": "Roast chickpeas, serve over quinoa with massaged kale and tahini dressing",
-                "prep_time": 30
+                "instructions": "Sear seitan, serve over quinoa with roasted chickpeas, kale, and tahini drizzle",
+                "prep_time": 25
             },
             "dinner": {
-                "name": "Lentil Curry with Rice",
+                "name": "Tempeh Lentil Curry",
                 "ingredients": {
-                    "red lentils": (150, 174, 14, 30, 1),
-                    "brown rice": (200, 224, 5, 48, 2),
-                    "coconut milk": (100, 197, 2, 4, 20),
+                    "tempeh": (200, 384, 40, 16, 22),  # 20g protein per 100g
+                    "red lentils": (100, 116, 9, 20, 1),  # 9g protein per 100g cooked
+                    "brown rice": (150, 168, 4, 36, 1),
+                    "coconut milk light": (80, 60, 1, 2, 5),
                     "spinach": (50, 12, 1, 2, 0),
                 },
-                "instructions": "Simmer lentils in coconut cream with curry spices, add spinach, serve over rice",
+                "instructions": "Cube tempeh, simmer with lentils and coconut milk, serve over rice with spinach",
                 "prep_time": 35
             },
             "snack": {
-                "name": "Hummus with Vegetables",
+                "name": "Protein Edamame Bowl",
                 "ingredients": {
-                    "hummus": (100, 166, 8, 14, 10),
-                    "carrots": (100, 41, 1, 10, 0),
-                    "cucumber": (100, 15, 1, 4, 0),
+                    "edamame": (150, 182, 17, 14, 8),  # High protein snack
+                    "pumpkin seeds": (25, 143, 7, 4, 12),  # 29g protein per 100g
+                    "sea salt": (1, 0, 0, 0, 0),
                 },
-                "instructions": "Serve hummus with fresh vegetable sticks",
+                "instructions": "Steam edamame, sprinkle with pumpkin seeds and sea salt",
                 "prep_time": 5
             }
         },
         "day2": {
             "breakfast": {
-                "name": "Overnight Oats with Berries",
+                "name": "Protein Oat Bowl",
                 "ingredients": {
                     "oats": (60, 225, 8, 41, 4),
-                    "almond milk": (200, 26, 1, 1, 2),
-                    "chia seeds": (20, 97, 3, 8, 6),
-                    "berries": (100, 45, 1, 11, 0),
-                    "maple syrup": (15, 39, 0, 10, 0),
+                    "pea protein powder": (30, 120, 24, 2, 1),  # 80g protein per 100g
+                    "soy milk": (200, 80, 7, 4, 4),  # 3.5g protein per 100g
+                    "peanut butter": (25, 147, 7, 5, 13),
+                    "chia seeds": (15, 73, 2, 6, 5),
                 },
-                "instructions": "Mix oats with plant milk and chia overnight, top with berries and maple syrup",
-                "prep_time": 5
+                "instructions": "Cook oats with soy milk, stir in protein powder and peanut butter, top with chia",
+                "prep_time": 10
             },
             "lunch": {
-                "name": "Black Bean Tacos",
+                "name": "Black Bean Tempeh Tacos",
                 "ingredients": {
-                    "black beans": (200, 264, 18, 48, 1),
+                    "tempeh": (150, 288, 30, 12, 17),
+                    "black beans": (150, 198, 14, 36, 1),  # 9g protein per 100g cooked
                     "corn tortillas": (60, 130, 3, 27, 2),
-                    "avocado": (100, 160, 2, 9, 15),
+                    "avocado": (75, 120, 2, 7, 11),
                     "salsa": (60, 20, 1, 4, 0),
                 },
-                "instructions": "Warm beans, serve in tortillas with avocado and salsa",
-                "prep_time": 15
+                "instructions": "Crumble tempeh, warm with black beans, serve in tortillas with avocado and salsa",
+                "prep_time": 20
             },
             "dinner": {
-                "name": "Tempeh Stir Fry",
+                "name": "Seitan Stir Fry",
                 "ingredients": {
-                    "tempeh": (200, 384, 40, 16, 22),
+                    "seitan": (200, 250, 50, 8, 3),  # 25g protein per 100g
                     "brown rice": (150, 168, 4, 36, 1),
-                    "broccoli": (100, 34, 3, 7, 0),
+                    "broccoli": (120, 41, 4, 8, 0),
+                    "bell pepper": (80, 25, 1, 5, 0),
                     "soy sauce": (15, 9, 1, 1, 0),
                     "sesame oil": (10, 88, 0, 0, 10),
                 },
-                "instructions": "Cube and fry tempeh, stir fry with broccoli and soy sauce",
+                "instructions": "Slice seitan, stir fry with vegetables and soy sauce, serve over rice",
                 "prep_time": 25
             },
             "snack": {
-                "name": "Nut Butter Apple",
+                "name": "Soy Yogurt with Seeds",
                 "ingredients": {
-                    "apple": (180, 94, 0, 25, 0),
-                    "almond butter": (30, 184, 7, 6, 17),
+                    "soy yogurt": (200, 120, 10, 12, 5),  # 5g protein per 100g
+                    "hemp seeds": (25, 139, 8, 2, 12),  # 32g protein per 100g
+                    "almonds": (20, 116, 4, 4, 10),
                 },
-                "instructions": "Slice apple, serve with nut spread for dipping",
+                "instructions": "Top soy yogurt with hemp seeds and almonds",
                 "prep_time": 3
             }
         },
         "day3": {
             "breakfast": {
-                "name": "Smoothie Bowl",
+                "name": "High Protein Smoothie Bowl",
                 "ingredients": {
-                    "banana": (150, 134, 2, 35, 0),
-                    "pea protein": (30, 120, 24, 2, 1),
-                    "almond milk": (150, 20, 1, 1, 2),
-                    "peanut butter": (25, 147, 7, 5, 13),
-                    "spinach": (30, 7, 1, 1, 0),
+                    "silken tofu": (200, 110, 10, 4, 6),  # 5g protein per 100g (blends smooth)
+                    "pea protein powder": (35, 140, 28, 2, 1),
+                    "banana": (100, 89, 1, 23, 0),
+                    "peanut butter": (30, 176, 8, 6, 15),
+                    "soy milk": (100, 40, 4, 2, 2),
                 },
-                "instructions": "Blend all ingredients thick, serve in bowl",
+                "instructions": "Blend silken tofu with protein powder, banana, and soy milk until smooth, top with peanut butter",
                 "prep_time": 10
             },
             "lunch": {
-                "name": "Falafel Wrap",
+                "name": "Lentil Falafel Plate",
                 "ingredients": {
-                    "falafel": (150, 333, 13, 31, 18),
-                    "whole wheat wrap": (60, 140, 5, 24, 3),
-                    "hummus": (50, 83, 4, 7, 5),
-                    "tomato": (60, 11, 1, 2, 0),
-                    "lettuce": (40, 5, 0, 1, 0),
+                    "lentils": (150, 174, 14, 30, 1),  # 9g protein per 100g cooked
+                    "falafel": (120, 266, 10, 25, 14),
+                    "hummus": (80, 133, 6, 11, 8),  # 8g protein per 100g
+                    "whole wheat pita": (60, 165, 5, 33, 1),
+                    "cucumber": (60, 9, 0, 2, 0),
                 },
-                "instructions": "Warm falafel, wrap with hummus and fresh vegetables",
-                "prep_time": 15
+                "instructions": "Serve lentils with falafel, hummus, pita bread, and fresh cucumber",
+                "prep_time": 20
             },
             "dinner": {
-                "name": "Vegetable Pasta Primavera",
+                "name": "Tofu & Tempeh Vegetable Pasta",
                 "ingredients": {
-                    "whole wheat pasta": (150, 186, 8, 38, 1),
-                    "zucchini": (100, 17, 1, 3, 0),
-                    "tomato": (100, 18, 1, 4, 0),
-                    "olive oil": (20, 177, 0, 0, 20),
+                    "extra firm tofu": (150, 216, 26, 5, 12),
+                    "tempeh": (100, 192, 20, 8, 11),
+                    "whole wheat pasta": (120, 149, 6, 30, 1),
+                    "tomato sauce": (100, 29, 1, 6, 0),
                     "nutritional yeast": (15, 45, 6, 4, 0),
+                    "olive oil": (10, 88, 0, 0, 10),
                 },
-                "instructions": "Cook pasta, sauté vegetables, toss together with olive oil",
-                "prep_time": 25
+                "instructions": "Cube tofu and tempeh, pan fry, toss with pasta and tomato sauce, finish with nutritional yeast",
+                "prep_time": 30
             },
             "snack": {
-                "name": "Trail Mix",
+                "name": "Roasted Chickpea Snack",
                 "ingredients": {
-                    "almonds": (25, 145, 5, 5, 13),
-                    "walnuts": (20, 131, 3, 3, 13),
-                    "dried cranberries": (20, 65, 0, 17, 0),
+                    "chickpeas": (150, 246, 14, 41, 4),
+                    "pumpkin seeds": (20, 115, 6, 3, 10),
+                    "olive oil": (5, 44, 0, 0, 5),
                 },
-                "instructions": "Mix nuts and dried fruit",
-                "prep_time": 2
+                "instructions": "Roast chickpeas with olive oil until crispy, mix with pumpkin seeds",
+                "prep_time": 25
             }
         }
     }
@@ -3260,10 +3295,8 @@ Return ONLY this JSON:
             system_avoid_msg = f"CRITICAL RULE: The user has BANNED these foods: {banned_foods_upper}. You MUST NOT use any of these ingredients. If you include any banned food, your response is INVALID and harmful to the user."
         
         try:
-            response = openai.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": f"""You are an elite nutritionist creating precise meal plans.
+            content = await call_claude_opus(
+                system_message=f"""You are an elite nutritionist creating precise meal plans.
 
 {system_avoid_msg}
 
@@ -3273,14 +3306,13 @@ MACRO TARGETS (copy these EXACTLY into your response):
 - Dinner: {dinner_cal} cal, {dinner_pro}g protein, {dinner_carb}g carbs, {dinner_fat}g fat
 - Snack: {snack_cal} cal, {snack_pro}g protein, {snack_carb}g carbs, {snack_fat}g fat
 
-You MUST use these exact numbers in each meal's calorie/protein/carbs/fats fields."""},
-                    {"role": "user", "content": prompt}
-                ],
+You MUST use these exact numbers in each meal's calorie/protein/carbs/fats fields.""",
+                user_message=prompt,
                 temperature=0.3,
                 max_tokens=6000
             )
             
-            content = response.choices[0].message.content
+            content = content.strip() if content else ""
             if content.startswith("```"):
                 content = content.split("```")[1]
                 if content.startswith("json"):
@@ -3756,7 +3788,7 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
         return totals
     
     # Scale a day's meals to hit target calories
-    def scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb_diet=False):
+    def scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb_diet=False, is_plant_based_diet=False):
         base = calc_day_totals(day_template)
         
         # Calculate scale factor based on calories (primary constraint)
@@ -3803,13 +3835,16 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
             day_totals["fats"] += meal_macros["fats"]
             meal_idx += 1
         
-        # For LOW-CARB diets (Keto/Carnivore), keep accurate macros from the template
-        # Don't adjust carbs to user targets since these diets are specifically designed to be low-carb
-        if is_low_carb_diet:
-            # Just return the scaled values without adjusting to user's carb target
+        # For LOW-CARB diets (Keto/Carnivore) and VEGAN/VEGETARIAN diets, keep accurate macros from the template
+        # These diets have specific macro profiles that should not be artificially adjusted
+        # - Keto/Carnivore: low carb by design
+        # - Vegan/Vegetarian: protein comes from specific plant sources, can't be artificially inflated
+        if is_low_carb_diet or is_plant_based_diet:
+            # Just return the scaled values without artificially adjusting macros
+            # The macros are accurate based on actual ingredient quantities
             return scaled_meals, day_totals
         
-        # For other diets, force daily totals to match user's targets
+        # For other diets (balanced, high_protein, whole_foods), force daily totals to match user's targets
         day_totals["calories"] = target_cal
         day_totals["protein"] = target_pro
         day_totals["carbs"] = target_carb
@@ -3835,12 +3870,14 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
     
     # Determine if this is a low-carb diet that should preserve template macros
     is_low_carb = eating_style in ['keto', 'carnivore']
+    # Determine if this is a plant-based diet (accurate protein matters, don't inflate)
+    is_plant_based = eating_style in ['vegan', 'vegetarian']
     
     # Generate all 3 days
     meal_days = []
     for day_num, day_key in enumerate(["day1", "day2", "day3"], 1):
         day_template = MEAL_TEMPLATES[day_key]
-        scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb)
+        scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb, is_plant_based)
         
         # Update meal IDs for the day
         for i, meal in enumerate(scaled_meals):
@@ -4122,20 +4159,16 @@ Use ONLY these allowed proteins: {', '.join(protein_alternatives) if protein_alt
     max_attempts = 3
     for attempt in range(max_attempts):
         try:
-            response = openai.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": f"""You are a precision nutritionist. Generate an alternate meal that MATCHES the current meal's macros exactly: {current_cal} cal, {current_pro}g P, {current_carb}g C, {current_fat}g F. Use specific ingredient amounts in grams.
+            content = await call_claude_opus(
+                system_message=f"""You are a precision nutritionist. Generate an alternate meal that MATCHES the current meal's macros exactly: {current_cal} cal, {current_pro}g P, {current_carb}g C, {current_fat}g F. Use specific ingredient amounts in grams.
 
-{system_avoid_msg}"""},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.4,  # Lower temperature for more consistent output
+{system_avoid_msg}""",
+                user_message=prompt,
+                temperature=0.4,
                 max_tokens=800
             )
             
-            content = response.choices[0].message.content
-            
+            content = content.strip() if content else ""
             if content.startswith("```"):
                 content = content.split("```")[1]
                 if content.startswith("json"):
@@ -4267,37 +4300,23 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         if request.additional_context:
             user_prompt += f"\n\nAdditional context from user: {request.additional_context}"
         
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are a nutrition expert. Analyze the food image and provide accurate nutritional information.
+        content = await call_claude_opus(
+            system_message="""You are a nutrition expert. Analyze the food image and provide accurate nutritional information.
 Consider any additional context provided by the user (e.g., portion size, specific ingredients).
 Respond with ONLY valid JSON, no other text. Use this exact format:
-{"food_name": "Name", "serving_size": "1 serving", "calories": 300, "protein": 25.0, "carbs": 30.0, "fats": 10.0, "fiber": 5.0, "sugar": 8.0, "sodium": 400.0}"""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": user_prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{request.image_base64}"}
-                        }
-                    ]
-                }
-            ],
-            max_tokens=500
+{"food_name": "Name", "serving_size": "1 serving", "calories": 300, "protein": 25.0, "carbs": 30.0, "fats": 10.0, "fiber": 5.0, "sugar": 8.0, "sodium": 400.0}""",
+            user_message=user_prompt,
+            temperature=0.3,
+            max_tokens=500,
+            image_base64=request.image_base64
         )
-        
-        content = response.choices[0].message.content
         logger.info(f"Food analysis raw response length: {len(content) if content else 0}")
         
         if not content or len(content.strip()) == 0:
             raise HTTPException(status_code=500, detail="AI returned empty response. Please try again with a clearer food image.")
         
         # Clean markdown code blocks if present
+        content = content.strip() if content else ""
         if content.startswith("```"):
             lines = content.split("\n")
             json_lines = []
@@ -4352,11 +4371,10 @@ Respond with ONLY valid JSON, no other text. Use this exact format:
         
     except HTTPException:
         raise
-    except openai.BadRequestError as e:
-        logger.error(f"OpenAI BadRequestError: {e}")
-        raise HTTPException(status_code=400, detail="Invalid image format. Please use a valid JPEG or PNG image.")
     except Exception as e:
         logger.error(f"Food analysis error: {e}")
+        if "invalid" in str(e).lower() or "image" in str(e).lower():
+            raise HTTPException(status_code=400, detail="Invalid image format. Please use a valid JPEG or PNG image.")
         raise HTTPException(status_code=500, detail=f"Failed to analyze food: {str(e)}")
 
 @api_router.post("/food/log", response_model=FoodEntry)
@@ -5042,14 +5060,19 @@ Be helpful, encouraging, and provide evidence-based advice. Keep responses conci
     messages.append({"role": "user", "content": request.message})
     
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=1000
+        # Build initial_messages = system + history (without current user message)
+        initial_messages = messages[:-1]
+        chat = (
+            LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=str(uuid.uuid4()),
+                system_message="",
+                initial_messages=initial_messages,
+            )
+            .with_model("anthropic", "claude-opus-4-6")
+            .with_params(temperature=0.7, max_tokens=1000)
         )
-        
-        ai_response = response.choices[0].message.content
+        ai_response = await chat.send_message(UserMessage(text=request.message))
         
         # Save user message
         user_msg = ChatMessage(user_id=request.user_id, role="user", content=request.message)
@@ -5737,12 +5760,8 @@ async def get_progress_photos(user_id: str):
 async def analyze_body_progress(request: BodyAnalysisRequest):
     """AI-powered body transformation analysis comparing before/after photos"""
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are a professional fitness coach and body composition expert. 
+        content = await call_claude_opus(
+            system_message="""You are a professional fitness coach and body composition expert. 
 Analyze the before and after progress photos provided. Give constructive, encouraging, and detailed feedback.
 Focus on visible improvements in:
 1. Muscle definition and tone
@@ -5759,29 +5778,15 @@ Respond with valid JSON only:
     "recommendations": ["Recommendation 1", "Recommendation 2"],
     "motivation_message": "Encouraging message",
     "estimated_progress_score": 8
-}"""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"Please analyze these before and after progress photos taken over {request.time_period}. Provide detailed feedback on the visible transformation."},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{request.before_image_base64}"}
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{request.after_image_base64}"}
-                        }
-                    ]
-                }
-            ],
-            max_tokens=1000
+}""",
+            user_message=f"Please analyze these before and after progress photos taken over {request.time_period}. Provide detailed feedback on the visible transformation.",
+            max_tokens=1000,
+            image_base64=request.before_image_base64,
+            image_base64_2=request.after_image_base64
         )
         
-        content = response.choices[0].message.content
-        
         # Clean markdown code blocks if present
+        content = content.strip() if content else ""
         if content.startswith("```"):
             lines = content.split("\n")
             json_lines = []

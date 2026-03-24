@@ -21,7 +21,7 @@ import api from '../src/services/api';
 // Get backend URL for constructing full GIF URLs
 const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 
                     process.env.EXPO_PUBLIC_BACKEND_URL || 
-                    'https://ai-fitness-pro-4.preview.emergentagent.com';
+                    'https://nutrition-debug-1.preview.emergentagent.com';
 
 // Helper to get full GIF URL
 const getFullGifUrl = (gifUrl: string | undefined) => {

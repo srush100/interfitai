@@ -4,7 +4,7 @@ import requests
 import json
 import time
 
-BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
+BACKEND_URL = "https://nutrition-debug-1.preview.emergentagent.com/api"
 
 def test_model_availability():
     """Test different Claude model names to see which ones work"""

@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 
 const BASE_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 
                  process.env.EXPO_PUBLIC_BACKEND_URL || 
-                 'https://ai-fitness-pro-4.preview.emergentagent.com';
+                 'https://nutrition-debug-1.preview.emergentagent.com';
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api`,

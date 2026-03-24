@@ -5,7 +5,7 @@ import json
 import time
 
 # Backend URL from review request  
-BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
+BACKEND_URL = "https://nutrition-debug-1.preview.emergentagent.com/api"
 
 # User ID for testing (from review request)
 TEST_USER_ID = "cbd82a69-3a37-48c2-88e8-0fe95081fa4b"

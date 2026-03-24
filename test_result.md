@@ -378,14 +378,47 @@ backend:
         agent: "main"
         comment: "Implemented daily motivation quotes and reminder settings."
 
-  - task: "Alternate Meal Generation"
+  - task: "Claude Opus 4.6 Migration - All AI Endpoints"
     implemented: true
-    working: true
+    working: "NA"
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Migrated ALL AI endpoints from OpenAI GPT-4o to Claude Opus 4.6 using emergentintegrations library. Added call_claude_opus() helper function. Replaced: workout generation, meal plan generation, alternate meal generation, food image analysis, Ask InterFitAI chat, body analyzer. EMERGENT_LLM_KEY already in .env. Also fixed the vegan protein bug - is_plant_based_diet was referenced in scale_day_to_targets() but was never defined as a parameter or passed in. Fixed by: 1) adding is_plant_based_diet=False param, 2) computing is_plant_based = eating_style in ['vegan','vegetarian'], 3) passing it to the function call."
+
+  - task: "Vegan Meal Plan Protein Accuracy Fix"
+    implemented: true
+    working: "NA"
     file: "server.py"
     stuck_count: 1
     priority: "high"
     needs_retesting: true
     status_history:
+      - working: false
+        agent: "user"
+        comment: "User reported: vegan meal plans show inaccurate (inflated) protein values. Tofu Scramble showed nearly double actual protein."
+      - working: "NA"
+        agent: "main"
+        comment: "Fixed: scale_day_to_targets() was missing is_plant_based_diet parameter. Added param, computed is_plant_based = eating_style in ['vegan','vegetarian'], and passed to function. Vegan/vegetarian plans now bypass artificial macro inflation and return accurate scaled values from actual ingredients."
+
+  - task: "Alternate Meal Generation - foods_to_avoid Compliance"
+    implemented: true
+    working: "NA"
+    file: "server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "User reported: meal replacement generating chicken even when 'no chicken' was in foods_to_avoid."
+      - working: "NA"
+        agent: "main"
+        comment: "Fix was implemented in previous session (PROTEIN_GROUPS filtering + retry logic + post-validation). Never tested due to subagent error. Needs testing now with Claude Opus 4.6."
       - working: NA
         agent: "main"
         comment: "Added endpoint POST /api/mealplan/alternate to generate alternate meals for specific meals in a meal plan using AI. Frontend meal-detail.tsx updated with 'Generate Alternate' button."

@@ -10,7 +10,7 @@ import sys
 from datetime import datetime
 
 # Backend URL from frontend/.env
-BACKEND_URL = "https://ai-fitness-pro-4.preview.emergentagent.com/api"
+BACKEND_URL = "https://nutrition-debug-1.preview.emergentagent.com/api"
 
 # Test user ID from review request
 TEST_USER_ID = "d704bac8-fa54-4d5b-b984-cc17393c1244"
