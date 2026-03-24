@@ -47,7 +47,7 @@ async def call_claude_opus(
             system_message=system_message,
         )
         .with_model("anthropic", "claude-opus-4-6")
-        .with_params(temperature=temperature, max_tokens=max_tokens)
+        .with_params(temperature=temperature, max_tokens=max_tokens, timeout=180)
     )
     file_contents = []
     if image_base64:
@@ -55,7 +55,16 @@ async def call_claude_opus(
     if image_base64_2:
         file_contents.append(ImageContent(image_base64_2))
     msg = UserMessage(text=user_message, file_contents=file_contents if file_contents else None)
-    return await chat.send_message(msg)
+    try:
+        return await chat.send_message(msg)
+    except Exception as e:
+        err = str(e)
+        if "budget" in err.lower() or "exceeded" in err.lower():
+            raise HTTPException(
+                status_code=402,
+                detail="AI service balance is low. Please go to Profile → Universal Key → Add Balance to top up."
+            )
+        raise
 
 # Stripe configuration
 stripe.api_key = os.environ.get('STRIPE_API_KEY', '')
