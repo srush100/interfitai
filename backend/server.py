@@ -1258,14 +1258,16 @@ async def generate_workout(request: WorkoutGenerateRequest):
     injuries_note = ', '.join(request.injuries) if request.injuries else 'none'
     
     # ============= BUILD CONCISE PROMPT =============
-    prompt = f"""Create a {request.days_per_week}-day {request.goal.replace('_', ' ')} program for {fitness_level}.
-Equipment: {', '.join(request.equipment)}. Style: {training_style}. Session: {session_duration}min.
-Injuries: {injuries_note}. Split: {split_note}.
-Rules: {goal_rules.get(request.goal, 'Balanced, 60-90s rest.')} | {level_rules.get(fitness_level, level_rules['intermediate'])} | {equip_note}
+    prompt = f"""Build a WORLD-CLASS {request.days_per_week}-day {request.goal.replace('_', ' ').upper()} program — {fitness_level} level.
+Style: {training_style} | Split: {split_note} | Session: {session_duration}min | Equipment: {', '.join(request.equipment)}
+Goal rules: {goal_rules.get(request.goal, 'Balanced, 60-90s rest.')}
+Level rules: {level_rules.get(fitness_level, level_rules['intermediate'])}
+Equipment rules: {equip_note}
+Injuries/avoid: {injuries_note}
 
-STRICT: 4 exercises/day max. Instructions <=12 words. Notes <=10 words. JSON only, no markdown.
+FORMAT RULES (strictly follow): 5-6 exercises/day. Instructions: 15-20 words, form-focused. Notes: 12 words max. JSON only — no markdown.
 
-{{"name":"Program Name","workout_days":[{{"day":"Day 1 - Push","focus":"Chest & Triceps","duration_minutes":{session_duration},"notes":"Control tempo on each rep.","exercises":[{{"name":"Barbell Bench Press","sets":4,"reps":"8-10","rest_seconds":{goal_rest.split('-')[0]},"instructions":"Lower bar to chest, press explosively.","muscle_groups":["chest","triceps"],"equipment":"barbell"}}]}}]}}"""
+{{"name":"Elite Program Name","workout_days":[{{"day":"Day 1 - Push","focus":"Chest, Shoulders & Triceps","duration_minutes":{session_duration},"notes":"Prioritise mind-muscle connection on pressing movements.","exercises":[{{"name":"Barbell Bench Press","sets":4,"reps":"6-8","rest_seconds":{goal_rest.split('-')[0]},"instructions":"Retract scapula, lower bar to sternum, drive explosively through full ROM.","muscle_groups":["chest","front delts","triceps"],"equipment":"barbell"}},{{"name":"Incline Dumbbell Press","sets":3,"reps":"8-10","rest_seconds":{goal_rest.split('-')[0]},"instructions":"Set 30-45 degree incline, control descent, squeeze chest at top.","muscle_groups":["upper chest","triceps"],"equipment":"dumbbells"}}]}}]}}"""
 
 
 
@@ -3058,7 +3060,7 @@ MACRO TARGETS (copy these EXACTLY into your response):
 You MUST use these exact numbers in each meal's calorie/protein/carbs/fats fields.""",
                 user_message=prompt,
                 temperature=0.3,
-                max_tokens=6000
+                max_tokens=4000
             )
             
             content = content.strip() if content else ""
@@ -3491,13 +3493,15 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                         meal_name_lower = meal.get("name", "").lower()
                         ingredients_str = " ".join(meal.get("ingredients", [])).lower()
                         for banned in banned_foods_list:
-                            if banned in meal_name_lower or banned in ingredients_str:
+                            # Avoid false positives: "gluten-free" should not match "gluten"
+                            def _contains_banned(text, banned_word):
+                                cleaned = text.replace(f'{banned_word}-free', '').replace(f'{banned_word} free', '')
+                                return banned_word in cleaned
+                            if _contains_banned(meal_name_lower, banned) or _contains_banned(ingredients_str, banned):
                                 logger.warning(f"BANNED FOOD DETECTED: '{banned}' found in meal '{meal.get('name')}' - This should not happen!")
-                                # Attempt to remove or replace the banned ingredient
-                                # For now, just filter out ingredients containing banned food
                                 meal["ingredients"] = [
-                                    ing for ing in meal.get("ingredients", []) 
-                                    if banned not in ing.lower()
+                                    ing for ing in meal.get("ingredients", [])
+                                    if not _contains_banned(ing.lower().replace(f'{banned}-free', '').replace(f'{banned} free', ''), banned)
                                 ]
             
             meal_plan = MealPlan(
