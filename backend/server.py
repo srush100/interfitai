@@ -854,7 +854,7 @@ class WorkoutProgram(BaseModel):
     goal: str
     focus_areas: List[str]
     equipment: List[str]
-    injuries: Optional[str] = None
+    injuries: Optional[List[str]] = None
     duration_weeks: int = 4
     days_per_week: int = 4
     session_duration_minutes: int = 60  # Workout session duration
@@ -867,7 +867,7 @@ class WorkoutGenerateRequest(BaseModel):
     training_style: str = "weights"  # weights, calisthenics, hybrid, functional
     focus_areas: List[str]  # full_body, back, chest, legs, glutes, arms
     equipment: List[str]  # full_gym, barbells, dumbbells, bodyweight, kettlebells, machines
-    injuries: Optional[str] = None  # lower_back, knees, shoulders, none
+    injuries: Optional[List[str]] = None  # lower_back, knees, shoulders, none
     days_per_week: int = 4
     duration_minutes: int = 60  # Session duration
     fitness_level: str = "intermediate"  # beginner, intermediate, advanced
