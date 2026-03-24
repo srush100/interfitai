@@ -831,8 +831,24 @@ metadata:
         agent: "main"
         comment: "NEW SESSION: Manual curl test confirms /api/mealplan/alternate correctly excludes chicken when foods_to_avoid=chicken is in the meal plan. Generated 'Scrambled Eggs & Toast with Berry Yogurt' - no chicken found. PROTEIN_GROUPS filtering is working. Needs formal testing to confirm all cases pass."
 
+  - task: "Workout Generation SyntaxError Fix"
+    implemented: true
+    working: "NA"
+    file: "server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "Workout generation failing with 500 Internal Server Error."
+      - working: "NA"
+        agent: "main"
+        comment: "ROOT CAUSE FOUND: SyntaxError at line 1780 in server.py - the generate_workout function had an orphaned 'except Exception as e:' with no matching 'try:' block. Additionally, lines 1735-1778 were over-indented by 4 extra spaces (8 instead of 4). FIXED: Corrected indentation of post-processing code (parse_sets function, GIF fetching, WorkoutProgram creation) and removed the orphaned except block. Backend syntax verified clean. Backend restarted successfully."
+
 test_plan:
   current_focus:
+    - "Workout Generation SyntaxError Fix"
     - "Hybrid AI Model - Claude Sonnet 4.5 + Haiku 4.5"
     - "Vegan Meal Plan Protein Accuracy"
     - "Alternate Meal foods_to_avoid Compliance"
@@ -843,6 +859,8 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+  - agent: "main"
+    message: "CRITICAL FIX: Found and fixed SyntaxError in generate_workout function (server.py line 1780). The function had an orphaned 'except Exception as e:' block with no matching 'try:', and the post-processing code (parse_sets, GIF fetching, WorkoutProgram creation) was over-indented by 4 spaces. Fixed both issues. Backend syntax verified clean. Backend restarted. Now need to test: 1) Workout generation with complex payload (4 days, full_gym), 2) Vegan meal plan protein accuracy, 3) foods_to_avoid compliance in alternate meal generation, 4) All diet types accuracy."
   - agent: "main"
     message: "Completed initial implementation of InterFitAI app. All backend endpoints are implemented with OpenAI integration for AI features and Stripe for payments. Frontend has all screens built with proper navigation. Need to test AI endpoints (workout generation, meal plan generation, food analysis, chat) as they require OpenAI API calls."
   - agent: "testing"

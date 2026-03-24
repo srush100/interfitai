@@ -1732,54 +1732,46 @@ Return ONLY valid JSON:
         raise HTTPException(status_code=500, detail="Failed to generate workout. Please try again.")
 
     # Helper function to parse sets value (handles "6-8 rounds" -> 6)
-        def parse_sets(sets_value):
-            """Convert sets value to integer, handling various formats"""
-            if isinstance(sets_value, int):
-                return sets_value
-            if isinstance(sets_value, str):
-                # Handle formats like "6-8 rounds", "4-5", "3 sets", etc.
-                import re
-                # Extract first number from the string
-                numbers = re.findall(r'\d+', sets_value)
-                if numbers:
-                    return int(numbers[0])
-            return 3  # Default fallback
-        
-        # Add GIF URLs to exercises - fetch from ExerciseDB API
-        processed_days = []
-        for day in workout_data.get("workout_days", []):
-            exercises_with_gifs = []
-            for ex in day.get("exercises", []):
-                ex_dict = dict(ex)
-                # Parse sets to ensure it's an integer
-                ex_dict["sets"] = parse_sets(ex_dict.get("sets", 3))
-                # Fetch animated GIF from ExerciseDB API
-                gif_url = await get_exercise_gif_from_api(ex.get("name", ""))
-                ex_dict["gif_url"] = gif_url
-                exercises_with_gifs.append(ex_dict)
-            day["exercises"] = exercises_with_gifs
-            processed_days.append(day)
-        
-        session_duration = request.duration_minutes if hasattr(request, 'duration_minutes') else 60
-        
-        program = WorkoutProgram(
-            user_id=request.user_id,
-            name=workout_data.get("name", f"{request.goal.replace('_', ' ').title()} Program"),
-            goal=request.goal,
-            focus_areas=request.focus_areas,
-            equipment=request.equipment,
-            injuries=request.injuries,
-            days_per_week=request.days_per_week,
-            session_duration_minutes=session_duration,
-            workout_days=[WorkoutDay(**day) for day in processed_days]
-        )
-        
-        await db.workouts.insert_one(program.model_dump())
-        return program
-        
-    except Exception as e:
-        logger.error(f"Workout generation error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate workout: {str(e)}")
+    def parse_sets(sets_value):
+        """Convert sets value to integer, handling various formats"""
+        if isinstance(sets_value, int):
+            return sets_value
+        if isinstance(sets_value, str):
+            import re
+            numbers = re.findall(r'\d+', sets_value)
+            if numbers:
+                return int(numbers[0])
+        return 3  # Default fallback
+    
+    # Add GIF URLs to exercises - fetch from ExerciseDB API
+    processed_days = []
+    for day in workout_data.get("workout_days", []):
+        exercises_with_gifs = []
+        for ex in day.get("exercises", []):
+            ex_dict = dict(ex)
+            ex_dict["sets"] = parse_sets(ex_dict.get("sets", 3))
+            gif_url = await get_exercise_gif_from_api(ex.get("name", ""))
+            ex_dict["gif_url"] = gif_url
+            exercises_with_gifs.append(ex_dict)
+        day["exercises"] = exercises_with_gifs
+        processed_days.append(day)
+    
+    session_duration = request.duration_minutes if hasattr(request, 'duration_minutes') else 60
+    
+    program = WorkoutProgram(
+        user_id=request.user_id,
+        name=workout_data.get("name", f"{request.goal.replace('_', ' ').title()} Program"),
+        goal=request.goal,
+        focus_areas=request.focus_areas,
+        equipment=request.equipment,
+        injuries=request.injuries,
+        days_per_week=request.days_per_week,
+        session_duration_minutes=session_duration,
+        workout_days=[WorkoutDay(**day) for day in processed_days]
+    )
+    
+    await db.workouts.insert_one(program.model_dump())
+    return program
 
 @api_router.get("/workouts/{user_id}", response_model=List[WorkoutProgram])
 async def get_user_workouts(user_id: str):
