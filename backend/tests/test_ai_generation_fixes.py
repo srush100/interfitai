@@ -5,6 +5,7 @@ Tests for AI Generation Bug Fixes - Iteration Review:
 3. POST /api/mealplans/generate vegan - protein BETWEEN 100-220g (NOT inflated >250g)
 4. POST /api/mealplans/generate + alternate meal with foods_to_avoid='chicken' - NO chicken in alternate
 5. POST /api/mealplans/generate keto - Day 1 carbs < 50g
+6. POST /api/mealplans/generate balanced + foods_to_avoid='chicken' - NO meal NAMES with 'chicken' (template filter)
 """
 import pytest
 import requests
@@ -348,3 +349,54 @@ class TestKetoMealPlanCarbs:
         assert total_calories > 0, "Keto plan has zero calories"
 
         print(f"✅ Keto compliance PASSED: {total_carbs}g carbs (< 50g limit), {total_fats}g fats")
+
+
+# ============================================================
+# TEST 6: Template-Based Meal Name Filtering (foods_to_avoid)
+# ============================================================
+class TestTemplateMealNameFiltering:
+    """When foods_to_avoid='chicken', no template meal NAME should contain 'chicken'"""
+
+    def test_template_no_chicken_in_meal_names(self, api_client):
+        """Template-based balanced plan with foods_to_avoid='chicken' must not have meal names containing 'chicken'"""
+        payload = {
+            "user_id": TEST_USER_ID,
+            "food_preferences": "balanced",
+            "foods_to_avoid": "chicken",
+            "supplements": [],
+            "allergies": []
+        }
+        print(f"\n[TemplateFilter] POST /api/mealplans/generate - balanced, foods_to_avoid='chicken'")
+        start = time.time()
+        response = api_client.post(f"{BASE_URL}/api/mealplans/generate", json=payload, timeout=180)
+        elapsed = time.time() - start
+        print(f"[TemplateFilter] Response time: {elapsed:.2f}s | Status: {response.status_code}")
+
+        assert response.status_code == 200, (
+            f"Expected 200 got {response.status_code}: {response.text[:300]}"
+        )
+        data = response.json()
+        assert "meal_days" in data, "Missing 'meal_days' in response"
+        assert len(data["meal_days"]) > 0, "No meal days in response"
+
+        # Check all meal names across all days for chicken
+        all_meal_names = []
+        chicken_found = []
+        for day in data["meal_days"]:
+            for meal in day.get("meals", []):
+                name = meal.get("name", "")
+                all_meal_names.append(name)
+                if "chicken" in name.lower():
+                    chicken_found.append(name)
+
+        print(f"[TemplateFilter] All meal names across {len(data['meal_days'])} days:")
+        for name in all_meal_names:
+            marker = "❌ CHICKEN" if "chicken" in name.lower() else "✅"
+            print(f"  {marker} {name}")
+
+        assert len(chicken_found) == 0, (
+            f"❌ TEMPLATE FILTER BUG: Meal names still contain 'chicken' despite foods_to_avoid='chicken'. "
+            f"Found in: {chicken_found}"
+        )
+
+        print(f"✅ Template meal name filtering PASSED: No chicken in any of {len(all_meal_names)} meal names")

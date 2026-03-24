@@ -831,6 +831,18 @@ metadata:
         agent: "main"
         comment: "NEW SESSION: Manual curl test confirms /api/mealplan/alternate correctly excludes chicken when foods_to_avoid=chicken is in the meal plan. Generated 'Scrambled Eggs & Toast with Berry Yogurt' - no chicken found. PROTEIN_GROUPS filtering is working. Needs formal testing to confirm all cases pass."
 
+  - task: "Template-Based Meal Name Filtering (foods_to_avoid)"
+    implemented: true
+    working: "NA"
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added filter in generate_meal_plan_template() at ~line 4002-4018: when foods_to_avoid='chicken' is passed, any template meal whose NAME contains 'chicken' (e.g. 'Grilled Chicken & Rice Bowl') is renamed to 'Lunch - Chef's Choice'. Ingredients containing banned items are also filtered out. Test 6 in test_ai_generation_fixes.py validates this - generates balanced plan with foods_to_avoid='chicken' and asserts no meal names contain 'chicken'."
+
   - task: "Workout Generation SyntaxError Fix"
     implemented: true
     working: true
