@@ -1575,7 +1575,7 @@ This is NOT just weights with occasional cardio. Create a TRUE hybrid program:
 - Workout Split: {split_desc.get(preferred_split, 'AI optimized')}
 - Focus Areas: {', '.join(request.focus_areas) if request.focus_areas else 'Full body'}
 - Available Equipment: {', '.join(request.equipment)}
-- Injuries/Limitations: {request.injuries or 'None'}
+- Injuries/Limitations: {', '.join(request.injuries) if request.injuries else 'None'}
 - Session Duration: {session_duration} minutes per workout
 
 {level_info['exercise_mods']}
@@ -1672,7 +1672,7 @@ FINAL CHECK - Before outputting, verify:
                 logger.info("Workout gen: retrying with simplified prompt")
                 current_prompt = f"""Create a {request.days_per_week}-day {request.goal.replace('_', ' ')} workout for {fitness_level} level.
 Equipment: {', '.join(request.equipment)}. Focus: {', '.join(request.focus_areas) if request.focus_areas else 'full body'}.
-Style: {training_style}. Session: {session_duration} min. Injuries: {request.injuries or 'None'}.
+Style: {training_style}. Session: {session_duration} min. Injuries: {', '.join(request.injuries) if request.injuries else 'None'}.
 
 RULES: Exactly 5 exercises per day. Instructions max 20 words each.
 
