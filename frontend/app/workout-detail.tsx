@@ -500,7 +500,7 @@ export default function WorkoutDetail() {
           </View>
 
           <View style={styles.tagContainer}>
-            {workout.focus_areas.map((area, idx) => (
+            {(workout.focus_areas || []).map((area, idx) => (
               <View key={idx} style={styles.tag}>
                 <Text style={styles.tagText}>{area}</Text>
               </View>
@@ -615,11 +615,15 @@ export default function WorkoutDetail() {
                     <View style={styles.detailRow}>
                       <View style={styles.detailItem}>
                         <Text style={styles.detailLabel}>Equipment</Text>
-                        <Text style={styles.detailValue}>{exercise.equipment}</Text>
+                        <Text style={styles.detailValue}>{exercise.equipment || 'varies'}</Text>
                       </View>
                       <View style={styles.detailItem}>
                         <Text style={styles.detailLabel}>Muscles</Text>
-                        <Text style={styles.detailValue}>{exercise.muscle_groups.join(', ')}</Text>
+                        <Text style={styles.detailValue}>
+                          {Array.isArray(exercise.muscle_groups)
+                            ? exercise.muscle_groups.join(', ')
+                            : exercise.muscle_groups || 'various'}
+                        </Text>
                       </View>
                     </View>
 

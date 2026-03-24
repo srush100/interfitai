@@ -150,7 +150,9 @@ export default function WorkoutQuestionnaire() {
         training_style: formData.training_style,
         focus_areas: formData.focus_areas,
         equipment: formData.equipment,
-        injuries: formData.injuries || null,
+        injuries: formData.injuries
+          ? formData.injuries.split(',').map((s) => s.trim()).filter(Boolean)
+          : null,
         days_per_week: formData.days_per_week,
         duration_minutes: formData.duration_minutes,
         fitness_level: formData.fitness_level,
@@ -159,7 +161,11 @@ export default function WorkoutQuestionnaire() {
 
       router.replace(`/workout-detail?id=${response.data.id}`);
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to generate workout. Please try again.');
+      const detail = error.response?.data?.detail;
+      const message = Array.isArray(detail)
+        ? 'Please check your inputs and try again.'
+        : (typeof detail === 'string' ? detail : 'Failed to generate workout. Please try again.');
+      Alert.alert('Error', message);
     } finally {
       setLoading(false);
     }
