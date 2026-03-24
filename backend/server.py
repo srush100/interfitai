@@ -31,22 +31,22 @@ openai.api_key = os.environ.get('OPENAI_API_KEY', '')
 # Claude Opus 4.6 via Emergent LLM Key
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 
-async def call_claude_opus(
+async def call_claude_sonnet(
     system_message: str,
     user_message: str,
     temperature: float = 0.7,
-    max_tokens: int = 4000,
+    max_tokens: int = 2500,
     image_base64: str = None,
     image_base64_2: str = None
 ) -> str:
-    """Call Claude Opus 4.6 via emergentintegrations library"""
+    """Call Claude Sonnet 4.5 via emergentintegrations - for complex generation tasks"""
     chat = (
         LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=str(uuid.uuid4()),
             system_message=system_message,
         )
-        .with_model("anthropic", "claude-opus-4-6")
+        .with_model("anthropic", "claude-sonnet-4-5-20250929")
         .with_params(temperature=temperature, max_tokens=max_tokens, timeout=180)
     )
     file_contents = []
@@ -54,6 +54,39 @@ async def call_claude_opus(
         file_contents.append(ImageContent(image_base64))
     if image_base64_2:
         file_contents.append(ImageContent(image_base64_2))
+    msg = UserMessage(text=user_message, file_contents=file_contents if file_contents else None)
+    try:
+        return await chat.send_message(msg)
+    except Exception as e:
+        err = str(e)
+        if "budget" in err.lower() or "exceeded" in err.lower():
+            raise HTTPException(
+                status_code=402,
+                detail="AI service balance is low. Please go to Profile → Universal Key → Add Balance to top up."
+            )
+        raise
+
+
+async def call_claude_haiku(
+    system_message: str,
+    user_message: str,
+    temperature: float = 0.7,
+    max_tokens: int = 1000,
+    image_base64: str = None
+) -> str:
+    """Call Claude Haiku 4.5 via emergentintegrations - for fast, lightweight tasks"""
+    chat = (
+        LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=str(uuid.uuid4()),
+            system_message=system_message,
+        )
+        .with_model("anthropic", "claude-haiku-4-5-20251001")
+        .with_params(temperature=temperature, max_tokens=max_tokens, timeout=60)
+    )
+    file_contents = []
+    if image_base64:
+        file_contents.append(ImageContent(image_base64))
     msg = UserMessage(text=user_message, file_contents=file_contents if file_contents else None)
     try:
         return await chat.send_message(msg)
@@ -1601,11 +1634,11 @@ FINAL CHECK - Before outputting, verify:
 ✓ Each day has clear focus and appropriate exercise selection"""
 
     try:
-        content = await call_claude_opus(
+        content = await call_claude_sonnet(
             system_message="You are an expert personal trainer. Create workout programs in valid JSON format only.",
             user_message=prompt,
             temperature=0.7,
-            max_tokens=4000
+            max_tokens=2500
         )
         
         # Clean the response - remove markdown code blocks if present
