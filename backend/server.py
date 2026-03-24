@@ -3986,11 +3986,36 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
     # Determine if this is a plant-based diet (accurate protein matters, don't inflate)
     is_plant_based = eating_style in ['vegan', 'vegetarian']
     
+    # Build banned foods list for template filtering
+    template_banned_foods = []
+    if request.foods_to_avoid and request.foods_to_avoid.strip():
+        template_banned_foods = [f.strip().lower() for f in request.foods_to_avoid.split(',') if f.strip()]
+    if request.allergies:
+        template_banned_foods.extend([a.lower() for a in request.allergies])
+    
     # Generate all 3 days
     meal_days = []
     for day_num, day_key in enumerate(["day1", "day2", "day3"], 1):
         day_template = MEAL_TEMPLATES[day_key]
         scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb, is_plant_based)
+        
+        # Filter banned foods from template-based meals (rename meals + remove ingredients)
+        if template_banned_foods:
+            for meal in scaled_meals:
+                meal_name_lower = meal.get("name", "").lower()
+                # Rename meal if its name contains a banned food
+                for banned in template_banned_foods:
+                    if banned in meal_name_lower:
+                        old_name = meal["name"]
+                        meal_type = meal.get("meal_type", "meal")
+                        meal["name"] = f"{meal_type.capitalize()} - Chef's Choice"
+                        logger.info(f"Template meal renamed: '{old_name}' -> '{meal['name']}' (banned: {banned})")
+                        break
+                # Filter banned ingredients
+                meal["ingredients"] = [
+                    ing for ing in meal.get("ingredients", [])
+                    if not any(banned in ing.lower() for banned in template_banned_foods)
+                ]
         
         # Update meal IDs for the day
         for i, meal in enumerate(scaled_meals):
