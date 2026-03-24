@@ -1633,26 +1633,105 @@ FINAL CHECK - Before outputting, verify:
 ✓ Equipment variety is used (machines + free weights for full gym)
 ✓ Each day has clear focus and appropriate exercise selection"""
 
-    try:
-        content = await call_claude_sonnet(
-            system_message="You are an expert personal trainer. Create workout programs in valid JSON format only.",
-            user_message=prompt,
-            temperature=0.7,
-            max_tokens=5000
-        )
-        
-        # Clean the response - remove markdown code blocks if present
-        logger.info(f"Workout raw response type: {type(content)}, len: {len(content) if content else 0}, first 100: {repr(content[:100]) if content else 'EMPTY'}")
-        content = content.strip() if content else ""
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
+    def repair_truncated_json(content: str) -> str:
+        """Attempt to repair truncated JSON by closing open structures"""
         content = content.strip()
-        
-        workout_data = json.loads(content)
-        
-        # Helper function to parse sets value (handles "6-8 rounds" -> 6)
+        # Remove trailing incomplete value (find last clean terminator)
+        for i in range(len(content) - 1, -1, -1):
+            c = content[i]
+            if c in ('}', ']', '"') or (c.isdigit()) or content[i:i+4] in ('true', 'fals', 'null'):
+                content = content[:i+1]
+                break
+        # Remove trailing comma if present
+        while content and content[-1] in ',':
+            content = content[:-1].rstrip()
+        # Close open brackets and braces
+        open_braces = content.count('{') - content.count('}')
+        open_brackets = content.count('[') - content.count(']')
+        content += ']' * max(0, open_brackets) + '}' * max(0, open_braces)
+        return content
+
+    def clean_json_content(raw: str) -> str:
+        """Clean and extract JSON from raw LLM response"""
+        raw = raw.strip() if raw else ""
+        if raw.startswith("```"):
+            parts = raw.split("```")
+            raw = parts[1] if len(parts) > 1 else raw
+            if raw.startswith("json"):
+                raw = raw[4:]
+        return raw.strip()
+
+    workout_data = None
+    last_error = None
+
+    for attempt in range(2):
+        try:
+            current_prompt = prompt
+            if attempt == 1:
+                # Simplified fallback prompt - fewer exercises, shorter instructions
+                logger.info("Workout gen: retrying with simplified prompt")
+                current_prompt = f"""Create a {request.days_per_week}-day {request.goal.replace('_', ' ')} workout for {fitness_level} level.
+Equipment: {', '.join(request.equipment)}. Focus: {', '.join(request.focus_areas) if request.focus_areas else 'full body'}.
+Style: {training_style}. Session: {session_duration} min. Injuries: {request.injuries or 'None'}.
+
+RULES: Exactly 5 exercises per day. Instructions max 20 words each.
+
+Return ONLY valid JSON:
+{{
+  "name": "Program Name",
+  "workout_days": [
+    {{
+      "day": "Day 1 - Focus",
+      "focus": "Brief focus",
+      "duration_minutes": {session_duration},
+      "notes": "Brief tip",
+      "exercises": [
+        {{"name": "Exercise", "sets": 3, "reps": "10-12", "rest_seconds": {goal_rest.split('-')[0]}, "instructions": "Form cue here.", "muscle_groups": ["primary"], "equipment": "equipment"}}
+      ]
+    }}
+  ]
+}}"""
+
+            content = await call_claude_sonnet(
+                system_message="You are an expert personal trainer. Return ONLY valid JSON. No markdown. No extra text. Max 6 exercises per day.",
+                user_message=current_prompt,
+                temperature=0.6 if attempt == 0 else 0.3,
+                max_tokens=5000
+            )
+
+            content = clean_json_content(content)
+            logger.info(f"Workout attempt {attempt+1} response len: {len(content) if content else 0}")
+
+            try:
+                workout_data = json.loads(content)
+                break
+            except json.JSONDecodeError as je:
+                logger.warning(f"Workout attempt {attempt+1} JSONDecodeError at char {je.pos}. Trying repair...")
+                try:
+                    repaired = repair_truncated_json(content)
+                    workout_data = json.loads(repaired)
+                    logger.info(f"Workout attempt {attempt+1}: JSON repair succeeded")
+                    break
+                except Exception as repair_err:
+                    last_error = je
+                    logger.error(f"Workout attempt {attempt+1}: repair failed: {repair_err}")
+                    if attempt < 1:
+                        continue
+                    raise HTTPException(status_code=500, detail="Failed to generate workout. Please try again.")
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            last_error = e
+            logger.error(f"Workout generation attempt {attempt+1} error: {e}")
+            if attempt < 1:
+                continue
+            raise HTTPException(status_code=500, detail=f"Failed to generate workout: {str(e)}")
+
+    if not workout_data:
+        raise HTTPException(status_code=500, detail="Failed to generate workout. Please try again.")
+
+    # Helper function to parse sets value (handles "6-8 rounds" -> 6)
         def parse_sets(sets_value):
             """Convert sets value to integer, handling various formats"""
             if isinstance(sets_value, int):

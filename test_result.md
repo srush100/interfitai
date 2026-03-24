@@ -791,6 +791,9 @@ metadata:
       - working: "NA"
         agent: "main"
         comment: "Implemented hybrid AI model strategy. call_claude_sonnet() uses claude-sonnet-4-5-20250929 for complex tasks (workout gen, meal plan with AI, chat, body analysis). call_claude_haiku() uses claude-haiku-4-5-20251001 for fast tasks (food analysis). Budget error handling added. Backend restarted. Needs testing to confirm 500 error on workout generation is resolved."
+      - working: "NA"
+        agent: "main"
+        comment: "NEW SESSION: Manual curl test confirms workout generation now returns 200 OK with full workout data (Intermediate Hypertrophy Builder). Vegan meal plan also returns 200 OK. Backend currently running. Need formal test coverage for all AI endpoints."
 
   - task: "Vegan Meal Plan Protein Accuracy"
     implemented: true
@@ -806,6 +809,9 @@ metadata:
       - working: "NA"
         agent: "main"
         comment: "Fix applied: scale_day_to_targets() was missing is_plant_based_diet parameter. Added param, computed is_plant_based = eating_style in ['vegan','vegetarian'], and passed to function. Vegan/vegetarian plans now bypass artificial macro inflation. Also updated VEGAN_TEMPLATES with more protein-dense recipes. Previous testing showed ✅ PASS but that was with older model. Re-testing needed with new hybrid model."
+      - working: "NA"
+        agent: "main"
+        comment: "NEW SESSION: Manual test shows vegan plan generates with realistic protein values. Day 1 total: 184g P vs 172g target (7% deviation). Individual meal values look correct: Tofu Scramble 43g P (255g tofu + 102g edamame + 20g nutritional yeast). scale_day_to_targets() correctly bypasses macro inflation for is_plant_based=True. Needs formal testing for all 3 days."
 
   - task: "Alternate Meal foods_to_avoid Compliance"
     implemented: true
@@ -821,12 +827,16 @@ metadata:
       - working: true
         agent: "testing"
         comment: "Previous test with PROTEIN_GROUPS filtering showed 100% success rate. Re-testing needed to confirm still works with new hybrid model."
+      - working: "NA"
+        agent: "main"
+        comment: "NEW SESSION: Manual curl test confirms /api/mealplan/alternate correctly excludes chicken when foods_to_avoid=chicken is in the meal plan. Generated 'Scrambled Eggs & Toast with Berry Yogurt' - no chicken found. PROTEIN_GROUPS filtering is working. Needs formal testing to confirm all cases pass."
 
 test_plan:
   current_focus:
     - "Hybrid AI Model - Claude Sonnet 4.5 + Haiku 4.5"
     - "Vegan Meal Plan Protein Accuracy"
     - "Alternate Meal foods_to_avoid Compliance"
+    - "Comprehensive All Diet Types Accuracy"
   stuck_tasks: 
     - "Food Image Analysis"
   test_all: false
