@@ -2556,7 +2556,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
             "breakfast": {
                 "name": "High Protein Tofu Scramble",
                 "ingredients": {
-                    "extra firm tofu": (250, 360, 43, 8, 20),  # 17g protein per 100g
+                    "extra firm tofu": (250, 213, 22, 5, 11),  # 8.8g protein per 100g (accurate USDA data)
                     "edamame": (100, 121, 11, 9, 5),  # 11g protein per 100g
                     "spinach": (50, 12, 1, 2, 0),
                     "nutritional yeast": (20, 60, 8, 5, 0),  # 8g protein per 20g
