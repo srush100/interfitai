@@ -7,7 +7,7 @@ const BASE_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL ||
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api`,
-  timeout: 60000,
+  timeout: 150000,
   headers: {
     'Content-Type': 'application/json',
   },

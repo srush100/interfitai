@@ -1212,7 +1212,7 @@ async def generate_workout(request: WorkoutGenerateRequest):
     training_style = getattr(request, 'training_style', 'weights')
     preferred_split = getattr(request, 'preferred_split', 'ai_choose')
     
-    # Determine rest times based on goal (scientifically optimal)
+    # Determine rest times based on goal
     rest_times_by_goal = {
         "strength": "180-300",
         "build_muscle": "90-120",
@@ -1222,425 +1222,71 @@ async def generate_workout(request: WorkoutGenerateRequest):
     }
     goal_rest = rest_times_by_goal.get(request.goal, "60-90")
     
-    # Training style descriptions with specific guidelines
-    style_desc = {
-        "weights": "Traditional weight training with barbells, dumbbells, and machines. Include a good MIX of free weights AND machines for balanced development.",
-        "calisthenics": "Bodyweight exercises - pull-ups, push-ups, dips, pistol squats, muscle-ups, bodyweight rows",
-        "hybrid": "TRUE HYBRID training combining weighted strength exercises WITH cardiovascular/endurance work like HIIT circuits, rowing intervals, bike sprints, jump rope, or battle ropes",
-        "functional": "Functional movements, kettlebells, medicine balls, athletic training, agility work"
+    # Compact goal/level/style rules for concise prompt
+    goal_rules = {
+        "build_muscle": "Hypertrophy focus: 8-12 reps, 90-120s rest. Pure resistance training, NO cardio days.",
+        "strength": "Heavy compounds (squat/bench/deadlift/OHP/row): 3-6 reps, 3-5 min rest. No HIIT or cardio.",
+        "lose_fat": "Circuit/superset format: 12-15 reps, 30-45s rest. Add 8-10 min cardio finisher each session.",
+        "body_recomp": "8-12 reps, 60-90s rest. Compound focus. Light cardio finisher 1-2 days/week only.",
+        "general_fitness": "Balanced variety: strength + endurance. 60-90s rest.",
     }
-    
-    # Workout split descriptions
-    split_desc = {
-        "ai_choose": f"Choose the optimal split for {request.goal} goal with {request.days_per_week} days",
-        "full_body": "Full body workout each session, training all major muscle groups",
-        "upper_lower": "Alternate between upper body and lower body days",
-        "push_pull_legs": "Push (chest/shoulders/triceps), Pull (back/biceps), Legs rotation",
-        "bro_split": "One major muscle group per day (chest day, back day, leg day, etc.)"
+    level_rules = {
+        "beginner": "2-3 sets, 12-15 reps. 60% machines, 30% dumbbells, 10% light barbell. No advanced exercises.",
+        "intermediate": "3-4 sets, 8-12 reps. Mix free weights (55%) and machines (45%). Standard compound lifts OK.",
+        "advanced": "4-5 sets, 6-10 reps. 70% free weights, 30% machines. Supersets and drop sets welcome.",
     }
-    
-    # ============= FITNESS LEVEL SPECIFIC CARDIO INTENSITY =============
-    cardio_intensity_by_level = {
-        "beginner": {
-            "assault_bike": "20 sec moderate effort / 40 sec easy pedal, 4-6 rounds",
-            "rowing": "250m at steady pace, rest 90 sec, repeat 3-4 times",
-            "battle_ropes": "20 sec work / 40 sec rest, 4-5 rounds",
-            "jump_rope": "30 sec work / 30 sec rest, 4-6 rounds (can step if needed)",
-            "treadmill": "30 sec jog / 60 sec walk, 5-6 rounds",
-            "burpees": "5-8 reps with rest as needed",
-            "box_jumps": "8-10 step-ups onto low box (no jumping required)",
-            "description": "Focus on building endurance base. Moderate intensity, longer rest periods."
-        },
-        "intermediate": {
-            "assault_bike": "30 sec hard effort / 30 sec easy, 6-8 rounds",
-            "rowing": "400m at challenging pace, rest 60 sec, repeat 4-5 times",
-            "battle_ropes": "30 sec work / 30 sec rest, 6-8 rounds",
-            "jump_rope": "45 sec work / 15 sec rest, 6-8 rounds",
-            "treadmill": "30 sec sprint / 45 sec walk, 8 rounds",
-            "burpees": "10-12 reps per set",
-            "box_jumps": "10-12 reps onto medium box",
-            "description": "Push cardio conditioning with controlled intensity. Challenging but sustainable."
-        },
-        "advanced": {
-            "assault_bike": "30 sec all-out / 30 sec easy, 8-10 rounds",
-            "rowing": "500m sprint, rest 60 sec, repeat 5-6 times",
-            "battle_ropes": "40 sec work / 20 sec rest, 8-10 rounds",
-            "jump_rope": "60 sec work / 15 sec rest, 8-10 rounds with double-unders",
-            "treadmill": "30 sec sprint / 30 sec walk, 10-12 rounds",
-            "burpees": "15+ reps per set, add chest-to-floor",
-            "box_jumps": "15-20 reps onto high box",
-            "description": "High intensity cardio. Maximum effort intervals for elite conditioning."
-        }
+    style_rules = {
+        "weights": "Traditional weight training with barbells, dumbbells, and machines.",
+        "calisthenics": "BODYWEIGHT ONLY. Push-ups, pull-ups, dips, pistol squats. NO barbells, dumbbells, or machines.",
+        "hybrid": "50% strength days + cardio finisher, 30% conditioning/HIIT, 20% combo. Include rowing/assault bike/battle ropes.",
+        "functional": "Functional movements, kettlebells, medicine balls, athletic training.",
     }
-    cardio_intensity = cardio_intensity_by_level.get(fitness_level, cardio_intensity_by_level["intermediate"])
+    equip_note = ""
+    if "full_gym" in request.equipment:
+        equip_note = "MUST use both free weights AND machines (lat pulldown, cable, leg press, chest press machine, leg curl)."
+    elif training_style == "calisthenics":
+        equip_note = "Bodyweight only."
+    else:
+        equip_note = f"Use available: {', '.join(request.equipment)}."
+    split_note = {
+        "ai_choose": f"Best split for {request.goal.replace('_', ' ')} with {request.days_per_week} days",
+        "full_body": "Full body each session",
+        "upper_lower": "Alternate upper/lower days",
+        "push_pull_legs": "Push/Pull/Legs rotation",
+        "bro_split": "One muscle group per day",
+    }.get(preferred_split, preferred_split)
+    injuries_note = ', '.join(request.injuries) if request.injuries else 'none'
     
-    # ============= FITNESS LEVEL SPECIFIC EXERCISE MODIFICATIONS =============
-    fitness_params = {
-        "beginner": {
-            "sets": "2-3", 
-            "reps": "12-15",
-            "complexity": "basic movements with machine support where needed",
-            "exercise_mods": f"""
-CRITICAL BEGINNER EXERCISE RULES (DO NOT IGNORE):
-1. SUBSTITUTE ADVANCED EXERCISES:
-   - Use Assisted Pull-Up Machine or Lat Pulldown (NOT regular Pull-Ups)
-   - Use Assisted Dip Machine or Machine Chest Press (NOT Dips)
-   - Use Leg Press or Goblet Squat (NOT Barbell Back Squat initially)
-   - Use Machine Chest Press before Barbell Bench Press
-   - Use Dumbbell Romanian Deadlift (light weight) before Conventional Deadlift
-   - Use Seated Cable Row before Bent Over Barbell Rows
+    # ============= BUILD CONCISE PROMPT =============
+    prompt = f"""Create a {request.days_per_week}-day {request.goal.replace('_', ' ')} workout for {fitness_level} level.
+Equipment: {', '.join(request.equipment)}. Focus: {', '.join(request.focus_areas) if request.focus_areas else 'full body'}.
+Style: {training_style}. Session: {session_duration}min. Injuries: {injuries_note}. Split: {split_note}.
 
-2. EXERCISE SELECTION PRIORITY:
-   - 60% Machine exercises for safety and form learning
-   - 30% Dumbbell exercises for stabilization
-   - 10% Barbell only for simple movements (like deadlifts with light weight)
+KEY RULES:
+- Goal: {goal_rules.get(request.goal, 'Balanced training, 60-90s rest.')}
+- Level: {level_rules.get(fitness_level, level_rules['intermediate'])}
+- Style: {style_rules.get(training_style, style_rules['weights'])}
+- Equipment: {equip_note}
+- Avoid exercises stressing: {injuries_note}
+- Exactly 5 exercises per day. Instructions max 25 words each.
 
-3. REP RANGES:
-   - 12-15 reps per set for motor learning and joint conditioning
-   - Lower weights, focus on controlled tempo
-
-4. CARDIO INTENSITY (CRITICAL - DO NOT GIVE ADVANCED CARDIO):
-   - Assault Bike: {cardio_intensity['assault_bike']}
-   - Rowing: {cardio_intensity['rowing']}
-   - Battle Ropes: {cardio_intensity['battle_ropes']}
-   - Jump Rope: {cardio_intensity['jump_rope']}
-   - Treadmill Sprints: {cardio_intensity['treadmill']}
-   - Burpees: {cardio_intensity['burpees']}
-   - Box Jumps: {cardio_intensity['box_jumps']}
-   - {cardio_intensity['description']}"""
-        },
-        "intermediate": {
-            "sets": "3-4", 
-            "reps": "8-12",
-            "complexity": "mix of compound and isolation exercises",
-            "exercise_mods": f"""
-INTERMEDIATE EXERCISE GUIDELINES:
-1. EXERCISE SELECTION:
-   - Can use standard Pull-Ups, Dips, Barbell movements
-   - Mix of free weights (55%) and machines (45%) for variety
-   - Include both compound and isolation exercises
-
-2. REP RANGES:
-   - 8-12 reps for hypertrophy focused exercises
-   - 6-8 reps for strength focused compound movements
-
-3. CARDIO INTENSITY (CHALLENGING BUT SUSTAINABLE):
-   - Assault Bike: {cardio_intensity['assault_bike']}
-   - Rowing: {cardio_intensity['rowing']}
-   - Battle Ropes: {cardio_intensity['battle_ropes']}
-   - Jump Rope: {cardio_intensity['jump_rope']}
-   - Treadmill Sprints: {cardio_intensity['treadmill']}
-   - Burpees: {cardio_intensity['burpees']}
-   - Box Jumps: {cardio_intensity['box_jumps']}
-   - {cardio_intensity['description']}"""
-        },
-        "advanced": {
-            "sets": "4-5", 
-            "reps": "6-10",
-            "complexity": "advanced techniques, supersets, drop sets",
-            "exercise_mods": f"""
-ADVANCED EXERCISE GUIDELINES:
-1. EXERCISE SELECTION:
-   - Weighted Pull-Ups, Weighted Dips, Olympic lift variations
-   - Primarily free weights (70%) with machines for isolation (30%)
-   - Include advanced techniques: supersets, drop sets, pause reps
-
-2. REP RANGES:
-   - 6-8 reps for strength compounds
-   - 8-12 reps for hypertrophy isolation
-   - Low reps (3-5) for max strength work
-
-3. CARDIO INTENSITY (HIGH INTENSITY):
-   - Assault Bike: {cardio_intensity['assault_bike']}
-   - Rowing: {cardio_intensity['rowing']}
-   - Battle Ropes: {cardio_intensity['battle_ropes']}
-   - Jump Rope: {cardio_intensity['jump_rope']}
-   - Treadmill Sprints: {cardio_intensity['treadmill']}
-   - Burpees: {cardio_intensity['burpees']}
-   - Box Jumps: {cardio_intensity['box_jumps']}
-   - {cardio_intensity['description']}"""
-        }
-    }
-    level_info = fitness_params.get(fitness_level, fitness_params["intermediate"])
-    
-    # ============= GOAL-SPECIFIC PROGRAMMING =============
-    goal_specific_guidance = ""
-    
-    if request.goal == "lose_fat":
-        goal_specific_guidance = f"""
-⚠️ FAT LOSS SPECIFIC PROGRAMMING (CRITICAL):
-Even when user selects "weights" training style, fat loss programs should include metabolic elements:
-
-1. RESISTANCE TRAINING STRUCTURE:
-   - Circuit-style or superset format where possible to keep heart rate elevated
-   - Shorter rest periods (30-45 seconds) between sets
-   - Higher rep ranges (12-15) with controlled tempo
-   - Compound movements prioritized for calorie burn
-
-2. ADD CARDIO FINISHERS TO WEIGHT DAYS:
-   End each weights session with a 8-12 minute cardio finisher appropriate to {fitness_level.upper()} level:
-   - Assault Bike: {cardio_intensity['assault_bike']}
-   - Rowing: {cardio_intensity['rowing']}
-   - Or a bodyweight circuit: {cardio_intensity['burpees']} burpees + {cardio_intensity['box_jumps'].split(' ')[0]} box jumps
-
-3. METABOLIC CONDITIONING:
-   - Include 1-2 dedicated conditioning/HIIT days per week
-   - Keep heart rate elevated throughout workout
-   - Focus on movements that burn maximum calories
-
-4. EXERCISE FORMAT FOR FAT LOSS:
-   - Consider pairing exercises (supersets): Upper + Lower or Push + Pull
-   - Example: Bench Press immediately into Bent Over Row (no rest between)
-   - This keeps metabolic demand high"""
-    
-    elif request.goal == "build_muscle":
-        goal_specific_guidance = """
-💪 MUSCLE BUILDING (HYPERTROPHY) SPECIFIC PROGRAMMING - NO CARDIO PRIORITY:
-
-⚠️ IMPORTANT: This is a MUSCLE BUILDING program. DO NOT include:
-- Dedicated conditioning/HIIT days
-- Intense cardio intervals
-- Circuit training format
-- Fat loss metabolic work
-
-FOCUS EXCLUSIVELY ON:
-1. RESISTANCE TRAINING VOLUME:
-   - 10-20 sets per muscle group per week
-   - Rep ranges: 8-12 for hypertrophy (primary), 6-8 for strength phases
-   - Rest 90-120 seconds for compounds, 60-90 seconds for isolation
-   - Progressive overload is KEY - track and increase weights
-
-2. PROGRAM STRUCTURE:
-   - ALL days should be dedicated resistance training
-   - Split training to hit each muscle 2x per week
-   - Focus on compound movements + targeted isolation work
-   
-3. EXERCISE SELECTION:
-   - Heavy compounds: Bench Press, Squat, Deadlift, Rows, Overhead Press
-   - Isolation for detail: Curls, Tricep work, Lateral Raises, Leg Curls
-   - Time under tension: 3-second negatives on key exercises
-
-4. RECOVERY FOCUS:
-   - Adequate rest between sets for muscle recovery
-   - DO NOT rush between exercises
-   - Quality > Metabolic stress for muscle building"""
-    
-    elif request.goal == "strength":
-        goal_specific_guidance = """
-🏋️ STRENGTH/POWER SPECIFIC PROGRAMMING - NO CONDITIONING DAYS:
-
-⚠️ IMPORTANT: This is a PURE STRENGTH program. DO NOT include:
-- Full conditioning/HIIT days
-- Cardio intervals or finishers
-- Circuit training format
-- High rep metabolic work
-
-FOCUS EXCLUSIVELY ON:
-1. HEAVY COMPOUND LIFTS (USE THESE EXACT NAMES):
-   - Barbell Squat (or Barbell Back Squat)
-   - Deadlift (Conventional or Sumo)
-   - Barbell Bench Press
-   - Barbell Military Press (standing overhead press - THE fundamental shoulder exercise)
-   - Barbell Row (Bent Over Row)
-   - These are the foundation - program around them
-   - Low rep ranges: 3-6 reps on main lifts
-   - Heavy weights with FULL recovery between sets
-   
-   NOTE: For shoulders, use "Barbell Military Press" or "Overhead Press" - NOT dumbbell shoulder press!
-
-2. REST PERIODS (CRITICAL):
-   - 3-5 MINUTES between heavy compound sets
-   - This is NOT optional - ATP must fully replenish
-   - Do NOT rush - strength requires full recovery
-   
-3. PROGRAM STRUCTURE:
-   - ALL days should focus on strength development
-   - No conditioning days, no HIIT, no cardio intervals
-   - Accessory work supports main lifts (triceps for bench, hamstrings for deadlift)
-   
-4. PERIODIZATION:
-   - Week 1: 5x5 at 80% effort
-   - Week 2: 4x4 at 85% effort
-   - Week 3: 3x3 at 90% effort
-   - Week 4: Deload - lighter weights
-   
-5. ACCESSORY WORK:
-   - Support main lifts: Face pulls, Romanian Deadlifts, Close Grip Bench
-   - 3-4 sets of 6-10 reps after main lifts"""
-    
-    elif request.goal == "body_recomp":
-        goal_specific_guidance = f"""
-🔄 BODY RECOMPOSITION SPECIFIC PROGRAMMING:
-
-BALANCED APPROACH - Build muscle while losing fat:
-1. RESISTANCE TRAINING PRIMARY:
-   - Maintain/build muscle with compound movements
-   - 8-12 rep range for hypertrophy
-   - Progressive overload still important
-
-2. LIGHT METABOLIC WORK (NOT INTENSE HIIT):
-   - End 1-2 sessions per week with light cardio finisher (5-8 min)
-   - Walking incline, light cycling, steady state
-   - NOT intense sprints or circuits
-
-3. REST PERIODS:
-   - 60-90 seconds between sets
-   - Moderate pace to keep some metabolic demand"""
-
-    elif request.goal == "general_fitness":
-        goal_specific_guidance = f"""
-🎯 GENERAL FITNESS PROGRAMMING:
-
-WELL-ROUNDED APPROACH:
-1. Mix of strength, endurance, and flexibility
-2. Include variety in exercise selection
-3. Moderate intensity across all aspects
-4. 60-90 second rest periods
-5. Can include light cardio finishers if desired"""
-    
-    # ============= EQUIPMENT GUIDANCE =============
-    equipment_list = request.equipment
-    has_full_gym = 'full_gym' in equipment_list
-    has_machines = 'machines' in equipment_list or has_full_gym
-    
-    equipment_guidance = ""
-    # CALISTHENICS OVERRIDES EQUIPMENT - NO WEIGHTS
-    if training_style == "calisthenics":
-        equipment_guidance = """
-🏋️ CALISTHENICS TRAINING - BODYWEIGHT ONLY:
-
-⚠️ CRITICAL: User selected CALISTHENICS training style.
-DO NOT include ANY weighted exercises, even if they have access to a full gym.
-
-ONLY USE BODYWEIGHT EXERCISES:
-- Push-Ups (all variations: wide, diamond, decline, incline, archer)
-- Pull-Ups (all variations: wide grip, close grip, chin-ups, commando)
-- Dips (parallel bar dips, bench dips)
-- Squats (bodyweight squats, pistol squats, sissy squats, jump squats)
-- Lunges (walking, reverse, jumping)
-- Core: Planks, L-sits, Leg Raises, Hollow Body Holds
-- Rows: Inverted Rows, Australian Pull-Ups
-- Advanced: Muscle-Ups, Handstand Push-Ups, Front Lever progressions
-
-FOR BEGINNERS:
-- Assisted Pull-Up Machine is acceptable to build strength
-- Incline Push-Ups instead of full push-ups
-- Box Step-Ups instead of pistol squats
-
-DO NOT USE:
-- Barbells, Dumbbells, Cables, or Machines for main exercises
-- The user wants BODYWEIGHT training, respect this choice!"""
-    elif has_full_gym:
-        equipment_guidance = """
-🏋️ FULL GYM EQUIPMENT - USE VARIETY:
-- MUST include BOTH free weights AND machines in every program
-- Machines to include: Lat Pulldown, Cable Station, Leg Press, Chest Press Machine, Leg Curl, Leg Extension
-- Free weights: Barbells, Dumbbells, EZ Bar
-- Cable machines are excellent for constant tension exercises
-- DO NOT create a program that only uses dumbbells and barbells!"""
-    elif has_machines:
-        equipment_guidance = "Include machine exercises where available for proper muscle isolation and safety."
-    
-    # ============= HYBRID TRAINING SPECIFIC =============
-    hybrid_guidance = ""
-    if training_style == "hybrid":
-        hybrid_guidance = f"""
-🔥 TRUE HYBRID TRAINING - WEIGHTS + CARDIO/CONDITIONING:
-This is NOT just weights with occasional cardio. Create a TRUE hybrid program:
-
-1. PROGRAM STRUCTURE:
-   - 50% of days: Strength-focused with cardio finisher
-   - 30% of days: Full HIIT/circuit conditioning
-   - 20% of days: Combination (strength + extensive cardio blocks)
-
-2. CARDIO ELEMENTS (USE INTENSITIES APPROPRIATE FOR {fitness_level.upper()}):
-   - Assault Bike: {cardio_intensity['assault_bike']}
-   - Rowing Intervals: {cardio_intensity['rowing']}
-   - Battle Ropes: {cardio_intensity['battle_ropes']}
-   - Jump Rope: {cardio_intensity['jump_rope']}
-   - Treadmill Sprints: {cardio_intensity['treadmill']}
-   
-3. CIRCUIT FORMAT EXAMPLE for {fitness_level.upper()}:
-   Round 1-{3 if fitness_level == 'beginner' else 4 if fitness_level == 'intermediate' else 5}:
-   - Kettlebell Swings x {'10' if fitness_level == 'beginner' else '15' if fitness_level == 'intermediate' else '20'}
-   - Push-Ups x {'8' if fitness_level == 'beginner' else '12' if fitness_level == 'intermediate' else '15'}
-   - Goblet Squats x {'10' if fitness_level == 'beginner' else '12' if fitness_level == 'intermediate' else '15'}
-   - Battle Ropes x {'15 sec' if fitness_level == 'beginner' else '20 sec' if fitness_level == 'intermediate' else '30 sec'}
-   Rest {'90 sec' if fitness_level == 'beginner' else '60 sec' if fitness_level == 'intermediate' else '45 sec'} between rounds
-
-4. CLEAR FORMATTING FOR CARDIO EXERCISES:
-   Name: "Rowing Intervals" or "Assault Bike Sprints"
-   Sets: Number of rounds
-   Reps: Duration format (e.g., "250m" or "20 sec work / 40 sec rest")
-   Instructions: Clear explanation including work/rest protocol"""
-    
-    # ============= BUILD THE FINAL PROMPT =============
-    prompt = f"""Create an ELITE-LEVEL {request.days_per_week}-day per week workout program perfectly tailored to this user:
-
-📋 USER PROFILE:
-- Primary Goal: {request.goal.replace('_', ' ').upper()}
-- Training Style: {training_style.upper()} - {style_desc.get(training_style, 'Traditional weight training')}
-- Fitness Level: {fitness_level.upper()} ⚠️ (MUST match exercise difficulty to this level)
-- Workout Split: {split_desc.get(preferred_split, 'AI optimized')}
-- Focus Areas: {', '.join(request.focus_areas) if request.focus_areas else 'Full body'}
-- Available Equipment: {', '.join(request.equipment)}
-- Injuries/Limitations: {', '.join(request.injuries) if request.injuries else 'None'}
-- Session Duration: {session_duration} minutes per workout
-
-{level_info['exercise_mods']}
-
-{goal_specific_guidance}
-
-{equipment_guidance}
-
-{hybrid_guidance}
-
-📊 SCIENTIFIC PARAMETERS:
-- Sets per exercise: {level_info['sets']}
-- Rep ranges: {level_info['reps']}
-- Rest between sets: {goal_rest} seconds
-- Session duration: {session_duration} minutes
-
-🎯 CRITICAL REQUIREMENTS (READ CAREFULLY):
-1. EVERY exercise must be appropriate for {fitness_level.upper()} level
-2. If {fitness_level} is BEGINNER, NO advanced exercises (use Assisted Pull-Up, Leg Press, machines)
-3. {"If goal is BUILD_MUSCLE or STRENGTH: NO cardio days, NO conditioning, NO HIIT circuits - PURE resistance training only!" if request.goal in ['build_muscle', 'strength'] else ""}
-4. {"If training style is CALISTHENICS: Use ONLY bodyweight exercises - NO barbells, dumbbells, or machines!" if training_style == "calisthenics" else ""}
-5. {"If goal is LOSE_FAT: Include cardio finishers appropriate to fitness level" if request.goal == "lose_fat" else ""}
-6. {"If training style is HYBRID: Include TRUE cardio elements - rowing, assault bike, circuits" if training_style == "hybrid" else ""}
-7. Cardio intensity MUST match {fitness_level.upper()} level (not advanced cardio for beginners!)
-8. Use equipment variety where appropriate (machines + free weights for full gym)
-
-Provide the workout program in this JSON structure:
+Return ONLY valid JSON:
 {{
-    "name": "Creative Program Name reflecting {request.goal.replace('_', ' ')} goal and {training_style} style for {fitness_level} level",
-    "workout_days": [
-        {{
-            "day": "Day 1 - Descriptive Focus",
-            "focus": "Primary focus (e.g., 'Upper Body Strength' or 'Full Body HIIT')",
-            "duration_minutes": {session_duration},
-            "notes": "Coaching tips and goals for this specific day",
-            "exercises": [
-                {{
-                    "name": "Exercise Name (use standard names matching ExerciseDB)",
-                    "sets": 3,
-                    "reps": "10-12 OR for cardio: '250m' or '20 sec work / 40 sec rest x 4 rounds'",
-                    "rest_seconds": {goal_rest.split('-')[0]},
-                    "instructions": "Detailed form cues and execution tips. For cardio: include work/rest protocol.",
-                    "muscle_groups": ["primary", "secondary"],
-                    "equipment": "specific equipment needed"
-                }}
-            ]
-        }}
-    ]
-}}
+  "name": "Program Name",
+  "workout_days": [
+    {{
+      "day": "Day 1 - Focus",
+      "focus": "e.g. Chest & Triceps",
+      "duration_minutes": {session_duration},
+      "notes": "Brief coaching tip",
+      "exercises": [
+        {{"name": "Exercise Name", "sets": 3, "reps": "10-12", "rest_seconds": {goal_rest.split('-')[0]}, "instructions": "Form cue here.", "muscle_groups": ["primary"], "equipment": "equipment"}}
+      ]
+    }}
+  ]
+}}"""
 
-FINAL CHECK - Before outputting, verify:
-✓ All exercises match {fitness_level.upper()} level
-✓ Cardio intensities use the EXACT values specified for {fitness_level.upper()}
-✓ Program structure supports the {request.goal.replace('_', ' ')} goal
-✓ Equipment variety is used (machines + free weights for full gym)
-✓ Each day has clear focus and appropriate exercise selection"""
+
 
     def repair_truncated_json(content: str) -> str:
         """Attempt to repair truncated JSON by closing open structures"""
@@ -1705,7 +1351,7 @@ Return ONLY valid JSON:
                 system_message="You are an expert personal trainer. Return ONLY valid JSON. No markdown. No extra text. Max 6 exercises per day.",
                 user_message=current_prompt,
                 temperature=0.6 if attempt == 0 else 0.3,
-                max_tokens=5000
+                max_tokens=3500
             )
 
             content = clean_json_content(content)
