@@ -867,13 +867,26 @@ test_plan:
     - "Vegan Meal Plan Protein Accuracy"
     - "Alternate Meal foods_to_avoid Compliance"
     - "Keto Meal Plan Carb Compliance"
-    - "Hybrid AI Model - Claude Sonnet 4.5 + Haiku 4.5"
+    - "Template-Based Meal Name Filtering (foods_to_avoid)"
   stuck_tasks: 
     - "Food Image Analysis"
   test_all: false
   test_priority: "high_first"
 
-# NEW SESSION TEST INSTRUCTIONS (2026-03-25 UPDATED - FORMAL TESTING REQUIRED)
+# NEW FORK TEST INSTRUCTIONS (2026-02 - FORMAL TESTING REQUIRED)
+# Backend is healthy (pid 7680). Hybrid model Claude Sonnet 4.5 + Haiku 4.5 in place.
+# Test file ready at: /app/backend/tests/test_ai_generation_fixes.py (6 tests)
+# Run: pytest /app/backend/tests/test_ai_generation_fixes.py -v
+# Set BASE_URL env var if needed (or use EXPO_PUBLIC_BACKEND_URL)
+#
+# RUN THESE FORMAL TESTS:
+# TEST 1: GET /api/health - sanity check
+# TEST 2: POST /api/workouts/generate with injuries=['shoulders'] - 200 OK, workout_days, gif_url on exercises
+# TEST 3: POST /api/mealplans/generate (VEGAN) - protein BETWEEN 30-220g (NOT inflated >250g)
+# TEST 4: POST /api/mealplans/generate + alternate meal with foods_to_avoid='chicken' - NO chicken in alternate
+# TEST 5: POST /api/mealplans/generate (KETO) - Day 1 carbs < 50g
+# TEST 6: POST /api/mealplans/generate (balanced + foods_to_avoid='chicken') - NO meal NAMES with 'chicken'
+# Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b
 # Backend is healthy (pid 5255). Hybrid model Claude Sonnet 4.5 + Haiku 4.5 in place.
 # Code has been reviewed and all fixes are in place:
 #   1. Workout generation: injuries=List[str] works correctly, GIF URLs fetched per exercise
@@ -907,6 +920,8 @@ test_plan:
 # Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b
 
 agent_communication:
+  - agent: "main"
+    message: "NEW FORK (2026-02): Backend running (pid 7475). Test file ready at /app/backend/tests/test_ai_generation_fixes.py with 6 tests. Running formal backend test suite to verify all recent fixes: 1) Workout generation with injuries, 2) Vegan protein accuracy (not inflated >250g), 3) Alternate meal no chicken when foods_to_avoid=chicken, 4) Keto carbs < 50g, 5) Template meal name filtering (no 'chicken' in names when foods_to_avoid=chicken). Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. Run pytest /app/backend/tests/test_ai_generation_fixes.py -v with BASE_URL set to the backend proxy URL."
   - agent: "main"
     message: "CURRENT STATE (2026-03-25 New Fork): Backend is running (pid 5255). All issues from analysis have been reviewed. Code confirms: 1) Workout generation IS working - injuries field is List[str] in both models, GIF URLs fetched with get_exercise_gif_from_api() for each exercise. 2) Vegan protein accuracy fix IS in place - scale_day_to_targets() has is_plant_based_diet param, for vegan/vegetarian it returns accurate scaled values WITHOUT artificial inflation. 3) Alternate meal foods_to_avoid IS implemented with PROTEIN_GROUPS filtering + 3-attempt retry + post-validation (lines 4154-4352 in server.py). 4) Keto is_low_carb=True bypasses macro inflation. Now running FORMAL tests to confirm all fixes work correctly end-to-end."
   - agent: "main"

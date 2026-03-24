@@ -1,0 +1,38 @@
+{
+  "summary": "Backend regression testing of 5 AI generation bug fixes for InterFitAI. All 7 pytest tests PASSED (100% pass rate) in 76.63s. Fixes verified: workout generation with injuries List[str], vegan protein accuracy, alternate meal foods_to_avoid compliance, keto carb compliance (<50g), and NEW template-based meal name filtering (no 'chicken' in names when banned).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ai_generation_fixes.py",
+    "/app/test_reports/pytest/ai_fixes_results_v2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (7/7 tests passed)",
+    "frontend": "N/A - backend only testing"
+  },
+  "test_results_detail": {
+    "test_1_health": "PASS - GET /api/health returns 200 OK in 0.21s. Response: {status: healthy, timestamp: ...}",
+    "test_2_workout_with_injuries": "PASS - POST /api/workouts/generate with injuries=['shoulders'] returns 200 OK in 46.89s. Generated 'Intermediate Chest-Focused Hypertrophy Builder' (3 days, 18/18 exercises have gif_url). injuries as List[str] working correctly.",
+    "test_3_workout_no_injuries": "PASS - POST /api/workouts/generate without injuries returns 200 OK. Generated 'Beginner Muscle Foundation: 2-Day Chest-Focused Builder'.",
+    "test_4_vegan_protein": "PASS - POST /api/mealplans/generate vegan returns 200 OK in 0.18s (template-based). Day 1 protein=184g (within 100-220g range, deviation=12g from 172g target). Meals: High Protein Tofu Scramble (43g P), Seitan & Quinoa Power Bowl (60g P), Tempeh Lentil Curry (56g P), Protein Edamame Bowl (25g P). No inflation bug.",
+    "test_5_alternate_no_chicken": "PASS - Plan generated with foods_to_avoid='chicken' in 0.11s. Original lunch was 'Lunch - Chef's Choice' (already renamed by template filter). Alternate meal 'Grilled Salmon with Quinoa & Roasted Vegetables' generated in 2.20s with zero chicken keywords.",
+    "test_6_keto_carbs": "PASS - Keto meal plan returns 200 OK in 0.11s (template-based). Day 1 carbs=21g (< 50g limit), Fats=190g. Keto compliance confirmed.",
+    "test_7_template_name_filter": "PASS - Balanced plan with foods_to_avoid='chicken' returns 200 OK in 0.13s. All 12 meal names across 3 days contain NO 'chicken'. Template correctly renames 'Grilled Chicken & Rice Bowl' to 'Lunch - Chef's Choice'."
+  },
+  "seed_data_creation": "None - used existing test user ID cbd82a69-3a37-48c2-88e8-0fe95081fa4b. New meal plans created per test (alternate test plan ID: 63545bba-fc27-4905-b6b0-f8711cb083ce).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 5 bug fixes confirmed working as of this iteration. Test file /app/backend/tests/test_ai_generation_fixes.py has 7 tests covering all scenarios. Template-based generation (no preferred_foods) is very fast (0.1-0.2s). AI generation (with preferred_foods) takes 30-50s for workout. Previous minor issue from iteration_2 (template meal name not filtered) is now FIXED - template filter correctly renames banned food meals to 'Chef's Choice'.",
+  "rca_of_issue": "All 5 issues were pre-verified fixed by main agent before this test run. Root causes: 1) Workout 422: injuries model was str not List[str]. 2) Vegan protein inflation: scale_day_to_targets() missing is_plant_based_diet param, added bypass logic. 3) Alternate meal chicken: missing PROTEIN_GROUPS filter + retry logic. 4) Keto carbs: is_low_carb=True skips macro inflation. 5) Template name filter: added filter loop at ~line 4002-4018 renaming banned-food meals to 'Chef's Choice'."
+}
