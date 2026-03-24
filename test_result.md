@@ -780,10 +780,53 @@ metadata:
   test_sequence: 1
   run_ui: false
 
+  - task: "Hybrid AI Model - Claude Sonnet 4.5 + Haiku 4.5"
+    implemented: true
+    working: "NA"
+    file: "server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented hybrid AI model strategy. call_claude_sonnet() uses claude-sonnet-4-5-20250929 for complex tasks (workout gen, meal plan with AI, chat, body analysis). call_claude_haiku() uses claude-haiku-4-5-20251001 for fast tasks (food analysis). Budget error handling added. Backend restarted. Needs testing to confirm 500 error on workout generation is resolved."
+
+  - task: "Vegan Meal Plan Protein Accuracy"
+    implemented: true
+    working: "NA"
+    file: "server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "User reported: vegan meal plans show inaccurate (inflated) protein values. Tofu Scramble showed nearly double actual protein."
+      - working: "NA"
+        agent: "main"
+        comment: "Fix applied: scale_day_to_targets() was missing is_plant_based_diet parameter. Added param, computed is_plant_based = eating_style in ['vegan','vegetarian'], and passed to function. Vegan/vegetarian plans now bypass artificial macro inflation. Also updated VEGAN_TEMPLATES with more protein-dense recipes. Previous testing showed ✅ PASS but that was with older model. Re-testing needed with new hybrid model."
+
+  - task: "Alternate Meal foods_to_avoid Compliance"
+    implemented: true
+    working: "NA"
+    file: "server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "User reported: meal replacement generating chicken even when 'no chicken' was in foods_to_avoid."
+      - working: true
+        agent: "testing"
+        comment: "Previous test with PROTEIN_GROUPS filtering showed 100% success rate. Re-testing needed to confirm still works with new hybrid model."
+
 test_plan:
   current_focus:
-    - "Meal Questionnaire"
-    - "Nutrition Screen"
+    - "Hybrid AI Model - Claude Sonnet 4.5 + Haiku 4.5"
+    - "Vegan Meal Plan Protein Accuracy"
+    - "Alternate Meal foods_to_avoid Compliance"
   stuck_tasks: 
     - "Food Image Analysis"
   test_all: false

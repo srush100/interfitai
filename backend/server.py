@@ -1638,7 +1638,7 @@ FINAL CHECK - Before outputting, verify:
             system_message="You are an expert personal trainer. Create workout programs in valid JSON format only.",
             user_message=prompt,
             temperature=0.7,
-            max_tokens=2500
+            max_tokens=5000
         )
         
         # Clean the response - remove markdown code blocks if present
