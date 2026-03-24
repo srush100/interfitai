@@ -1,0 +1,47 @@
+{
+  "summary": "Backend testing of 4 AI generation bug fixes: workout generation with injuries, vegan meal plan protein accuracy, alternate meal foods_to_avoid compliance, and keto carb compliance. All 6 tests PASSED (100% pass rate). Test duration: ~93 seconds.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/mealplans/generate",
+        "issue": "Template-based meal generation (no preferred_foods) ignores foods_to_avoid. E.g., balanced plan generates 'Grilled Chicken & Rice Bowl' even when foods_to_avoid='chicken'. The post-validation strips chicken from ingredients list but does NOT fix the meal name. Only AI-generation path (preferred_foods specified) enforces foods_to_avoid properly.",
+        "priority": "MEDIUM - regression risk for template-based plans with dietary exclusions"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ai_generation_fixes.py",
+    "/app/test_reports/pytest/ai_fixes_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL FIX: In template-based meal generation (when preferred_foods is empty), filter out templates whose meal names or ingredients contain foods in foods_to_avoid. Currently only AI-generation respects this. The post-validation at line 3852-3865 removes ingredients but leaves meal names like 'Grilled Chicken & Rice Bowl' intact when chicken is banned."
+  ],
+  "critical_code_review_comments": [
+    "Template-based generation path (no preferred_foods) does not pre-filter templates by foods_to_avoid - only AI generation path does. The post-validation only strips ingredients but not meal names, so a meal can still be named 'Grilled Chicken & Rice Bowl' when chicken is banned."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ai_generation_fixes.py"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 tests passed)",
+    "frontend": "N/A - backend only testing"
+  },
+  "seed_data_creation": "None - used existing test user ID cbd82a69-3a37-48c2-88e8-0fe95081fa4b. New meal plans created per test (alternate meal test: plan ID de439841-97d6-4b6a-a731-eb33830be02b).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 4 bug fixes have been formally verified and are working. Test file at /app/backend/tests/test_ai_generation_fixes.py covers all 5 review scenarios. Backend is Claude Haiku 4.5 + Sonnet 4.5 hybrid. One minor issue found: template-based meal plan generation doesn't enforce foods_to_avoid in meal names (only AI path does).",
+  "test_results_detail": {
+    "test_1_health": "PASS - GET /api/health returns 200 OK in 0.33s",
+    "test_2_workout_injuries": "PASS - POST /api/workouts/generate with injuries=['shoulders'] returns 200 OK. Generated '3-Day Chest Focus Split' with 18/18 exercises having gif_url. injuries as List[str] working correctly.",
+    "test_3_vegan_protein": "PASS - POST /api/mealplans/generate vegan returns 200 OK. Day 1 protein=184g (within 100-220g range). Old inflation bug produced 250g+ - now fixed to natural template values. Meals: High Protein Tofu Scramble (43g P), Seitan & Quinoa Power Bowl (60g P), Tempeh Lentil Curry (56g P), Protein Edamame Bowl (25g P).",
+    "test_4_alternate_no_chicken": "PASS - Alternate meal for plan with foods_to_avoid='chicken' generated 'Grilled Salmon & Quinoa Bowl' with salmon, quinoa, sweet potato, broccoli - NO chicken found. PROTEIN_GROUPS filtering working.",
+    "test_5_keto_carbs": "PASS - Keto meal plan Day 1 carbs=21g (< 50g limit). Fats=190g. is_low_carb=True correctly bypasses macro inflation."
+  }
+}
