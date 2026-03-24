@@ -1258,33 +1258,14 @@ async def generate_workout(request: WorkoutGenerateRequest):
     injuries_note = ', '.join(request.injuries) if request.injuries else 'none'
     
     # ============= BUILD CONCISE PROMPT =============
-    prompt = f"""Create a {request.days_per_week}-day {request.goal.replace('_', ' ')} workout for {fitness_level} level.
-Equipment: {', '.join(request.equipment)}. Focus: {', '.join(request.focus_areas) if request.focus_areas else 'full body'}.
-Style: {training_style}. Session: {session_duration}min. Injuries: {injuries_note}. Split: {split_note}.
+    prompt = f"""Create a {request.days_per_week}-day {request.goal.replace('_', ' ')} program for {fitness_level}.
+Equipment: {', '.join(request.equipment)}. Style: {training_style}. Session: {session_duration}min.
+Injuries: {injuries_note}. Split: {split_note}.
+Rules: {goal_rules.get(request.goal, 'Balanced, 60-90s rest.')} | {level_rules.get(fitness_level, level_rules['intermediate'])} | {equip_note}
 
-KEY RULES:
-- Goal: {goal_rules.get(request.goal, 'Balanced training, 60-90s rest.')}
-- Level: {level_rules.get(fitness_level, level_rules['intermediate'])}
-- Style: {style_rules.get(training_style, style_rules['weights'])}
-- Equipment: {equip_note}
-- Avoid exercises stressing: {injuries_note}
-- Exactly 5 exercises per day. Instructions max 25 words each.
+STRICT: 4 exercises/day max. Instructions <=12 words. Notes <=10 words. JSON only, no markdown.
 
-Return ONLY valid JSON:
-{{
-  "name": "Program Name",
-  "workout_days": [
-    {{
-      "day": "Day 1 - Focus",
-      "focus": "e.g. Chest & Triceps",
-      "duration_minutes": {session_duration},
-      "notes": "Brief coaching tip",
-      "exercises": [
-        {{"name": "Exercise Name", "sets": 3, "reps": "10-12", "rest_seconds": {goal_rest.split('-')[0]}, "instructions": "Form cue here.", "muscle_groups": ["primary"], "equipment": "equipment"}}
-      ]
-    }}
-  ]
-}}"""
+{{"name":"Program Name","workout_days":[{{"day":"Day 1 - Push","focus":"Chest & Triceps","duration_minutes":{session_duration},"notes":"Control tempo on each rep.","exercises":[{{"name":"Barbell Bench Press","sets":4,"reps":"8-10","rest_seconds":{goal_rest.split('-')[0]},"instructions":"Lower bar to chest, press explosively.","muscle_groups":["chest","triceps"],"equipment":"barbell"}}]}}]}}"""
 
 
 
@@ -1348,10 +1329,10 @@ Return ONLY valid JSON:
 }}"""
 
             content = await call_claude_sonnet(
-                system_message="You are an expert personal trainer. Return ONLY valid JSON. No markdown. No extra text. Max 6 exercises per day.",
+                system_message="You are a personal trainer. Return ONLY valid compact JSON. No markdown. Strict: 4 exercises per day, instructions max 12 words.",
                 user_message=current_prompt,
-                temperature=0.6 if attempt == 0 else 0.3,
-                max_tokens=3500
+                temperature=0.5 if attempt == 0 else 0.2,
+                max_tokens=4500
             )
 
             content = clean_json_content(content)
