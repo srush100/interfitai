@@ -3337,7 +3337,7 @@ Return ONLY this JSON:
             system_avoid_msg = f"CRITICAL RULE: The user has BANNED these foods: {banned_foods_upper}. You MUST NOT use any of these ingredients. If you include any banned food, your response is INVALID and harmful to the user."
         
         try:
-            content = await call_claude_opus(
+            content = await call_claude_sonnet(
                 system_message=f"""You are an elite nutritionist creating precise meal plans.
 
 {system_avoid_msg}
@@ -4201,7 +4201,7 @@ Use ONLY these allowed proteins: {', '.join(protein_alternatives) if protein_alt
     max_attempts = 3
     for attempt in range(max_attempts):
         try:
-            content = await call_claude_opus(
+            content = await call_claude_haiku(
                 system_message=f"""You are a precision nutritionist. Generate an alternate meal that MATCHES the current meal's macros exactly: {current_cal} cal, {current_pro}g P, {current_carb}g C, {current_fat}g F. Use specific ingredient amounts in grams.
 
 {system_avoid_msg}""",
@@ -4342,7 +4342,7 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         if request.additional_context:
             user_prompt += f"\n\nAdditional context from user: {request.additional_context}"
         
-        content = await call_claude_opus(
+        content = await call_claude_sonnet(
             system_message="""You are a nutrition expert. Analyze the food image and provide accurate nutritional information.
 Consider any additional context provided by the user (e.g., portion size, specific ingredients).
 Respond with ONLY valid JSON, no other text. Use this exact format:
@@ -5111,7 +5111,7 @@ Be helpful, encouraging, and provide evidence-based advice. Keep responses conci
                 system_message="",
                 initial_messages=initial_messages,
             )
-            .with_model("anthropic", "claude-opus-4-6")
+            .with_model("anthropic", "claude-haiku-4-5-20251001")
             .with_params(temperature=0.7, max_tokens=1000)
         )
         ai_response = await chat.send_message(UserMessage(text=request.message))
@@ -5802,7 +5802,7 @@ async def get_progress_photos(user_id: str):
 async def analyze_body_progress(request: BodyAnalysisRequest):
     """AI-powered body transformation analysis comparing before/after photos"""
     try:
-        content = await call_claude_opus(
+        content = await call_claude_sonnet(
             system_message="""You are a professional fitness coach and body composition expert. 
 Analyze the before and after progress photos provided. Give constructive, encouraging, and detailed feedback.
 Focus on visible improvements in:
