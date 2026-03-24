@@ -5,7 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, date
@@ -860,6 +860,15 @@ class WorkoutProgram(BaseModel):
     session_duration_minutes: int = 60  # Workout session duration
     workout_days: List[WorkoutDay]
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    @field_validator('injuries', mode='before')
+    @classmethod
+    def normalize_injuries(cls, v):
+        if isinstance(v, str):
+            # Convert legacy string format to list
+            items = [i.strip() for i in v.replace('\n', ',').split(',') if i.strip()]
+            return items if items else None
+        return v
 
 class WorkoutGenerateRequest(BaseModel):
     user_id: str
