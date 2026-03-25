@@ -3036,7 +3036,7 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
                 'vegetarian': 'Use: eggs, greek yogurt, cottage cheese, tempeh, legumes, quinoa, sweet potato, brown rice.',
                 'paleo': 'Use: lean beef, salmon, chicken, sweet potato, almond flour, coconut oil, berries, green vegetables.',
                 'carnivore': 'Use ONLY: beef (ribeye/sirloin/ground), chicken thighs, salmon, bacon, eggs, butter. Zero carbs.',
-                'high_protein': 'Use: chicken breast, turkey, tuna, egg whites, greek yogurt, cottage cheese, lean beef, whey protein.',
+                'high_protein': f'Use: chicken breast, turkey, tuna, egg whites, greek yogurt, cottage cheese, lean beef, whey protein. IMPORTANT: Still include {ai_target_carb}g carbs from: oats, rice, sweet potato, fruit. This is high PROTEIN, not low carb!',
                 'balanced': 'Use a rich variety: lean proteins, complex carbs (rice, oats, sweet potato), healthy fats, diverse vegetables.',
                 'whole_foods': 'Use only whole, unprocessed ingredients. No packaged foods. Rich variety of vegetables, legumes, lean proteins.',
             }
@@ -3720,8 +3720,10 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                     fat_skip_in_carbs = ['peanut butter', 'almond butter', 'coconut oil', 'olive oil', 'avocado oil']
                     if after_pro_carb > 0:
                         carb_scale = target_carb / after_pro_carb
-                        carb_scale = max(0.6, min(1.8, carb_scale))
-                        if abs(carb_scale - 1.0) > 0.08:
+                        # Allow more aggressive carb scaling (up to 3x) — especially for high_protein plans
+                        # where AI sometimes skimps on carbs
+                        carb_scale = max(0.6, min(3.0, carb_scale))
+                        if abs(carb_scale - 1.0) > 0.06:
                             scale_ingredients_by_type(day, carb_keywords, carb_scale, skip_keywords=fat_skip_in_carbs)
                 
                 # Stage 3: Fat correction — skip for keto/carnivore (these need high fat — don't override)
