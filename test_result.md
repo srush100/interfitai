@@ -863,10 +863,10 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Workout Generation End-to-End Test"
-    - "Vegan Meal Plan Protein Accuracy"
-    - "Alternate Meal foods_to_avoid Compliance"
-    - "Keto Meal Plan Carb Compliance"
+    - "Workout Generation with injuries"
+    - "Vegan Meal Plan Protein Accuracy (not inflated)"
+    - "Alternate Meal foods_to_avoid Compliance (no chicken)"
+    - "Keto Meal Plan Carb Compliance (< 50g)"
     - "Template-Based Meal Name Filtering (foods_to_avoid)"
   stuck_tasks: 
     - "Food Image Analysis"
@@ -924,6 +924,8 @@ agent_communication:
     message: "NEW FORK (2026-02): Backend running (pid 7475). Test file ready at /app/backend/tests/test_ai_generation_fixes.py with 6 tests. Running formal backend test suite to verify all recent fixes: 1) Workout generation with injuries, 2) Vegan protein accuracy (not inflated >250g), 3) Alternate meal no chicken when foods_to_avoid=chicken, 4) Keto carbs < 50g, 5) Template meal name filtering (no 'chicken' in names when foods_to_avoid=chicken). Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. Run pytest /app/backend/tests/test_ai_generation_fixes.py -v with BASE_URL set to the backend proxy URL."
   - agent: "main"
     message: "CURRENT STATE (2026-03-25 New Fork): Backend is running (pid 5255). All issues from analysis have been reviewed. Code confirms: 1) Workout generation IS working - injuries field is List[str] in both models, GIF URLs fetched with get_exercise_gif_from_api() for each exercise. 2) Vegan protein accuracy fix IS in place - scale_day_to_targets() has is_plant_based_diet param, for vegan/vegetarian it returns accurate scaled values WITHOUT artificial inflation. 3) Alternate meal foods_to_avoid IS implemented with PROTEIN_GROUPS filtering + 3-attempt retry + post-validation (lines 4154-4352 in server.py). 4) Keto is_low_carb=True bypasses macro inflation. Now running FORMAL tests to confirm all fixes work correctly end-to-end."
+  - agent: "main"
+    message: "NEW FORK (2026-02 latest): Backend is running (pid 129, uptime 1:21:31). Code has been reviewed. All key fixes are confirmed in place: 1) scale_day_to_targets() at line 3682 has is_plant_based_diet param - vegan/vegetarian returns accurate scaled values WITHOUT artificial inflation (line 3733). 2) PROTEIN_GROUPS filtering in generate_alternate_meal() (lines 3957-4001) with 3-attempt retry + post-validation (lines 4074-4155). 3) Keto is_low_carb=True bypasses macro inflation. 4) Template meal name filtering for foods_to_avoid (lines 3780-3796). Backend URL: https://nutrition-debug-1.preview.emergentagent.com. Test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. PLEASE RUN FORMAL TESTS for: (1) Vegan meal plan - protein NOT inflated (should be 130-220g for target ~170g), (2) Keto meal plan - Day 1 carbs < 50g, (3) Alternate meal with foods_to_avoid='chicken' - NO chicken in result, (4) Workout generation - 200 OK + gif_url in exercises."
   - agent: "main"
     message: "Completed initial implementation of InterFitAI app. All backend endpoints are implemented with OpenAI integration for AI features and Stripe for payments. Frontend has all screens built with proper navigation. Need to test AI endpoints (workout generation, meal plan generation, food analysis, chat) as they require OpenAI API calls."
   - agent: "testing"
