@@ -2859,29 +2859,46 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     logger.info(f"Using AI generation | style={eating_style} | preferred={request.preferred_foods} | avoid={request.foods_to_avoid} | allergies={request.allergies}")
     if True:
         
-        # Calculate exact per-meal targets
-        breakfast_cal = round(target_cal * 0.25)
-        breakfast_pro = round(target_pro * 0.25)
-        breakfast_carb = round(target_carb * 0.25)
-        breakfast_fat = round(target_fat * 0.25)
+        # For keto/carnivore: override macro targets with diet-appropriate values
+        # User's profile targets are based on general fitness goals, but keto needs 70%+ fat, <5% carbs
+        ai_target_cal = target_cal
+        if eating_style == 'keto':
+            ai_target_fat = round(target_cal * 0.72 / 9)    # 72% of calories from fat
+            ai_target_carb = min(30, round(target_cal * 0.05 / 4))  # 5% calories, max 30g carbs
+            ai_target_pro = round((target_cal - ai_target_fat * 9 - ai_target_carb * 4) / 4)  # remaining from protein
+        elif eating_style == 'carnivore':
+            ai_target_fat = round(target_cal * 0.70 / 9)    # 70% fat
+            ai_target_carb = 5                               # near-zero carbs
+            ai_target_pro = round((target_cal - ai_target_fat * 9 - ai_target_carb * 4) / 4)
+        else:
+            # All other diets: use the user's profile macro targets
+            ai_target_fat = target_fat
+            ai_target_carb = target_carb
+            ai_target_pro = target_pro
         
-        lunch_cal = round(target_cal * 0.30)
-        lunch_pro = round(target_pro * 0.30)
-        lunch_carb = round(target_carb * 0.30)
-        lunch_fat = round(target_fat * 0.30)
+        # Calculate exact per-meal targets using diet-adjusted macros
+        breakfast_cal = round(ai_target_cal * 0.25)
+        breakfast_pro = round(ai_target_pro * 0.25)
+        breakfast_carb = round(ai_target_carb * 0.25)
+        breakfast_fat = round(ai_target_fat * 0.25)
         
-        dinner_cal = round(target_cal * 0.35)
-        dinner_pro = round(target_pro * 0.35)
-        dinner_carb = round(target_carb * 0.35)
-        dinner_fat = round(target_fat * 0.35)
+        lunch_cal = round(ai_target_cal * 0.30)
+        lunch_pro = round(ai_target_pro * 0.30)
+        lunch_carb = round(ai_target_carb * 0.30)
+        lunch_fat = round(ai_target_fat * 0.30)
         
-        snack_cal = target_cal - breakfast_cal - lunch_cal - dinner_cal
-        snack_pro = target_pro - breakfast_pro - lunch_pro - dinner_pro
-        snack_carb = target_carb - breakfast_carb - lunch_carb - dinner_carb
-        snack_fat = target_fat - breakfast_fat - lunch_fat - dinner_fat
+        dinner_cal = round(ai_target_cal * 0.35)
+        dinner_pro = round(ai_target_pro * 0.35)
+        dinner_carb = round(ai_target_carb * 0.35)
+        dinner_fat = round(ai_target_fat * 0.35)
+        
+        snack_cal = ai_target_cal - breakfast_cal - lunch_cal - dinner_cal
+        snack_pro = ai_target_pro - breakfast_pro - lunch_pro - dinner_pro
+        snack_carb = ai_target_carb - breakfast_carb - lunch_carb - dinner_carb
+        snack_fat = ai_target_fat - breakfast_fat - lunch_fat - dinner_fat
         
         # Determine if user needs lean or moderate-fat proteins based on their fat target
-        fat_pct = (target_fat * 9 / target_cal) * 100 if target_cal > 0 else 30
+        fat_pct = (ai_target_fat * 9 / ai_target_cal) * 100 if ai_target_cal > 0 else 30
         
         if fat_pct < 25:
             protein_guidance = "Use LEAN proteins only: chicken breast, turkey breast, sirloin steak, eye of round, tilapia, cod, egg whites. Minimize added fats."
@@ -2907,7 +2924,14 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         elif eating_style == 'paleo':
             diet_instructions = "PALEO: NO grains, NO dairy, NO legumes. Use sweet potatoes instead of white potatoes."
         elif eating_style == 'vegan':
-            diet_instructions = "VEGAN: NO animal products. Use tofu, tempeh, legumes, seitan for protein."
+            diet_instructions = f"""VEGAN: NO animal products whatsoever.
+HIGH-PROTEIN VEGAN RULE: Every meal MUST have a HIGH-PROTEIN base ingredient:
+  - Breakfast: tofu scramble (100g tofu = 8g P) OR protein powder (30g = 20-25g P) OR seitan
+  - Lunch: tempeh ({round(ai_target_pro * 0.30 / 0.189)}g = {round(ai_target_pro * 0.30)}g P) OR seitan (25g P per 100g) OR high-protein tofu
+  - Dinner: seitan ({round(ai_target_pro * 0.35 / 0.25)}g = {round(ai_target_pro * 0.35)}g P) OR tempeh OR firm tofu
+  - Snack: vegan protein powder (20-25g P per 30g) OR hemp seeds (31g P per 100g)
+IMPORTANT: Do NOT rely solely on lentils/chickpeas for protein — they are high-carb too.
+Protein sources per 100g: seitan=25g | tempeh=19g | edamame=11g | firm tofu=8g | hemp seeds=31g"""
         elif eating_style == 'vegetarian':
             diet_instructions = "VEGETARIAN: NO meat/fish. Use eggs, dairy, tofu for protein."
         
@@ -2933,10 +2957,10 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
 🚫 ALLERGENS TO AVOID:
 {', '.join(request.allergies).upper()}"""
         
-        # Calculate macro percentages to guide AI
-        protein_pct = round((target_pro * 4 / target_cal) * 100) if target_cal > 0 else 30
-        carb_pct = round((target_carb * 4 / target_cal) * 100) if target_cal > 0 else 40
-        fat_pct = round((target_fat * 9 / target_cal) * 100) if target_cal > 0 else 30
+        # Calculate macro percentages to guide AI (use diet-adjusted targets)
+        protein_pct = round((ai_target_pro * 4 / ai_target_cal) * 100) if ai_target_cal > 0 else 30
+        carb_pct = round((ai_target_carb * 4 / ai_target_cal) * 100) if ai_target_cal > 0 else 40
+        fat_pct = round((ai_target_fat * 9 / ai_target_cal) * 100) if ai_target_cal > 0 else 30
         
         # Build protein alternatives based on what's banned
         # Group related foods together so banning "chicken" removes all chicken types
@@ -3020,17 +3044,21 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
             foods_section = f"No preferred foods specified — choose ELITE, nutritionist-approved foods for a {eating_style.replace('_', ' ')} diet.\n{style_hint}"
 
         # Calculate fat percentage to guide lean vs rich protein choices
-        fat_is_strict = target_fat < (target_cal * 0.33 / 9)  # Less than 33% fat calories = strict
+        fat_is_strict = ai_target_fat < (ai_target_cal * 0.33 / 9)  # Less than 33% fat calories = strict
 
         fat_guidance = ""
         if fat_is_strict:
-            fat_guidance = f"""FAT BUDGET: {target_fat}g/day ({fat_pct}% of calories) — this is a STRICT LOW-FAT target.
-- PREFER lean proteins: chicken breast, turkey breast, tuna, shrimp, cod, egg whites, cottage cheese
-- LIMIT: max 2 whole eggs/day, max 1 salmon serving/week, avoid lamb/ribeye unless requested
-- MINIMAL added fat: max 1 tsp (5ml) olive oil per MEAL
-- NO avocado more than 50g/day, NO full-fat cheese"""
+            fat_guidance = f"""FAT BUDGET: {ai_target_fat}g/day ({fat_pct:.0f}% of calories) — STRICT.
+⚠️ COUNT FAT FROM EVERY SOURCE — protein foods have fat too:
+  Whole egg (50g each) = 5.5g fat | Salmon 100g = 13g fat | Ribeye 100g = 15g fat
+  Chicken breast 100g = 3.6g fat | Turkey breast = 1g | Cod/Tuna/Shrimp ≈ 0.5-1g
+RULE: Fat in each meal = fat from protein + fat from added oils/nuts/dairy — TOTAL must stay ≤ meal fat target.
+- PREFER zero-fat proteins (chicken breast, turkey, tuna, shrimp, cod, egg WHITES, cottage cheese)
+- LIMIT whole eggs: max {round(ai_target_fat * 0.2 / 5.5):.0f} eggs total per day (each egg = 5.5g fat)
+- Added oil: if using whole eggs or salmon, use ZERO added oil
+- NO avocado >30g/day, NO full-fat cheese, NO nuts if fat budget is tight"""
         else:
-            fat_guidance = f"Fat target: {target_fat}g/day. Healthy fats from natural sources are fine."
+            fat_guidance = f"Fat target: {ai_target_fat}g/day ({fat_pct:.0f}%). Healthy fats from natural sources welcome — count fat from ALL ingredients."
 
         # Pre-calculate exact ingredient quantities needed per meal for accurate macro targeting
         def grams_for_macro(target_macro_g, food_density):
@@ -3065,7 +3093,7 @@ DIET STYLE: {eating_style.upper().replace('_', ' ')}
 {diet_instructions}
 
 DAILY MACRO TARGETS — hit these precisely:
-{target_cal} cal | {target_pro}g protein ({protein_pct}%) | {target_carb}g carbs ({carb_pct}%) | {target_fat}g fat ({fat_pct}%)
+{ai_target_cal} cal | {ai_target_pro}g protein ({protein_pct}%) | {ai_target_carb}g carbs ({carb_pct}%) | {ai_target_fat}g fat ({fat_pct}%)
 
 ABSOLUTE PROHIBITIONS — NEVER include these:
 {allergy_block}
@@ -3089,14 +3117,27 @@ Sweet potato: 86cal 1.6P 20C 0.1F | Quinoa cooked: 120cal 4.4P 21C 1.9F | Oats d
 Banana (120g): 107cal 1.3P 27.6C 0.4F | Avocado (50g): 80cal 1P 4.5C 7.5F | Olive oil (10ml): 88cal 0P 0C 10F
 
 EXACT QUANTITIES TO HIT EACH MEAL TARGET:
-Breakfast ({breakfast_cal}cal | {breakfast_pro}g P | {breakfast_carb}g C | {breakfast_fat}g F):
-  Protein: {b_pro_chicken}g chicken breast OR {b_pro_eggs} whole eggs | Carbs: {b_carb_rice}g cooked rice OR {b_carb_potato}g sweet potato | Fat: max {b_fat_oil_ml}ml oil
-Lunch ({lunch_cal}cal | {lunch_pro}g P | {lunch_carb}g C | {lunch_fat}g F):
-  Protein: {l_pro_chicken}g chicken OR {l_pro_beef}g beef/tuna | Carbs: {l_carb_rice}g rice OR {l_carb_potato}g potato | Fat: max {l_fat_oil_ml}ml oil
-Dinner ({dinner_cal}cal | {dinner_pro}g P | {dinner_carb}g C | {dinner_fat}g F):
-  Protein: {d_pro_chicken}g chicken OR {d_pro_beef}g beef/salmon | Carbs: {d_carb_rice}g rice OR {d_carb_potato}g potato | Fat: max {d_fat_oil_ml}ml oil
-Snack ({snack_cal}cal | {snack_pro}g P | {snack_carb}g C | {snack_fat}g F):
-  Protein: {s_pro_yogurt}g Greek yogurt OR equivalent | Keep carbs and fat light
+⚠️ CRITICAL: The fat values below are TOTAL fat — count fat from proteins + oils + all ingredients combined.
+
+Breakfast ({breakfast_cal}cal | {breakfast_pro}g P | {breakfast_carb}g C | {breakfast_fat}g F total):
+  Protein: {b_pro_chicken}g chicken breast (only 4g fat) OR use egg whites if fat is tight
+  Note: 1 whole egg = 5.5g fat — if using eggs, count their fat against {breakfast_fat}g budget
+  Carbs: {b_carb_rice}g cooked rice OR {b_carb_potato}g sweet potato
+  Max added fat (oil/butter): {breakfast_fat}g minus fat already in your protein choice
+
+Lunch ({lunch_cal}cal | {lunch_pro}g P | {lunch_carb}g C | {lunch_fat}g F total):
+  Protein: {l_pro_chicken}g chicken breast (4g fat) OR {l_pro_beef}g tuna/turkey
+  Note: salmon 100g = 13g fat — account for this in {lunch_fat}g total budget
+  Carbs: {l_carb_rice}g cooked rice OR {l_carb_potato}g sweet potato
+  Max added fat: {lunch_fat}g minus fat from your protein choice
+
+Dinner ({dinner_cal}cal | {dinner_pro}g P | {dinner_carb}g C | {dinner_fat}g F total):
+  Protein: {d_pro_chicken}g chicken OR {d_pro_beef}g lean beef/fish — steak has 11g fat/100g so only {round(dinner_fat/0.11)}g steak max before adding oil
+  Carbs: {d_carb_rice}g cooked rice OR {d_carb_potato}g sweet potato
+  Max added fat: {dinner_fat}g minus fat from your protein choice
+
+Snack ({snack_cal}cal | {snack_pro}g P | {snack_carb}g C | {snack_fat}g F total):
+  Protein: {s_pro_yogurt}g Greek yogurt OR equivalent | Keep total fat ≤{snack_fat}g
 
 ELITE STANDARDS:
 1. All 3 days MUST have completely different meals — zero repetition
@@ -3193,7 +3234,16 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                 "cottage cheese": (84, 11, 4, 2.5),
                 # Proteins - Other
                 "tofu": (144, 17, 3, 8),
+                "tofu firm": (144, 17, 3, 8),
+                "firm tofu": (144, 17, 3, 8),
                 "tempeh": (192, 20, 8, 11),
+                "seitan": (166, 25, 14, 2),          # wheat gluten — 25g P per 100g
+                "edamame": (121, 11, 8, 5),           # shelled edamame — 11g P per 100g
+                "shelled edamame": (121, 11, 8, 5),
+                "nutritional yeast": (355, 50, 35, 7), # 50g P per 100g!
+                "hemp seeds": (553, 31, 8.7, 49),      # 31g P per 100g
+                "hemp seed": (553, 31, 8.7, 49),
+                "tahini": (595, 17, 23, 54),           # sesame paste
                 "pork": (242, 27, 0, 14),
                 "pork chop": (231, 27, 0, 13),
                 "bacon": (417, 13, 1.4, 40),
@@ -3364,6 +3414,40 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                 "tomato sauce": (29, 1.5, 6, 0.3),
                 "garlic": (149, 6, 33, 0.5),
                 "ginger": (80, 1.8, 18, 0.8),
+                # Vegan / specialty ingredients (frequently missing)
+                "chickpea flour": (387, 22, 58, 6),
+                "besan": (387, 22, 58, 6),         # Indian name for chickpea flour
+                "dark chocolate": (598, 7.8, 43, 42),
+                "dark chocolate chips": (598, 7.8, 43, 42),
+                "cacao": (228, 20, 28, 14),
+                "cocoa powder": (228, 20, 28, 14),
+                "agave nectar": (310, 0.1, 76, 0),
+                "agave syrup": (310, 0.1, 76, 0),
+                "balsamic vinegar": (88, 0.5, 17, 0),
+                "apple cider vinegar": (22, 0, 0.9, 0),
+                "lemon juice": (22, 0.4, 7, 0.2),
+                "lime juice": (25, 0.4, 8, 0.1),
+                "nutritional yeast": (355, 50, 35, 7),
+                "yeast flakes": (355, 50, 35, 7),
+                "miso paste": (199, 12, 26, 6),
+                "miso": (199, 12, 26, 6),
+                "coconut aminos": (74, 2, 18, 0),
+                "plant milk": (35, 1.5, 4, 1.8),   # generic plant milk
+                "soy milk": (54, 3.3, 4.5, 2.2),
+                "oat milk": (47, 1.5, 8, 0.9),
+                "coconut yogurt": (100, 0.7, 6, 9),
+                "soy yogurt": (67, 3.9, 6.6, 2.4),
+                "vegan protein": (380, 72, 8, 5),  # generic vegan protein powder
+                "pea protein": (380, 72, 8, 5),
+                "brown sugar": (380, 0, 98, 0),
+                "maple syrup": (260, 0.1, 67, 0.1),
+                "tahini": (595, 17, 23, 54),        # sesame paste — high fat
+                "almond flour": (571, 21, 20, 50),
+                "flaxseed meal": (534, 18, 29, 42),
+                "chia seeds": (486, 17, 42, 31),
+                "spirulina": (290, 57, 24, 8),
+                "maca powder": (325, 11, 66, 4),
+                "matcha powder": (306, 26, 52, 5),
             }
             
             def calculate_ingredient_macros(ingredient_str):
@@ -3395,6 +3479,23 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                     'slice bread': 30, 'slice of bread': 30,
                     'chicken breast': 175, 'breast': 175,
                     'steak': 225,
+                    # Small aromatics — 1 clove/piece ≈ 3-5g, NOT 100g
+                    'garlic': 4, 'garlic clove': 4, 'garlic cloves': 4,
+                    'ginger': 5, 'ginger piece': 5,
+                    'shallot': 20,
+                    # Fruits (medium size)
+                    'lime': 67, 'limes': 67, 'lemon': 58, 'lemons': 58,
+                    'tomato': 120, 'tomatoes': 120, 'cherry tomato': 17, 'cherry tomatoes': 17,
+                    'avocado': 200,
+                    'peach': 150, 'nectarine': 140, 'plum': 85,
+                    'kiwi': 70, 'fig': 50, 'date': 24,
+                    # Vegetables (medium size)
+                    'onion': 110, 'large onion': 150, 'medium onion': 110, 'small onion': 75,
+                    'bell pepper': 120, 'pepper': 120, 'jalapeno': 14, 'chili': 15,
+                    'mushroom': 90, 'large mushroom': 120,
+                    'carrot': 80, 'medium carrot': 80, 'large carrot': 120,
+                    'zucchini': 196,  # one medium zucchini
+                    'potato': 180, 'sweet potato': 130, 'medium potato': 180,
                 }
                 
                 # Try pattern: "food (Xg)" like "chicken breast (200g)"
@@ -3540,6 +3641,10 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                     return total_cal, total_pro, total_carb, total_fat
                 
                 # POST-PROCESSING: Multi-stage macro correction
+                # Diet-type flags to control which stages apply
+                _is_low_carb_ai = eating_style in ['keto', 'carnivore']  # These need high fat, low carbs — don't override
+                _is_plant_based_ai = eating_style in ['vegan', 'vegetarian']
+                
                 # Stage 1: Initial calorie-based scale
                 current_cal, current_pro, current_carb, current_fat = recalc_day_macros(day)
                 
@@ -3586,33 +3691,55 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                 for meal in day.get("meals", []):
                     meal["ingredients"] = [scale_ingredient_str(ing, cal_scale) for ing in meal.get("ingredients", [])]
                 
-                # Stage 2: Carb correction — scale carb sources to hit target
+                # Stage 1.5: Protein correction — scale PURE protein ingredients to hit target
+                # Use only primarily-protein foods (NOT legumes which are carb-dominant)
                 after_cal_cal, after_cal_pro, after_cal_carb, after_cal_fat = recalc_day_macros(day)
-                carb_keywords = ['rice', 'sweet potato', 'potato', 'oat', 'quinoa', 'bread', 'pasta',
-                                  'banana', 'apple', 'fruit', 'bean', 'lentil', 'chickpea', 'corn',
-                                  'tortilla', 'noodle', 'couscous', 'barley', 'bulgur', 'mango', 'berry',
-                                  'orange', 'grape', 'pear', 'pineapple', 'wrap']
-                fat_skip_in_carbs = ['peanut butter', 'almond butter', 'coconut oil', 'olive oil', 'avocado oil']
+                # Only primarily-protein sources (not dual-purpose foods like legumes/quinoa)
+                pure_protein_keywords = [
+                    'chicken', 'turkey', 'beef', 'steak', 'fish', 'tuna', 'salmon', 'shrimp', 'pork',
+                    'egg', 'tofu', 'tempeh', 'seitan', 'protein powder', 'pea protein',
+                    'greek yogurt', 'cottage cheese', 'hemp seed', 'soy yogurt', 'soy milk',
+                    'ground beef', 'ground turkey', 'cod', 'tilapia', 'halibut', 'snapper'
+                ]
+                # Skip carb-dominant and fat-dominant foods during protein scaling
+                non_protein_skip = ['rice', 'oat', 'potato', 'pasta', 'bread', 'banana', 'tortilla',
+                                     'pita', 'barley', 'mango', 'apple', 'oil', 'butter', 'avocado']
+                if after_cal_pro > 0:
+                    pro_scale = target_pro / after_cal_pro
+                    pro_scale = max(0.75, min(1.35, pro_scale))  # ±25-35% max to keep portions realistic
+                    if abs(pro_scale - 1.0) > 0.05:
+                        scale_ingredients_by_type(day, pure_protein_keywords, pro_scale, skip_keywords=non_protein_skip)
                 
-                if after_cal_carb > 0:
-                    carb_scale = target_carb / after_cal_carb
-                    carb_scale = max(0.6, min(1.8, carb_scale))
-                    if abs(carb_scale - 1.0) > 0.08:
-                        scale_ingredients_by_type(day, carb_keywords, carb_scale, skip_keywords=fat_skip_in_carbs)
+                # Stage 2: Carb correction — skip for keto/carnivore (intentionally low carb)
+                if not _is_low_carb_ai:
+                    after_pro_cal, after_pro_pro, after_pro_carb, after_pro_fat = recalc_day_macros(day)
+                    carb_keywords = ['rice', 'sweet potato', 'potato', 'oat', 'quinoa', 'bread', 'pasta',
+                                      'banana', 'apple', 'fruit', 'bean', 'lentil', 'chickpea', 'corn',
+                                      'tortilla', 'noodle', 'couscous', 'barley', 'bulgur', 'mango', 'berry',
+                                      'orange', 'grape', 'pear', 'pineapple', 'wrap']
+                    fat_skip_in_carbs = ['peanut butter', 'almond butter', 'coconut oil', 'olive oil', 'avocado oil']
+                    if after_pro_carb > 0:
+                        carb_scale = target_carb / after_pro_carb
+                        carb_scale = max(0.6, min(1.8, carb_scale))
+                        if abs(carb_scale - 1.0) > 0.08:
+                            scale_ingredients_by_type(day, carb_keywords, carb_scale, skip_keywords=fat_skip_in_carbs)
                 
-                # Stage 3: Fat correction — scale fat sources down/up to hit target
-                after_carb_cal, after_carb_pro, after_carb_carb, after_carb_fat = recalc_day_macros(day)
-                fat_keywords = ['oil', 'butter', 'avocado', 'almond butter', 'peanut butter', 'nuts',
-                                 'cheese', 'cream', 'coconut', 'ghee', 'lard', 'mayo', 'tahini',
-                                 'walnuts', 'almonds', 'cashews', 'pecans', 'seeds', 'flaxseed']
-                protein_skip_in_fats = ['chicken', 'beef', 'turkey', 'salmon', 'fish', 'tuna', 'tofu',
-                                         'tempeh', 'egg', 'yogurt', 'cottage cheese']
-                
-                if after_carb_fat > 0:
-                    fat_scale = target_fat / after_carb_fat
-                    fat_scale = max(0.5, min(2.0, fat_scale))
-                    if abs(fat_scale - 1.0) > 0.08:
-                        scale_ingredients_by_type(day, fat_keywords, fat_scale, skip_keywords=protein_skip_in_fats)
+                # Stage 3: Fat correction — skip for keto/carnivore (these need high fat — don't override)
+                if not _is_low_carb_ai:
+                    after_carb_cal, after_carb_pro, after_carb_carb, after_carb_fat = recalc_day_macros(day)
+                    fat_keywords = ['oil', 'butter', 'avocado', 'almond butter', 'peanut butter', 'nuts',
+                                     'cheese', 'cream', 'coconut', 'ghee', 'lard', 'mayo', 'tahini',
+                                     'walnuts', 'almonds', 'cashews', 'pecans', 'seeds', 'flaxseed',
+                                     'whole egg', 'salmon', 'bacon', 'ribeye', 'lamb', 'duck', 'pork belly']
+                    # Only skip truly lean proteins from fat scaling
+                    lean_protein_skip = ['chicken breast', 'turkey breast', 'cod', 'tilapia', 'tuna',
+                                          'shrimp', 'egg white', 'cottage cheese', 'tofu', 'tempeh',
+                                          'seitan', 'ground turkey', 'white fish']
+                    if after_carb_fat > 0:
+                        fat_scale = target_fat / after_carb_fat
+                        fat_scale = max(0.5, min(2.0, fat_scale))
+                        if abs(fat_scale - 1.0) > 0.04:  # Trigger at 4%+ deviation for tighter accuracy
+                            scale_ingredients_by_type(day, fat_keywords, fat_scale, skip_keywords=lean_protein_skip)
                 
                 # Stage 4: Final recalculation — get true accurate macros
                 final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
@@ -3680,33 +3807,133 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
     
     # Scale a day's meals to hit target calories
     def scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb_diet=False, is_plant_based_diet=False):
-        base = calc_day_totals(day_template)
-        
-        # Calculate scale factor based on calories (primary constraint)
-        scale = target_cal / base["calories"] if base["calories"] > 0 else 1.0
-        
+        """
+        Accurately scales template ingredients to hit user's daily macro targets.
+        Uses ingredient-level scaling so displayed macros always match actual ingredient amounts.
+        - Step 1: Scale all ingredients proportionally to hit calorie target
+        - Step 2: Scale protein-rich ingredients to hit protein target
+        - Step 3: Scale carb-rich ingredients to hit carb target (skip for keto/carnivore)
+        - Step 4: Scale fat-rich ingredients to hit fat target
+        - Step 5: Build meals and calculate macros from actual ingredient amounts (honest, no inflation)
+        """
+        import copy as _copy
+
+        # Ingredient keyword categories for targeted scaling
+        PROTEIN_KEYWORDS = [
+            'chicken', 'beef', 'turkey', 'fish', 'salmon', 'tuna', 'shrimp', 'pork',
+            'egg', 'tofu', 'tempeh', 'seitan', 'lentil', 'protein powder', 'pea protein',
+            'greek yogurt', 'cottage cheese', 'edamame', 'chickpea', 'black bean',
+            'kidney bean', 'ground beef', 'steak', 'hemp seed', 'soy yogurt', 'soy milk',
+            'milk', 'quinoa', 'smoked salmon', 'ribeye', 'lamb', 'bison', 'venison'
+        ]
+        CARB_KEYWORDS = [
+            'rice', 'oat', 'potato', 'sweet potato', 'pasta', 'bread', 'pita', 'tortilla',
+            'banana', 'corn', 'barley', 'couscous', 'noodle', 'wrap', 'cereal', 'granola',
+            'fruit', 'berry', 'apple', 'mango', 'orange', 'grape', 'lentil', 'chickpea',
+            'black bean', 'kidney bean', 'falafel', 'hummus', 'cracker'
+        ]
+        # Fat-rich keywords — avoid scaling pure-protein foods as fat sources
+        FAT_KEYWORDS = [
+            'oil', 'butter', 'avocado', 'nut', 'almond', 'peanut', 'cashew',
+            'pecan', 'walnut', 'macadamia', 'cheese', 'cream', 'coconut', 'ghee',
+            'mayo', 'tahini', 'seed', 'bacon', 'lard', 'pesto', 'heavy cream'
+        ]
+        # These are mainly protein — skip them when scaling fat sources
+        FAT_SKIP_PROTEINS = [
+            'chicken', 'beef', 'turkey', 'salmon', 'fish', 'tuna', 'tofu', 'tempeh',
+            'seitan', 'egg', 'yogurt', 'cottage', 'shrimp', 'pork', 'steak', 'ground beef'
+        ]
+
+        def _totals(tmpl):
+            t = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
+            for meal in tmpl.values():
+                for _g, cal, pro, carb, fat in meal["ingredients"].values():
+                    t["calories"] += cal
+                    t["protein"] += pro
+                    t["carbs"] += carb
+                    t["fats"] += fat
+            return t
+
+        def _scale_all(tmpl, factor):
+            """Scale every ingredient by factor (calorie-based initial scaling)."""
+            f = max(0.3, min(3.0, factor))
+            new = {}
+            for mt, meal in tmpl.items():
+                new_ings = {
+                    n: (round(g * f), round(c * f), round(p * f, 1), round(cb * f, 1), round(ft * f, 1))
+                    for n, (g, c, p, cb, ft) in meal["ingredients"].items()
+                }
+                new[mt] = {**meal, "ingredients": new_ings}
+            return new
+
+        def _scale_by_keywords(tmpl, keywords, factor, skip=None):
+            """Scale only ingredients whose names match keywords, while skipping skip-keywords."""
+            skip = skip or []
+            f = max(0.3, min(3.0, factor))
+            new = {}
+            for mt, meal in tmpl.items():
+                new_ings = {}
+                for n, (g, c, p, cb, ft) in meal["ingredients"].items():
+                    nl = n.lower()
+                    is_target = any(k in nl for k in keywords)
+                    is_skip = any(k in nl for k in skip)
+                    if is_target and not is_skip and abs(f - 1.0) > 0.03:
+                        new_ings[n] = (round(g * f), round(c * f), round(p * f, 1), round(cb * f, 1), round(ft * f, 1))
+                    else:
+                        new_ings[n] = (g, c, p, cb, ft)
+                new[mt] = {**meal, "ingredients": new_ings}
+            return new
+
+        # Work on a deep copy to preserve original templates
+        working = _copy.deepcopy(day_template)
+
+        # STEP 1 — Calorie scaling: scale all ingredients proportionally to hit calorie target
+        base = _totals(working)
+        if base["calories"] > 0:
+            cal_scale = target_cal / base["calories"]
+            working = _scale_all(working, cal_scale)
+
+        # STEP 2 — Protein scaling: adjust protein-rich ingredient amounts to hit protein target
+        t = _totals(working)
+        if t["protein"] > 0:
+            pro_scale = target_pro / t["protein"]
+            # Limit to ±50% adjustment to keep portions realistic
+            pro_scale = max(0.5, min(1.5, pro_scale))
+            working = _scale_by_keywords(working, PROTEIN_KEYWORDS, pro_scale)
+
+        # STEP 3 — Carb scaling: adjust carb-rich ingredient amounts to hit carb target
+        # Skip for keto/carnivore (low carb is intentional for those diets)
+        if not is_low_carb_diet:
+            t = _totals(working)
+            if t["carbs"] > 0:
+                carb_scale = target_carb / t["carbs"]
+                carb_scale = max(0.5, min(2.0, carb_scale))
+                working = _scale_by_keywords(working, CARB_KEYWORDS, carb_scale, skip=FAT_KEYWORDS)
+
+        # STEP 4 — Fat scaling: adjust fat-rich ingredient amounts to hit fat target
+        t = _totals(working)
+        if t["fats"] > 0:
+            fat_scale = target_fat / t["fats"]
+            fat_scale = max(0.4, min(2.0, fat_scale))
+            working = _scale_by_keywords(working, FAT_KEYWORDS, fat_scale, skip=FAT_SKIP_PROTEINS)
+
+        # STEP 5 — Build output meals with macros calculated from ACTUAL ingredient amounts
+        # This ensures the displayed macros are always honest and match ingredient quantities
         scaled_meals = []
-        day_totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
-        
+        day_totals = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
         meal_idx = 1
-        for meal_type, meal in day_template.items():
+
+        for meal_type, meal in working.items():
+            meal_macros = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
             scaled_ingredients = []
-            meal_macros = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
-            
-            for ing_name, (base_g, cal, pro, carb, fat) in meal["ingredients"].items():
-                # Scale grams and macros
-                scaled_g = round(base_g * scale)
-                scaled_cal = round(cal * scale)
-                scaled_pro = round(pro * scale, 1)
-                scaled_carb = round(carb * scale, 1)
-                scaled_fat = round(fat * scale, 1)
-                
-                scaled_ingredients.append(f"{scaled_g}g {ing_name}")
-                meal_macros["calories"] += scaled_cal
-                meal_macros["protein"] += scaled_pro
-                meal_macros["carbs"] += scaled_carb
-                meal_macros["fats"] += scaled_fat
-            
+
+            for ing_name, (g, cal, pro, carb, fat) in meal["ingredients"].items():
+                scaled_ingredients.append(f"{g}g {ing_name}")
+                meal_macros["calories"] += cal
+                meal_macros["protein"] += pro
+                meal_macros["carbs"] += carb
+                meal_macros["fats"] += fat
+
             scaled_meals.append({
                 "id": f"meal{meal_idx}",
                 "name": meal["name"],
@@ -3717,46 +3944,17 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                 "protein": round(meal_macros["protein"]),
                 "carbs": round(meal_macros["carbs"]),
                 "fats": round(meal_macros["fats"]),
-                "prep_time_minutes": meal["prep_time"]
+                "prep_time_minutes": meal.get("prep_time", 20)
             })
-            
+
             day_totals["calories"] += meal_macros["calories"]
             day_totals["protein"] += meal_macros["protein"]
             day_totals["carbs"] += meal_macros["carbs"]
             day_totals["fats"] += meal_macros["fats"]
             meal_idx += 1
-        
-        # For LOW-CARB diets (Keto/Carnivore) and VEGAN/VEGETARIAN diets, keep accurate macros from the template
-        # These diets have specific macro profiles that should not be artificially adjusted
-        # - Keto/Carnivore: low carb by design
-        # - Vegan/Vegetarian: protein comes from specific plant sources, can't be artificially inflated
-        if is_low_carb_diet or is_plant_based_diet:
-            # Just return the scaled values without artificially adjusting macros
-            # The macros are accurate based on actual ingredient quantities
-            return scaled_meals, day_totals
-        
-        # For other diets (balanced, high_protein, whole_foods), force daily totals to match user's targets
-        day_totals["calories"] = target_cal
-        day_totals["protein"] = target_pro
-        day_totals["carbs"] = target_carb
-        day_totals["fats"] = target_fat
-        
-        # Adjust individual meal macros proportionally to hit targets
-        raw_pro = sum(m["protein"] for m in scaled_meals)
-        raw_carb = sum(m["carbs"] for m in scaled_meals)
-        raw_fat = sum(m["fats"] for m in scaled_meals)
-        
-        pro_adj = target_pro / raw_pro if raw_pro > 0 else 1
-        carb_adj = target_carb / raw_carb if raw_carb > 0 else 1
-        fat_adj = target_fat / raw_fat if raw_fat > 0 else 1
-        
-        for meal in scaled_meals:
-            meal["protein"] = round(meal["protein"] * pro_adj)
-            meal["carbs"] = round(meal["carbs"] * carb_adj)
-            meal["fats"] = round(meal["fats"] * fat_adj)
-            # Recalculate calories from adjusted macros
-            meal["calories"] = round(meal["protein"] * 4 + meal["carbs"] * 4 + meal["fats"] * 9)
-        
+
+        # Round day totals
+        day_totals = {k: round(v) for k, v in day_totals.items()}
         return scaled_meals, day_totals
     
     # Determine if this is a low-carb diet that should preserve template macros

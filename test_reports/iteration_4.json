@@ -1,0 +1,96 @@
+{
+  "summary": "Backend macro accuracy testing for InterFitAI meal plan generation. Tested all 4 diet types (balanced, high_protein, keto, vegan) across 3 full test suite runs to assess consistency of the new ingredient-level scaling approach. Run 3 results: 8/9 tests passed (Balanced failed with borderline 10.5% protein deviation). Key finding: Keto and Vegan work perfectly; Balanced and High Protein have AI-variability-driven occasional failures around ±10% boundary.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/mealplans/generate (high_protein)",
+        "issue": "FLAKY: High protein plans can deviate up to 31.9% on carbs (156g vs 229g target) and 14.5% on protein. Root cause: AI interprets 'high_protein' as signal to minimize carbs and maximize protein, post-processing carb correction (max 1.8x cap) can't compensate when AI generates too few carb-rich ingredients. Passed 2/3 runs, failed 1/3.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "POST /api/mealplans/generate (balanced)",
+        "issue": "FLAKY: Balanced plans occasionally deviate ~10.5% on protein and ~11.8% on fat. Borderline failures right at the ±10% spec boundary. Passed 2/3 runs, failed 1/3 (Day 2 protein 190g vs 172g target, Day 3 fats 85g vs 76g target).",
+        "priority": "MEDIUM"
+      }
+    ]
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+
+  "test_results_detail": {
+    "balanced": {
+      "run1_individual": "PASSED (all 3 days ≤8% deviation: cal=0.1%, P=2.9%, C=1.3%, F=2.6%)",
+      "run2_full_suite": "PASSED",
+      "run3_full_suite": "FAILED (Day 2 protein 10.5%, Day 3 fats 11.8%)",
+      "verdict": "Generally good but flaky near boundary - 2/3 runs pass"
+    },
+    "high_protein": {
+      "run1_individual": "PASSED (all 3 days ≤8%: cal=2.4%, P=1.2%, C=5.2%, F=0.0%)",
+      "run2_full_suite": "FAILED (Day 1: P=14.5%, F=18.4%; Day 2: P=13.4%, C=31.9%; Day 3: F=11.8%)",
+      "run3_full_suite": "PASSED",
+      "verdict": "Flaky - carbs can be severely under target (31.9%) when AI generates too-protein-dense meals"
+    },
+    "keto": {
+      "run1_individual": "PASSED: Day1=26g, Day2=16g, Day3=25g carbs (all well under 50g)",
+      "run2_full_suite": "PASSED: Day1=26g, Day2=16g, Day3=25g carbs",
+      "run3_full_suite": "PASSED: Day1=34g, Day2=22g, Day3=31g carbs",
+      "keto_vs_profile": "CORRECTLY using keto targets (~28g), NOT user profile 229g carbs",
+      "fat_dominance": "Fat is 69-78% of calories (correct for keto)",
+      "verdict": "PERFECT - consistent across all runs"
+    },
+    "vegan": {
+      "run1_individual": "PASSED: No animal products, protein 174-177g vs 172g target (1-3% deviation)",
+      "run2_full_suite": "PASSED: No animal products, protein 173-175g vs 172g target",
+      "no_inflation": "CONFIRMED: Old bug (>250g protein) is gone - max seen 178g",
+      "verdict": "PERFECT - accurate and compliant"
+    },
+    "macro_sanity": {
+      "verdict": "PASSED: No impossible macros, protein calories never exceed total calories, balanced diet protein ≤31% of calories, keto fat is 69-78% of calories"
+    }
+  },
+
+  "rca_of_issue": "HIGH PROTEIN CARB DEVIATION ROOT CAUSE: The AI generation for 'high_protein' diet type naturally produces protein-heavy, low-carb meal plans. Post-processing Stage 2 (carb correction) applies carb_scale = 229/156 = 1.47x to carb-rich ingredients. However, when AI generates fewer carb ingredients (e.g., minimal rice/potato), scaling 1.47x still leaves carbs well below 229g target. The cap of max(0.6, min(1.8, carb_scale)) limits maximum scaling to 1.8x. If actual carbs are 100g, max 1.8x scaling only reaches ~180g vs 229g target. This is an AI prompt issue - the high_protein prompt needs to explicitly specify carb gram targets OR the post-processing needs a 3rd-pass with larger carb ingredient scaling cap.",
+
+  "test_report_links": [
+    "/app/backend/tests/test_macro_accuracy.py",
+    "/app/test_reports/pytest/macro_accuracy_results.xml"
+  ],
+
+  "action_items": [
+    "HIGH: Fix high_protein post-processing carb correction - carbs can deviate 31.9% under target. Options: 1) Include explicit carb gram targets in AI prompt (e.g., 'you MUST include {target_carb}g carbs from rice/oats/potatoes'), 2) Increase carb_scale cap from 1.8x to 3.0x, 3) Accept ±15% tolerance for high_protein (relax spec)",
+    "MEDIUM: Balanced diet occasionally exceeds ±10% by small margin (10.5-11.8%). Consider relaxing acceptance criteria to ±12% or add a retry if any macro exceeds 10%.",
+    "INFO: Keto meal plans are working perfectly - carbs 16-34g across all runs, correctly NOT using user profile 229g carb target. This was the original complaint and it is RESOLVED.",
+    "INFO: Vegan protein accuracy is excellent - 173-178g vs 172g target (1-4% deviation). No artificial inflation (old bug with >250g protein is CONFIRMED FIXED).",
+    "INFO: Ingredient-level scaling is working correctly - macros match ingredient amounts honestly. The 'fake inflation' from previous implementation is gone."
+  ],
+
+  "critical_code_review_comments": [
+    "scale_ingredient_str() has hard cap of max(0.5, min(2.5, scale_factor)) per ingredient. For aggressive carb correction (e.g., 1.47x target when low), this cap is fine, but if AI generates very few carb-rich ingredients, scaling them all 1.8x still won't reach the target.",
+    "high_protein AI prompt does not include explicit carb gram targets - it only says 'high protein' which AI interprets as reducing carbs. The balanced/vegan/keto prompts all explicitly mention exact carb amounts.",
+    "recalc_day_macros() falls back to AI values for ingredients not in INGREDIENT_DB (line 3626-3632). This is correct behavior but means unmatched ingredients use AI's claimed values, adding variability."
+  ],
+
+  "updated_files": [
+    "/app/backend/tests/test_macro_accuracy.py"
+  ],
+
+  "success_rate": {
+    "backend": "88.9% (8/9 tests passing in final run; keto and vegan 100%, balanced/high_protein occasional failures)",
+    "frontend": "Not tested (backend-only review)"
+  },
+
+  "seed_data_creation": "No seed data created. Used existing test user: cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
+
+  "retest_needed": true,
+
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "This is an AI-generated meal plan test. Macro accuracy is inherently non-deterministic. Test results: KETO (always passes - carbs 16-34g, far below 50g limit), VEGAN (always passes - protein 173-178g vs 172g target, no inflation), BALANCED (mostly passes but ~1/3 runs see borderline 10-12% deviation), HIGH_PROTEIN (flaky - can have 14-32% deviations especially carbs going 31.9% under target). Run each diet type 2-3 times to confirm. The high_protein carb issue needs the main agent to fix the AI prompt or post-processing cap."
+}
