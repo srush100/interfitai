@@ -1,0 +1,113 @@
+{
+  "summary": "Backend testing for InterFitAI macro scaling logic and foods_to_avoid filtering. All 7 review request acceptance criteria PASSED. Template path (4-step ingredient-level scaling) and AI path (4-stage correction + Stage 4 last-meal balance) are working correctly. All diet types pass their specific criteria.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/mealplans/generate (keto)",
+        "issue": "Keto plan total calories (2629-2669 kcal) significantly exceed user profile target (2273 kcal). This is expected behavior since keto uses diet-appropriate macro targets rather than user profile carb/fat targets, but may confuse users who expect their calorie target to be honored.",
+        "priority": "LOW"
+      },
+      {
+        "endpoint": "POST /api/mealplans/generate (vegan)",
+        "issue": "Vegan plan macros are identical to balanced plan (2288 cal, 172g P, 229g C, 76g F). All 3 days have exactly the same totals - this is correct for template path. However, a false positive 'animal product' detection was found: the word 'egg' appears as substring of 'veggie' (in 'Mediterranean Veggies'). This is not an actual animal product.",
+        "priority": "LOW"
+      },
+      {
+        "endpoint": "POST /api/mealplans/generate (all template plans)",
+        "issue": "All 3 days of template-based plans (balanced, vegan, high_protein) return identical macro totals (2288 cal, 172g P, 229g C, 76g F) because the same template scaling is applied uniformly. While meals/ingredients differ, the macro totals are always the same. Not a bug but may feel repetitive.",
+        "priority": "INFO"
+      }
+    ]
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+
+  "test_results_detail": {
+    "health_check": "✅ PASSED: 200 OK, response time 0.32s",
+    "balanced_all_3_days": {
+      "result": "✅ PASSED",
+      "day1": "2288 cal (0.7%), 172g P (1.2%), 229g C (0.9%), 76g F (0.0%)",
+      "day2": "2288 cal (0.7%), 172g P (1.2%), 229g C (0.9%), 76g F (0.0%)",
+      "day3": "2288 cal (0.7%), 172g P (1.2%), 229g C (0.9%), 76g F (0.0%)",
+      "path": "Template (no preferred_foods)",
+      "response_time": "32.91s"
+    },
+    "vegan": {
+      "result": "✅ PASSED",
+      "protein_per_day": "172g (vs 130-220g target range)",
+      "old_inflation_bug": "CONFIRMED FIXED - protein never exceeds 250g",
+      "response_time": "36.29s"
+    },
+    "keto": {
+      "result": "✅ PASSED",
+      "run1_carbs_day1": "43g (< 50g limit)",
+      "run2_carbs_day1": "29g (< 50g limit)",
+      "fat_percentage": "74.2% of calories",
+      "note": "Correctly using keto-specific targets, NOT user profile 227g carbs",
+      "response_time": "35-37s"
+    },
+    "high_protein": {
+      "result": "✅ PASSED",
+      "protein_per_day": "172g (1.2% deviation from 170g target, within ±15%)",
+      "response_time": "37.53s"
+    },
+    "foods_to_avoid_chicken_template": {
+      "result": "✅ PASSED",
+      "meals_checked": "12 meals across 3 days",
+      "chicken_violations": "ZERO - in names, ingredients, and instructions",
+      "response_time": "35-38s"
+    },
+    "alternate_meal_chicken_free": {
+      "result": "✅ PASSED",
+      "generated_meals": [
+        "Grilled Sirloin Steak with Sweet Potato and Sautéed Spinach",
+        "Grilled Shrimp with Quinoa and Roasted Vegetables"
+      ],
+      "chicken_violations": "ZERO across name, ingredients, instructions",
+      "response_time": "2.86-3.64s (very fast - uses template)"
+    }
+  },
+
+  "test_report_links": [
+    "/app/backend/tests/test_macro_scaling_and_foods_filter.py",
+    "/app/test_reports/pytest/macro_scaling_review.xml"
+  ],
+
+  "action_items": [
+    "INFO: Keto plan calories (2629-2669) exceed user profile target (2273). Consider whether keto should honor user calorie target or always use diet-appropriate macros. Current behavior passes the <50g carb requirement.",
+    "INFO: Template-based plans have identical macro totals across all 3 days (different meals but same macro numbers). Consider if this is acceptable or if variation is desired."
+  ],
+
+  "critical_code_review_comments": [
+    "Template path scale_day_to_targets() 4-step ingredient scaling is working correctly (calorie → protein → carb → fat). Output macros are honest reflections of ingredient amounts.",
+    "AI path Stage 4 last-meal balance correctly guarantees EXACT daily totals for non-keto plans by forcing the last meal to absorb the remainder.",
+    "Template foods_to_avoid filter (lines 4032-4047): correctly renames meal if name contains banned food AND removes banned ingredients. Both checks working.",
+    "generate_alternate_meal() PROTEIN_GROUPS filtering + 3-attempt retry + post-validation all working. Alternate meal correctly excludes chicken.",
+    "Keto path correctly bypasses Stage 2/3/4 scaling and uses honest ingredient macros only - confirmed working.",
+    "Vegan 'egg' substring false positive: the word 'egg' appears in 'veggie' as a substring. Not a real bug but worth noting for vegan animal product validation."
+  ],
+
+  "updated_files": [
+    "/app/backend/tests/test_macro_scaling_and_foods_filter.py"
+  ],
+
+  "success_rate": {
+    "backend": "100% (7/7 tests passing)",
+    "frontend": "Not tested (backend-only review)"
+  },
+
+  "seed_data_creation": "No seed data created. Used existing test user: cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
+
+  "retest_needed": false,
+
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "All 7 review request acceptance criteria PASS as of 2026-03-25. Template path delivers near-exact macros (0.7% cal, 1.2% P, 0.9% C, 0.0% F deviation). AI path Stage 4 guarantees exact totals for non-keto. Keto correctly uses <50g carbs. foods_to_avoid='chicken' filter works in both template generation and alternate meal generation. Note: template plans have identical macro totals across all 3 days (different meals, same numbers). Keto calories are higher than user profile target because keto ignores profile carb/fat targets in favor of diet-appropriate ratios."
+}
