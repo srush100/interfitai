@@ -3032,15 +3032,42 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
         else:
             fat_guidance = f"Fat target: {target_fat}g/day. Healthy fats from natural sources are fine."
 
+        # Pre-calculate exact ingredient quantities needed per meal for accurate macro targeting
+        def grams_for_macro(target_macro_g, food_density):
+            """How many grams of food needed to hit a macro target"""
+            return round(target_macro_g / food_density * 100) if food_density > 0 else 0
+
+        # Protein quantities (per meal)
+        b_pro_chicken = grams_for_macro(breakfast_pro, 31)
+        b_pro_eggs    = round(breakfast_pro / 6.5)  # number of eggs
+        l_pro_chicken = grams_for_macro(lunch_pro, 31)
+        l_pro_beef    = grams_for_macro(lunch_pro, 26)
+        d_pro_chicken = grams_for_macro(dinner_pro, 31)
+        d_pro_beef    = grams_for_macro(dinner_pro, 26)
+        s_pro_yogurt  = grams_for_macro(snack_pro, 10)
+
+        # Carb quantities (per meal)
+        b_carb_rice   = grams_for_macro(breakfast_carb, 28)
+        b_carb_potato = grams_for_macro(breakfast_carb, 20)
+        l_carb_rice   = grams_for_macro(lunch_carb, 28)
+        l_carb_potato = grams_for_macro(lunch_carb, 20)
+        d_carb_rice   = grams_for_macro(dinner_carb, 28)
+        d_carb_potato = grams_for_macro(dinner_carb, 20)
+
+        # Fat per meal (g)
+        b_fat_oil_ml  = round(breakfast_fat / 14 * 10)  # ml of olive oil
+        l_fat_oil_ml  = round(lunch_fat / 14 * 10)
+        d_fat_oil_ml  = round(dinner_fat / 14 * 10)
+
         prompt = f"""You are an ELITE sports nutritionist. Create a world-class, fully personalised 3-day meal plan.
 
 DIET STYLE: {eating_style.upper().replace('_', ' ')}
 {diet_instructions}
 
-DAILY TARGETS (hit these EXACTLY):
+DAILY MACRO TARGETS — hit these precisely:
 {target_cal} cal | {target_pro}g protein ({protein_pct}%) | {target_carb}g carbs ({carb_pct}%) | {target_fat}g fat ({fat_pct}%)
 
-ABSOLUTE PROHIBITIONS — NEVER include these ingredients:
+ABSOLUTE PROHIBITIONS — NEVER include these:
 {allergy_block}
 {avoid_instructions if avoid_instructions else ''}
 {do_not_use_str if do_not_use_str else ''}
@@ -3052,39 +3079,42 @@ ABSOLUTE PROHIBITIONS — NEVER include these ingredients:
 {protein_guidance_for_prompt}
 {protein_guidance}
 
-PER-MEAL TARGETS:
-- Breakfast: {breakfast_cal} cal | {breakfast_pro}g P | {breakfast_carb}g C | {breakfast_fat}g F
-- Lunch: {lunch_cal} cal | {lunch_pro}g P | {lunch_carb}g C | {lunch_fat}g F
-- Dinner: {dinner_cal} cal | {dinner_pro}g P | {dinner_carb}g C | {dinner_fat}g F
-- Snack: {snack_cal} cal | {snack_pro}g P | {snack_carb}g C | {snack_fat}g F
+MACRO REFERENCE (per 100g cooked unless noted):
+Chicken breast: 165cal 31P 0C 3.6F | Turkey breast: 135cal 30P 0C 1F | Tuna: 116cal 26P 0C 0.8F
+Beef sirloin: 207cal 26P 0C 11F | Shrimp: 99cal 24P 0C 0.3F | Cod: 82cal 18P 0C 0.7F
+Salmon: 208cal 20P 0C 13F | Egg whites (100g): 52cal 11P 0.7C 0.2F | Whole egg (50g ea): 78cal 6.5P 0.5C 5.5F
+Tofu firm: 144cal 17P 3C 8F | Tempeh: 192cal 20P 8C 11F | Greek yogurt 0%: 59cal 10P 4C 0.4F
+Cottage cheese: 84cal 11P 4C 2.5F | White rice cooked: 130cal 2.7P 28C 0.3F | Brown rice: 112cal 2.7P 24C 0.9F
+Sweet potato: 86cal 1.6P 20C 0.1F | Quinoa cooked: 120cal 4.4P 21C 1.9F | Oats dry: 389cal 17P 66C 7F
+Banana (120g): 107cal 1.3P 27.6C 0.4F | Avocado (50g): 80cal 1P 4.5C 7.5F | Olive oil (10ml): 88cal 0P 0C 10F
+
+EXACT QUANTITIES TO HIT EACH MEAL TARGET:
+Breakfast ({breakfast_cal}cal | {breakfast_pro}g P | {breakfast_carb}g C | {breakfast_fat}g F):
+  Protein: {b_pro_chicken}g chicken breast OR {b_pro_eggs} whole eggs | Carbs: {b_carb_rice}g cooked rice OR {b_carb_potato}g sweet potato | Fat: max {b_fat_oil_ml}ml oil
+Lunch ({lunch_cal}cal | {lunch_pro}g P | {lunch_carb}g C | {lunch_fat}g F):
+  Protein: {l_pro_chicken}g chicken OR {l_pro_beef}g beef/tuna | Carbs: {l_carb_rice}g rice OR {l_carb_potato}g potato | Fat: max {l_fat_oil_ml}ml oil
+Dinner ({dinner_cal}cal | {dinner_pro}g P | {dinner_carb}g C | {dinner_fat}g F):
+  Protein: {d_pro_chicken}g chicken OR {d_pro_beef}g beef/salmon | Carbs: {d_carb_rice}g rice OR {d_carb_potato}g potato | Fat: max {d_fat_oil_ml}ml oil
+Snack ({snack_cal}cal | {snack_pro}g P | {snack_carb}g C | {snack_fat}g F):
+  Protein: {s_pro_yogurt}g Greek yogurt OR equivalent | Keep carbs and fat light
 
 ELITE STANDARDS:
 1. All 3 days MUST have completely different meals — zero repetition
-2. Use EXACT gram amounts: "220g chicken breast", "160g cooked white rice"
-3. Give each meal an appealing, descriptive name (e.g. "Herb-Crusted Salmon with Roasted Sweet Potato & Asparagus")
+2. Use the EXACT gram amounts from the quantities guide above
+3. Give each meal an appealing, descriptive name (e.g. "Herb-Marinated Chicken with Jasmine Rice & Broccolini")
 4. Instructions: concise 2-3 step cooking method
-5. Every macro number must be accurate based on real ingredient weights
+5. Calculate ACCURATE macros from the actual ingredient weights you use
 
-INGREDIENT MACROS REFERENCE (per 100g cooked/as stated):
-- Chicken breast: 165 cal, 31g P, 0g C, 3.6g F
-- Beef sirloin: 207 cal, 26g P, 0g C, 11g F | Salmon: 208 cal, 20g P, 0g C, 13g F
-- Eggs (2 large): 155 cal, 13g P, 1g C, 11g F | Tofu (firm): 76 cal, 8g P, 2g C, 4g F
-- White rice (cooked): 130 cal, 2.7g P, 28g C, 0.3g F | Brown rice: 123 cal, 2.7g P, 25.6g C, 1g F
-- Sweet potato: 86 cal, 1.6g P, 20g C, 0.1g F | Quinoa: 120 cal, 4.4g P, 21.3g C, 1.9g F
-- Oats (dry): 389 cal, 17g P, 66g C, 7g F | Greek yogurt (0%): 59 cal, 10g P, 3.6g C, 0.4g F
-- Avocado: 160 cal, 2g P, 9g C, 15g F | Olive oil (1 tbsp=14g): 124 cal, 0g P, 0g C, 14g F
-- Almond butter (2 tbsp=32g): 196 cal, 6.7g P, 6g C, 17.8g F | Cottage cheese: 98 cal, 11g P, 3.4g C, 4.3g F
-
-Return ONLY this JSON (no markdown, no extra text):
+Return ONLY this JSON (no markdown):
 {{"name": "{plan_name} Elite Meal Plan", "meal_days": [
   {{"day": "Day 1", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [
-    {{"id": "d1m1", "name": "Descriptive Meal Name", "meal_type": "breakfast", "ingredients": ["220g ingredient", "100g ingredient"], "instructions": "Concise cooking steps.", "calories": {breakfast_cal}, "protein": {breakfast_pro}, "carbs": {breakfast_carb}, "fats": {breakfast_fat}, "prep_time_minutes": 10}},
-    {{"id": "d1m2", "name": "Descriptive Meal Name", "meal_type": "lunch", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {lunch_cal}, "protein": {lunch_pro}, "carbs": {lunch_carb}, "fats": {lunch_fat}, "prep_time_minutes": 20}},
-    {{"id": "d1m3", "name": "Descriptive Meal Name", "meal_type": "dinner", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {dinner_cal}, "protein": {dinner_pro}, "carbs": {dinner_carb}, "fats": {dinner_fat}, "prep_time_minutes": 25}},
-    {{"id": "d1m4", "name": "Descriptive Snack Name", "meal_type": "snack", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {snack_cal}, "protein": {snack_pro}, "carbs": {snack_carb}, "fats": {snack_fat}, "prep_time_minutes": 5}}
+    {{"id": "d1m1", "name": "Meal Name", "meal_type": "breakfast", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {breakfast_cal}, "protein": {breakfast_pro}, "carbs": {breakfast_carb}, "fats": {breakfast_fat}, "prep_time_minutes": 10}},
+    {{"id": "d1m2", "name": "Meal Name", "meal_type": "lunch", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {lunch_cal}, "protein": {lunch_pro}, "carbs": {lunch_carb}, "fats": {lunch_fat}, "prep_time_minutes": 20}},
+    {{"id": "d1m3", "name": "Meal Name", "meal_type": "dinner", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {dinner_cal}, "protein": {dinner_pro}, "carbs": {dinner_carb}, "fats": {dinner_fat}, "prep_time_minutes": 25}},
+    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {snack_cal}, "protein": {snack_pro}, "carbs": {snack_carb}, "fats": {snack_fat}, "prep_time_minutes": 5}}
   ]}},
-  {{"day": "Day 2", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [COMPLETELY DIFFERENT meals from Day 1, same macro targets]}},
-  {{"day": "Day 3", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [COMPLETELY DIFFERENT meals from Days 1 & 2, same macro targets]}}
+  {{"day": "Day 2", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [COMPLETELY DIFFERENT meals, same structure]}},
+  {{"day": "Day 3", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [COMPLETELY DIFFERENT meals, same structure]}}
 ]}}"""
 
         # Build system message with strict avoid instructions
