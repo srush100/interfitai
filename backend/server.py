@@ -2854,9 +2854,10 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         MEAL_TEMPLATES = BALANCED_TEMPLATES
         plan_name = "Balanced"
     
-    # If user specified preferred foods, use AI to generate custom meals
-    if request.preferred_foods and request.preferred_foods.strip():
-        logger.info(f"Using AI generation with preferred foods: {request.preferred_foods}")
+    # ALWAYS use AI generation for world-class personalized meal plans
+    # Templates are only used as fallback if AI fails
+    logger.info(f"Using AI generation | style={eating_style} | preferred={request.preferred_foods} | avoid={request.foods_to_avoid} | allergies={request.allergies}")
+    if True:
         
         # Calculate exact per-meal targets
         breakfast_cal = round(target_cal * 0.25)
@@ -2984,59 +2985,91 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
         do_not_use_str = f"DO NOT USE: {', '.join(do_not_use_list).upper()}" if do_not_use_list else ""
         
         # Calculate approximate grams of each macro source needed per meal
-        protein_grams_per_meal = round(target_pro / 4 / 31 * 100)  # Approx grams of protein source per meal
-        carb_grams_per_meal = round(target_carb / 4 / 28 * 100)    # Approx grams of rice/carb per meal
-        
-        prompt = f"""Create a 3-day meal plan that hits these EXACT daily targets:
-{target_cal} cal | {target_pro}g protein ({protein_pct}%) | {target_carb}g carbs ({carb_pct}%) | {target_fat}g fats ({fat_pct}%)
+        # Build allergy-specific prohibition block
+        allergy_specifics = {
+            'gluten': 'NO wheat, barley, rye, oats (ALL oats — even "gluten-free" labelled oats), spelt, seitan, regular pasta, bread, flour. Use tamari not soy sauce. Use rice, quinoa, sweet potato instead of grains.',
+            'dairy': 'NO milk, cheese, yogurt, butter, cream, whey, casein. Use plant-based alternatives.',
+            'nuts': 'NO almonds, cashews, walnuts, pecans, pistachios, brazil nuts, hazelnuts, macadamia. Seeds (sunflower, pumpkin) OK.',
+            'eggs': 'NO eggs in any form — fried, scrambled, boiled, baked.',
+            'soy': 'NO tofu, tempeh, soy sauce, edamame, soy milk, miso.',
+            'shellfish': 'NO shrimp, crab, lobster, scallops, oysters, mussels, clams.',
+            'fish': 'NO salmon, tuna, cod, tilapia, bass or any fish species.',
+            'peanuts': 'NO peanuts or peanut butter in any form.',
+        }
+        allergy_lines = []
+        for allergy in (request.allergies or []):
+            spec = allergy_specifics.get(allergy.lower(), f'NO {allergy} in any form.')
+            allergy_lines.append(f"  - {allergy.upper()}: {spec}")
+        allergy_block = '\n'.join(allergy_lines) if allergy_lines else '  - None'
 
-{avoid_instructions}
+        # Foods section — personalised whether or not user typed preferred foods
+        if request.preferred_foods and request.preferred_foods.strip():
+            foods_section = f"INCORPORATE THESE PREFERRED FOODS: {request.preferred_foods}\nBuild all meals around these. Supplement with complementary whole foods to hit macro targets."
+        else:
+            style_food_ideas = {
+                'keto': 'Use: ribeye, salmon, eggs, bacon, avocado, butter, cream, brie, macadamia nuts, leafy greens, broccoli, cauliflower.',
+                'vegan': 'Use: tempeh, tofu, black beans, lentils, quinoa, chickpeas, edamame, nuts, seeds, plant-based protein powder.',
+                'vegetarian': 'Use: eggs, greek yogurt, cottage cheese, tempeh, legumes, quinoa, sweet potato, brown rice.',
+                'paleo': 'Use: lean beef, salmon, chicken, sweet potato, almond flour, coconut oil, berries, green vegetables.',
+                'carnivore': 'Use ONLY: beef (ribeye/sirloin/ground), chicken thighs, salmon, bacon, eggs, butter. Zero carbs.',
+                'high_protein': 'Use: chicken breast, turkey, tuna, egg whites, greek yogurt, cottage cheese, lean beef, whey protein.',
+                'balanced': 'Use a rich variety: lean proteins, complex carbs (rice, oats, sweet potato), healthy fats, diverse vegetables.',
+                'whole_foods': 'Use only whole, unprocessed ingredients. No packaged foods. Rich variety of vegetables, legumes, lean proteins.',
+            }
+            style_hint = style_food_ideas.get(eating_style, style_food_ideas['balanced'])
+            foods_section = f"No preferred foods specified — choose ELITE, nutritionist-approved foods for a {eating_style.replace('_', ' ')} diet.\n{style_hint}"
 
+        prompt = f"""You are an ELITE sports nutritionist. Create a world-class, fully personalised 3-day meal plan.
+
+DIET STYLE: {eating_style.upper().replace('_', ' ')}
 {diet_instructions}
 
+DAILY TARGETS (hit these EXACTLY):
+{target_cal} cal | {target_pro}g protein ({protein_pct}%) | {target_carb}g carbs ({carb_pct}%) | {target_fat}g fat ({fat_pct}%)
+
+ABSOLUTE PROHIBITIONS — NEVER include these ingredients:
+{allergy_block}
+{avoid_instructions if avoid_instructions else ''}
+{do_not_use_str if do_not_use_str else ''}
+
+{foods_section}
+
 {protein_guidance_for_prompt}
-PREFERRED FOODS: {request.preferred_foods if request.preferred_foods else 'None specified'}
 {protein_guidance}
 
-⚠️ PRIORITY ORDER FOR MACROS:
-1. PROTEIN FIRST: Hit {target_pro}g protein EXACTLY using allowed protein sources
-2. FATS: Hit {target_fat}g fats using oils, nuts, avocado, fatty fish
-3. CARBS: Fill remaining calories with carbs to hit {target_carb}g
+PER-MEAL TARGETS:
+- Breakfast: {breakfast_cal} cal | {breakfast_pro}g P | {breakfast_carb}g C | {breakfast_fat}g F
+- Lunch: {lunch_cal} cal | {lunch_pro}g P | {lunch_carb}g C | {lunch_fat}g F
+- Dinner: {dinner_cal} cal | {dinner_pro}g P | {dinner_carb}g C | {dinner_fat}g F
+- Snack: {snack_cal} cal | {snack_pro}g P | {snack_carb}g C | {snack_fat}g F
 
-MEAL TARGETS:
-- Breakfast: {breakfast_cal} cal, {breakfast_pro}g P, {breakfast_carb}g C, {breakfast_fat}g F
-- Lunch: {lunch_cal} cal, {lunch_pro}g P, {lunch_carb}g C, {lunch_fat}g F  
-- Dinner: {dinner_cal} cal, {dinner_pro}g P, {dinner_carb}g C, {dinner_fat}g F
-- Snack: {snack_cal} cal, {snack_pro}g P, {snack_carb}g C, {snack_fat}g F
+ELITE STANDARDS:
+1. All 3 days MUST have completely different meals — zero repetition
+2. Use EXACT gram amounts: "220g chicken breast", "160g cooked white rice"
+3. Give each meal an appealing, descriptive name (e.g. "Herb-Crusted Salmon with Roasted Sweet Potato & Asparagus")
+4. Instructions: concise 2-3 step cooking method
+5. Every macro number must be accurate based on real ingredient weights
 
-INGREDIENT REFERENCE (per 100g):
-- Beef (lean): 250 cal, 26g P, 0g C, 15g F
-- Salmon: 208 cal, 20g P, 0g C, 13g F
-- Eggs (100g = 2 eggs): 155 cal, 13g P, 1g C, 11g F
-- Tofu: 76 cal, 8g P, 2g C, 4g F
-- Turkey breast: 135 cal, 30g P, 0g C, 1g F
-- Rice (cooked): 130 cal, 2.7g P, 28g C, 0.3g F  
-- Sweet potato: 86 cal, 1.6g P, 20g C, 0.1g F
-- Olive oil (1 tbsp = 14g): 124 cal, 0g P, 0g C, 14g F
-- Avocado (100g): 160 cal, 2g P, 9g C, 15g F
-- Greek yogurt: 59 cal, 10g P, 4g C, 0.4g F
-- Oats: 389 cal, 17g P, 66g C, 7g F
+INGREDIENT MACROS REFERENCE (per 100g cooked/as stated):
+- Chicken breast: 165 cal, 31g P, 0g C, 3.6g F
+- Beef sirloin: 207 cal, 26g P, 0g C, 11g F | Salmon: 208 cal, 20g P, 0g C, 13g F
+- Eggs (2 large): 155 cal, 13g P, 1g C, 11g F | Tofu (firm): 76 cal, 8g P, 2g C, 4g F
+- White rice (cooked): 130 cal, 2.7g P, 28g C, 0.3g F | Brown rice: 123 cal, 2.7g P, 25.6g C, 1g F
+- Sweet potato: 86 cal, 1.6g P, 20g C, 0.1g F | Quinoa: 120 cal, 4.4g P, 21.3g C, 1.9g F
+- Oats (dry): 389 cal, 17g P, 66g C, 7g F | Greek yogurt (0%): 59 cal, 10g P, 3.6g C, 0.4g F
+- Avocado: 160 cal, 2g P, 9g C, 15g F | Olive oil (1 tbsp=14g): 124 cal, 0g P, 0g C, 14g F
+- Almond butter (2 tbsp=32g): 196 cal, 6.7g P, 6g C, 17.8g F | Cottage cheese: 98 cal, 11g P, 3.4g C, 4.3g F
 
-RULES:
-1. Use SPECIFIC gram amounts: "200g chicken breast", "150g rice"
-2. Balance each meal to hit ~{protein_pct}% P / ~{carb_pct}% C / ~{fat_pct}% F
-3. Include the preferred foods but ADD carbs/fats as needed to balance
-
-Return ONLY this JSON:
-{{"name": "{plan_name} Custom Meal Plan", "meal_days": [
+Return ONLY this JSON (no markdown, no extra text):
+{{"name": "{plan_name} Elite Meal Plan", "meal_days": [
   {{"day": "Day 1", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [
-    {{"id": "d1m1", "name": "Breakfast Name", "meal_type": "breakfast", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {breakfast_cal}, "protein": {breakfast_pro}, "carbs": {breakfast_carb}, "fats": {breakfast_fat}, "prep_time_minutes": 10}},
-    {{"id": "d1m2", "name": "Lunch Name", "meal_type": "lunch", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {lunch_cal}, "protein": {lunch_pro}, "carbs": {lunch_carb}, "fats": {lunch_fat}, "prep_time_minutes": 20}},
-    {{"id": "d1m3", "name": "Dinner Name", "meal_type": "dinner", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {dinner_cal}, "protein": {dinner_pro}, "carbs": {dinner_carb}, "fats": {dinner_fat}, "prep_time_minutes": 25}},
-    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["Xg ingredient"], "instructions": "Steps", "calories": {snack_cal}, "protein": {snack_pro}, "carbs": {snack_carb}, "fats": {snack_fat}, "prep_time_minutes": 5}}
+    {{"id": "d1m1", "name": "Descriptive Meal Name", "meal_type": "breakfast", "ingredients": ["220g ingredient", "100g ingredient"], "instructions": "Concise cooking steps.", "calories": {breakfast_cal}, "protein": {breakfast_pro}, "carbs": {breakfast_carb}, "fats": {breakfast_fat}, "prep_time_minutes": 10}},
+    {{"id": "d1m2", "name": "Descriptive Meal Name", "meal_type": "lunch", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {lunch_cal}, "protein": {lunch_pro}, "carbs": {lunch_carb}, "fats": {lunch_fat}, "prep_time_minutes": 20}},
+    {{"id": "d1m3", "name": "Descriptive Meal Name", "meal_type": "dinner", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {dinner_cal}, "protein": {dinner_pro}, "carbs": {dinner_carb}, "fats": {dinner_fat}, "prep_time_minutes": 25}},
+    {{"id": "d1m4", "name": "Descriptive Snack Name", "meal_type": "snack", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {snack_cal}, "protein": {snack_pro}, "carbs": {snack_carb}, "fats": {snack_fat}, "prep_time_minutes": 5}}
   ]}},
-  {{"day": "Day 2", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [SAME macros, DIFFERENT foods]}},
-  {{"day": "Day 3", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [SAME macros, DIFFERENT foods]}}
+  {{"day": "Day 2", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [COMPLETELY DIFFERENT meals from Day 1, same macro targets]}},
+  {{"day": "Day 3", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [COMPLETELY DIFFERENT meals from Days 1 & 2, same macro targets]}}
 ]}}"""
 
         # Build system message with strict avoid instructions
