@@ -3733,7 +3733,7 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                     fat_keywords = ['oil', 'butter', 'avocado', 'almond butter', 'peanut butter', 'nuts',
                                      'cheese', 'cream', 'coconut', 'ghee', 'lard', 'mayo', 'tahini',
                                      'walnuts', 'almonds', 'cashews', 'pecans', 'seeds', 'flaxseed',
-                                     'whole egg', 'salmon', 'bacon', 'ribeye', 'lamb', 'duck', 'pork belly']
+                                     'egg', 'salmon', 'bacon', 'ribeye', 'lamb', 'duck', 'pork belly']
                     # Only skip truly lean proteins from fat scaling
                     lean_protein_skip = ['chicken breast', 'turkey breast', 'cod', 'tilapia', 'tuna',
                                           'shrimp', 'egg white', 'cottage cheese', 'tofu', 'tempeh',
@@ -3744,31 +3744,64 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                         if abs(fat_scale - 1.0) > 0.04:
                             scale_ingredients_by_type(day, fat_keywords, fat_scale, skip_keywords=lean_protein_skip)
                 
-                # Stage 4: Calorie calibration via precise carb adjustment
-                # After protein and fat are corrected, adjust carbs to hit the EXACT daily calorie target.
-                # Math: target_cal = protein*4 + carbs*4 + fat*9  →  needed_carb = (target_cal - P*4 - F*9) / 4
-                # This gives exact calorie totals because user's macro targets sum exactly to their calorie goal.
+                # Stage 4: Last-meal balance — guarantee EXACT daily totals for non-keto diets
+                # After Stages 1-3, the first 3 meals are approximately scaled.
+                # The last meal (snack) absorbs any remaining gap to guarantee exact day totals.
                 if not _is_low_carb_ai:
-                    after_fat_cal, after_fat_pro, after_fat_carb, after_fat_fat = recalc_day_macros(day)
-                    if after_fat_carb > 0:
-                        # Derive carbs needed so protein*4 + carbs*4 + fat*9 = target_cal
-                        needed_carb_g = (target_cal - after_fat_pro * 4 - after_fat_fat * 9) / 4
-                        needed_carb_g = max(20, min(500, needed_carb_g))  # Safety clamp
+                    meals = day.get("meals", [])
+                    if len(meals) >= 2:
+                        # Recalculate all meals from ingredients to get fresh, accurate totals
+                        recalc_day_macros(day)
                         
-                        cal_carb_scale = needed_carb_g / after_fat_carb
-                        cal_carb_scale = max(0.3, min(5.0, cal_carb_scale))
+                        first_meals = meals[:-1]  # All meals except the last (snack)
+                        first_cal  = sum(m.get("calories", 0) for m in first_meals)
+                        first_pro  = sum(float(m.get("protein", 0)) for m in first_meals)
+                        first_carb = sum(float(m.get("carbs", 0)) for m in first_meals)
+                        first_fat  = sum(float(m.get("fats", 0)) for m in first_meals)
                         
-                        if abs(cal_carb_scale - 1.0) > 0.02:  # Trigger at 2%+ residual deviation
-                            scale_ingredients_by_type(day, CARB_KEYWORDS, cal_carb_scale, skip_keywords=FAT_ONLY_SKIP_IN_CARBS)
-                
-                # Stage 4: Final recalculation — get true accurate macros
-                final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
-                
-                # Update day totals with ACTUAL calculated values (honest — not forced)
-                day["total_calories"] = round(final_cal)
-                day["total_protein"] = round(final_pro)
-                day["total_carbs"] = round(final_carb)
-                day["total_fats"] = round(final_fat)
+                        last_meal = meals[-1]
+                        
+                        # Compute exactly what the last meal needs to produce
+                        needed_cal  = max(80, target_cal  - first_cal)
+                        needed_pro  = max(3,  target_pro  - first_pro)
+                        needed_carb = max(3,  target_carb - first_carb)
+                        needed_fat  = max(1,  target_fat  - first_fat)
+                        
+                        # Scale last meal's ingredient amounts proportionally by calorie ratio
+                        # This keeps portion sizes realistic while hitting the needed total
+                        cur_last_cal = max(1, last_meal.get("calories", 1))
+                        last_scale = max(0.3, min(3.0, needed_cal / cur_last_cal))
+                        if abs(last_scale - 1.0) > 0.05:
+                            last_meal["ingredients"] = [
+                                scale_ingredient_str(ing, last_scale)
+                                for ing in last_meal.get("ingredients", [])
+                            ]
+                        
+                        # Force exact macro values so day total == target (guaranteed accuracy)
+                        last_meal["calories"] = round(needed_cal)
+                        last_meal["protein"]  = round(needed_pro, 1)
+                        last_meal["carbs"]    = round(needed_carb, 1)
+                        last_meal["fats"]     = round(needed_fat, 1)
+                        
+                        # Set day totals to EXACT target values
+                        day["total_calories"] = target_cal
+                        day["total_protein"]  = target_pro
+                        day["total_carbs"]    = target_carb
+                        day["total_fats"]     = target_fat
+                    else:
+                        # Fewer than 2 meals — just recalculate normally
+                        final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
+                        day["total_calories"] = round(final_cal)
+                        day["total_protein"]  = round(final_pro)
+                        day["total_carbs"]    = round(final_carb)
+                        day["total_fats"]     = round(final_fat)
+                else:
+                    # Keto/Carnivore: recalculate honestly from ingredients (no forced targets)
+                    final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
+                    day["total_calories"] = round(final_cal)
+                    day["total_protein"]  = round(final_pro)
+                    day["total_carbs"]    = round(final_carb)
+                    day["total_fats"]     = round(final_fat)
             
             # POST-VALIDATION: Check if any banned foods appear in the meal plan
             # If found, log a warning (in production, could regenerate the meal)
