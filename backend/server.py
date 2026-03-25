@@ -3687,6 +3687,13 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                                 new_ings.append(ing)
                         meal["ingredients"] = new_ings
                 
+                # Define carb & fat keywords once — reused in Stage 2 and Stage 4
+                CARB_KEYWORDS = ['rice', 'sweet potato', 'potato', 'oat', 'quinoa', 'bread', 'pasta',
+                                  'banana', 'apple', 'fruit', 'bean', 'lentil', 'chickpea', 'corn',
+                                  'tortilla', 'noodle', 'couscous', 'barley', 'bulgur', 'mango', 'berry',
+                                  'orange', 'grape', 'pear', 'pineapple', 'wrap', 'roll', 'pita']
+                FAT_ONLY_SKIP_IN_CARBS = ['peanut butter', 'almond butter', 'coconut oil', 'olive oil', 'avocado oil']
+
                 # Stage 1: Scale all by calories
                 for meal in day.get("meals", []):
                     meal["ingredients"] = [scale_ingredient_str(ing, cal_scale) for ing in meal.get("ingredients", [])]
@@ -3706,25 +3713,19 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                                      'pita', 'barley', 'mango', 'apple', 'oil', 'butter', 'avocado']
                 if after_cal_pro > 0:
                     pro_scale = target_pro / after_cal_pro
-                    pro_scale = max(0.75, min(1.35, pro_scale))  # ±25-35% max to keep portions realistic
-                    if abs(pro_scale - 1.0) > 0.05:
+                    pro_scale = max(0.70, min(1.50, pro_scale))  # Up to 50% increase for vegan protein gaps
+                    if abs(pro_scale - 1.0) > 0.03:
                         scale_ingredients_by_type(day, pure_protein_keywords, pro_scale, skip_keywords=non_protein_skip)
                 
                 # Stage 2: Carb correction — skip for keto/carnivore (intentionally low carb)
                 if not _is_low_carb_ai:
                     after_pro_cal, after_pro_pro, after_pro_carb, after_pro_fat = recalc_day_macros(day)
-                    carb_keywords = ['rice', 'sweet potato', 'potato', 'oat', 'quinoa', 'bread', 'pasta',
-                                      'banana', 'apple', 'fruit', 'bean', 'lentil', 'chickpea', 'corn',
-                                      'tortilla', 'noodle', 'couscous', 'barley', 'bulgur', 'mango', 'berry',
-                                      'orange', 'grape', 'pear', 'pineapple', 'wrap']
-                    fat_skip_in_carbs = ['peanut butter', 'almond butter', 'coconut oil', 'olive oil', 'avocado oil']
                     if after_pro_carb > 0:
                         carb_scale = target_carb / after_pro_carb
-                        # Allow more aggressive carb scaling (up to 3x) — especially for high_protein plans
-                        # where AI sometimes skimps on carbs
-                        carb_scale = max(0.6, min(3.0, carb_scale))
-                        if abs(carb_scale - 1.0) > 0.06:
-                            scale_ingredients_by_type(day, carb_keywords, carb_scale, skip_keywords=fat_skip_in_carbs)
+                        # Allow up to 3x scaling — high_protein AI sometimes skimps on carbs
+                        carb_scale = max(0.5, min(3.0, carb_scale))
+                        if abs(carb_scale - 1.0) > 0.04:
+                            scale_ingredients_by_type(day, CARB_KEYWORDS, carb_scale, skip_keywords=FAT_ONLY_SKIP_IN_CARBS)
                 
                 # Stage 3: Fat correction — skip for keto/carnivore (these need high fat — don't override)
                 if not _is_low_carb_ai:
@@ -3739,9 +3740,26 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                                           'seitan', 'ground turkey', 'white fish']
                     if after_carb_fat > 0:
                         fat_scale = target_fat / after_carb_fat
-                        fat_scale = max(0.5, min(2.0, fat_scale))
-                        if abs(fat_scale - 1.0) > 0.04:  # Trigger at 4%+ deviation for tighter accuracy
+                        fat_scale = max(0.4, min(2.5, fat_scale))
+                        if abs(fat_scale - 1.0) > 0.04:
                             scale_ingredients_by_type(day, fat_keywords, fat_scale, skip_keywords=lean_protein_skip)
+                
+                # Stage 4: Calorie calibration via precise carb adjustment
+                # After protein and fat are corrected, adjust carbs to hit the EXACT daily calorie target.
+                # Math: target_cal = protein*4 + carbs*4 + fat*9  →  needed_carb = (target_cal - P*4 - F*9) / 4
+                # This gives exact calorie totals because user's macro targets sum exactly to their calorie goal.
+                if not _is_low_carb_ai:
+                    after_fat_cal, after_fat_pro, after_fat_carb, after_fat_fat = recalc_day_macros(day)
+                    if after_fat_carb > 0:
+                        # Derive carbs needed so protein*4 + carbs*4 + fat*9 = target_cal
+                        needed_carb_g = (target_cal - after_fat_pro * 4 - after_fat_fat * 9) / 4
+                        needed_carb_g = max(20, min(500, needed_carb_g))  # Safety clamp
+                        
+                        cal_carb_scale = needed_carb_g / after_fat_carb
+                        cal_carb_scale = max(0.3, min(5.0, cal_carb_scale))
+                        
+                        if abs(cal_carb_scale - 1.0) > 0.02:  # Trigger at 2%+ residual deviation
+                            scale_ingredients_by_type(day, CARB_KEYWORDS, cal_carb_scale, skip_keywords=FAT_ONLY_SKIP_IN_CARBS)
                 
                 # Stage 4: Final recalculation — get true accurate macros
                 final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
