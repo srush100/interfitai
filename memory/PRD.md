@@ -92,8 +92,8 @@ Build InterFitAI - a comprehensive AI fitness app with:
 - [x] Vegan protein accuracy: seitan/tempeh/edamame now in ingredient DB (2026-03-25)
 
 ## P1 - High Priority
+- [x] Alternate meal foods_to_avoid: VERIFIED WORKING (2026-02) — PROTEIN_GROUPS filtering + retry loop confirmed with 7/7 tests passing
 - [ ] RevenueCat native purchase integration (requires native build, not web preview)
-- [ ] Alternate meal foods_to_avoid: verify fix is still working with latest code
 
 ## P2 - Medium Priority
 - [ ] Google Fit / Fitbit / Garmin live device connection (OAuth flows)

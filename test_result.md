@@ -815,11 +815,11 @@ metadata:
 
   - task: "Alternate Meal foods_to_avoid Compliance"
     implemented: true
-    working: "NA"
+    working: true
     file: "server.py"
     stuck_count: 1
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: false
         agent: "user"
@@ -830,6 +830,9 @@ metadata:
       - working: "NA"
         agent: "main"
         comment: "NEW SESSION: Manual curl test confirms /api/mealplan/alternate correctly excludes chicken when foods_to_avoid=chicken is in the meal plan. Generated 'Scrambled Eggs & Toast with Berry Yogurt' - no chicken found. PROTEIN_GROUPS filtering is working. Needs formal testing to confirm all cases pass."
+      - working: true
+        agent: "testing"
+        comment: "✅ FORMALLY TESTED (2026-02): PROTEIN_GROUPS filtering + 3-attempt retry + post-validation all confirmed working. Generated alternate meals 'Grilled Sirloin Steak...' and 'Grilled Shrimp with Quinoa...' with ZERO chicken in name, ingredients, or instructions. Response time: 2.86-3.64s. P1 RESOLVED."
 
   - task: "Template-Based Meal Name Filtering (foods_to_avoid)"
     implemented: true
