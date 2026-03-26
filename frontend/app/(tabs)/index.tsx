@@ -357,19 +357,19 @@ export default function HomeScreen() {
           <Text style={styles.sectionTitle}>Today's Progress</Text>
           <View style={styles.progressRow}>
             <View style={styles.progressItem}>
-              <Ionicons name="footsteps" size={24} color={colors.primary} />
+              <Ionicons name="footsteps" size={24} color="#FFFFFF" />
               <Text style={styles.progressValue}>{todaySteps.toLocaleString()}</Text>
               <Text style={styles.progressLabel}>Steps</Text>
             </View>
             <View style={styles.progressItem}>
-              <Ionicons name="flame" size={24} color="#FF6B6B" />
+              <Ionicons name="flame" size={24} color="#F5C518" />
               <Text style={styles.progressValue}>
                 {dailySummary?.consumed?.calories || 0}
               </Text>
               <Text style={styles.progressLabel}>Calories</Text>
             </View>
             <View style={styles.progressItem}>
-              <Ionicons name="water" size={24} color="#45B7D1" />
+              <Ionicons name="water" size={24} color="#FF6B6B" />
               <Text style={styles.progressValue}>
                 {Math.round(dailySummary?.consumed?.protein || 0)}g
               </Text>

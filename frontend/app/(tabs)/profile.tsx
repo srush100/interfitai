@@ -490,7 +490,7 @@ export default function ProfileScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Step Tracking</Text>
           <View style={styles.stepsDisplay}>
-            <Ionicons name="footsteps" size={32} color={colors.primary} />
+            <Ionicons name="footsteps" size={32} color="#FFFFFF" />
             <View style={styles.stepsInfo}>
               <Text style={styles.stepsValue}>{stepCount.toLocaleString()}</Text>
               <Text style={styles.stepsGoal}>/ {stepGoal.toLocaleString()} steps</Text>
@@ -823,7 +823,7 @@ const styles = StyleSheet.create({
   stepsValue: {
     fontSize: 32,
     fontWeight: '700',
-    color: colors.primary,
+    color: '#FFFFFF',
   },
   stepsGoal: {
     fontSize: 16,
