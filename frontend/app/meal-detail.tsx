@@ -363,7 +363,7 @@ export default function MealDetail() {
               <Text style={styles.macroLabel}>Carbs</Text>
             </View>
             <View style={styles.macroBox}>
-              <Text style={[styles.macroValue, { color: '#FFD93D' }]}>
+              <Text style={[styles.macroValue, { color: '#F97316' }]}>
                 {mealPlan.target_fats}g
               </Text>
               <Text style={styles.macroLabel}>Fats</Text>
@@ -458,13 +458,13 @@ export default function MealDetail() {
                     return (
                       <>
                         <View style={styles.macroBar}>
-                          <View style={[styles.macroBarSeg, { width: `${pPct}%`, backgroundColor: '#F5C518', borderTopLeftRadius: 4, borderBottomLeftRadius: 4 }]} />
-                          <View style={[styles.macroBarSeg, { width: `${cPct}%`, backgroundColor: '#4A90D9' }]} />
+                          <View style={[styles.macroBarSeg, { width: `${pPct}%`, backgroundColor: '#FF6B6B', borderTopLeftRadius: 4, borderBottomLeftRadius: 4 }]} />
+                          <View style={[styles.macroBarSeg, { width: `${cPct}%`, backgroundColor: '#4ECDC4' }]} />
                           <View style={[styles.macroBarSeg, { width: `${fPct}%`, backgroundColor: '#F97316', borderTopRightRadius: 4, borderBottomRightRadius: 4 }]} />
                         </View>
                         <View style={styles.macroBarLabels}>
-                          <Text style={[styles.macroBarLabel, { color: '#F5C518' }]}>P {meal.protein}g</Text>
-                          <Text style={[styles.macroBarLabel, { color: '#4A90D9' }]}>C {meal.carbs}g</Text>
+                          <Text style={[styles.macroBarLabel, { color: '#FF6B6B' }]}>P {meal.protein}g</Text>
+                          <Text style={[styles.macroBarLabel, { color: '#4ECDC4' }]}>C {meal.carbs}g</Text>
                           <Text style={[styles.macroBarLabel, { color: '#F97316' }]}>F {meal.fats}g</Text>
                         </View>
                       </>
