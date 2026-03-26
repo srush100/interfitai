@@ -771,23 +771,23 @@ export default function FoodLog() {
                       {/* Inline quantity + add row — only shown when expanded */}
                       {isSelected && (
                         <View style={styles.inlineQtyRow}>
-                          <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={styles.qtyChipsRow}
-                          >
-                            {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                              <TouchableOpacity
-                                key={n}
-                                style={[styles.qtyChip, searchQty === n && styles.qtyChipActive]}
-                                onPress={() => setSearchQty(n)}
-                              >
-                                <Text style={[styles.qtyChipText, searchQty === n && styles.qtyChipTextActive]}>
-                                  {n}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </ScrollView>
+                          <View style={styles.inlineQtyControls}>
+                            <TouchableOpacity
+                              style={[styles.inlineQtyBtn, searchQty <= 1 && styles.inlineQtyBtnDisabled]}
+                              onPress={() => setSearchQty(q => Math.max(1, q - 1))}
+                              disabled={searchQty <= 1}
+                            >
+                              <Ionicons name="remove" size={18} color={searchQty <= 1 ? colors.textSecondary : colors.text} />
+                            </TouchableOpacity>
+                            <Text style={styles.inlineQtyValue}>{searchQty}</Text>
+                            <TouchableOpacity
+                              style={[styles.inlineQtyBtn, searchQty >= 10 && styles.inlineQtyBtnDisabled]}
+                              onPress={() => setSearchQty(q => Math.min(10, q + 1))}
+                              disabled={searchQty >= 10}
+                            >
+                              <Ionicons name="add" size={18} color={searchQty >= 10 ? colors.textSecondary : colors.text} />
+                            </TouchableOpacity>
+                          </View>
 
                           <TouchableOpacity
                             style={styles.inlineAddBtn}
@@ -1336,33 +1336,30 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  qtyChipsRow: {
+  inlineQtyControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingRight: 10,
-  },
-  qtyChip: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: colors.background,
+    borderRadius: 10,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
   },
-  qtyChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  inlineQtyBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  qtyChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
+  inlineQtyBtnDisabled: {
+    opacity: 0.4,
   },
-  qtyChipTextActive: {
-    color: colors.background,
+  inlineQtyValue: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.text,
+    minWidth: 36,
+    textAlign: 'center',
   },
   inlineAddBtn: {
     backgroundColor: colors.primary,
