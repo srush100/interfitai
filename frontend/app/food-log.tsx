@@ -65,7 +65,8 @@ export default function FoodLog() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [additionalContext, setAdditionalContext] = useState('');
-  const [quantity, setQuantity] = useState(1);
+  const [selectedSearchIdx, setSelectedSearchIdx] = useState<number | null>(null);
+  const [searchQty, setSearchQty] = useState(1);
   
   // Manual entry state
   const [manualFood, setManualFood] = useState({
@@ -227,25 +228,29 @@ export default function FoodLog() {
     }
   };
 
-  const logFood = async (food: SearchResult) => {
+  const [quantity, setQuantity] = useState(1);
+
+  const logFood = async (food: SearchResult, qty: number = 1) => {
     if (!profile?.id) return;
     try {
       const today = new Date().toISOString().split('T')[0];
       await api.post('/food/log', {
         user_id: profile.id,
         food_name: food.name,
-        serving_size: '1 serving',
-        calories: food.calories,
-        protein: food.protein,
-        carbs: food.carbs,
-        fats: food.fats,
+        serving_size: qty === 1 ? '1 serving' : `${qty} servings`,
+        calories: Math.round(food.calories * qty),
+        protein: Math.round(food.protein * qty * 10) / 10,
+        carbs: Math.round(food.carbs * qty * 10) / 10,
+        fats: Math.round(food.fats * qty * 10) / 10,
         meal_type: selectedMealType,
         logged_date: today,
       });
-      Alert.alert('Success', `${food.name} logged!`);
+      Alert.alert('Logged!', `${qty > 1 ? `${qty}x ` : ''}${food.name} — ${Math.round(food.calories * qty)} cal`);
       loadTodayLogs();
       setSearchQuery('');
       setSearchResults([]);
+      setSelectedSearchIdx(null);
+      setSearchQty(1);
       setActiveTab('log');
     } catch (error) {
       Alert.alert('Error', 'Failed to log food');
@@ -729,33 +734,87 @@ export default function FoodLog() {
 
             {searchResults.length > 0 && (
               <View style={styles.resultsContainer}>
-                {searchResults.map((food, idx) => (
-                  <View key={idx} style={styles.resultItem}>
-                    <TouchableOpacity
-                      style={styles.resultContent}
-                      onPress={() => logFood(food)}
-                    >
-                      <View style={styles.resultInfo}>
-                        <Text style={styles.resultName}>{food.name}</Text>
-                        <Text style={styles.resultMacros}>
-                          {food.calories} cal • {food.protein}g P • {food.carbs}g C • {food.fats}g F
-                        </Text>
-                      </View>
-                      <Ionicons name="add-circle" size={26} color={colors.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.saveFavoriteBtn}
-                      onPress={() => saveSearchedFoodToFavorites(food, idx)}
-                      disabled={savingSearchFavorite === idx}
-                    >
-                      {savingSearchFavorite === idx ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
-                      ) : (
-                        <Ionicons name="heart-outline" size={20} color={colors.primary} />
+                {searchResults.map((food, idx) => {
+                  const isSelected = selectedSearchIdx === idx;
+                  const qty = isSelected ? searchQty : 1;
+                  return (
+                    <View key={idx} style={[styles.resultItem, isSelected && styles.resultItemExpanded]}>
+                      {/* Food name row — tap to expand/collapse */}
+                      <TouchableOpacity
+                        style={styles.resultContent}
+                        onPress={() => {
+                          if (isSelected) {
+                            setSelectedSearchIdx(null);
+                            setSearchQty(1);
+                          } else {
+                            setSelectedSearchIdx(idx);
+                            setSearchQty(1);
+                          }
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.resultInfo}>
+                          <Text style={styles.resultName}>{food.name}</Text>
+                          <Text style={styles.resultMacros}>
+                            {isSelected
+                              ? `${Math.round(food.calories * qty)} cal • ${Math.round(food.protein * qty * 10) / 10}g P • ${Math.round(food.carbs * qty * 10) / 10}g C • ${Math.round(food.fats * qty * 10) / 10}g F`
+                              : `${food.calories} cal • ${food.protein}g P • ${food.carbs}g C • ${food.fats}g F`}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name={isSelected ? 'chevron-up' : 'add-circle'}
+                          size={26}
+                          color={colors.primary}
+                        />
+                      </TouchableOpacity>
+
+                      {/* Inline quantity + add row — only shown when expanded */}
+                      {isSelected && (
+                        <View style={styles.inlineQtyRow}>
+                          <View style={styles.inlineQtyControls}>
+                            <TouchableOpacity
+                              style={styles.inlineQtyBtn}
+                              onPress={() => setSearchQty(q => Math.max(1, q - 1))}
+                            >
+                              <Ionicons name="remove" size={18} color={colors.text} />
+                            </TouchableOpacity>
+                            <Text style={styles.inlineQtyValue}>{searchQty}</Text>
+                            <TouchableOpacity
+                              style={styles.inlineQtyBtn}
+                              onPress={() => setSearchQty(q => q + 1)}
+                            >
+                              <Ionicons name="add" size={18} color={colors.text} />
+                            </TouchableOpacity>
+                          </View>
+
+                          <TouchableOpacity
+                            style={styles.inlineAddBtn}
+                            onPress={() => logFood(food, searchQty)}
+                          >
+                            <Text style={styles.inlineAddBtnText}>
+                              Add {searchQty > 1 ? `×${searchQty}` : ''}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
                       )}
-                    </TouchableOpacity>
-                  </View>
-                ))}
+
+                      {/* Save to favourites — always visible */}
+                      {!isSelected && (
+                        <TouchableOpacity
+                          style={styles.saveFavoriteBtn}
+                          onPress={() => saveSearchedFoodToFavorites(food, idx)}
+                          disabled={savingSearchFavorite === idx}
+                        >
+                          {savingSearchFavorite === idx ? (
+                            <ActivityIndicator size="small" color={colors.primary} />
+                          ) : (
+                            <Ionicons name="heart-outline" size={20} color={colors.primary} />
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -1257,17 +1316,60 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   resultItem: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    marginBottom: 2,
+    overflow: 'hidden',
+  },
+  resultItemExpanded: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  inlineQtyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    padding: 14,
-    borderRadius: 12,
-    gap: 10,
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  inlineQtyControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  inlineQtyBtn: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inlineQtyValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    minWidth: 32,
+    textAlign: 'center',
+  },
+  inlineAddBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+  },
+  inlineAddBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.background,
   },
   resultContent: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 14,
+    gap: 10,
   },
   resultInfo: {
     flex: 1,
