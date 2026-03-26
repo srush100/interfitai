@@ -878,6 +878,9 @@ metadata:
       - working: true
         agent: "testing"
         comment: "✅ FORMAL TESTING COMPLETE (3 runs): KETO: PERFECT - carbs 16-34g across all runs (target < 50g, NOT using profile 229g). Fat dominance 69-78% calories. VEGAN: PERFECT - protein 173-178g vs 172g target (1-4% deviation), no animal products, no inflation (old >250g bug confirmed fixed). BALANCED: MOSTLY PASSES - 2/3 full suite runs pass, 1/3 shows borderline 10-12% deviation on protein/fat. HIGH_PROTEIN: FLAKY - 2/3 runs pass, 1/3 run failed with protein 14.5% over and carbs 31.9% UNDER target. Root cause: AI interprets 'high_protein' as signal to minimize carbs, post-processing carb correction (max 1.8x cap) insufficient when AI generates too few carb-rich foods. Action needed: strengthen carb correction for high_protein diet or add explicit carb gram targets to prompt."
+      - working: true
+        agent: "main"
+        comment: "ADDITIONAL FIX (2026-03-26): Fixed two more accuracy issues: 1) Stage 4 'last-meal balance' was forcing exact macro VALUES (e.g. 1.7g fat) onto the last meal without matching the ingredient amounts (6g peanut butter gives 3g fat, not 1.7g). Fixed by replacing forced values with honest recalc_day_macros() call — now ingredients always match displayed macros. 2) AI-generated instructions were mentioning specific gram amounts that become inconsistent after scaling (e.g. '15g olive oil' in instructions while ingredient shows '12g olive oil'). Fixed by adding explicit rule to AI prompt: 'NEVER mention specific gram/ml amounts in instructions'. Both fixes verified: all 7/7 tests pass, instructions show zero gram amount violations, per-meal macros now honestly derived from ingredient amounts."
 
 test_plan:
   current_focus:

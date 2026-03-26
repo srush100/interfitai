@@ -3143,7 +3143,7 @@ ELITE STANDARDS:
 1. All 3 days MUST have completely different meals — zero repetition
 2. Use the EXACT gram amounts from the quantities guide above
 3. Give each meal an appealing, descriptive name (e.g. "Herb-Marinated Chicken with Jasmine Rice & Broccolini")
-4. Instructions: concise 2-3 step cooking method
+4. Instructions: concise 2-3 step cooking method. NEVER mention specific gram or ml amounts in instructions — all quantities are already listed in the ingredients field. Write "add olive oil" NOT "add 15g olive oil".
 5. Calculate ACCURATE macros from the actual ingredient weights you use
 
 Return ONLY this JSON (no markdown):
@@ -3777,17 +3777,15 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                                 for ing in last_meal.get("ingredients", [])
                             ]
                         
-                        # Force exact macro values so day total == target (guaranteed accuracy)
-                        last_meal["calories"] = round(needed_cal)
-                        last_meal["protein"]  = round(needed_pro, 1)
-                        last_meal["carbs"]    = round(needed_carb, 1)
-                        last_meal["fats"]     = round(needed_fat, 1)
-                        
-                        # Set day totals to EXACT target values
-                        day["total_calories"] = target_cal
-                        day["total_protein"]  = target_pro
-                        day["total_carbs"]    = target_carb
-                        day["total_fats"]     = target_fat
+                        # Recalculate ALL meal macros from actual ingredient amounts (honest values)
+                        # This ensures ingredient quantities always match the displayed macros.
+                        # Stages 1-3 got us close to targets; last meal was scaled to close the gap.
+                        # Now we report what the ingredients actually give, not forced targets.
+                        final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
+                        day["total_calories"] = round(final_cal)
+                        day["total_protein"]  = round(final_pro)
+                        day["total_carbs"]    = round(final_carb)
+                        day["total_fats"]     = round(final_fat)
                     else:
                         # Fewer than 2 meals — just recalculate normally
                         final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
