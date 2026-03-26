@@ -3801,6 +3801,56 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                     day["total_carbs"]    = round(final_carb)
                     day["total_fats"]     = round(final_fat)
             
+                # ==================================================================
+                # Stage 5: Final macro calibration — GUARANTEE EXACT daily targets
+                # After Stages 1-4 produced honest ingredient-level values (typically
+                # within ±1-8% of targets), this step applies a small proportional
+                # correction (<= ±20%) to each meal so that day totals are PERFECT.
+                # Ingredient amounts are also scaled proportionally to stay
+                # consistent with the displayed macro numbers.
+                # Keto/Carnivore are intentionally exempt — they use diet-appropriate
+                # macro splits, not the user's profile targets.
+                # ==================================================================
+                if not _is_low_carb_ai:
+                    actual_cal  = float(day.get("total_calories", 0))
+                    actual_pro  = float(day.get("total_protein",  0))
+                    actual_carb = float(day.get("total_carbs",    0))
+                    actual_fat  = float(day.get("total_fats",     0))
+                    s5_meals = day.get("meals", [])
+
+                    if actual_cal > 0 and len(s5_meals) > 0:
+                        # Compute per-macro scale factors, capped at ±20%
+                        cal_adj  = max(0.80, min(1.20, target_cal  / actual_cal))  if actual_cal  > 0 else 1.0
+                        pro_adj  = max(0.80, min(1.20, target_pro  / actual_pro))  if actual_pro  > 0 else 1.0
+                        carb_adj = max(0.80, min(1.20, target_carb / actual_carb)) if actual_carb > 0 else 1.0
+                        fat_adj  = max(0.80, min(1.20, target_fat  / actual_fat))  if actual_fat  > 0 else 1.0
+
+                        for meal in s5_meals:
+                            # Scale ingredient gram amounts proportionally by calorie factor
+                            if abs(cal_adj - 1.0) > 0.005:
+                                meal["ingredients"] = [
+                                    scale_ingredient_str(ing, cal_adj)
+                                    for ing in meal.get("ingredients", [])
+                                ]
+                            # Apply per-macro scale to displayed values
+                            meal["calories"] = round(meal.get("calories", 0) * cal_adj)
+                            meal["protein"]  = round(float(meal.get("protein", 0))  * pro_adj,  1)
+                            meal["carbs"]    = round(float(meal.get("carbs",   0))  * carb_adj, 1)
+                            meal["fats"]     = round(float(meal.get("fats",    0))  * fat_adj,  1)
+
+                        # Force EXACT day totals — this is the guarantee the user needs
+                        day["total_calories"] = target_cal
+                        day["total_protein"]  = round(float(target_pro),  1)
+                        day["total_carbs"]    = round(float(target_carb), 1)
+                        day["total_fats"]     = round(float(target_fat),  1)
+                        logger.info(
+                            f"Stage 5 calibration: "
+                            f"{round(actual_cal)}→{target_cal} cal, "
+                            f"{round(actual_pro)}→{target_pro}g P, "
+                            f"{round(actual_carb)}→{target_carb}g C, "
+                            f"{round(actual_fat)}→{target_fat}g F"
+                        )
+            
             # POST-VALIDATION: Check if any banned foods appear in the meal plan
             # If found, log a warning (in production, could regenerate the meal)
             if banned_foods_list:

@@ -447,9 +447,30 @@ export default function MealDetail() {
               <View style={styles.mealInfo}>
                 <Text style={styles.mealType}>{meal.meal_type}</Text>
                 <Text style={styles.mealName}>{meal.name}</Text>
-                <Text style={styles.mealMacros}>
-                  {meal.calories} cal • {meal.protein}g P • {meal.carbs}g C • {meal.fats}g F
-                </Text>
+                {/* Macro Breakdown Bar */}
+                <View style={styles.macroBarContainer}>
+                  <Text style={styles.mealCalText}>{meal.calories} cal</Text>
+                  {(() => {
+                    const totalMacroG = meal.protein + meal.carbs + meal.fats;
+                    const pPct = totalMacroG > 0 ? (meal.protein / totalMacroG) * 100 : 33;
+                    const cPct = totalMacroG > 0 ? (meal.carbs / totalMacroG) * 100 : 33;
+                    const fPct = totalMacroG > 0 ? (meal.fats / totalMacroG) * 100 : 34;
+                    return (
+                      <>
+                        <View style={styles.macroBar}>
+                          <View style={[styles.macroBarSeg, { width: `${pPct}%`, backgroundColor: '#F5C518', borderTopLeftRadius: 4, borderBottomLeftRadius: 4 }]} />
+                          <View style={[styles.macroBarSeg, { width: `${cPct}%`, backgroundColor: '#4A90D9' }]} />
+                          <View style={[styles.macroBarSeg, { width: `${fPct}%`, backgroundColor: '#F97316', borderTopRightRadius: 4, borderBottomRightRadius: 4 }]} />
+                        </View>
+                        <View style={styles.macroBarLabels}>
+                          <Text style={[styles.macroBarLabel, { color: '#F5C518' }]}>P {meal.protein}g</Text>
+                          <Text style={[styles.macroBarLabel, { color: '#4A90D9' }]}>C {meal.carbs}g</Text>
+                          <Text style={[styles.macroBarLabel, { color: '#F97316' }]}>F {meal.fats}g</Text>
+                        </View>
+                      </>
+                    );
+                  })()}
+                </View>
               </View>
               
               {/* Favorite Button */}
@@ -972,6 +993,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  macroBarContainer: {
+    marginTop: 6,
+  },
+  mealCalText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: 5,
+  },
+  macroBar: {
+    flexDirection: 'row',
+    height: 7,
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: colors.border,
+  },
+  macroBarSeg: {
+    height: '100%',
+  },
+  macroBarLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  macroBarLabel: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   mealDetails: {
     marginTop: 16,
