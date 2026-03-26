@@ -345,7 +345,7 @@ export default function HomeScreen() {
                 <Text style={styles.macroLabel}>Carbs</Text>
               </View>
               <View style={styles.macroItem}>
-                <Text style={[styles.macroValue, { color: '#FFD93D' }]}>{macros.fats}g</Text>
+                <Text style={[styles.macroValue, { color: '#F97316' }]}>{macros.fats}g</Text>
                 <Text style={styles.macroLabel}>Fats</Text>
               </View>
             </View>

@@ -182,7 +182,7 @@ export default function NutritionScreen() {
                   <View
                     style={[
                       styles.progressFill,
-                      { width: `${getProgress(consumed.fats || 0, macros.fats)}%`, backgroundColor: '#FFD93D' },
+                      { width: `${getProgress(consumed.fats || 0, macros.fats)}%`, backgroundColor: '#F97316' },
                     ]}
                   />
                 </View>
