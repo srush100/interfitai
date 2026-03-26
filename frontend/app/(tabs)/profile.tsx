@@ -490,7 +490,7 @@ export default function ProfileScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Step Tracking</Text>
           <View style={styles.stepsDisplay}>
-            <Ionicons name="footsteps" size={32} color="#FFFFFF" />
+            <Ionicons name="footsteps" size={32} color={colors.primary} />
             <View style={styles.stepsInfo}>
               <Text style={styles.stepsValue}>{stepCount.toLocaleString()}</Text>
               <Text style={styles.stepsGoal}>/ {stepGoal.toLocaleString()} steps</Text>

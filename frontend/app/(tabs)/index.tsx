@@ -357,7 +357,7 @@ export default function HomeScreen() {
           <Text style={styles.sectionTitle}>Today's Progress</Text>
           <View style={styles.progressRow}>
             <View style={styles.progressItem}>
-              <Ionicons name="footsteps" size={24} color="#FFFFFF" />
+              <Ionicons name="footsteps" size={24} color={colors.primary} />
               <Text style={styles.progressValue}>{todaySteps.toLocaleString()}</Text>
               <Text style={styles.progressLabel}>Steps</Text>
             </View>
