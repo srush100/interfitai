@@ -76,6 +76,31 @@ export default function FoodLog() {
     carbs: '',
     fats: '',
   });
+  const [energyUnit, setEnergyUnit] = useState<'cal' | 'kj'>('cal');
+  const [caloriesManuallyEdited, setCaloriesManuallyEdited] = useState(false);
+
+  // Auto-calculate calories from macros (protein=4, carbs=4, fat=9 cal/g)
+  const autoCalcCalories = (protein: string, carbs: string, fats: string, unit: 'cal' | 'kj') => {
+    const p = parseFloat(protein) || 0;
+    const c = parseFloat(carbs) || 0;
+    const f = parseFloat(fats) || 0;
+    const totalCal = p * 4 + c * 4 + f * 9;
+    if (totalCal === 0) return '';
+    return unit === 'kj' ? Math.round(totalCal * 4.184).toString() : Math.round(totalCal).toString();
+  };
+
+  const handleMacroChange = (field: 'protein' | 'carbs' | 'fats', value: string) => {
+    const updated = { ...manualFood, [field]: value };
+    if (!caloriesManuallyEdited) {
+      updated.calories = autoCalcCalories(
+        field === 'protein' ? value : manualFood.protein,
+        field === 'carbs'   ? value : manualFood.carbs,
+        field === 'fats'    ? value : manualFood.fats,
+        energyUnit
+      );
+    }
+    setManualFood(updated);
+  };
   
   // Saved meals state
   const [savedMeals, setSavedMeals] = useState<FavoriteMeal[]>([]);
@@ -323,27 +348,36 @@ export default function FoodLog() {
   };
 
   const logManualFood = async () => {
-    if (!profile?.id || !manualFood.name || !manualFood.calories) {
-      Alert.alert('Required Fields', 'Please enter food name and calories');
+    if (!profile?.id || !manualFood.name) {
+      Alert.alert('Required Fields', 'Please enter a food name');
       return;
     }
-    
+    // Derive calories: if not set, auto-calc from macros
+    const rawCal = parseFloat(manualFood.calories) || 0;
+    const calFromMacros = (parseFloat(manualFood.protein)||0)*4 + (parseFloat(manualFood.carbs)||0)*4 + (parseFloat(manualFood.fats)||0)*9;
+    let finalCalories = rawCal > 0 ? rawCal : calFromMacros;
+    // Convert kJ → cal if needed
+    if (energyUnit === 'kj' && finalCalories > 0) finalCalories = Math.round(finalCalories / 4.184);
+    if (finalCalories === 0) {
+      Alert.alert('Required Fields', 'Please enter calories or at least one macro');
+      return;
+    }
     try {
       const today = new Date().toISOString().split('T')[0];
       await api.post('/food/log', {
         user_id: profile.id,
         food_name: manualFood.name,
         serving_size: `${quantity} serving(s)`,
-        calories: parseInt(manualFood.calories) * quantity,
+        calories: Math.round(finalCalories * quantity),
         protein: parseFloat(manualFood.protein || '0') * quantity,
         carbs: parseFloat(manualFood.carbs || '0') * quantity,
         fats: parseFloat(manualFood.fats || '0') * quantity,
         meal_type: selectedMealType,
         logged_date: today,
       });
-      
-      Alert.alert('Success', `${manualFood.name} logged!`);
+      Alert.alert('Logged!', `${manualFood.name} — ${Math.round(finalCalories * quantity)} cal`);
       setManualFood({ name: '', calories: '', protein: '', carbs: '', fats: '' });
+      setCaloriesManuallyEdited(false);
       setQuantity(1);
       loadTodayLogs();
       setActiveTab('log');
@@ -939,47 +973,93 @@ export default function FoodLog() {
               onChangeText={(text) => setManualFood({ ...manualFood, name: text })}
             />
 
-            <Text style={styles.manualLabel}>Calories *</Text>
-            <TextInput
-              style={styles.manualInput}
-              placeholder="e.g., 250"
-              placeholderTextColor={colors.textMuted}
-              value={manualFood.calories}
-              onChangeText={(text) => setManualFood({ ...manualFood, calories: text })}
-              keyboardType="numeric"
-            />
+            {/* Energy row: label + cal/kj toggle */}
+            <View style={styles.energyHeader}>
+              <Text style={styles.manualLabel}>Energy</Text>
+              <View style={styles.unitToggle}>
+                <TouchableOpacity
+                  style={[styles.unitBtn, energyUnit === 'cal' && styles.unitBtnActive]}
+                  onPress={() => {
+                    if (energyUnit !== 'cal') {
+                      setEnergyUnit('cal');
+                      // Convert existing value kJ → cal
+                      if (manualFood.calories) {
+                        setManualFood(f => ({ ...f, calories: Math.round(parseFloat(f.calories) / 4.184).toString() }));
+                      }
+                    }
+                  }}
+                >
+                  <Text style={[styles.unitBtnText, energyUnit === 'cal' && styles.unitBtnTextActive]}>cal</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.unitBtn, energyUnit === 'kj' && styles.unitBtnActive]}
+                  onPress={() => {
+                    if (energyUnit !== 'kj') {
+                      setEnergyUnit('kj');
+                      // Convert existing value cal → kJ
+                      if (manualFood.calories) {
+                        setManualFood(f => ({ ...f, calories: Math.round(parseFloat(f.calories) * 4.184).toString() }));
+                      }
+                    }
+                  }}
+                >
+                  <Text style={[styles.unitBtnText, energyUnit === 'kj' && styles.unitBtnTextActive]}>kJ</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Calories/kJ input with auto badge */}
+            <View style={styles.caloriesInputRow}>
+              <TextInput
+                style={[styles.manualInput, styles.caloriesInput]}
+                placeholder={energyUnit === 'cal' ? 'e.g. 250' : 'e.g. 1046'}
+                placeholderTextColor={colors.textMuted}
+                value={manualFood.calories}
+                onChangeText={(text) => {
+                  setCaloriesManuallyEdited(true);
+                  setManualFood({ ...manualFood, calories: text });
+                }}
+                keyboardType="numeric"
+              />
+              {!caloriesManuallyEdited && manualFood.calories !== '' && (
+                <View style={styles.autoBadge}>
+                  <Ionicons name="flash" size={11} color={colors.primary} />
+                  <Text style={styles.autoBadgeText}>auto</Text>
+                </View>
+              )}
+            </View>
 
             <View style={styles.macroRow}>
               <View style={styles.macroInputContainer}>
-                <Text style={styles.manualLabel}>Protein (g)</Text>
+                <Text style={[styles.manualLabel, { color: '#FF6B6B' }]}>Protein (g)</Text>
                 <TextInput
                   style={styles.manualInput}
                   placeholder="0"
                   placeholderTextColor={colors.textMuted}
                   value={manualFood.protein}
-                  onChangeText={(text) => setManualFood({ ...manualFood, protein: text })}
+                  onChangeText={(text) => handleMacroChange('protein', text)}
                   keyboardType="numeric"
                 />
               </View>
               <View style={styles.macroInputContainer}>
-                <Text style={styles.manualLabel}>Carbs (g)</Text>
+                <Text style={[styles.manualLabel, { color: '#4ECDC4' }]}>Carbs (g)</Text>
                 <TextInput
                   style={styles.manualInput}
                   placeholder="0"
                   placeholderTextColor={colors.textMuted}
                   value={manualFood.carbs}
-                  onChangeText={(text) => setManualFood({ ...manualFood, carbs: text })}
+                  onChangeText={(text) => handleMacroChange('carbs', text)}
                   keyboardType="numeric"
                 />
               </View>
               <View style={styles.macroInputContainer}>
-                <Text style={styles.manualLabel}>Fats (g)</Text>
+                <Text style={[styles.manualLabel, { color: '#F97316' }]}>Fats (g)</Text>
                 <TextInput
                   style={styles.manualInput}
                   placeholder="0"
                   placeholderTextColor={colors.textMuted}
                   value={manualFood.fats}
-                  onChangeText={(text) => setManualFood({ ...manualFood, fats: text })}
+                  onChangeText={(text) => handleMacroChange('fats', text)}
                   keyboardType="numeric"
                 />
               </View>
@@ -1547,7 +1627,57 @@ const styles = StyleSheet.create({
     minHeight: 60,
     textAlignVertical: 'top',
   },
-  manualSection: {
+  energyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  unitToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: 2,
+    gap: 2,
+  },
+  unitBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  unitBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  unitBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  unitBtnTextActive: {
+    color: colors.background,
+  },
+  caloriesInputRow: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  caloriesInput: {
+    marginBottom: 0,
+  },
+  autoBadge: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  autoBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+  },
     gap: 4,
   },
   manualInput: {
