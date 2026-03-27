@@ -2173,7 +2173,15 @@ async def generate_workout(request: WorkoutGenerateRequest):
 
             # Infer equipment tag from exercise name
             nl = chosen_name.lower()
-            if any(w in nl for w in ['barbell', 'deadlift', 'squat', 'bench']):
+            if blueprint['style'] == 'calisthenics':
+                eq = 'bodyweight'
+            elif any(w in nl for w in ['barbell ',' barbell']):
+                eq = 'barbell'
+            elif 'barbell' in nl and not any(w in nl for w in ['split squat', 'hip thrust', 'glute bridge']):
+                eq = 'barbell'
+            elif any(w in nl for w in ['conventional deadlift', 'sumo deadlift', 'romanian deadlift']):
+                eq = 'barbell'
+            elif any(w in nl for w in ['back squat', 'front squat', 'pause squat', 'overhead press']):
                 eq = 'barbell'
             elif any(w in nl for w in ['dumbbell', ' db ']):
                 eq = 'dumbbells'
