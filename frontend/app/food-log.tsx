@@ -1678,8 +1678,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primary,
   },
-    gap: 4,
-  },
   manualInput: {
     backgroundColor: colors.surface,
     borderRadius: 12,
