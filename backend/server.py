@@ -838,7 +838,10 @@ class Exercise(BaseModel):
     instructions: str
     muscle_groups: List[str]
     equipment: str
-    gif_url: Optional[str] = None  # GIF demonstration URL
+    gif_url: Optional[str] = None
+    effort_target: Optional[str] = None      # e.g. "RIR 2-3", "RPE 8"
+    exercise_type: Optional[str] = None      # primary_compound / accessory / isolation / unilateral / core / conditioning
+    substitution_hint: Optional[str] = None  # alternative exercise suggestion
 
 class WorkoutDay(BaseModel):
     day: str
@@ -852,12 +855,22 @@ class WorkoutProgram(BaseModel):
     user_id: str
     name: str
     goal: str
+    training_style: str = "weights"
+    fitness_level: str = "intermediate"
     focus_areas: List[str]
+    secondary_focus_areas: Optional[List[str]] = None
     equipment: List[str]
     injuries: Optional[List[str]] = None
     duration_weeks: int = 4
     days_per_week: int = 4
-    session_duration_minutes: int = 60  # Workout session duration
+    session_duration_minutes: int = 60
+    preferred_split: str = "ai_choose"
+    split_name: Optional[str] = None
+    split_rationale: Optional[str] = None
+    progression_method: Optional[str] = None
+    deload_timing: Optional[str] = None
+    weekly_structure: Optional[List[str]] = None
+    training_notes: Optional[str] = None
     workout_days: List[WorkoutDay]
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -865,22 +878,789 @@ class WorkoutProgram(BaseModel):
     @classmethod
     def normalize_injuries(cls, v):
         if isinstance(v, str):
-            # Convert legacy string format to list
             items = [i.strip() for i in v.replace('\n', ',').split(',') if i.strip()]
             return items if items else None
         return v
 
 class WorkoutGenerateRequest(BaseModel):
     user_id: str
-    goal: str  # build_muscle, lose_fat, body_recomp, strength, general_fitness
-    training_style: str = "weights"  # weights, calisthenics, hybrid, functional
-    focus_areas: List[str]  # full_body, back, chest, legs, glutes, arms
-    equipment: List[str]  # full_gym, barbells, dumbbells, bodyweight, kettlebells, machines
-    injuries: Optional[List[str]] = None  # lower_back, knees, shoulders, none
+    goal: str          # build_muscle, lose_fat, body_recomp, strength, general_fitness, athletic_performance
+    training_style: str = "weights"   # weights, calisthenics, hybrid, functional
+    focus_areas: List[str]
+    secondary_focus_areas: Optional[List[str]] = None
+    equipment: List[str]
+    injuries: Optional[List[str]] = None
     days_per_week: int = 4
-    duration_minutes: int = 60  # Session duration
-    fitness_level: str = "intermediate"  # beginner, intermediate, advanced
-    preferred_split: str = "ai_choose"  # ai_choose, full_body, upper_lower, push_pull_legs, bro_split
+    duration_minutes: int = 60
+    fitness_level: str = "intermediate"
+    preferred_split: str = "ai_choose"
+    exercise_preferences: Optional[str] = None  # free text: favourite/disliked exercises
+
+
+# ==================== ELITE COACHING ENGINE ====================
+# All programming decisions are made here in Python.
+# Claude is only used to fill exercise names + instructions from the blueprint.
+
+class EliteCoachingEngine:
+    """
+    Builds a complete, science-backed coaching blueprint before any AI is involved.
+    Split selection, volume allocation, exercise categorization, sets/reps/rest/effort,
+    and progression model are all determined deterministically here.
+    """
+
+    # ----- Exercise options per movement pattern and equipment type -----
+    PATTERNS = {
+        "horizontal_push": {
+            "full_gym":  ["Barbell Bench Press", "Machine Chest Press", "Cable Chest Fly"],
+            "barbells":  ["Barbell Bench Press", "Close-Grip Bench Press"],
+            "dumbbells": ["Dumbbell Bench Press", "Dumbbell Incline Press"],
+            "machines":  ["Machine Chest Press", "Machine Incline Press"],
+            "bodyweight":["Push-Up", "Archer Push-Up", "Decline Push-Up"],
+            "kettlebells":["Kettlebell Floor Press"],
+            "cables":    ["Cable Chest Fly", "Cable Crossover"],
+            "resistance_bands":["Band Push-Up", "Band Chest Press"],
+        },
+        "incline_push": {
+            "full_gym":  ["Incline Barbell Press", "Incline Dumbbell Press"],
+            "barbells":  ["Incline Barbell Press"],
+            "dumbbells": ["Incline Dumbbell Press", "Incline Dumbbell Fly"],
+            "machines":  ["Incline Machine Press"],
+            "bodyweight":["Pike Push-Up", "Decline Push-Up"],
+            "cables":    ["High-to-Low Cable Fly"],
+            "resistance_bands":["Incline Band Press"],
+        },
+        "vertical_push": {
+            "full_gym":  ["Barbell Overhead Press", "Dumbbell Shoulder Press", "Machine Shoulder Press"],
+            "barbells":  ["Barbell Overhead Press", "Push Press"],
+            "dumbbells": ["Dumbbell Shoulder Press", "Arnold Press"],
+            "machines":  ["Machine Shoulder Press"],
+            "bodyweight":["Pike Push-Up", "Handstand Push-Up (wall assisted)"],
+            "kettlebells":["Kettlebell Press"],
+            "cables":    ["Cable Shoulder Press"],
+            "resistance_bands":["Band Overhead Press"],
+        },
+        "lateral_raise": {
+            "full_gym":  ["Cable Lateral Raise", "Machine Lateral Raise", "Dumbbell Lateral Raise"],
+            "dumbbells": ["Dumbbell Lateral Raise"],
+            "machines":  ["Machine Lateral Raise"],
+            "cables":    ["Cable Lateral Raise"],
+            "resistance_bands":["Band Lateral Raise"],
+            "bodyweight":["Bodyweight Lateral Raise"],
+        },
+        "rear_delt": {
+            "full_gym":  ["Cable Face Pull", "Rear Delt Machine Fly", "Dumbbell Rear Delt Fly"],
+            "dumbbells": ["Dumbbell Rear Delt Fly", "Bent-Over Rear Delt Raise"],
+            "machines":  ["Reverse Pec Deck", "Face Pull Machine"],
+            "cables":    ["Cable Face Pull", "Cable Rear Delt Fly"],
+            "resistance_bands":["Band Face Pull", "Band Pull-Apart"],
+            "bodyweight":["Band Pull-Apart"],
+        },
+        "tricep_push": {
+            "full_gym":  ["Cable Tricep Pushdown", "Overhead Cable Extension", "Skull Crusher"],
+            "barbells":  ["Skull Crusher", "Close-Grip Bench Press"],
+            "dumbbells": ["Overhead Dumbbell Extension", "Dumbbell Kickback"],
+            "machines":  ["Cable Tricep Pushdown"],
+            "cables":    ["Cable Tricep Pushdown", "Overhead Cable Extension"],
+            "bodyweight":["Diamond Push-Up", "Bench Dip"],
+            "resistance_bands":["Band Tricep Pushdown"],
+        },
+        "vertical_pull": {
+            "full_gym":  ["Lat Pulldown", "Pull-Up", "Assisted Pull-Up"],
+            "barbells":  ["Pull-Up", "Chin-Up"],
+            "dumbbells": ["Pull-Up", "Dumbbell Pullover"],
+            "machines":  ["Lat Pulldown", "Assisted Pull-Up Machine"],
+            "bodyweight":["Pull-Up", "Chin-Up", "Australian Pull-Up"],
+            "cables":    ["Lat Pulldown", "Single-Arm Lat Pulldown"],
+            "resistance_bands":["Band-Assisted Pull-Up", "Band Lat Pulldown"],
+        },
+        "horizontal_pull": {
+            "full_gym":  ["Barbell Row", "Cable Row", "Machine Row"],
+            "barbells":  ["Barbell Row", "Pendlay Row", "T-Bar Row"],
+            "dumbbells": ["Dumbbell Row", "Chest-Supported Row"],
+            "machines":  ["Machine Row", "Cable Row"],
+            "cables":    ["Cable Row", "Single-Arm Cable Row"],
+            "bodyweight":["Australian Pull-Up", "Inverted Row"],
+            "kettlebells":["Kettlebell Row"],
+            "resistance_bands":["Band Row", "Band Pull-Apart"],
+        },
+        "bicep_curl": {
+            "full_gym":  ["EZ Bar Curl", "Cable Curl", "Incline Dumbbell Curl"],
+            "barbells":  ["Barbell Curl", "EZ Bar Curl"],
+            "dumbbells": ["Dumbbell Curl", "Hammer Curl", "Incline Dumbbell Curl"],
+            "machines":  ["Machine Preacher Curl"],
+            "cables":    ["Cable Curl", "Cable Hammer Curl"],
+            "bodyweight":["Chin-Up", "Supinated Row"],
+            "resistance_bands":["Band Curl"],
+        },
+        "squat": {
+            "full_gym":  ["Back Squat", "Leg Press", "Hack Squat"],
+            "barbells":  ["Back Squat", "Front Squat", "Pause Squat"],
+            "dumbbells": ["Goblet Squat", "Dumbbell Front Squat"],
+            "machines":  ["Leg Press", "Hack Squat", "Smith Machine Squat"],
+            "bodyweight":["Bodyweight Squat", "Jump Squat", "Pistol Squat (assisted)"],
+            "kettlebells":["Kettlebell Goblet Squat"],
+            "resistance_bands":["Band Squat"],
+        },
+        "lunge": {
+            "full_gym":  ["Barbell Bulgarian Split Squat", "Dumbbell Reverse Lunge", "Walking Lunge"],
+            "barbells":  ["Barbell Bulgarian Split Squat", "Barbell Lunge"],
+            "dumbbells": ["Dumbbell Reverse Lunge", "Dumbbell Bulgarian Split Squat", "Dumbbell Step-Up"],
+            "machines":  ["Smith Machine Split Squat"],
+            "bodyweight":["Reverse Lunge", "Bulgarian Split Squat", "Step-Up", "Lateral Lunge"],
+            "kettlebells":["Kettlebell Lunge", "Kettlebell Step-Up"],
+            "resistance_bands":["Band Lunge"],
+        },
+        "hip_hinge": {
+            "full_gym":  ["Romanian Deadlift", "Conventional Deadlift", "Cable Pull-Through"],
+            "barbells":  ["Romanian Deadlift", "Conventional Deadlift", "Sumo Deadlift"],
+            "dumbbells": ["Dumbbell Romanian Deadlift", "Single-Leg RDL"],
+            "machines":  ["Cable Pull-Through", "Leg Curl"],
+            "bodyweight":["Single-Leg Romanian Deadlift", "Good Morning"],
+            "kettlebells":["Kettlebell Swing", "Kettlebell Romanian Deadlift"],
+            "cables":    ["Cable Pull-Through"],
+        },
+        "glute": {
+            "full_gym":  ["Barbell Hip Thrust", "Cable Kickback", "Leg Press (feet high)"],
+            "barbells":  ["Barbell Hip Thrust", "Barbell Glute Bridge"],
+            "dumbbells": ["Dumbbell Hip Thrust", "Single-Leg Glute Bridge"],
+            "machines":  ["Hip Thrust Machine", "Cable Kickback"],
+            "bodyweight":["Hip Thrust", "Glute Bridge", "Single-Leg Glute Bridge"],
+            "cables":    ["Cable Kickback", "Cable Hip Extension"],
+            "resistance_bands":["Band Hip Thrust", "Band Kickback", "Band Clamshell"],
+        },
+        "hamstring_curl": {
+            "full_gym":  ["Lying Leg Curl", "Seated Leg Curl", "Nordic Hamstring Curl"],
+            "machines":  ["Lying Leg Curl", "Seated Leg Curl"],
+            "dumbbells": ["Dumbbell Leg Curl"],
+            "bodyweight":["Nordic Hamstring Curl", "Swiss Ball Leg Curl"],
+            "cables":    ["Cable Leg Curl"],
+            "resistance_bands":["Band Leg Curl"],
+        },
+        "knee_extension": {
+            "full_gym":  ["Leg Extension", "Spanish Squat"],
+            "machines":  ["Leg Extension"],
+            "bodyweight":["Terminal Knee Extension", "Sissy Squat"],
+            "resistance_bands":["Band Terminal Knee Extension"],
+        },
+        "calf": {
+            "full_gym":  ["Calf Raise Machine", "Seated Calf Raise", "Leg Press Calf Raise"],
+            "machines":  ["Calf Raise Machine", "Seated Calf Raise"],
+            "barbells":  ["Barbell Calf Raise"],
+            "dumbbells": ["Dumbbell Calf Raise", "Single-Leg Calf Raise"],
+            "bodyweight":["Single-Leg Calf Raise", "Bodyweight Calf Raise"],
+        },
+        "core_stability": {
+            "full_gym":  ["Plank", "Dead Bug", "Ab Rollout", "Pallof Press"],
+            "cables":    ["Pallof Press", "Cable Wood Chop", "Ab Pulldown"],
+            "bodyweight":["Plank", "Dead Bug", "Bird Dog", "Side Plank"],
+            "resistance_bands":["Band Pallof Press"],
+            "any":       ["Plank", "Dead Bug", "Bird Dog"],
+        },
+        "core_flexion": {
+            "full_gym":  ["Hanging Leg Raise", "Cable Crunch", "Ab Rollout"],
+            "machines":  ["Cable Crunch"],
+            "bodyweight":["Hanging Leg Raise", "Reverse Crunch", "V-Up"],
+            "cables":    ["Cable Crunch", "Cable Wood Chop"],
+            "any":       ["Reverse Crunch", "V-Up"],
+        },
+        "carry": {
+            "full_gym":  ["Farmer's Carry", "Suitcase Carry"],
+            "dumbbells": ["Farmer's Carry", "Suitcase Carry"],
+            "kettlebells":["Kettlebell Farmer's Carry", "Kettlebell Overhead Carry"],
+            "barbells":  ["Trap Bar Farmer's Carry"],
+            "bodyweight":["Plank Walk"],
+            "any":       ["Farmer's Carry"],
+        },
+        "explosive": {
+            "full_gym":  ["Box Jump", "Broad Jump", "Jump Squat", "Medicine Ball Slam"],
+            "bodyweight":["Box Jump", "Broad Jump", "Plyo Push-Up", "Jump Squat"],
+            "kettlebells":["Kettlebell Swing"],
+            "any":       ["Box Jump", "Jump Squat"],
+        },
+        "conditioning": {
+            "full_gym":  ["Rowing Machine Intervals", "Assault Bike Intervals", "Battle Ropes"],
+            "bodyweight":["Burpee Intervals", "Jump Rope", "Mountain Climbers EMOM"],
+            "kettlebells":["Kettlebell Swing Intervals"],
+            "any":       ["Burpee Intervals", "Jump Rope"],
+        },
+    }
+
+    # ----- Session archetypes: movement patterns per session type -----
+    SESSION_ARCHETYPES = {
+        "upper_push_heavy": {
+            "label": "Upper – Push (Heavy)",
+            "focus": "Chest, Shoulders & Triceps",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "heavy horizontal pressing – chest emphasis"),
+                ("incline_push",     "secondary_compound",  "incline angle for upper chest development"),
+                ("vertical_push",    "secondary_compound",  "overhead pressing – shoulder strength"),
+                ("lateral_raise",    "accessory",           "medial delt isolation – shoulder width"),
+                ("tricep_push",      "isolation",           "tricep isolation – elbow extension"),
+            ],
+            "optional_slots": [
+                ("rear_delt",        "accessory",           "rear delt for shoulder health balance"),
+            ],
+        },
+        "upper_push_volume": {
+            "label": "Upper – Push (Volume)",
+            "focus": "Chest, Shoulders & Triceps",
+            "slots": [
+                ("incline_push",     "primary_compound",   "incline press – upper chest emphasis"),
+                ("horizontal_push",  "secondary_compound",  "flat pressing – overall chest volume"),
+                ("vertical_push",    "accessory",           "overhead pressing – shoulder development"),
+                ("lateral_raise",    "accessory",           "medial delt isolation"),
+                ("tricep_push",      "isolation",           "tricep isolation – volume day"),
+            ],
+            "optional_slots": [
+                ("rear_delt",        "accessory",           "rear delt for balance"),
+            ],
+        },
+        "upper_pull_heavy": {
+            "label": "Upper – Pull (Heavy)",
+            "focus": "Back & Biceps",
+            "slots": [
+                ("vertical_pull",    "primary_compound",   "vertical pulling – lat width and strength"),
+                ("horizontal_pull",  "primary_compound",   "horizontal rowing – mid-back thickness"),
+                ("horizontal_pull",  "secondary_compound",  "secondary row variation – back volume"),
+                ("rear_delt",        "accessory",           "rear delt – shoulder health"),
+                ("bicep_curl",       "isolation",           "bicep isolation – elbow flexion"),
+            ],
+            "optional_slots": [
+                ("bicep_curl",       "isolation",           "hammer curl – brachialis and forearm"),
+            ],
+        },
+        "upper_pull_volume": {
+            "label": "Upper – Pull (Volume)",
+            "focus": "Back & Biceps",
+            "slots": [
+                ("horizontal_pull",  "primary_compound",   "heavy row – back thickness priority"),
+                ("vertical_pull",    "secondary_compound",  "lat pulldown variation – lat width"),
+                ("horizontal_pull",  "accessory",           "chest-supported row – eliminate cheating"),
+                ("rear_delt",        "accessory",           "face pull / rear fly – rotator cuff health"),
+                ("bicep_curl",       "isolation",           "bicep curl – peak contraction focus"),
+            ],
+            "optional_slots": [],
+        },
+        "lower_quad_focus": {
+            "label": "Lower – Quad Focus",
+            "focus": "Quads, Hamstrings & Glutes",
+            "slots": [
+                ("squat",            "primary_compound",   "knee-dominant compound – quad strength and size"),
+                ("lunge",            "secondary_compound",  "unilateral leg work – balance and quad isolation"),
+                ("hip_hinge",        "secondary_compound",  "hinge pattern – hamstring and posterior chain"),
+                ("knee_extension",   "accessory",           "quad isolation – VMO and knee health"),
+                ("calf",             "isolation",           "calf raise – soleus and gastrocnemius"),
+            ],
+            "optional_slots": [
+                ("core_stability",   "core",                "core finisher – stability and bracing"),
+            ],
+        },
+        "lower_hip_focus": {
+            "label": "Lower – Hip Focus",
+            "focus": "Hamstrings, Glutes & Posterior Chain",
+            "slots": [
+                ("hip_hinge",        "primary_compound",   "hip hinge – deadlift pattern, posterior chain"),
+                ("glute",            "primary_compound",   "hip thrust – glute isolation and strength"),
+                ("lunge",            "secondary_compound",  "unilateral work – single-leg strength"),
+                ("hamstring_curl",   "accessory",           "hamstring isolation – leg curl"),
+                ("calf",             "isolation",           "calf raise – lower leg development"),
+            ],
+            "optional_slots": [
+                ("core_stability",   "core",                "core finisher"),
+            ],
+        },
+        "push_session": {
+            "label": "Push",
+            "focus": "Chest, Shoulders & Triceps",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "bench press variation – chest strength"),
+                ("incline_push",     "secondary_compound",  "incline press – upper chest"),
+                ("vertical_push",    "secondary_compound",  "overhead press – shoulder strength"),
+                ("lateral_raise",    "accessory",           "lateral raise – medial delt width"),
+                ("tricep_push",      "isolation",           "tricep isolation – full elbow extension"),
+            ],
+            "optional_slots": [
+                ("rear_delt",        "accessory",           "rear delt health"),
+            ],
+        },
+        "pull_session": {
+            "label": "Pull",
+            "focus": "Back & Biceps",
+            "slots": [
+                ("vertical_pull",    "primary_compound",   "vertical pull – lat strength and width"),
+                ("horizontal_pull",  "primary_compound",   "heavy row – back thickness"),
+                ("horizontal_pull",  "secondary_compound",  "row variation – volume accumulation"),
+                ("rear_delt",        "accessory",           "face pull – rear delt and rotator cuff"),
+                ("bicep_curl",       "isolation",           "bicep curl – elbow flexion"),
+            ],
+            "optional_slots": [
+                ("bicep_curl",       "isolation",           "hammer curl variation"),
+            ],
+        },
+        "legs_session": {
+            "label": "Legs",
+            "focus": "Quads, Hamstrings, Glutes & Calves",
+            "slots": [
+                ("squat",            "primary_compound",   "squat pattern – quad and glute strength"),
+                ("hip_hinge",        "secondary_compound",  "hinge pattern – hamstrings and posterior chain"),
+                ("lunge",            "secondary_compound",  "unilateral work – balance and isolation"),
+                ("glute",            "accessory",           "glute isolation – hip thrust or bridge"),
+                ("hamstring_curl",   "accessory",           "hamstring isolation – leg curl"),
+                ("calf",             "isolation",           "calf raise – ankle plantar flexion"),
+            ],
+            "optional_slots": [],
+        },
+        "full_body_heavy": {
+            "label": "Full Body A",
+            "focus": "Full Body – Strength Emphasis",
+            "slots": [
+                ("squat",            "primary_compound",   "lower body compound – bilateral squat pattern"),
+                ("horizontal_push",  "primary_compound",   "upper body push – pressing strength"),
+                ("horizontal_pull",  "primary_compound",   "upper body pull – rowing strength"),
+                ("hip_hinge",        "secondary_compound",  "posterior chain – hinge pattern"),
+                ("lunge",            "accessory",           "unilateral lower body – balance"),
+                ("core_stability",   "core",                "core stability – trunk control"),
+            ],
+            "optional_slots": [],
+        },
+        "full_body_moderate": {
+            "label": "Full Body B",
+            "focus": "Full Body – Hypertrophy Emphasis",
+            "slots": [
+                ("hip_hinge",        "primary_compound",   "hinge pattern – deadlift variation"),
+                ("incline_push",     "primary_compound",   "incline press – upper chest volume"),
+                ("vertical_pull",    "primary_compound",   "vertical pull – lat development"),
+                ("lunge",            "secondary_compound",  "single-leg squat – quad and glute"),
+                ("vertical_push",    "accessory",           "overhead press – shoulder volume"),
+                ("core_flexion",     "core",                "core flexion – ab isolation"),
+            ],
+            "optional_slots": [],
+        },
+        "full_body_light": {
+            "label": "Full Body C",
+            "focus": "Full Body – Accessory Emphasis",
+            "slots": [
+                ("squat",            "secondary_compound",  "squat pattern – quad focus"),
+                ("horizontal_push",  "secondary_compound",  "press variation – chest volume"),
+                ("horizontal_pull",  "secondary_compound",  "row variation – back volume"),
+                ("glute",            "accessory",           "glute isolation – hip extension"),
+                ("lateral_raise",    "accessory",           "medial delt – shoulder width"),
+                ("bicep_curl",       "isolation",           "bicep isolation – supination focus"),
+                ("tricep_push",      "isolation",           "tricep isolation – lockout strength"),
+            ],
+            "optional_slots": [],
+        },
+        "upper_full": {
+            "label": "Upper Body",
+            "focus": "Chest, Back, Shoulders & Arms",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "pressing – chest and tricep strength"),
+                ("horizontal_pull",  "primary_compound",   "rowing – back and bicep strength"),
+                ("incline_push",     "secondary_compound",  "incline press – upper chest"),
+                ("vertical_pull",    "secondary_compound",  "vertical pull – lat development"),
+                ("lateral_raise",    "accessory",           "lateral delt – shoulder width"),
+                ("bicep_curl",       "isolation",           "bicep isolation"),
+                ("tricep_push",      "isolation",           "tricep isolation"),
+            ],
+            "optional_slots": [],
+        },
+        "lower_full": {
+            "label": "Lower Body",
+            "focus": "Quads, Hamstrings, Glutes & Calves",
+            "slots": [
+                ("squat",            "primary_compound",   "squat pattern – bilateral lower body strength"),
+                ("hip_hinge",        "primary_compound",   "hinge pattern – posterior chain"),
+                ("lunge",            "secondary_compound",  "unilateral – single-leg development"),
+                ("glute",            "accessory",           "glute isolation – hip thrust"),
+                ("hamstring_curl",   "accessory",           "hamstring isolation"),
+                ("calf",             "isolation",           "calf raise"),
+            ],
+            "optional_slots": [],
+        },
+        "athletic_conditioning": {
+            "label": "Athletic Conditioning",
+            "focus": "Power, Speed & Work Capacity",
+            "slots": [
+                ("explosive",        "primary_compound",   "power development – explosive lower body"),
+                ("carry",            "accessory",           "loaded carry – trunk stability and grip"),
+                ("squat",            "secondary_compound",  "strength base – squat pattern"),
+                ("horizontal_pull",  "secondary_compound",  "row – pulling strength"),
+                ("conditioning",     "conditioning",        "metabolic finisher – work capacity"),
+            ],
+            "optional_slots": [
+                ("core_stability",   "core",                "anti-rotation core work"),
+            ],
+        },
+        "functional_session": {
+            "label": "Functional",
+            "focus": "Movement Quality & Work Capacity",
+            "slots": [
+                ("squat",            "primary_compound",   "bilateral squat – movement foundation"),
+                ("horizontal_pull",  "secondary_compound",  "row – pulling pattern"),
+                ("lunge",            "secondary_compound",  "unilateral – single-leg control"),
+                ("carry",            "accessory",           "farmer's carry – trunk stability"),
+                ("core_stability",   "core",                "anti-rotation core work"),
+                ("conditioning",     "conditioning",        "conditioning finisher"),
+            ],
+            "optional_slots": [],
+        },
+        "calisthenics_upper": {
+            "label": "Calisthenics Upper",
+            "focus": "Chest, Back, Shoulders & Arms",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "push-up progression – horizontal push"),
+                ("vertical_pull",    "primary_compound",   "pull-up progression – vertical pull"),
+                ("incline_push",     "secondary_compound",  "pike push-up – overhead push pattern"),
+                ("horizontal_pull",  "secondary_compound",  "row progression – horizontal pull"),
+                ("tricep_push",      "isolation",           "dip variation – tricep extension"),
+                ("bicep_curl",       "isolation",           "chin-up supinated grip – bicep focus"),
+            ],
+            "optional_slots": [],
+        },
+        "calisthenics_lower": {
+            "label": "Calisthenics Lower",
+            "focus": "Legs & Core",
+            "slots": [
+                ("squat",            "primary_compound",   "squat progression – bilateral strength"),
+                ("lunge",            "secondary_compound",  "lunge progression – unilateral control"),
+                ("hip_hinge",        "secondary_compound",  "hinge progression – posterior chain"),
+                ("glute",            "accessory",           "glute bridge – hip extension"),
+                ("core_stability",   "core",                "plank progression – trunk stability"),
+                ("core_flexion",     "core",                "hanging or floor core flexion"),
+            ],
+            "optional_slots": [],
+        },
+    }
+
+    # ----- Split → session type mapping (days_per_week → session sequence) -----
+    SPLIT_MAP = {
+        "full_body": {
+            2: ["full_body_heavy", "full_body_moderate"],
+            3: ["full_body_heavy", "full_body_moderate", "full_body_light"],
+            4: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy"],
+        },
+        "upper_lower": {
+            4: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus"],
+            5: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_full"],
+            6: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_push_volume", "lower_full"],
+        },
+        "push_pull_legs": {
+            3: ["push_session", "pull_session", "legs_session"],
+            5: ["push_session", "pull_session", "legs_session", "push_session", "pull_session"],
+            6: ["push_session", "pull_session", "legs_session", "upper_push_volume", "upper_pull_volume", "lower_full"],
+        },
+        "bro_split": {
+            5: ["upper_push_heavy", "upper_pull_heavy", "legs_session", "push_session", "pull_session"],
+            6: ["upper_push_heavy", "upper_pull_heavy", "legs_session", "upper_push_volume", "upper_pull_volume", "lower_hip_focus"],
+        },
+        "athletic_split": {
+            4: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full"],
+            5: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full", "athletic_conditioning"],
+        },
+        "functional_split": {
+            3: ["functional_session", "functional_session", "functional_session"],
+            4: ["functional_session", "full_body_heavy", "functional_session", "lower_full"],
+        },
+        "calisthenics_split": {
+            3: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper"],
+            4: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower"],
+            5: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower", "calisthenics_upper"],
+        },
+    }
+
+    # ----- Goal + level → sets/reps/rest/effort per exercise type -----
+    GOAL_PARAMS = {
+        "strength": {
+            "primary_compound":   {"sets": 5, "reps": "3-5",   "rest": 240, "effort": "RPE 8-9"},
+            "secondary_compound": {"sets": 4, "reps": "5-8",   "rest": 180, "effort": "RPE 7-8"},
+            "accessory":          {"sets": 3, "reps": "8-12",  "rest": 90,  "effort": "RIR 2-3"},
+            "isolation":          {"sets": 3, "reps": "10-15", "rest": 60,  "effort": "RIR 2-3"},
+            "unilateral":         {"sets": 3, "reps": "6-8 each", "rest": 120, "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "8-12",  "rest": 60,  "effort": "Controlled"},
+            "conditioning":       {"sets": 4, "reps": "30s work / 30s rest", "rest": 30, "effort": "Moderate intensity"},
+        },
+        "build_muscle": {
+            "primary_compound":   {"sets": 4, "reps": "6-10",  "rest": 120, "effort": "RIR 2-3"},
+            "secondary_compound": {"sets": 3, "reps": "8-12",  "rest": 90,  "effort": "RIR 2-3"},
+            "accessory":          {"sets": 3, "reps": "10-15", "rest": 75,  "effort": "RIR 1-2"},
+            "isolation":          {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 1-2"},
+            "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 90, "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "10-15", "rest": 45,  "effort": "Controlled"},
+            "conditioning":       {"sets": 3, "reps": "40s work / 20s rest", "rest": 20, "effort": "Moderate intensity"},
+        },
+        "lose_fat": {
+            "primary_compound":   {"sets": 3, "reps": "8-12",  "rest": 75,  "effort": "RIR 2-3"},
+            "secondary_compound": {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 2-3"},
+            "accessory":          {"sets": 3, "reps": "12-15", "rest": 45,  "effort": "RIR 1-2"},
+            "isolation":          {"sets": 2, "reps": "15-20", "rest": 45,  "effort": "RIR 1-2"},
+            "unilateral":         {"sets": 3, "reps": "12-15 each", "rest": 45, "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "15-20", "rest": 30,  "effort": "Controlled"},
+            "conditioning":       {"sets": 5, "reps": "40s work / 20s rest", "rest": 20, "effort": "High intensity"},
+        },
+        "body_recomp": {
+            "primary_compound":   {"sets": 4, "reps": "8-10",  "rest": 90,  "effort": "RIR 2-3"},
+            "secondary_compound": {"sets": 3, "reps": "10-12", "rest": 75,  "effort": "RIR 2-3"},
+            "accessory":          {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 2"},
+            "isolation":          {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 1-2"},
+            "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 75, "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "12-15", "rest": 45,  "effort": "Controlled"},
+            "conditioning":       {"sets": 3, "reps": "40s work / 20s rest", "rest": 20, "effort": "Moderate-high intensity"},
+        },
+        "general_fitness": {
+            "primary_compound":   {"sets": 3, "reps": "8-12",  "rest": 90,  "effort": "RIR 3"},
+            "secondary_compound": {"sets": 3, "reps": "10-12", "rest": 75,  "effort": "RIR 3"},
+            "accessory":          {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 2-3"},
+            "isolation":          {"sets": 2, "reps": "12-15", "rest": 60,  "effort": "RIR 2-3"},
+            "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 60, "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "10-15", "rest": 45,  "effort": "Controlled"},
+            "conditioning":       {"sets": 3, "reps": "30s work / 30s rest", "rest": 30, "effort": "Moderate intensity"},
+        },
+        "athletic_performance": {
+            "primary_compound":   {"sets": 4, "reps": "4-6",   "rest": 180, "effort": "RPE 8"},
+            "secondary_compound": {"sets": 3, "reps": "6-10",  "rest": 120, "effort": "RIR 2-3"},
+            "accessory":          {"sets": 3, "reps": "8-12",  "rest": 90,  "effort": "RIR 2-3"},
+            "isolation":          {"sets": 2, "reps": "12-15", "rest": 60,  "effort": "RIR 2-3"},
+            "unilateral":         {"sets": 3, "reps": "6-8 each", "rest": 90, "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "8-10",  "rest": 60,  "effort": "Controlled – maximal tension"},
+            "conditioning":       {"sets": 5, "reps": "20s max effort / 40s rest", "rest": 40, "effort": "Near-maximal intensity"},
+        },
+    }
+
+    # Exercises that should be excluded for certain limitations
+    LIMITATION_EXCLUSIONS = {
+        "lower_back":    ["Conventional Deadlift", "Sumo Deadlift", "Good Morning", "Back Squat", "T-Bar Row", "Barbell Row"],
+        "knee":          ["Back Squat", "Leg Press", "Barbell Bulgarian Split Squat", "Jump Squat", "Running", "Lunge"],
+        "shoulder":      ["Barbell Overhead Press", "Push Press", "Upright Row", "Behind-the-Neck Press", "Barbell Bench Press"],
+        "wrist":         ["Barbell Curl", "Barbell Overhead Press", "Push-Up", "Barbell Bench Press"],
+        "elbow":         ["Skull Crusher", "Dip", "Barbell Curl"],
+        "hip":           ["Barbell Hip Thrust", "Barbell Bulgarian Split Squat", "Leg Press"],
+        "ankle":         ["Calf Raise", "Jump Squat", "Broad Jump"],
+        "neck":          ["Barbell Back Squat", "Barbell Overhead Press"],
+    }
+
+    def select_split(self, days: int, goal: str, style: str, level: str,
+                     preferred_split: str, focus_areas: list) -> tuple:
+        """Returns (split_id, split_display_name, rationale)"""
+        if preferred_split != 'ai_choose':
+            names = {
+                'full_body':       'Full Body',
+                'upper_lower':     'Upper / Lower',
+                'push_pull_legs':  'Push Pull Legs',
+                'bro_split':       'Bro Split',
+            }
+            return preferred_split, names.get(preferred_split, preferred_split), "User-selected split — adapted to your goal and schedule."
+
+        # Style-specific overrides
+        if style == 'calisthenics':
+            return 'calisthenics_split', 'Calisthenics Split', \
+                "Bodyweight training is best structured as dedicated upper/lower sessions to maximise push/pull frequency and skill progression."
+        if style == 'functional':
+            return 'functional_split', 'Functional Training Split', \
+                "Functional training is built around full-body sessions that combine movement quality, stability work, and conditioning for real-world carryover."
+        if style == 'hybrid' and goal == 'athletic_performance':
+            return 'athletic_split', 'Athletic Hybrid Split', \
+                "Athletic hybrid training alternates strength-focused and conditioning-focused sessions to develop power, capacity, and structural balance simultaneously."
+
+        # Standard logic by days
+        if days <= 2:
+            return 'full_body', 'Full Body', \
+                f"{days}-day training requires Full Body sessions to ensure every muscle is stimulated twice per week — the minimum for meaningful adaptation."
+        elif days == 3:
+            if goal == 'strength' and level in ['intermediate', 'advanced']:
+                return 'full_body', 'Full Body', \
+                    "3-day Full Body is ideal for strength — the big compounds (squat, bench, deadlift) are trained multiple times per week for maximum neural adaptation."
+            if goal in ['build_muscle', 'body_recomp'] and level in ['intermediate', 'advanced']:
+                return 'push_pull_legs', 'Push Pull Legs', \
+                    "3-day PPL cleanly separates pushing, pulling, and leg patterns — each session fully focused on its muscle group with ideal recovery before the next session."
+            return 'full_body', 'Full Body', \
+                "3-day Full Body gives every muscle group 2-3x weekly stimulus with appropriate recovery, perfect for your goal and level combination."
+        elif days == 4:
+            if goal == 'strength':
+                return 'upper_lower', 'Upper / Lower', \
+                    "4-day Upper/Lower perfectly pairs the major strength lifts — upper body (bench, OHP, row) and lower body (squat, deadlift) each get two dedicated sessions per week."
+            if goal in ['build_muscle', 'body_recomp']:
+                return 'upper_lower', 'Upper / Lower', \
+                    "4-day Upper/Lower provides twice-weekly frequency for every muscle group — the gold standard for hypertrophy and recomposition at this training frequency."
+            if goal == 'lose_fat':
+                return 'upper_lower', 'Upper / Lower', \
+                    "4-day Upper/Lower maximises muscle retention during a fat loss phase — high frequency per muscle group combined with manageable session volume."
+            return 'upper_lower', 'Upper / Lower', \
+                "4-day Upper/Lower is the most well-balanced split at this frequency — twice-weekly per muscle, clear push/pull structure, and excellent recovery management."
+        elif days == 5:
+            if goal == 'build_muscle' and level == 'advanced':
+                return 'push_pull_legs', 'Push Pull Legs', \
+                    "5-day PPL (A/B rotation) gives advanced trainees near-twice-weekly frequency per pattern with higher total volume — ideal for maximising hypertrophy."
+            return 'push_pull_legs', 'Push Pull Legs', \
+                "5-day PPL provides each movement pattern its own dedicated session plus an extra session in the rotation — very high weekly frequency with targeted volume."
+        else:  # 6 days
+            return 'push_pull_legs', 'Push Pull Legs (x2)', \
+                "6-day PPL (Push/Pull/Legs × 2) provides maximum weekly volume and frequency — every pattern trained twice per week. Only appropriate with elite recovery capacity."
+
+    def get_exercise_options(self, pattern: str, equipment: list, style: str,
+                              limitations: list) -> list:
+        """Returns suitable exercise options for a slot given equipment and limitations."""
+        opts = self.PATTERNS.get(pattern, {})
+        candidates = []
+
+        # Build candidates from equipment intersection
+        for eq in ['full_gym', 'barbells', 'dumbbells', 'kettlebells', 'cables', 'machines',
+                   'resistance_bands', 'bodyweight', 'any']:
+            if eq == 'any' or eq in equipment or eq == 'full_gym' and 'full_gym' in equipment:
+                candidates.extend(opts.get(eq, []))
+
+        if not candidates:  # fallback to bodyweight
+            candidates = opts.get('bodyweight', opts.get('any', ["Bodyweight Exercise"]))
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique = []
+        for c in candidates:
+            if c not in seen:
+                seen.add(c)
+                unique.append(c)
+
+        # Filter out exercises contraindicated for limitations
+        excluded = set()
+        for lim in (limitations or []):
+            key = lim.lower().replace(' ', '_').replace('-', '_')
+            for excl_key, excl_list in self.LIMITATION_EXCLUSIONS.items():
+                if excl_key in key:
+                    excluded.update(excl_list)
+
+        filtered = [e for e in unique if e not in excluded]
+        return filtered[:4] if filtered else unique[:4]  # top 4 options for Claude to choose from
+
+    def get_session_count_for_split(self, split_id: str, days: int) -> list:
+        """Get the session types for this split and day count."""
+        split_sessions = self.SPLIT_MAP.get(split_id, {})
+        # Find closest matching day count
+        if days in split_sessions:
+            return split_sessions[days]
+        # Try to find nearest
+        available = sorted(split_sessions.keys())
+        if not available:
+            return ["full_body_heavy"] * days
+        closest = min(available, key=lambda d: abs(d - days))
+        sessions = split_sessions[closest]
+        # Extend or trim to match requested days
+        while len(sessions) < days:
+            sessions = sessions + sessions
+        return sessions[:days]
+
+    def adjust_volume_for_level(self, ex_type: str, level: str, params: dict) -> dict:
+        """Adjust sets slightly based on experience level."""
+        adjusted = dict(params)
+        if level == 'beginner':
+            adjusted['sets'] = max(2, params['sets'] - 1)
+        elif level == 'advanced':
+            adjusted['sets'] = min(6, params['sets'] + 1)
+        return adjusted
+
+    def get_progression_model(self, goal: str, level: str) -> tuple:
+        """Returns (method, description)"""
+        if goal == 'strength':
+            return ("Linear Periodisation",
+                    "Add weight each session when you complete all sets with good form. Typically +2.5kg on upper, +5kg on lower. Deload after 4 weeks: reduce weight 40% for one week.")
+        elif goal == 'build_muscle':
+            return ("Double Progression",
+                    "Work within the prescribed rep range. Once you hit the top end of the range on ALL sets → increase load by 2.5kg next session. Stay at the bottom until you earn the top.")
+        elif goal == 'lose_fat':
+            return ("Volume Progression",
+                    "Prioritise consistent effort. Add 1 rep per set per week where possible. Increase weight when you exceed the top of the rep range on 2 consecutive sessions.")
+        elif goal == 'body_recomp':
+            return ("Double Progression",
+                    "Same as hypertrophy: hit top of rep range on all sets → add weight. If you miss reps, stay at current weight. Progress will be slower — stay patient and consistent.")
+        elif goal == 'athletic_performance':
+            return ("Wave Loading",
+                    "Cycle through heavy (week 1-2) and moderate (week 3) waves. Week 4 is a deload. Prioritise movement quality and bar speed over maximum load.")
+        else:
+            return ("Progressive Overload",
+                    "Add weight or reps each week. If you can complete all sets at the top of the rep range, increase load slightly next session. Focus on consistent effort.")
+
+    def build_blueprint(self, req) -> dict:
+        """Main entry point — returns complete coaching blueprint."""
+        goal = req.goal
+        style = req.training_style
+        days = req.days_per_week
+        level = req.fitness_level
+        equipment = req.equipment or ['full_gym']
+        limitations = req.injuries or []
+        focus = req.focus_areas or ['full_body']
+        secondary = req.secondary_focus_areas or []
+        preferred_split = req.preferred_split
+
+        split_id, split_name, split_rationale = self.select_split(
+            days, goal, style, level, preferred_split, focus)
+
+        session_types = self.get_session_count_for_split(split_id, days)
+        goal_params = self.GOAL_PARAMS.get(goal, self.GOAL_PARAMS['general_fitness'])
+        progression_name, progression_desc = self.get_progression_model(goal, level)
+
+        # Build per-day blueprints
+        day_blueprints = []
+        for i, session_type in enumerate(session_types):
+            archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
+            slots = list(archetype['slots'])
+
+            # Add optional slots based on time budget (>45min) and level
+            if req.duration_minutes >= 60 and level != 'beginner':
+                slots += archetype.get('optional_slots', [])
+
+            # Trim slots to fit session duration (roughly 8-12min per slot)
+            max_slots = req.duration_minutes // 10
+            slots = slots[:max(4, min(len(slots), max_slots))]
+
+            # Build exercise slot specifications
+            slot_specs = []
+            for pattern, ex_type, coaching_note in slots:
+                params = goal_params.get(ex_type, goal_params['accessory'])
+                params = self.adjust_volume_for_level(ex_type, level, params)
+                options = self.get_exercise_options(pattern, equipment, style, limitations)
+
+                slot_specs.append({
+                    "pattern":       pattern,
+                    "type":          ex_type,
+                    "coaching_note": coaching_note,
+                    "sets":          params['sets'],
+                    "reps":          params['reps'],
+                    "rest_seconds":  params['rest'],
+                    "effort":        params['effort'],
+                    "options":       options,
+                    "excluded":      [e for lim in limitations for excl_key, excl_list 
+                                      in self.LIMITATION_EXCLUSIONS.items()
+                                      if excl_key in lim.lower()
+                                      for e in excl_list],
+                })
+
+            day_blueprints.append({
+                "session_number": i + 1,
+                "archetype_id":   session_type,
+                "label":          archetype['label'],
+                "focus":          archetype['focus'],
+                "slots":          slot_specs,
+            })
+
+        return {
+            "split_id":          split_id,
+            "split_name":        split_name,
+            "split_rationale":   split_rationale,
+            "progression_name":  progression_name,
+            "progression_desc":  progression_desc,
+            "deload_timing":     "Every 5 weeks — reduce all weights by 40% for one week to allow full recovery and super-compensation.",
+            "weekly_structure":  [f"Day {d['session_number']}: {d['label']} — {d['focus']}" for d in day_blueprints],
+            "day_blueprints":    day_blueprints,
+            "goal":              goal,
+            "style":             style,
+            "level":             level,
+            "days":              days,
+            "duration":          req.duration_minutes,
+            "equipment":         equipment,
+            "limitations":       limitations,
+            "focus":             focus,
+            "secondary":         secondary,
+        }
+
+_coaching_engine = EliteCoachingEngine()
 
 # Meal Plan Models
 class Meal(BaseModel):
