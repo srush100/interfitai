@@ -39,6 +39,9 @@ interface Exercise {
   muscle_groups: string[];
   equipment: string;
   gif_url?: string;
+  effort_target?: string;    // e.g. "RIR 2-3", "RPE 8-9"
+  exercise_type?: string;    // primary_compound / isolation / etc.
+  substitution_hint?: string;
 }
 
 interface ExercisePerformance {
@@ -59,11 +62,21 @@ interface WorkoutProgram {
   id: string;
   name: string;
   goal: string;
+  training_style?: string;
+  fitness_level?: string;
   focus_areas: string[];
+  secondary_focus_areas?: string[];
   equipment: string[];
   days_per_week: number;
   workout_days: WorkoutDay[];
   created_at: string;
+  // Coaching metadata (from elite coaching engine)
+  split_name?: string;
+  split_rationale?: string;
+  progression_method?: string;
+  deload_timing?: string;
+  weekly_structure?: string[];
+  training_notes?: string;
 }
 
 export default function WorkoutDetail() {
@@ -486,6 +499,7 @@ export default function WorkoutDetail() {
           </TouchableOpacity>
           <Text style={styles.programGoal}>
             {workout.goal.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+            {workout.training_style ? ` · ${workout.training_style.charAt(0).toUpperCase() + workout.training_style.slice(1)}` : ''}
           </Text>
           
           <View style={styles.infoRow}>
@@ -494,18 +508,25 @@ export default function WorkoutDetail() {
               <Text style={styles.infoText}>{workout.days_per_week} days/week</Text>
             </View>
             <View style={styles.infoItem}>
-              <Ionicons name="body" size={20} color={colors.primary} />
-              <Text style={styles.infoText}>{workout.focus_areas.length} areas</Text>
+              <Ionicons name="git-branch" size={20} color={colors.primary} />
+              <Text style={styles.infoText}>{workout.split_name || 'Custom Split'}</Text>
             </View>
           </View>
 
-          <View style={styles.tagContainer}>
-            {(workout.focus_areas || []).map((area, idx) => (
-              <View key={idx} style={styles.tag}>
-                <Text style={styles.tagText}>{area}</Text>
-              </View>
-            ))}
-          </View>
+          {workout.focus_areas && (
+            <View style={styles.tagContainer}>
+              {(workout.focus_areas || []).map((area, idx) => (
+                <View key={idx} style={styles.tag}>
+                  <Text style={styles.tagText}>{area}</Text>
+                </View>
+              ))}
+              {(workout.secondary_focus_areas || []).map((area, idx) => (
+                <View key={`sec-${idx}`} style={[styles.tag, styles.tagSecondary]}>
+                  <Text style={styles.tagText}>{area}</Text>
+                </View>
+              ))}
+            </View>
+          )}
           
           {/* Refresh GIFs Button */}
           <TouchableOpacity
@@ -523,6 +544,64 @@ export default function WorkoutDetail() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Premium Coaching Panel */}
+        {(workout.split_rationale || workout.progression_method || workout.weekly_structure) && (
+          <View style={styles.coachingPanel}>
+            <View style={styles.coachingPanelHeader}>
+              <Ionicons name="sparkles" size={18} color={colors.primary} />
+              <Text style={styles.coachingPanelTitle}>Elite Coaching Breakdown</Text>
+            </View>
+
+            {workout.split_rationale && (
+              <View style={styles.coachingRow}>
+                <View style={styles.coachingIcon}>
+                  <Ionicons name="information-circle" size={16} color={colors.primary} />
+                </View>
+                <View style={styles.coachingContent}>
+                  <Text style={styles.coachingLabel}>Why this split</Text>
+                  <Text style={styles.coachingValue}>{workout.split_rationale}</Text>
+                </View>
+              </View>
+            )}
+
+            {workout.progression_method && (
+              <View style={styles.coachingRow}>
+                <View style={styles.coachingIcon}>
+                  <Ionicons name="trending-up" size={16} color={colors.primary} />
+                </View>
+                <View style={styles.coachingContent}>
+                  <Text style={styles.coachingLabel}>Progression Method</Text>
+                  <Text style={styles.coachingValue}>{workout.progression_method}</Text>
+                </View>
+              </View>
+            )}
+
+            {workout.deload_timing && (
+              <View style={styles.coachingRow}>
+                <View style={styles.coachingIcon}>
+                  <Ionicons name="refresh-circle" size={16} color={colors.primary} />
+                </View>
+                <View style={styles.coachingContent}>
+                  <Text style={styles.coachingLabel}>Deload Protocol</Text>
+                  <Text style={styles.coachingValue}>{workout.deload_timing}</Text>
+                </View>
+              </View>
+            )}
+
+            {workout.weekly_structure && workout.weekly_structure.length > 0 && (
+              <View style={styles.weeklyStructure}>
+                <Text style={styles.coachingLabel}>Weekly Blueprint</Text>
+                {workout.weekly_structure.map((day, idx) => (
+                  <View key={idx} style={styles.weeklyDayRow}>
+                    <View style={styles.weeklyDayDot} />
+                    <Text style={styles.weeklyDayText}>{day}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Day Tabs */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayTabs}>
@@ -586,9 +665,16 @@ export default function WorkoutDetail() {
                   )}
                   <View style={styles.exerciseInfo}>
                     <Text style={styles.exerciseName}>{exercise.name}</Text>
-                    <Text style={styles.exerciseMeta}>
-                      {exercise.sets} sets x {exercise.reps} reps • {exercise.rest_seconds}s rest
-                    </Text>
+                    <View style={styles.exerciseMetaRow}>
+                      <Text style={styles.exerciseMeta}>
+                        {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
+                      </Text>
+                      {exercise.effort_target && (
+                        <View style={styles.effortBadge}>
+                          <Text style={styles.effortBadgeText}>{exercise.effort_target}</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                   <Ionicons
                     name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
@@ -626,6 +712,17 @@ export default function WorkoutDetail() {
                         </Text>
                       </View>
                     </View>
+                    
+                    {/* Substitution hint */}
+                    {exercise.substitution_hint && (
+                      <View style={styles.substitutionRow}>
+                        <Ionicons name="swap-horizontal" size={14} color={colors.textSecondary} />
+                        <Text style={styles.substitutionText}>
+                          <Text style={styles.substitutionLabel}>Alternatives: </Text>
+                          {exercise.substitution_hint}
+                        </Text>
+                      </View>
+                    )}
 
                     {/* Performance Tracking */}
                     <View style={styles.trackingSection}>
@@ -979,13 +1076,138 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   tag: {
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.primary + '20',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+  },
+  tagSecondary: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   tagText: {
     fontSize: 12,
+    color: colors.primary,
+  },
+  // Coaching Panel
+  coachingPanel: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  coachingPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  coachingPanelTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  coachingRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  coachingIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginTop: 2,
+  },
+  coachingContent: {
+    flex: 1,
+  },
+  coachingLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 3,
+  },
+  coachingValue: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 20,
+  },
+  weeklyStructure: {
+    marginTop: 6,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  weeklyDayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  weeklyDayDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+    flexShrink: 0,
+  },
+  weeklyDayText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  // Effort badge on exercise row
+  exerciseMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  effortBadge: {
+    backgroundColor: colors.primary + '20',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+  },
+  effortBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  // Substitution hint
+  substitutionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  substitutionText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    flex: 1,
+    lineHeight: 17,
+  },
+  substitutionLabel: {
+    fontWeight: '600',
     color: colors.textSecondary,
   },
   refreshGifsBtn: {

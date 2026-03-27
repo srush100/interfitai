@@ -19,11 +19,12 @@ import usePremium from '../src/hooks/usePremium';
 
 // Step 1: Goals
 const GOALS = [
-  { id: 'build_muscle', label: 'Build Muscle', icon: 'barbell', desc: 'Maximize muscle growth & size' },
-  { id: 'lose_fat', label: 'Lose Fat', icon: 'flame', desc: 'Burn fat while preserving muscle' },
-  { id: 'body_recomp', label: 'Body Recomposition', icon: 'body', desc: 'Build muscle & lose fat together' },
-  { id: 'strength', label: 'Build Strength', icon: 'trophy', desc: 'Increase power & max lifts' },
-  { id: 'general_fitness', label: 'General Fitness', icon: 'fitness', desc: 'Overall health & conditioning' },
+  { id: 'build_muscle',        label: 'Build Muscle',          icon: 'barbell',       desc: 'Maximize muscle growth & size' },
+  { id: 'lose_fat',            label: 'Lose Fat',               icon: 'flame',         desc: 'Burn fat while preserving muscle' },
+  { id: 'body_recomp',         label: 'Body Recomposition',     icon: 'body',          desc: 'Build muscle & lose fat together' },
+  { id: 'strength',            label: 'Build Strength',         icon: 'trophy',        desc: 'Increase power & max lifts' },
+  { id: 'general_fitness',     label: 'General Fitness',        icon: 'fitness',       desc: 'Overall health & conditioning' },
+  { id: 'athletic_performance',label: 'Athletic Performance',   icon: 'flash',         desc: 'Power, speed & athletic output' },
 ];
 
 // Step 2: Training Style
@@ -148,7 +149,8 @@ export default function WorkoutQuestionnaire() {
         user_id: profile.id,
         goal: formData.goal,
         training_style: formData.training_style,
-        focus_areas: formData.focus_areas,
+        focus_areas: formData.focus_areas.slice(0, 1),             // first = primary
+        secondary_focus_areas: formData.focus_areas.slice(1),      // rest = secondary
         equipment: formData.equipment,
         injuries: formData.injuries
           ? formData.injuries.split(',').map((s) => s.trim()).filter(Boolean)
@@ -243,27 +245,55 @@ export default function WorkoutQuestionnaire() {
   const renderStep3 = () => (
     <View style={styles.stepContent}>
       <Text style={styles.stepTitle}>What do you want to focus on?</Text>
-      <Text style={styles.stepSubtitle}>Select one or more areas</Text>
-      
-      <View style={styles.chipContainer}>
-        {FOCUS_AREAS.map((area) => (
-          <TouchableOpacity
-            key={area.id}
-            style={[
-              styles.chip, 
-              formData.focus_areas.includes(area.id) && styles.chipActive,
-              area.featured && styles.chipFeatured,
-            ]}
-            onPress={() => toggleSelection('focus_areas', area.id)}
-          >
-            {formData.focus_areas.includes(area.id) && (
-              <Ionicons name="checkmark" size={16} color={colors.primary} style={styles.chipCheck} />
-            )}
-            <Text style={[styles.chipText, formData.focus_areas.includes(area.id) && styles.chipTextActive]}>
-              {area.label}
+      <Text style={styles.stepSubtitle}>
+        First selection = primary focus. Add more for secondary emphasis.
+      </Text>
+
+      {formData.focus_areas.length > 0 && (
+        <View style={styles.focusBadgeRow}>
+          <View style={styles.focusBadgePrimary}>
+            <Ionicons name="star" size={12} color={colors.background} />
+            <Text style={styles.focusBadgePrimaryText}>
+              Primary: {FOCUS_AREAS.find(f => f.id === formData.focus_areas[0])?.label}
             </Text>
-          </TouchableOpacity>
-        ))}
+          </View>
+          {formData.focus_areas.length > 1 && (
+            <View style={styles.focusBadgeSecondary}>
+              <Text style={styles.focusBadgeSecondaryText}>
+                +{formData.focus_areas.length - 1} secondary
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      <View style={styles.chipContainer}>
+        {FOCUS_AREAS.map((area, idx) => {
+          const isSelected = formData.focus_areas.includes(area.id);
+          const isPrimary  = formData.focus_areas[0] === area.id;
+          return (
+            <TouchableOpacity
+              key={area.id}
+              style={[
+                styles.chip,
+                isSelected && styles.chipActive,
+                isPrimary && styles.chipPrimary,
+                area.featured && !isSelected && styles.chipFeatured,
+              ]}
+              onPress={() => toggleSelection('focus_areas', area.id)}
+            >
+              {isPrimary && (
+                <Ionicons name="star" size={13} color={colors.primary} style={styles.chipCheck} />
+              )}
+              {isSelected && !isPrimary && (
+                <Ionicons name="checkmark" size={13} color={colors.primary} style={styles.chipCheck} />
+              )}
+              <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
+                {area.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </View>
   );
@@ -724,6 +754,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary + '20',
     borderColor: colors.primary,
   },
+  chipPrimary: {
+    backgroundColor: colors.primary + '30',
+    borderColor: colors.primary,
+    borderWidth: 2.5,
+  },
   chipFeatured: {
     borderColor: colors.primary + '50',
   },
@@ -736,6 +771,41 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   chipTextActive: {
+    color: colors.primary,
+  },
+  // Focus area badges
+  focusBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    flexWrap: 'wrap',
+  },
+  focusBadgePrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: colors.primary,
+    borderRadius: 20,
+  },
+  focusBadgePrimaryText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.background,
+  },
+  focusBadgeSecondary: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: colors.primary + '20',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+  },
+  focusBadgeSecondaryText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: colors.primary,
   },
   // Duration Grid

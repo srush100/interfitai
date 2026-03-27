@@ -1,0 +1,57 @@
+{
+  "summary": "Backend-only testing of Elite Coaching Engine (EliteCoachingEngine.build_blueprint()). Ran 7 pytest tests covering: health check, build_muscle 4-day split selection, athletic_performance hybrid split + GOAL_PARAMS verification, lower_back limitation exclusion filter, calisthenics bodyweight-only check, and foods_to_avoid alternate meal filtering. 6/7 tests passed. 1 test failed due to equipment tagging bug in generate_workout().",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/workouts/generate (calisthenics style)",
+        "issue": "Equipment inference code in generate_workout() (line 2176) incorrectly tags bodyweight calisthenics exercises as 'barbell' when the exercise name contains keywords 'squat', 'deadlift', or 'bench'. Affected exercises: 'Pistol Squat (assisted)', 'Bulgarian Split Squat', 'Single-Leg Romanian Deadlift', 'Bench Dip', 'Jump Squat'. The exercises themselves are correct (bodyweight options from PATTERNS dict) but the equipment field in the response is wrong.",
+        "priority": "MEDIUM"
+      },
+      {
+        "endpoint": "POST /api/mealplan/alternate",
+        "issue": "API response wraps the meal in {'alternate_meal': {...}} not just {...}. This is a documentation/structure inconsistency — other meal endpoints return the object directly. Not a bug per se but worth noting for frontend consistency.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_elite_coaching_engine.py",
+    "/app/test_reports/pytest/elite_coaching_engine_results.xml"
+  ],
+  "action_items": [
+    "FIX: Equipment inference logic in generate_workout() (server.py ~line 2176). When training_style=='calisthenics' OR when exercise name does NOT contain 'barbell' prefix, don't tag as 'barbell'. Fix: add 'barbell' prefix check instead of just 'squat'/'deadlift'/'bench' keywords. Example fix: check for 'barbell squat' not just 'squat'.",
+    "VERIFY: Confirm the alternate meal API response structure ({'alternate_meal': {...}}) is intentional and frontend handles it correctly."
+  ],
+  "critical_code_review_comments": [
+    "server.py ~line 2176: Equipment inference uses keyword matching that is too broad. 'squat' and 'deadlift' match bodyweight exercise names in calisthenics mode. Should check for 'barbell' prefix specifically, or use training_style context to fall back to 'bodyweight' for calisthenics.",
+    "generate_workout(): The EliteCoachingEngine is correctly wired - build_blueprint() is called first, LLM only fills names+instructions, all sets/reps/rest/effort are Python-determined. This was VERIFIED."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_elite_coaching_engine.py"
+  ],
+  "success_rate": {
+    "backend": "86% (6/7 tests passed)",
+    "frontend": "N/A (backend-only testing)"
+  },
+  "seed_data_creation": "Used existing test user: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. Generated test meal plans during testing (IDs: 4b41af2f-b1fb-4117-80ad-553f71974a02, 164af80e-117c-4891-a784-9abaef801ac4).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Elite Coaching Engine is working correctly. The Python-determined sets/reps/rest/effort values are being passed to the LLM and correctly reflected in the response. The only outstanding issue is the equipment field tagging for calisthenics exercises that happen to contain 'squat', 'deadlift', or 'bench' in their name. All other coaching metadata fields (split_name, split_rationale, progression_method, deload_timing, weekly_structure) are correctly populated. The foods_to_avoid alternate meal filtering works correctly.",
+  "rca_of_issue": "Equipment tagging bug (calisthenics): generate_workout() has equipment inference logic at line 2176 that checks if exercise name contains any of ['barbell', 'deadlift', 'squat', 'bench'] → tags as 'barbell'. For calisthenics workouts, exercises like 'Pistol Squat (assisted)', 'Bulgarian Split Squat', 'Jump Squat' (all bodyweight) are incorrectly tagged as 'barbell' because their names contain 'squat'. FIX: Change check to require 'barbell' to appear as a PREFIX or standalone word, e.g. name.startswith('barbell') or ' barbell ' in name. Or check training_style=='calisthenics' and default to bodyweight.",
+  "test_results_detail": {
+    "test_1_health": "PASSED - GET /api/health returns 200 OK, status=healthy",
+    "test_2a_build_muscle_split": "PASSED - 4-day build_muscle returns split_name='Upper / Lower' as expected. All coaching fields verified: split_name, split_rationale, progression_method, deload_timing, weekly_structure, training_style, training_notes. All exercises have effort_target, muscle_groups, substitution_hint.",
+    "test_2b_weekly_structure": "PASSED - weekly_structure is a list of 4 strings like 'Day 1: Upper - Push (Heavy) - Chest, Shoulders & Triceps'",
+    "test_3_athletic_performance": "PASSED - athletic_performance+hybrid+4days returns split='Athletic Hybrid Split'. Found 8 primary_compound exercises, ALL have sets=4, reps='4-6', rest=180s - confirming Python engine sets these, not LLM.",
+    "test_4_lower_back": "PASSED - strength+3days+lower_back generates 18 exercises across 3 days, NONE are from LIMITATION_EXCLUSIONS (Conventional Deadlift, Sumo Deadlift, Back Squat, T-Bar Row, Barbell Row all absent).",
+    "test_5_calisthenics": "FAILED - Calisthenics workout correctly uses bodyweight exercise options (Pistol Squat, Bulgarian Split Squat, etc.) but equipment field is incorrectly tagged as 'barbell' for 5 of 24 exercises due to keyword matching bug.",
+    "test_6_foods_to_avoid": "PASSED - Generated meal plan with foods_to_avoid='chicken', swapped lunch via /api/mealplan/alternate, replacement was 'Grilled Salmon with Quinoa & Roasted Broccoli' - no chicken found. Backend logs confirm 11-food exclusion list built from PROTEIN_GROUPS mapping."
+  }
+}

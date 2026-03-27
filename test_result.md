@@ -102,9 +102,45 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Build InterFitAI - a comprehensive AI fitness app with user profile & macro calculation, AI workout generation, AI meal plan generation, food tracking with image recognition, Ask InterFitAI chat, subscription payments with Stripe, step tracking, and device connections."
+user_problem_statement: "Build InterFitAI - a comprehensive AI fitness app with user profile & macro calculation, AI workout generation, AI meal plan generation, food tracking with image recognition, Ask InterFitAI chat, subscription payments with Stripe, step tracking, and device connections. Current focus: Build world-class Elite Coaching Engine for workout generation - Python backend rules, not LLM guessing. Goal/style/focus_areas must drive split selection, volume, sets/reps/rest/effort. LLM only fills exercise names and form cues."
 
 backend:
+  - task: "Elite Coaching Engine - generate_workout wired to EliteCoachingEngine"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Rewrote generate_workout() to call _coaching_engine.build_blueprint() first. Python determines split, sets, reps, rest, effort. LLM only picks exercise names from options list and writes 15-20 word form cues. Goal-specific deload timing added. Secondary focus areas passed to LLM context. Needs testing: POST /api/workouts/generate with various goal+style combos."
+
+  - task: "Athletic Performance goal support"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "GOAL_PARAMS already contains athletic_performance. select_split handles it. Frontend questionnaire now shows it. Needs end-to-end test."
+
+  - task: "Meal replacement foods_to_avoid filtering"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 2
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Fix was applied in previous session but never verified. Test POST /api/mealplans/swap-meal with a user profile that has foods_to_avoid set. Verify the replacement meal does not include those foods."
+
   - task: "OPTIMIZED Claude Sonnet 4.6 - Health Check"
     implemented: true
     working: true

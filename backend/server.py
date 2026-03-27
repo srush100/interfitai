@@ -1646,7 +1646,14 @@ class EliteCoachingEngine:
             "split_rationale":   split_rationale,
             "progression_name":  progression_name,
             "progression_desc":  progression_desc,
-            "deload_timing":     "Every 5 weeks — reduce all weights by 40% for one week to allow full recovery and super-compensation.",
+            "deload_timing":     {
+                "strength":             "Every 4 weeks: reduce weight 40% for 1 week, then reload heavier than before.",
+                "build_muscle":         "Every 5-6 weeks: cut working sets by 50% for 1 week — keep load, reduce volume.",
+                "lose_fat":             "Every 6-7 weeks: reduce volume 40% for 1 week while maintaining training frequency.",
+                "body_recomp":          "Every 5 weeks: reduce both load and volume by 40% — prioritise sleep and recovery.",
+                "athletic_performance": "Every 4 weeks: cut volume 50% — use deload week for skill work and mobility.",
+                "general_fitness":      "Every 6-8 weeks: reduce total volume by 30% for 1 week, stay lightly active.",
+            }.get(goal, "Every 5-6 weeks: reduce volume by 40% for 1 week to allow full recovery and super-compensation."),
             "weekly_structure":  [f"Day {d['session_number']}: {d['label']} — {d['focus']}" for d in day_blueprints],
             "day_blueprints":    day_blueprints,
             "goal":              goal,
@@ -1984,210 +1991,260 @@ async def get_profile_by_email(email: str):
 
 @api_router.post("/workouts/generate", response_model=WorkoutProgram)
 async def generate_workout(request: WorkoutGenerateRequest):
-    """Generate AI-powered workout program - ELITE level, perfectly tailored to goal, level, and preferences"""
-    # Get user profile for personalization
-    profile = await db.profiles.find_one({"id": request.user_id})
-    session_duration = request.duration_minutes if hasattr(request, 'duration_minutes') else 60
-    fitness_level = request.fitness_level if hasattr(request, 'fitness_level') else "intermediate"
-    training_style = getattr(request, 'training_style', 'weights')
-    preferred_split = getattr(request, 'preferred_split', 'ai_choose')
-    
-    # Determine rest times based on goal
-    rest_times_by_goal = {
-        "strength": "180-300",
-        "build_muscle": "90-120",
-        "body_recomp": "60-90",
-        "lose_fat": "30-45",
-        "general_fitness": "60-90",
-    }
-    goal_rest = rest_times_by_goal.get(request.goal, "60-90")
-    
-    # Compact goal/level/style rules for concise prompt
-    goal_rules = {
-        "build_muscle": "Hypertrophy focus: 8-12 reps, 90-120s rest. Pure resistance training, NO cardio days.",
-        "strength": "Heavy compounds (squat/bench/deadlift/OHP/row): 3-6 reps, 3-5 min rest. No HIIT or cardio.",
-        "lose_fat": "Circuit/superset format: 12-15 reps, 30-45s rest. Add 8-10 min cardio finisher each session.",
-        "body_recomp": "8-12 reps, 60-90s rest. Compound focus. Light cardio finisher 1-2 days/week only.",
-        "general_fitness": "Balanced variety: strength + endurance. 60-90s rest.",
-    }
-    level_rules = {
-        "beginner": "2-3 sets, 12-15 reps. 60% machines, 30% dumbbells, 10% light barbell. No advanced exercises.",
-        "intermediate": "3-4 sets, 8-12 reps. Mix free weights (55%) and machines (45%). Standard compound lifts OK.",
-        "advanced": "4-5 sets, 6-10 reps. 70% free weights, 30% machines. Supersets and drop sets welcome.",
-    }
-    style_rules = {
-        "weights": "Traditional weight training with barbells, dumbbells, and machines.",
-        "calisthenics": "BODYWEIGHT ONLY. Push-ups, pull-ups, dips, pistol squats. NO barbells, dumbbells, or machines.",
-        "hybrid": "50% strength days + cardio finisher, 30% conditioning/HIIT, 20% combo. Include rowing/assault bike/battle ropes.",
-        "functional": "Functional movements, kettlebells, medicine balls, athletic training.",
-    }
-    equip_note = ""
-    if "full_gym" in request.equipment:
-        equip_note = "MUST use both free weights AND machines (lat pulldown, cable, leg press, chest press machine, leg curl)."
-    elif training_style == "calisthenics":
-        equip_note = "Bodyweight only."
-    else:
-        equip_note = f"Use available: {', '.join(request.equipment)}."
-    split_note = {
-        "ai_choose": f"Best split for {request.goal.replace('_', ' ')} with {request.days_per_week} days",
-        "full_body": "Full body each session",
-        "upper_lower": "Alternate upper/lower days",
-        "push_pull_legs": "Push/Pull/Legs rotation",
-        "bro_split": "One muscle group per day",
-    }.get(preferred_split, preferred_split)
-    injuries_note = ', '.join(request.injuries) if request.injuries else 'none'
-    
-    # ============= BUILD CONCISE PROMPT =============
-    prompt = f"""Build a WORLD-CLASS {request.days_per_week}-day {request.goal.replace('_', ' ').upper()} program — {fitness_level} level.
-Style: {training_style} | Split: {split_note} | Session: {session_duration}min | Equipment: {', '.join(request.equipment)}
-Goal rules: {goal_rules.get(request.goal, 'Balanced, 60-90s rest.')}
-Level rules: {level_rules.get(fitness_level, level_rules['intermediate'])}
-Equipment rules: {equip_note}
-Injuries/avoid: {injuries_note}
+    """
+    ELITE COACHING ENGINE
+    Step 1 (Python): Build a complete blueprint — split, volume, sets/reps/rest/effort, exercise options
+    Step 2 (LLM):    Fill in ONLY exercise names (from options list) and form coaching instructions
+    Step 3 (Python): Merge, store coaching metadata, fetch GIFs
+    """
 
-FORMAT RULES (strictly follow): 5-6 exercises/day. Instructions: 15-20 words, form-focused. Notes: 12 words max. JSON only — no markdown.
+    # ─── STEP 1: Python builds the full blueprint ─────────────────────────────
+    blueprint = _coaching_engine.build_blueprint(request)
 
-{{"name":"Elite Program Name","workout_days":[{{"day":"Day 1 - Push","focus":"Chest, Shoulders & Triceps","duration_minutes":{session_duration},"notes":"Prioritise mind-muscle connection on pressing movements.","exercises":[{{"name":"Barbell Bench Press","sets":4,"reps":"6-8","rest_seconds":{goal_rest.split('-')[0]},"instructions":"Retract scapula, lower bar to sternum, drive explosively through full ROM.","muscle_groups":["chest","front delts","triceps"],"equipment":"barbell"}},{{"name":"Incline Dumbbell Press","sets":3,"reps":"8-10","rest_seconds":{goal_rest.split('-')[0]},"instructions":"Set 30-45 degree incline, control descent, squeeze chest at top.","muscle_groups":["upper chest","triceps"],"equipment":"dumbbells"}}]}}]}}"""
+    # ─── STEP 2: Build tight LLM prompt ───────────────────────────────────────
+    # Claude picks ONE name from each slot's options list + writes form cues.
+    # Sets / reps / rest / effort are FIXED — Claude cannot change them.
 
+    prompt_lines = [
+        f"Goal: {blueprint['goal'].replace('_',' ')} | Style: {blueprint['style']} | "
+        f"Level: {blueprint['level']} | Split: {blueprint['split_name']}",
+        f"Equipment: {', '.join(blueprint['equipment'])}",
+        f"Limitations: {', '.join(blueprint['limitations']) if blueprint['limitations'] else 'None'}",
+    ]
+    if blueprint.get('secondary'):
+        prompt_lines.append(
+            f"Primary focus: {', '.join(blueprint['focus'])} | "
+            f"Secondary emphasis: {', '.join(blueprint['secondary'])}"
+        )
+    elif blueprint.get('focus') and blueprint['focus'] != ['full_body']:
+        prompt_lines.append(f"Focus areas: {', '.join(blueprint['focus'])}")
+    prompt_lines += [
+        "",
+        "For each slot below: choose ONE name from Options and write coaching Instructions (15-20 words, strict form cue).",
+        "Do NOT change sets, reps, rest, or effort — those are fixed.",
+        "",
+    ]
 
+    day_slot_data = []
 
-    def repair_truncated_json(content: str) -> str:
-        """Attempt to repair truncated JSON by closing open structures"""
+    for day_bp in blueprint['day_blueprints']:
+        prompt_lines.append(
+            f"Day {day_bp['session_number']} — {day_bp['label']} | Focus: {day_bp['focus']}"
+        )
+        day_exercises_meta = []
+
+        for slot_idx, slot in enumerate(day_bp['slots']):
+            opts = slot['options'] or ['Bodyweight Exercise']
+            prompt_lines.append(
+                f"  [{slot_idx+1}] {slot['coaching_note']} | "
+                f"{slot['sets']}×{slot['reps']} | {slot['rest_seconds']}s rest | {slot['effort']}"
+            )
+            prompt_lines.append(f"  Options: {', '.join(opts[:3])}")
+            prompt_lines.append(f"  → name: ?, instructions: ?")
+
+            day_exercises_meta.append({
+                "pattern":       slot['pattern'],
+                "type":          slot['type'],
+                "coaching_note": slot['coaching_note'],
+                "options":       opts,
+                "sets":          slot['sets'],
+                "reps":          slot['reps'],
+                "rest_seconds":  slot['rest_seconds'],
+                "effort":        slot['effort'],
+                "default_name":  opts[0],
+            })
+
+        day_slot_data.append({
+            "session_number":  day_bp['session_number'],
+            "label":           day_bp['label'],
+            "focus":           day_bp['focus'],
+            "exercises_meta":  day_exercises_meta,
+        })
+        prompt_lines.append("")
+
+    prompt_lines += [
+        'Return ONLY valid compact JSON in this exact format:',
+        '{"program_name":"...","workout_days":[{"exercises":[{"name":"...","instructions":"..."},...]},...]}',
+        "Same day order and exercise count as above. JSON only, no markdown.",
+    ]
+    prompt = '\n'.join(prompt_lines)
+
+    # ─── STEP 2b: Call LLM ────────────────────────────────────────────────────
+    def _clean_json(raw: str) -> str:
+        raw = raw.strip()
+        if raw.startswith('```'):
+            parts = raw.split('```')
+            raw = parts[1] if len(parts) > 1 else raw
+            if raw.startswith('json'):
+                raw = raw[4:]
+        return raw.strip()
+
+    def _repair_json(content: str) -> str:
         content = content.strip()
-        # Remove trailing incomplete value (find last clean terminator)
-        for i in range(len(content) - 1, -1, -1):
-            c = content[i]
-            if c in ('}', ']', '"') or (c.isdigit()) or content[i:i+4] in ('true', 'fals', 'null'):
-                content = content[:i+1]
-                break
-        # Remove trailing comma if present
-        while content and content[-1] in ',':
+        while content and content[-1] == ',':
             content = content[:-1].rstrip()
-        # Close open brackets and braces
-        open_braces = content.count('{') - content.count('}')
+        open_braces   = content.count('{') - content.count('}')
         open_brackets = content.count('[') - content.count(']')
         content += ']' * max(0, open_brackets) + '}' * max(0, open_braces)
         return content
 
-    def clean_json_content(raw: str) -> str:
-        """Clean and extract JSON from raw LLM response"""
-        raw = raw.strip() if raw else ""
-        if raw.startswith("```"):
-            parts = raw.split("```")
-            raw = parts[1] if len(parts) > 1 else raw
-            if raw.startswith("json"):
-                raw = raw[4:]
-        return raw.strip()
-
-    workout_data = None
-    last_error = None
-
+    llm_data = None
     for attempt in range(2):
         try:
-            current_prompt = prompt
-            if attempt == 1:
-                # Simplified fallback prompt - fewer exercises, shorter instructions
-                logger.info("Workout gen: retrying with simplified prompt")
-                current_prompt = f"""Create a {request.days_per_week}-day {request.goal.replace('_', ' ')} workout for {fitness_level} level.
-Equipment: {', '.join(request.equipment)}. Focus: {', '.join(request.focus_areas) if request.focus_areas else 'full body'}.
-Style: {training_style}. Session: {session_duration} min. Injuries: {', '.join(request.injuries) if request.injuries else 'None'}.
-
-RULES: Exactly 5 exercises per day. Instructions max 20 words each.
-
-Return ONLY valid JSON:
-{{
-  "name": "Program Name",
-  "workout_days": [
-    {{
-      "day": "Day 1 - Focus",
-      "focus": "Brief focus",
-      "duration_minutes": {session_duration},
-      "notes": "Brief tip",
-      "exercises": [
-        {{"name": "Exercise", "sets": 3, "reps": "10-12", "rest_seconds": {goal_rest.split('-')[0]}, "instructions": "Form cue here.", "muscle_groups": ["primary"], "equipment": "equipment"}}
-      ]
-    }}
-  ]
-}}"""
-
             content = await call_claude_sonnet(
-                system_message="You are a personal trainer. Return ONLY valid compact JSON. No markdown. Strict: 4 exercises per day, instructions max 12 words.",
-                user_message=current_prompt,
-                temperature=0.5 if attempt == 0 else 0.2,
-                max_tokens=4500
+                system_message=(
+                    "You are a personal trainer filling an exercise scaffold. "
+                    "Pick ONE name from each slot's Options list and write 15-20 word form coaching instructions. "
+                    "Return ONLY valid compact JSON. No markdown. No extra fields."
+                ),
+                user_message=prompt,
+                temperature=0.3 if attempt == 0 else 0.1,
+                max_tokens=3500,
             )
-
-            content = clean_json_content(content)
-            logger.info(f"Workout attempt {attempt+1} response len: {len(content) if content else 0}")
-
+            content = _clean_json(content)
+            logger.info(f"Workout gen attempt {attempt+1}: response len={len(content)}")
             try:
-                workout_data = json.loads(content)
+                llm_data = json.loads(content)
                 break
-            except json.JSONDecodeError as je:
-                logger.warning(f"Workout attempt {attempt+1} JSONDecodeError at char {je.pos}. Trying repair...")
+            except json.JSONDecodeError:
                 try:
-                    repaired = repair_truncated_json(content)
-                    workout_data = json.loads(repaired)
-                    logger.info(f"Workout attempt {attempt+1}: JSON repair succeeded")
+                    llm_data = json.loads(_repair_json(content))
+                    logger.info("Workout gen: JSON repair succeeded")
                     break
-                except Exception as repair_err:
-                    last_error = je
-                    logger.error(f"Workout attempt {attempt+1}: repair failed: {repair_err}")
-                    if attempt < 1:
-                        continue
-                    raise HTTPException(status_code=500, detail="Failed to generate workout. Please try again.")
-
+                except Exception:
+                    llm_data = None
         except HTTPException:
             raise
         except Exception as e:
-            last_error = e
-            logger.error(f"Workout generation attempt {attempt+1} error: {e}")
-            if attempt < 1:
-                continue
-            raise HTTPException(status_code=500, detail=f"Failed to generate workout: {str(e)}")
+            logger.error(f"Workout gen attempt {attempt+1} error: {e}")
+            if attempt == 1:
+                raise HTTPException(status_code=500, detail=f"Failed to generate workout: {str(e)}")
 
-    if not workout_data:
-        raise HTTPException(status_code=500, detail="Failed to generate workout. Please try again.")
+    # ─── STEP 3: Merge LLM output with blueprint ──────────────────────────────
+    PATTERN_MUSCLES = {
+        "horizontal_push": ["chest", "triceps", "front delts"],
+        "incline_push":    ["upper chest", "triceps"],
+        "vertical_push":   ["shoulders", "triceps"],
+        "lateral_raise":   ["medial delts", "shoulders"],
+        "rear_delt":       ["rear delts", "upper back"],
+        "tricep_push":     ["triceps"],
+        "vertical_pull":   ["lats", "biceps"],
+        "horizontal_pull": ["rhomboids", "lats", "biceps"],
+        "bicep_curl":      ["biceps", "brachialis"],
+        "squat":           ["quads", "glutes"],
+        "lunge":           ["quads", "glutes", "hamstrings"],
+        "hip_hinge":       ["hamstrings", "glutes", "lower back"],
+        "glute":           ["glutes", "hip flexors"],
+        "hamstring_curl":  ["hamstrings"],
+        "knee_extension":  ["quads"],
+        "calf":            ["calves", "soleus"],
+        "core_stability":  ["core", "abs", "obliques"],
+        "core_flexion":    ["abs", "hip flexors"],
+        "carry":           ["core", "grip", "traps"],
+        "explosive":       ["quads", "glutes", "calves"],
+        "conditioning":    ["full body", "cardiovascular"],
+    }
 
-    # Helper function to parse sets value (handles "6-8 rounds" -> 6)
-    def parse_sets(sets_value):
-        """Convert sets value to integer, handling various formats"""
-        if isinstance(sets_value, int):
-            return sets_value
-        if isinstance(sets_value, str):
-            import re
-            numbers = re.findall(r'\d+', sets_value)
-            if numbers:
-                return int(numbers[0])
-        return 3  # Default fallback
-    
-    # Add GIF URLs to exercises - fetch from ExerciseDB API
+    program_name = f"{blueprint['goal'].replace('_',' ').title()} — {blueprint['split_name']}"
+    if llm_data and llm_data.get('program_name'):
+        program_name = llm_data['program_name']
+
+    llm_days = (llm_data or {}).get('workout_days', [])
     processed_days = []
-    for day in workout_data.get("workout_days", []):
+
+    for day_idx, day in enumerate(day_slot_data):
+        llm_day_exs = []
+        if day_idx < len(llm_days) and llm_days[day_idx]:
+            llm_day_exs = llm_days[day_idx].get('exercises', [])
+
         exercises_with_gifs = []
-        for ex in day.get("exercises", []):
-            ex_dict = dict(ex)
-            ex_dict["sets"] = parse_sets(ex_dict.get("sets", 3))
-            gif_url = await get_exercise_gif_from_api(ex.get("name", ""))
-            ex_dict["gif_url"] = gif_url
-            exercises_with_gifs.append(ex_dict)
-        day["exercises"] = exercises_with_gifs
-        processed_days.append(day)
-    
-    session_duration = request.duration_minutes if hasattr(request, 'duration_minutes') else 60
-    
+        for ex_idx, slot_meta in enumerate(day['exercises_meta']):
+            llm_ex = llm_day_exs[ex_idx] if ex_idx < len(llm_day_exs) else {}
+
+            chosen_name = (llm_ex.get('name') or '').strip() or slot_meta['default_name']
+            instructions = (llm_ex.get('instructions') or '').strip()
+            if not instructions:
+                instructions = (
+                    f"Perform {chosen_name} with controlled tempo, full range of motion, "
+                    "and proper form throughout."
+                )
+
+            gif_url = await get_exercise_gif_from_api(chosen_name)
+
+            # Infer equipment tag from exercise name
+            nl = chosen_name.lower()
+            if any(w in nl for w in ['barbell', 'deadlift', 'squat', 'bench']):
+                eq = 'barbell'
+            elif any(w in nl for w in ['dumbbell', ' db ']):
+                eq = 'dumbbells'
+            elif any(w in nl for w in ['cable', 'machine', 'pulldown', 'leg press']):
+                eq = 'cable/machine'
+            elif any(w in nl for w in ['kettlebell', 'kb']):
+                eq = 'kettlebell'
+            elif any(w in nl for w in ['band', 'resistance']):
+                eq = 'resistance band'
+            else:
+                eq = 'bodyweight'
+
+            exercises_with_gifs.append({
+                "name":              chosen_name,
+                "sets":              slot_meta['sets'],
+                "reps":              slot_meta['reps'],
+                "rest_seconds":      slot_meta['rest_seconds'],
+                "instructions":      instructions,
+                "muscle_groups":     PATTERN_MUSCLES.get(slot_meta['pattern'], ['various']),
+                "equipment":         eq,
+                "gif_url":           gif_url,
+                "effort_target":     slot_meta['effort'],
+                "exercise_type":     slot_meta['type'],
+                "substitution_hint": ', '.join(slot_meta['options'][1:3])
+                                     if len(slot_meta['options']) > 1 else None,
+            })
+
+        main_rest = day['exercises_meta'][0]['rest_seconds'] if day['exercises_meta'] else 90
+        processed_days.append({
+            "day":              f"Day {day['session_number']} — {day['label']}",
+            "focus":            day['focus'],
+            "duration_minutes": request.duration_minutes,
+            "notes": (
+                f"{day['label']} session — {day['focus']}. "
+                f"Rest {main_rest}s on main lifts. Focus on controlled tempo and muscle connection."
+            ),
+            "exercises":        exercises_with_gifs,
+        })
+
+    # Build progression + deload text
+    prog_name, prog_desc = _coaching_engine.get_progression_model(
+        blueprint['goal'], blueprint['level']
+    )
+
     program = WorkoutProgram(
         user_id=request.user_id,
-        name=workout_data.get("name", f"{request.goal.replace('_', ' ').title()} Program"),
+        name=program_name,
         goal=request.goal,
+        training_style=request.training_style,
+        fitness_level=request.fitness_level,
         focus_areas=request.focus_areas,
+        secondary_focus_areas=request.secondary_focus_areas,
         equipment=request.equipment,
         injuries=request.injuries,
         days_per_week=request.days_per_week,
-        session_duration_minutes=session_duration,
-        workout_days=[WorkoutDay(**day) for day in processed_days]
+        session_duration_minutes=request.duration_minutes,
+        preferred_split=request.preferred_split,
+        split_name=blueprint['split_name'],
+        split_rationale=blueprint['split_rationale'],
+        progression_method=f"{prog_name} — {prog_desc}",
+        deload_timing=blueprint['deload_timing'],
+        weekly_structure=blueprint['weekly_structure'],
+        training_notes=(
+            f"Goal: {request.goal.replace('_',' ').title()} | "
+            f"Style: {request.training_style.title()} | "
+            f"Split: {blueprint['split_name']} | "
+            f"{request.days_per_week} days/week @ {request.duration_minutes}min"
+        ),
+        workout_days=[WorkoutDay(**day) for day in processed_days],
     )
-    
+
     await db.workouts.insert_one(program.model_dump())
     return program
 
