@@ -96,7 +96,14 @@ Build InterFitAI - a comprehensive AI fitness app with:
 - Macro Breakdown color bars in meal detail cards
 - Manual food logging with auto-calorie calculation from macros
 
-## 2026-03-27 - Elite Workout Coaching Engine
+## 2026-03-28 - Six Structural Engine Improvements (all 14/14 tests passed)
+- **Hybrid split**: 4 dedicated archetypes (hybrid_strength_push/pull/lower + hybrid_power_conditioning). Every session ends with a Python-injected conditioning slot. Structural identity verified.
+- **Functional A/B**: `functional_movement_quality` (unilateral, carries, trunk, aerobic) alternates with `functional_strength_capacity` (compound + plyometric + high-intensity). No more repeated sessions.
+- **Focus area volume**: Primary focus patterns get +1 set (capped 6); secondary +1 (capped 5). Slots reordered — focus patterns appear right after primary_compound via stable Python sort.
+- **Conditioning finisher injection**: `lose_fat` → injected every session; `body_recomp` → every other session (odd days). Hybrid/functional exempt (already contain it structurally).
+- **Duration-adaptive rest**: ≤30min → 0.55× rest scale + max 4 slots. ≤45min → 0.75× rest. Verified: 30min avg rest=52.7s vs 60min avg=85.8s.
+- **Calisthenics difficulty ordering**: BODYWEIGHT_DIFFICULTY (3-tier) reorders options list per level — beginner gets Push-Up/Plank first; advanced gets Pull-Up/Archer Push-Up/Pistol Squat first.
+
 - **WIRED EliteCoachingEngine into generate_workout()** — was dead code before, now called first
 - Python determines all sets/reps/rest/effort via GOAL_PARAMS × experience level
 - LLM only picks exercise name from options list and writes 15-20 word form cues
