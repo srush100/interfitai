@@ -1,0 +1,137 @@
+{
+  "summary": "All 6 EliteCoachingEngine structural improvements verified via 14 backend tests. All tests PASSED in 3m 41s. Each improvement was confirmed by deep structural inspection of actual API responses from POST /api/workouts/generate.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_six_engine_improvements.py",
+    "/app/test_reports/pytest/six_improvements_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_six_engine_improvements.py"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 tests passed)",
+    "frontend": "N/A (backend-only testing requested)"
+  },
+  "test_results_detail": {
+    "improvement_1_hybrid_split": {
+      "status": "PASSED",
+      "split_name": "Hybrid Strength + Conditioning",
+      "day_labels": [
+        "Day 1 — Hybrid – Push + Conditioning",
+        "Day 2 — Hybrid – Lower + Conditioning",
+        "Day 3 — Hybrid – Pull + Conditioning",
+        "Day 4 — Hybrid – Power & Conditioning"
+      ],
+      "conditioning_in_all_days": true,
+      "day_types": {
+        "day1": ["primary_compound", "secondary_compound", "secondary_compound", "isolation", "conditioning", "accessory"],
+        "day2": ["primary_compound", "secondary_compound", "secondary_compound", "accessory", "conditioning", "core"],
+        "day3": ["primary_compound", "primary_compound", "accessory", "isolation", "conditioning"],
+        "day4": ["primary_compound", "accessory", "secondary_compound", "secondary_compound", "conditioning", "core"]
+      }
+    },
+    "improvement_2_functional_ab": {
+      "status": "PASSED",
+      "day_labels": [
+        "Day 1 — Functional A – Movement Quality",
+        "Day 2 — Functional B – Strength & Capacity",
+        "Day 3 — Functional A – Movement Quality",
+        "Day 4 — Functional B – Strength & Capacity"
+      ],
+      "day1_focus": "Unilateral Strength, Trunk Control & Pattern Integrity",
+      "day2_focus": "Multi-Plane Strength, Power Output & Work Capacity",
+      "sessions_distinct": true,
+      "ab_rotation_confirmed": true
+    },
+    "improvement_3_focus_volume_boost": {
+      "status": "PASSED",
+      "chest_focus_day1_exercises": [
+        {"name": "Barbell Bench Press", "sets": 5, "type": "primary_compound", "note": "boosted from base 4 to 5"},
+        {"name": "Incline Dumbbell Press", "sets": 4, "type": "secondary_compound", "note": "boosted from base 3 to 4"},
+        {"name": "Barbell Overhead Press", "sets": 3, "type": "secondary_compound", "note": "no boost"},
+        {"name": "Cable Lateral Raise", "sets": 3, "type": "accessory"},
+        {"name": "Cable Tricep Pushdown", "sets": 3, "type": "isolation"},
+        {"name": "Cable Face Pull", "sets": 3, "type": "accessory"}
+      ],
+      "primary_compound_before_isolation": "primary_compound idx=0, isolation idx=4"
+    },
+    "improvement_4_conditioning_lose_fat": {
+      "status": "PASSED",
+      "conditioning_finisher_all_days": true,
+      "day_finishers": [
+        "Day 1: Assault Bike Intervals (exercise_type=conditioning, effort=High intensity)",
+        "Day 2: Rowing Machine Intervals (exercise_type=conditioning, effort=High intensity)",
+        "Day 3: Battle Ropes (exercise_type=conditioning, effort=High intensity)",
+        "Day 4: Rowing Machine Intervals (exercise_type=conditioning, effort=High intensity)"
+      ]
+    },
+    "improvement_4b_body_recomp_every_other": {
+      "status": "PASSED",
+      "day1_i0_has_conditioning": true,
+      "day2_i1_no_conditioning": true,
+      "day3_i2_has_conditioning": true,
+      "day4_i3_no_conditioning": true,
+      "pattern": "i%2==0 gets conditioning, i%2==1 does not"
+    },
+    "improvement_5_duration_adaptive_rest": {
+      "status": "PASSED",
+      "avg_rest_30min": "52.7s",
+      "avg_rest_60min": "85.8s",
+      "ratio": 0.614,
+      "expected_ratio": 0.55,
+      "within_tolerance": true,
+      "30min_rest_values_per_day": {
+        "day1": [66, 49, 49, 41],
+        "day2": [66, 66, 49, 41],
+        "day3": [66, 49, 49, 41]
+      },
+      "60min_rest_values_per_day": {
+        "day1": [120, 90, 90, 75, 60, 75],
+        "day2": [120, 120, 90, 75, 60, 60],
+        "day3": [120, 90, 90, 75, 75, 60]
+      },
+      "30min_exercises_per_session": 4,
+      "max_exercises_constraint_met": true
+    },
+    "improvement_6_calisthenics_difficulty": {
+      "status": "PASSED",
+      "beginner_exercises": [
+        "Push-Up (tier-1)",
+        "Australian Pull-Up (tier-2)",
+        "Bodyweight Squat (tier-1)",
+        "Reverse Lunge (tier-1)",
+        "Glute Bridge (tier-1)",
+        "Plank (tier-1)"
+      ],
+      "beginner_advanced_exercises_chosen": 0,
+      "beginner_hints_correct": "hints start with tier-2 (not tier-3) for beginner",
+      "advanced_exercises": [
+        "Archer Push-Up (tier-3)",
+        "Pull-Up (tier-3)",
+        "Pistol Squat (assisted) (tier-3)",
+        "Chin-Up (tier-3)",
+        "Chin-Up (tier-3)",
+        "Australian Pull-Up",
+        "Bench Dip"
+      ],
+      "advanced_tier3_count": "7/18 exercises = 39%",
+      "basic_exercise_ratio_in_advanced": "0%",
+      "difficulty_ordering_correct": true
+    }
+  },
+  "seed_data_creation": "None - used existing test user cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 6 EliteCoachingEngine improvements verified and working correctly. Test file at /app/backend/tests/test_six_engine_improvements.py uses session-scoped fixtures to reuse API responses. 8 LLM API calls made total (one per unique workout configuration). Tests are regression-safe and can be rerun for future changes."
+}

@@ -1330,6 +1330,90 @@ class EliteCoachingEngine:
             ],
             "optional_slots": [],
         },
+
+        # ── Hybrid archetypes: strength session + conditioning finisher ──────────
+        "hybrid_strength_push": {
+            "label": "Hybrid – Push + Conditioning",
+            "focus": "Chest, Shoulders & Triceps + Metabolic Finisher",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "heavy pressing – chest and tricep strength base"),
+                ("incline_push",     "secondary_compound",  "incline angle – upper chest development"),
+                ("vertical_push",    "secondary_compound",  "overhead press – shoulder strength and stability"),
+                ("tricep_push",      "isolation",           "tricep isolation – elbow lockout strength"),
+                ("conditioning",     "conditioning",        "conditioning finisher – raise heart rate, burn extra energy"),
+            ],
+            "optional_slots": [
+                ("lateral_raise",    "accessory",           "medial delt – shoulder width and fullness"),
+            ],
+        },
+        "hybrid_strength_pull": {
+            "label": "Hybrid – Pull + Conditioning",
+            "focus": "Back & Biceps + Metabolic Finisher",
+            "slots": [
+                ("vertical_pull",    "primary_compound",   "vertical pull – lat strength and width"),
+                ("horizontal_pull",  "primary_compound",   "heavy row – mid-back thickness and density"),
+                ("rear_delt",        "accessory",           "rear delt and rotator cuff – shoulder health"),
+                ("bicep_curl",       "isolation",           "bicep isolation – elbow flexion and peak"),
+                ("conditioning",     "conditioning",        "conditioning finisher – metabolic output"),
+            ],
+            "optional_slots": [],
+        },
+        "hybrid_strength_lower": {
+            "label": "Hybrid – Lower + Conditioning",
+            "focus": "Legs, Glutes & Posterior Chain + Metabolic Finisher",
+            "slots": [
+                ("squat",            "primary_compound",   "bilateral squat – lower body strength foundation"),
+                ("hip_hinge",        "secondary_compound",  "hinge pattern – hamstring and glute strength"),
+                ("lunge",            "secondary_compound",  "unilateral – single-leg strength and control"),
+                ("glute",            "accessory",           "glute isolation – hip extension and strength"),
+                ("conditioning",     "conditioning",        "lower body conditioning finisher – work capacity"),
+            ],
+            "optional_slots": [
+                ("core_stability",   "core",                "core bracing – trunk stability under load"),
+            ],
+        },
+        "hybrid_power_conditioning": {
+            "label": "Hybrid – Power & Conditioning",
+            "focus": "Power, Athleticism & Work Capacity",
+            "slots": [
+                ("explosive",        "primary_compound",   "plyometric power – explosive lower body output"),
+                ("carry",            "accessory",           "loaded carry – trunk integrity and grip strength"),
+                ("squat",            "secondary_compound",  "squat strength – bilateral lower body base"),
+                ("horizontal_pull",  "secondary_compound",  "row – pulling strength and postural balance"),
+                ("conditioning",     "conditioning",        "high-output metabolic finisher – push the limit"),
+            ],
+            "optional_slots": [
+                ("core_stability",   "core",                "anti-rotation – rotary stability under fatigue"),
+            ],
+        },
+
+        # ── Functional A/B archetypes: genuinely distinct sessions ───────────────
+        "functional_movement_quality": {
+            "label": "Functional A – Movement Quality",
+            "focus": "Unilateral Strength, Trunk Control & Pattern Integrity",
+            "slots": [
+                ("lunge",            "primary_compound",   "single-leg dominance – unilateral strength and control"),
+                ("horizontal_pull",  "secondary_compound",  "row – scapular control and anti-extension"),
+                ("carry",            "accessory",           "loaded carry – trunk stability and gait integrity"),
+                ("core_stability",   "core",                "anti-rotation core – Pallof press or bird-dog"),
+                ("glute",            "accessory",           "glute activation and control – hip extension quality"),
+                ("conditioning",     "conditioning",        "aerobic capacity – low-intensity steady state"),
+            ],
+            "optional_slots": [],
+        },
+        "functional_strength_capacity": {
+            "label": "Functional B – Strength & Capacity",
+            "focus": "Multi-Plane Strength, Power Output & Work Capacity",
+            "slots": [
+                ("squat",            "primary_compound",   "bilateral squat – strength foundation and power base"),
+                ("horizontal_push",  "secondary_compound",  "press pattern – upper body pushing capacity"),
+                ("explosive",        "secondary_compound",  "plyometric output – power development and rate-of-force"),
+                ("hip_hinge",        "accessory",           "hinge strength – posterior chain and trunk loading"),
+                ("core_flexion",     "core",                "dynamic core – anti-flexion and rotational control"),
+                ("conditioning",     "conditioning",        "high-intensity finisher – glycolytic capacity"),
+            ],
+            "optional_slots": [],
+        },
     }
 
     # ----- Split → session type mapping (days_per_week → session sequence) -----
@@ -1358,8 +1442,15 @@ class EliteCoachingEngine:
             5: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full", "athletic_conditioning"],
         },
         "functional_split": {
-            3: ["functional_session", "functional_session", "functional_session"],
-            4: ["functional_session", "full_body_heavy", "functional_session", "lower_full"],
+            3: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality"],
+            4: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity"],
+            5: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity", "functional_movement_quality"],
+        },
+        "hybrid_split": {
+            3: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_power_conditioning"],
+            4: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning"],
+            5: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_lower"],
+            6: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_push", "hybrid_strength_pull"],
         },
         "calisthenics_split": {
             3: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper"],
@@ -1438,6 +1529,49 @@ class EliteCoachingEngine:
         "neck":          ["Barbell Back Squat", "Barbell Overhead Press"],
     }
 
+    # Focus area → movement patterns that should receive volume priority
+    FOCUS_AREA_PATTERNS: dict = {
+        "chest":        ["horizontal_push", "incline_push"],
+        "back":         ["vertical_pull", "horizontal_pull"],
+        "shoulders":    ["vertical_push", "lateral_raise", "rear_delt"],
+        "arms":         ["bicep_curl", "tricep_push"],
+        "biceps":       ["bicep_curl"],
+        "triceps":      ["tricep_push"],
+        "legs":         ["squat", "lunge", "knee_extension", "calf", "hamstring_curl"],
+        "glutes":       ["glute", "hip_hinge", "lunge"],
+        "hamstrings":   ["hip_hinge", "hamstring_curl"],
+        "quads":        ["squat", "lunge", "knee_extension"],
+        "calves":       ["calf"],
+        "core":         ["core_stability", "core_flexion", "carry"],
+        "upper_body":   ["horizontal_push", "vertical_pull", "horizontal_pull", "vertical_push"],
+        "lower_body":   ["squat", "hip_hinge", "glute", "lunge", "hamstring_curl"],
+        "full_body":    [],
+        "conditioning": ["conditioning", "explosive"],
+        "power":        ["explosive", "squat", "hip_hinge"],
+        "endurance":    ["conditioning"],
+    }
+
+    # Bodyweight exercise difficulty tiers for level-based ordering in calisthenics
+    BODYWEIGHT_DIFFICULTY: dict = {
+        # Tier 1 — Beginner
+        "Push-Up": 1, "Bodyweight Squat": 1, "Glute Bridge": 1,
+        "Hip Thrust": 1, "Single-Leg Glute Bridge": 1, "Plank": 1,
+        "Bird Dog": 1, "Reverse Lunge": 1, "Reverse Crunch": 1,
+        "Dead Bug": 1, "Side Plank": 1, "Bodyweight Calf Raise": 1,
+        "Step-Up": 1, "Good Morning": 1,
+        # Tier 2 — Intermediate
+        "Diamond Push-Up": 2, "Pike Push-Up": 2, "Decline Push-Up": 2,
+        "Jump Squat": 2, "Bulgarian Split Squat": 2, "Lateral Lunge": 2,
+        "Australian Pull-Up": 2, "Inverted Row": 2, "Nordic Hamstring Curl": 2,
+        "Hanging Leg Raise": 2, "V-Up": 2, "Single-Leg Calf Raise": 2,
+        "Single-Leg Romanian Deadlift": 2, "Plank Walk": 2, "Supinated Row": 2,
+        "Bench Dip": 2, "Swiss Ball Leg Curl": 2,
+        # Tier 3 — Advanced
+        "Archer Push-Up": 3, "Handstand Push-Up (wall assisted)": 3,
+        "Pistol Squat (assisted)": 3, "Pull-Up": 3, "Chin-Up": 3,
+        "Dip": 3, "Muscle-Up Progression": 3, "Terminal Knee Extension": 3,
+    }
+
     def select_split(self, days: int, goal: str, style: str, level: str,
                      preferred_split: str, focus_areas: list) -> tuple:
         """Returns (split_id, split_display_name, rationale)"""
@@ -1450,16 +1584,21 @@ class EliteCoachingEngine:
             }
             return preferred_split, names.get(preferred_split, preferred_split), "User-selected split — adapted to your goal and schedule."
 
-        # Style-specific overrides
+        # Style-specific overrides — these always take precedence over days/goal logic
         if style == 'calisthenics':
             return 'calisthenics_split', 'Calisthenics Split', \
-                "Bodyweight training is best structured as dedicated upper/lower sessions to maximise push/pull frequency and skill progression."
+                "Bodyweight training is best structured as dedicated upper/lower sessions to maximise push/pull frequency and calisthenics skill progression."
         if style == 'functional':
-            return 'functional_split', 'Functional Training Split', \
-                "Functional training is built around full-body sessions that combine movement quality, stability work, and conditioning for real-world carryover."
-        if style == 'hybrid' and goal == 'athletic_performance':
-            return 'athletic_split', 'Athletic Hybrid Split', \
-                "Athletic hybrid training alternates strength-focused and conditioning-focused sessions to develop power, capacity, and structural balance simultaneously."
+            return 'functional_split', 'Functional A/B Split', \
+                "Functional training alternates a Movement Quality session (unilateral strength, trunk control, loaded carries, aerobic capacity) with a Strength & Capacity session (compound strength, power output, high-intensity conditioning) — developing real-world athletic function across all physical qualities."
+        if style == 'hybrid':
+            return 'hybrid_split', 'Hybrid Strength + Conditioning', \
+                "Hybrid training alternates structured resistance sessions (each ending with a metabolic conditioning finisher) with dedicated Power & Conditioning sessions — building strength, muscular development, and cardiovascular capacity in the same program."
+
+        # Athletic performance always uses athletic split regardless of style
+        if goal == 'athletic_performance':
+            return 'athletic_split', 'Athletic Performance Split', \
+                "Athletic performance training alternates full-body strength sessions with power and conditioning sessions — developing maximal strength, explosive power, and structural balance simultaneously."
 
         # Standard logic by days
         if days <= 2:
@@ -1497,21 +1636,38 @@ class EliteCoachingEngine:
                 "6-day PPL (Push/Pull/Legs × 2) provides maximum weekly volume and frequency — every pattern trained twice per week. Only appropriate with elite recovery capacity."
 
     def get_exercise_options(self, pattern: str, equipment: list, style: str,
-                              limitations: list) -> list:
-        """Returns suitable exercise options for a slot given equipment and limitations."""
+                              limitations: list, level: str = 'intermediate') -> list:
+        """
+        Returns suitable exercise options for a slot.
+        - Calisthenics / bodyweight-only: exercises sorted by difficulty for the given level.
+        - Equipment-aware: builds candidates from equipment intersection.
+        - Limitation-filtered: removes contraindicated exercises.
+        """
         opts = self.PATTERNS.get(pattern, {})
-        candidates = []
+        is_bodyweight_context = (
+            style == 'calisthenics'
+            or (equipment and all(e in ['bodyweight', 'resistance_bands'] for e in equipment))
+        )
 
-        # Build candidates from equipment intersection
-        for eq in ['full_gym', 'barbells', 'dumbbells', 'kettlebells', 'cables', 'machines',
-                   'resistance_bands', 'bodyweight', 'any']:
-            if eq == 'any' or eq in equipment or eq == 'full_gym' and 'full_gym' in equipment:
-                candidates.extend(opts.get(eq, []))
+        if is_bodyweight_context:
+            # Pull bodyweight (+ bands if available) options only
+            candidates = list(opts.get('bodyweight', []))
+            if 'resistance_bands' in (equipment or []):
+                for ex in opts.get('resistance_bands', []):
+                    if ex not in candidates:
+                        candidates.append(ex)
+            if not candidates:
+                candidates = opts.get('any', ["Bodyweight Exercise"])
+        else:
+            candidates = []
+            for eq in ['full_gym', 'barbells', 'dumbbells', 'kettlebells', 'cables',
+                       'machines', 'resistance_bands', 'bodyweight', 'any']:
+                if eq == 'any' or eq in equipment or (eq == 'full_gym' and 'full_gym' in equipment):
+                    candidates.extend(opts.get(eq, []))
+            if not candidates:
+                candidates = opts.get('bodyweight', opts.get('any', ["Bodyweight Exercise"]))
 
-        if not candidates:  # fallback to bodyweight
-            candidates = opts.get('bodyweight', opts.get('any', ["Bodyweight Exercise"]))
-
-        # Remove duplicates while preserving order
+        # Deduplicate while preserving order
         seen = set()
         unique = []
         for c in candidates:
@@ -1519,16 +1675,32 @@ class EliteCoachingEngine:
                 seen.add(c)
                 unique.append(c)
 
-        # Filter out exercises contraindicated for limitations
+        # Filter out exercises contraindicated by limitations
         excluded = set()
         for lim in (limitations or []):
             key = lim.lower().replace(' ', '_').replace('-', '_')
             for excl_key, excl_list in self.LIMITATION_EXCLUSIONS.items():
                 if excl_key in key:
                     excluded.update(excl_list)
-
         filtered = [e for e in unique if e not in excluded]
-        return filtered[:4] if filtered else unique[:4]  # top 4 options for Claude to choose from
+        result = filtered if filtered else unique
+
+        # ── Calisthenics difficulty ordering (Improvement #6) ─────────────────
+        # Beginner: easiest first → coaches progressive skill building
+        # Advanced: hardest first → challenges appropriately
+        # Intermediate: natural order (tier 1-2 first, tier 3 last)
+        if is_bodyweight_context or style == 'calisthenics':
+            diff = self.BODYWEIGHT_DIFFICULTY
+            if level == 'beginner':
+                result = sorted(result, key=lambda x: diff.get(x, 2))
+            elif level == 'advanced':
+                result = sorted(result, key=lambda x: -diff.get(x, 2))
+            else:  # intermediate — exclude tier-3 only from top options
+                tier1_2 = [x for x in result if diff.get(x, 2) <= 2]
+                tier3   = [x for x in result if diff.get(x, 2) > 2]
+                result  = tier1_2 + tier3
+
+        return result[:4] if result else ["Bodyweight Exercise"]
 
     def get_session_count_for_split(self, split_id: str, days: int) -> list:
         """Get the session types for this split and day count."""
@@ -1598,24 +1770,43 @@ class EliteCoachingEngine:
 
         # Build per-day blueprints
         day_blueprints = []
+
+        # ── Pre-compute focus area pattern lists (used in every day's loop) ──
+        primary_focus_key = (focus[0] if focus else 'full_body').lower().replace(' ', '_')
+        primary_patterns  = self.FOCUS_AREA_PATTERNS.get(primary_focus_key, [])
+        secondary_patterns: list = []
+        for sf in secondary:
+            secondary_patterns.extend(
+                self.FOCUS_AREA_PATTERNS.get(sf.lower().replace(' ', '_'), [])
+            )
+
         for i, session_type in enumerate(session_types):
             archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
             slots = list(archetype['slots'])
 
-            # Add optional slots based on time budget (>45min) and level
-            if req.duration_minutes >= 60 and level != 'beginner':
+            # Add optional slots based on time budget (>50min) and level
+            if req.duration_minutes >= 50 and level != 'beginner':
                 slots += archetype.get('optional_slots', [])
 
-            # Trim slots to fit session duration (roughly 8-12min per slot)
-            max_slots = req.duration_minutes // 10
+            # ── Improvement #5a: Duration → max slots and rest scaling ──────
+            # Short sessions: fewer slots. Very short: minimal slots.
+            if req.duration_minutes <= 30:
+                max_slots  = 4
+                rest_scale = 0.55
+            elif req.duration_minutes <= 45:
+                max_slots  = max(4, req.duration_minutes // 10)
+                rest_scale = 0.75
+            else:
+                max_slots  = req.duration_minutes // 10
+                rest_scale = 1.0
             slots = slots[:max(4, min(len(slots), max_slots))]
 
             # Build exercise slot specifications
             slot_specs = []
             for pattern, ex_type, coaching_note in slots:
-                params = goal_params.get(ex_type, goal_params['accessory'])
-                params = self.adjust_volume_for_level(ex_type, level, params)
-                options = self.get_exercise_options(pattern, equipment, style, limitations)
+                params  = goal_params.get(ex_type, goal_params['accessory'])
+                params  = self.adjust_volume_for_level(ex_type, level, params)
+                options = self.get_exercise_options(pattern, equipment, style, limitations, level)
 
                 slot_specs.append({
                     "pattern":       pattern,
@@ -1626,11 +1817,65 @@ class EliteCoachingEngine:
                     "rest_seconds":  params['rest'],
                     "effort":        params['effort'],
                     "options":       options,
-                    "excluded":      [e for lim in limitations for excl_key, excl_list 
-                                      in self.LIMITATION_EXCLUSIONS.items()
+                    "excluded":      [e for lim in limitations
+                                      for excl_key, excl_list in self.LIMITATION_EXCLUSIONS.items()
                                       if excl_key in lim.lower()
                                       for e in excl_list],
                 })
+
+            # ── Improvement #3: Focus area volume boost ──────────────────────
+            # +1 set for primary focus patterns (cap 6), +1 for secondary (cap 5)
+            for slot in slot_specs:
+                if slot['pattern'] in primary_patterns:
+                    slot['sets'] = min(slot['sets'] + 1, 6)
+                elif slot['pattern'] in secondary_patterns:
+                    slot['sets'] = min(slot['sets'] + 1, 5)
+
+            # Reorder within session: primary_compound always first, then
+            # primary focus patterns, then secondary focus, then rest.
+            # Uses stable sort so relative internal order is preserved.
+            def _slot_priority(s: dict) -> int:
+                if s['type'] == 'primary_compound':
+                    return 0
+                if s['pattern'] in primary_patterns:
+                    return 1
+                if s['pattern'] in secondary_patterns:
+                    return 2
+                return 3
+            slot_specs.sort(key=_slot_priority)
+
+            # ── Improvement #4: Conditioning finisher for fat loss / recomp ──
+            # Hybrid/functional already contain conditioning slots — skip them.
+            # For lose_fat: inject every session.
+            # For body_recomp: inject every other session (odd days).
+            if goal in ('lose_fat', 'body_recomp') and style not in ('hybrid', 'functional'):
+                has_conditioning = any(s['type'] == 'conditioning' for s in slot_specs)
+                if not has_conditioning:
+                    should_inject = (goal == 'lose_fat') or (i % 2 == 0)
+                    if should_inject:
+                        cond_params  = goal_params.get(
+                            'conditioning',
+                            {"sets": 3, "reps": "40s on / 20s off", "rest": 20, "effort": "High intensity"}
+                        )
+                        cond_options = self.get_exercise_options(
+                            'conditioning', equipment, style, limitations, level
+                        )
+                        slot_specs.append({
+                            "pattern":       "conditioning",
+                            "type":          "conditioning",
+                            "coaching_note": "metabolic finisher — elevate heart rate and maximise calorie burn",
+                            "sets":          cond_params['sets'],
+                            "reps":          cond_params['reps'],
+                            "rest_seconds":  cond_params['rest'],
+                            "effort":        cond_params['effort'],
+                            "options":       cond_options,
+                            "excluded":      [],
+                        })
+
+            # ── Improvement #5b: Apply rest scaling for short sessions ───────
+            if rest_scale < 1.0:
+                for slot in slot_specs:
+                    slot['rest_seconds'] = max(20, int(slot['rest_seconds'] * rest_scale))
 
             day_blueprints.append({
                 "session_number": i + 1,

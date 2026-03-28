@@ -105,7 +105,7 @@
 user_problem_statement: "Build InterFitAI - a comprehensive AI fitness app with user profile & macro calculation, AI workout generation, AI meal plan generation, food tracking with image recognition, Ask InterFitAI chat, subscription payments with Stripe, step tracking, and device connections. Current focus: Build world-class Elite Coaching Engine for workout generation - Python backend rules, not LLM guessing. Goal/style/focus_areas must drive split selection, volume, sets/reps/rest/effort. LLM only fills exercise names and form cues."
 
 backend:
-  - task: "Elite Coaching Engine - generate_workout wired to EliteCoachingEngine"
+  - task: "Elite Coaching Engine - 6 structural improvements"
     implemented: true
     working: "NA"
     file: "backend/server.py"
@@ -115,7 +115,16 @@ backend:
     status_history:
       - working: "NA"
         agent: "main"
-        comment: "Rewrote generate_workout() to call _coaching_engine.build_blueprint() first. Python determines split, sets, reps, rest, effort. LLM only picks exercise names from options list and writes 15-20 word form cues. Goal-specific deload timing added. Secondary focus areas passed to LLM context. Needs testing: POST /api/workouts/generate with various goal+style combos."
+        comment: |
+          Six engine improvements implemented:
+          1. Hybrid split (new SPLIT_MAP entry + 4 dedicated archetypes: hybrid_strength_push/pull/lower + hybrid_power_conditioning)
+          2. Functional A/B variation (functional_movement_quality + functional_strength_capacity — different structure, not repeated sessions)
+          3. Focus area volume boost (primary focus +1 set capped 6; secondary +1 capped 5; slot reordering puts focus patterns after primary_compound)
+          4. Conditioning finisher injection (lose_fat every session; body_recomp every other; skipped for hybrid/functional which already have it)
+          5. Duration-adaptive rest (<=30min → 0.55x rest; <=45min → 0.75x; plus slot count limits)
+          6. Calisthenics difficulty ordering (beginner: easiest first; advanced: hardest first via BODYWEIGHT_DIFFICULTY tiers)
+          Also: select_split() now always routes hybrid→hybrid_split and functional→functional A/B; athletic_performance (non-hybrid/functional) routes to athletic_split.
+
 
   - task: "Athletic Performance goal support"
     implemented: true
