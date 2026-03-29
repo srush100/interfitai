@@ -912,6 +912,7 @@ class EliteCoachingEngine:
     PATTERNS = {
         "horizontal_push": {
             "full_gym":  ["Barbell Bench Press", "Machine Chest Press", "Cable Chest Fly"],
+            "beginner_gym": ["Machine Chest Press", "Dumbbell Bench Press", "Cable Chest Fly", "Incline Machine Press"],
             "barbells":  ["Barbell Bench Press", "Close-Grip Bench Press"],
             "dumbbells": ["Dumbbell Bench Press", "Dumbbell Incline Press"],
             "machines":  ["Machine Chest Press", "Machine Incline Press"],
@@ -922,6 +923,7 @@ class EliteCoachingEngine:
         },
         "incline_push": {
             "full_gym":  ["Incline Barbell Press", "Incline Dumbbell Press"],
+            "beginner_gym": ["Incline Machine Press", "Incline Dumbbell Press", "High-to-Low Cable Fly"],
             "barbells":  ["Incline Barbell Press"],
             "dumbbells": ["Incline Dumbbell Press", "Incline Dumbbell Fly"],
             "machines":  ["Incline Machine Press"],
@@ -931,6 +933,7 @@ class EliteCoachingEngine:
         },
         "vertical_push": {
             "full_gym":  ["Barbell Overhead Press", "Dumbbell Shoulder Press", "Machine Shoulder Press"],
+            "beginner_gym": ["Machine Shoulder Press", "Dumbbell Shoulder Press", "Cable Shoulder Press"],
             "barbells":  ["Barbell Overhead Press", "Push Press"],
             "dumbbells": ["Dumbbell Shoulder Press", "Arnold Press"],
             "machines":  ["Machine Shoulder Press"],
@@ -975,6 +978,7 @@ class EliteCoachingEngine:
         },
         "horizontal_pull": {
             "full_gym":  ["Barbell Row", "Cable Row", "Machine Row"],
+            "beginner_gym": ["Cable Row", "Machine Row", "Dumbbell Row"],
             "barbells":  ["Barbell Row", "Pendlay Row", "T-Bar Row"],
             "dumbbells": ["Dumbbell Row", "Chest-Supported Row"],
             "machines":  ["Machine Row", "Cable Row"],
@@ -994,6 +998,7 @@ class EliteCoachingEngine:
         },
         "squat": {
             "full_gym":  ["Back Squat", "Leg Press", "Hack Squat"],
+            "beginner_gym": ["Leg Press", "Goblet Squat", "Hack Squat", "Smith Machine Squat"],
             "barbells":  ["Back Squat", "Front Squat", "Pause Squat"],
             "dumbbells": ["Goblet Squat", "Dumbbell Front Squat"],
             "machines":  ["Leg Press", "Hack Squat", "Smith Machine Squat"],
@@ -1003,6 +1008,7 @@ class EliteCoachingEngine:
         },
         "lunge": {
             "full_gym":  ["Barbell Bulgarian Split Squat", "Dumbbell Reverse Lunge", "Walking Lunge"],
+            "beginner_gym": ["Dumbbell Reverse Lunge", "Dumbbell Step-Up", "Smith Machine Split Squat"],
             "barbells":  ["Barbell Bulgarian Split Squat", "Barbell Lunge"],
             "dumbbells": ["Dumbbell Reverse Lunge", "Dumbbell Bulgarian Split Squat", "Dumbbell Step-Up"],
             "machines":  ["Smith Machine Split Squat"],
@@ -1012,6 +1018,7 @@ class EliteCoachingEngine:
         },
         "hip_hinge": {
             "full_gym":  ["Romanian Deadlift", "Conventional Deadlift", "Cable Pull-Through"],
+            "beginner_gym": ["Dumbbell Romanian Deadlift", "Cable Pull-Through", "Leg Curl"],
             "barbells":  ["Romanian Deadlift", "Conventional Deadlift", "Sumo Deadlift"],
             "dumbbells": ["Dumbbell Romanian Deadlift", "Single-Leg RDL"],
             "machines":  ["Cable Pull-Through", "Leg Curl"],
@@ -1021,6 +1028,7 @@ class EliteCoachingEngine:
         },
         "glute": {
             "full_gym":  ["Barbell Hip Thrust", "Cable Kickback", "Leg Press (feet high)"],
+            "beginner_gym": ["Hip Thrust Machine", "Dumbbell Hip Thrust", "Cable Kickback"],
             "barbells":  ["Barbell Hip Thrust", "Barbell Glute Bridge"],
             "dumbbells": ["Dumbbell Hip Thrust", "Single-Leg Glute Bridge"],
             "machines":  ["Hip Thrust Machine", "Cable Kickback"],
@@ -1850,9 +1858,20 @@ class EliteCoachingEngine:
                 candidates = opts.get('any', ["Bodyweight Exercise"])
         else:
             candidates = []
-            for eq in ['full_gym', 'barbells', 'dumbbells', 'kettlebells', 'cables',
-                       'machines', 'resistance_bands', 'bodyweight', 'any']:
-                if eq == 'any' or eq in equipment or (eq == 'full_gym' and 'full_gym' in equipment):
+            # ── Level-sensitive equipment ordering ─────────────────────────────
+            # Beginners at a full gym get machines/cables/dumbbells prioritised
+            # over barbells — safer, more stable, easier to learn and progress.
+            # Intermediate and advanced get the standard ordering.
+            if 'full_gym' in equipment and level == 'beginner':
+                eq_order = ['beginner_gym', 'machines', 'cables', 'dumbbells',
+                            'kettlebells', 'full_gym', 'resistance_bands', 'bodyweight', 'any']
+            else:
+                eq_order = ['full_gym', 'barbells', 'dumbbells', 'kettlebells',
+                            'cables', 'machines', 'resistance_bands', 'bodyweight', 'any']
+            for eq in eq_order:
+                if (eq == 'any'
+                        or eq in equipment
+                        or eq in ('full_gym', 'barbells', 'beginner_gym') and 'full_gym' in equipment):
                     candidates.extend(opts.get(eq, []))
             if not candidates:
                 candidates = opts.get('bodyweight', opts.get('any', ["Bodyweight Exercise"]))
