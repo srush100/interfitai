@@ -573,7 +573,7 @@ export default function WorkoutDetail() {
               <View style={styles.coachingContent}>
                 <Text style={styles.coachingLabel}>How Hard to Train</Text>
                 <Text style={styles.coachingValue}>
-                  Each set should feel genuinely challenging. Finish with 2–3 reps still in you — not easy, not total failure. When a weight stops feeling hard, add a little more next session.
+                  Each set should feel genuinely challenging. Finish with 1–3 reps still in you — not easy, not total failure. When a weight stops feeling hard, add a little more next session.
                 </Text>
               </View>
             </View>
