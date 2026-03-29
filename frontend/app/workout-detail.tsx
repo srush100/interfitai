@@ -565,16 +565,15 @@ export default function WorkoutDetail() {
               </View>
             )}
 
-            {/* RIR explanation — always shown when progression mentions RIR */}
+            {/* Effort guideline — plain-English, no jargon */}
             <View style={styles.coachingRow}>
               <View style={styles.coachingIcon}>
-                <Ionicons name="bulb" size={16} color={colors.primary} />
+                <Ionicons name="flame" size={16} color={colors.primary} />
               </View>
               <View style={styles.coachingContent}>
-                <Text style={styles.coachingLabel}>What is RIR?</Text>
+                <Text style={styles.coachingLabel}>How Hard to Train</Text>
                 <Text style={styles.coachingValue}>
-                  Reps In Reserve — how many reps you could still do at the end of a set before true failure.
-                  RIR 2 = 2 reps left in the tank. RIR 0 = failure.
+                  Each set should feel genuinely challenging. Finish with 2–3 reps still in you — not easy, not total failure. When a weight stops feeling hard, add a little more next session.
                 </Text>
               </View>
             </View>
@@ -679,16 +678,9 @@ export default function WorkoutDetail() {
                   )}
                   <View style={styles.exerciseInfo}>
                     <Text style={styles.exerciseName}>{exercise.name}</Text>
-                    <View style={styles.exerciseMetaRow}>
-                      <Text style={styles.exerciseMeta}>
-                        {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
-                      </Text>
-                      {exercise.effort_target && (
-                        <View style={styles.effortBadge}>
-                          <Text style={styles.effortBadgeText}>{exercise.effort_target}</Text>
-                        </View>
-                      )}
-                    </View>
+                    <Text style={styles.exerciseMeta}>
+                      {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
+                    </Text>
                   </View>
                   <Ionicons
                     name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
@@ -1183,26 +1175,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     flex: 1,
-  },
-  // Effort badge on exercise row
-  exerciseMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  effortBadge: {
-    backgroundColor: colors.primary + '20',
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: colors.primary + '40',
-  },
-  effortBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.primary,
   },
   // Substitution hint
   substitutionRow: {
