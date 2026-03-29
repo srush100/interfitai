@@ -96,7 +96,15 @@ Build InterFitAI - a comprehensive AI fitness app with:
 - Macro Breakdown color bars in meal detail cards
 - Manual food logging with auto-calorie calculation from macros
 
-## 2026-03-28 - Six Structural Engine Improvements (all 14/14 tests passed)
+## 2026-03-29 - Master Volume & Session-Time Framework (11/11 tests passed)
+- **VOLUME_FRAMEWORK**: Master set budgets (min_sets, max_sets, max_exercises) per goal × level × duration bucket (30/45/60/75+). All 6 goals + hybrid/functional/calisthenics style keys.
+- **SETS_PER_EXERCISE**: Level-appropriate set ranges per exercise type (primary_compound: beginner 2-4, intermediate 3-4, advanced 3-5 etc.). Budget-aware allocation — never exceeds session total.
+- **STRENGTH_REST_FLOORS**: Goal-specific minimum rest periods. Strength primary compounds: absolute floor 150s (never shortened below this, even in 30min sessions). Verified: 30min strength → 191s on primary lifts.
+- **Duration-adaptive rest**: Intelligent per-exercise-type scaling. 30min: accessories max(30, base*0.55); primary compounds max(floor, base*0.65). Strength primary compound exception: max(150, base*0.85).
+- **Anti-bloat enforcement**: VOLUME_FRAMEWORK hard cap on exercise count. Conditioning finisher pre-reduces slot count by 1. Strength 45min → exactly 4-5 exercises max.
+- **Budget-aware set allocation**: Slots receive sets based on remaining budget. Primary compounds always get full allocation; accessories/isolation stop when budget reached.
+- Verified: strength 30min beginner → 4 exercises, 11 total sets. build_muscle 60min intermediate → 6 exercises, 20 sets. All rep ranges correct.
+
 - **Hybrid split**: 4 dedicated archetypes (hybrid_strength_push/pull/lower + hybrid_power_conditioning). Every session ends with a Python-injected conditioning slot. Structural identity verified.
 - **Functional A/B**: `functional_movement_quality` (unilateral, carries, trunk, aerobic) alternates with `functional_strength_capacity` (compound + plyometric + high-intensity). No more repeated sessions.
 - **Focus area volume**: Primary focus patterns get +1 set (capped 6); secondary +1 (capped 5). Slots reordered — focus patterns appear right after primary_compound via stable Python sort.
