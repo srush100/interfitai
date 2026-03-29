@@ -944,6 +944,15 @@ metadata:
           3. ExerciseDB GIF accuracy thresholds raised (fuzzy match threshold improved).
           4. RIR explanation added to workout-detail.tsx frontend.
           Backend syntax verified clean. Backend restarted. Needs end-to-end testing.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ 22/22 TESTS PASSED (final_tightening_results.xml).
+          1. MIN SETS: Zero violations — primary_compound ≥ 3 sets, all others ≥ 2 sets. (Bench Press=5, Pull-Up=4, Squat=4).
+          2. BRO SPLIT: 5-day bro split confirmed — Chest & Triceps · Back & Biceps · Deltoids & Traps · Quads/Hamstrings · Biceps & Triceps.
+          3. GIF ACCURACY: 96.4% on bro split (27/28), 93.3% on smoke test (14/15). Raised threshold (score≥40) working.
+          4. SMOKE TEST: 200 OK, 3 workout days, 5 exercises each with sets/reps/rest_seconds.
+          All 6 tightening edits confirmed working correctly end-to-end.
 
 test_plan:
   current_focus:
