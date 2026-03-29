@@ -1462,59 +1462,145 @@ class EliteCoachingEngine:
     # ----- Goal + level → sets/reps/rest/effort per exercise type -----
     GOAL_PARAMS = {
         "strength": {
-            "primary_compound":   {"sets": 5, "reps": "3-5",   "rest": 240, "effort": "RPE 8-9"},
-            "secondary_compound": {"sets": 4, "reps": "5-8",   "rest": 180, "effort": "RPE 7-8"},
-            "accessory":          {"sets": 3, "reps": "8-12",  "rest": 90,  "effort": "RIR 2-3"},
-            "isolation":          {"sets": 3, "reps": "10-15", "rest": 60,  "effort": "RIR 2-3"},
-            "unilateral":         {"sets": 3, "reps": "6-8 each", "rest": 120, "effort": "RIR 2-3"},
-            "core":               {"sets": 3, "reps": "8-12",  "rest": 60,  "effort": "Controlled"},
-            "conditioning":       {"sets": 4, "reps": "30s work / 30s rest", "rest": 30, "effort": "Moderate intensity"},
+            # Heavy: 2.5-4 min rest on primary, 2-3 min on secondary, 60-120s on accessories
+            "primary_compound":   {"sets": 5, "reps": "3-5",        "rest": 225, "effort": "RPE 8-9 — heavy but technically solid"},
+            "secondary_compound": {"sets": 4, "reps": "4-8",        "rest": 150, "effort": "RPE 8 — controlled and strong"},
+            "accessory":          {"sets": 3, "reps": "6-12",       "rest": 90,  "effort": "RIR 2-3 — support work"},
+            "isolation":          {"sets": 3, "reps": "8-15",       "rest": 75,  "effort": "RIR 2-3"},
+            "unilateral":         {"sets": 3, "reps": "4-8 each",   "rest": 120, "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "6-10",       "rest": 75,  "effort": "Max tension — controlled tempo"},
+            "conditioning":       {"sets": 1, "reps": "10-15 min",  "rest": 0,   "effort": "Zone 2 — low intensity only"},
+            "explosive":          {"sets": 3, "reps": "3-5",        "rest": 150, "effort": "Max intent — bar speed matters"},
         },
         "build_muscle": {
-            "primary_compound":   {"sets": 4, "reps": "6-10",  "rest": 120, "effort": "RIR 2-3"},
-            "secondary_compound": {"sets": 3, "reps": "8-12",  "rest": 90,  "effort": "RIR 2-3"},
-            "accessory":          {"sets": 3, "reps": "10-15", "rest": 75,  "effort": "RIR 1-2"},
-            "isolation":          {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 1-2"},
-            "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 90, "effort": "RIR 2-3"},
-            "core":               {"sets": 3, "reps": "10-15", "rest": 45,  "effort": "Controlled"},
-            "conditioning":       {"sets": 3, "reps": "40s work / 20s rest", "rest": 20, "effort": "Moderate intensity"},
+            # Hypertrophy: 90-180s compounds, 45-90s accessories
+            "primary_compound":   {"sets": 4, "reps": "6-10",       "rest": 120, "effort": "RIR 2-3"},
+            "secondary_compound": {"sets": 3, "reps": "8-12",       "rest": 90,  "effort": "RIR 2-3"},
+            "accessory":          {"sets": 3, "reps": "10-15",      "rest": 75,  "effort": "RIR 1-2"},
+            "isolation":          {"sets": 3, "reps": "12-15",      "rest": 60,  "effort": "RIR 1-2 — full contraction"},
+            "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 90,  "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "10-15",      "rest": 45,  "effort": "Controlled — anti-gravity tension"},
+            "conditioning":       {"sets": 1, "reps": "10-15 min",  "rest": 0,   "effort": "Zone 2-3 — light cardio only"},
+            "explosive":          {"sets": 3, "reps": "4-6",        "rest": 90,  "effort": "Controlled power — moderate intent"},
         },
         "lose_fat": {
-            "primary_compound":   {"sets": 3, "reps": "8-12",  "rest": 75,  "effort": "RIR 2-3"},
-            "secondary_compound": {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 2-3"},
-            "accessory":          {"sets": 3, "reps": "12-15", "rest": 45,  "effort": "RIR 1-2"},
-            "isolation":          {"sets": 2, "reps": "15-20", "rest": 45,  "effort": "RIR 1-2"},
-            "unilateral":         {"sets": 3, "reps": "12-15 each", "rest": 45, "effort": "RIR 2-3"},
-            "core":               {"sets": 3, "reps": "15-20", "rest": 30,  "effort": "Controlled"},
-            "conditioning":       {"sets": 5, "reps": "40s work / 20s rest", "rest": 20, "effort": "High intensity"},
+            # Efficient: shorter rest, moderate reps — preserve muscle, maximise calorie burn
+            "primary_compound":   {"sets": 3, "reps": "8-12",       "rest": 90,  "effort": "RIR 2-3"},
+            "secondary_compound": {"sets": 3, "reps": "10-15",      "rest": 75,  "effort": "RIR 2-3"},
+            "accessory":          {"sets": 3, "reps": "12-15",      "rest": 60,  "effort": "RIR 1-2"},
+            "isolation":          {"sets": 2, "reps": "15-20",      "rest": 45,  "effort": "RIR 1-2 — pump-focused"},
+            "unilateral":         {"sets": 3, "reps": "12-15 each", "rest": 60,  "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "12-20",      "rest": 30,  "effort": "Controlled — efficient"},
+            "conditioning":       {"sets": 1, "reps": "10-20 min",  "rest": 0,   "effort": "High intensity — intervals or HIIT"},
+            "explosive":          {"sets": 3, "reps": "5-8",        "rest": 60,  "effort": "Moderate intensity"},
         },
         "body_recomp": {
-            "primary_compound":   {"sets": 4, "reps": "8-10",  "rest": 90,  "effort": "RIR 2-3"},
-            "secondary_compound": {"sets": 3, "reps": "10-12", "rest": 75,  "effort": "RIR 2-3"},
-            "accessory":          {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 2"},
-            "isolation":          {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 1-2"},
-            "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 75, "effort": "RIR 2-3"},
-            "core":               {"sets": 3, "reps": "12-15", "rest": 45,  "effort": "Controlled"},
-            "conditioning":       {"sets": 3, "reps": "40s work / 20s rest", "rest": 20, "effort": "Moderate-high intensity"},
+            # Balanced: build muscle + maintain efficiency
+            "primary_compound":   {"sets": 4, "reps": "6-10",       "rest": 105, "effort": "RIR 2-3"},
+            "secondary_compound": {"sets": 3, "reps": "8-12",       "rest": 90,  "effort": "RIR 2-3"},
+            "accessory":          {"sets": 3, "reps": "10-15",      "rest": 60,  "effort": "RIR 2"},
+            "isolation":          {"sets": 3, "reps": "12-15",      "rest": 60,  "effort": "RIR 1-2"},
+            "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 75,  "effort": "RIR 2-3"},
+            "core":               {"sets": 3, "reps": "10-15",      "rest": 45,  "effort": "Controlled"},
+            "conditioning":       {"sets": 1, "reps": "10-15 min",  "rest": 0,   "effort": "Moderate-high — efficient cardio"},
+            "explosive":          {"sets": 3, "reps": "4-6",        "rest": 90,  "effort": "Moderate power output"},
         },
         "general_fitness": {
-            "primary_compound":   {"sets": 3, "reps": "8-12",  "rest": 90,  "effort": "RIR 3"},
-            "secondary_compound": {"sets": 3, "reps": "10-12", "rest": 75,  "effort": "RIR 3"},
-            "accessory":          {"sets": 3, "reps": "12-15", "rest": 60,  "effort": "RIR 2-3"},
-            "isolation":          {"sets": 2, "reps": "12-15", "rest": 60,  "effort": "RIR 2-3"},
-            "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 60, "effort": "RIR 2-3"},
-            "core":               {"sets": 3, "reps": "10-15", "rest": 45,  "effort": "Controlled"},
-            "conditioning":       {"sets": 3, "reps": "30s work / 30s rest", "rest": 30, "effort": "Moderate intensity"},
+            # Balanced and sustainable
+            "primary_compound":   {"sets": 3, "reps": "6-10",       "rest": 90,  "effort": "RPE 7 — challenging but controlled"},
+            "secondary_compound": {"sets": 3, "reps": "8-12",       "rest": 75,  "effort": "RPE 7"},
+            "accessory":          {"sets": 2, "reps": "10-15",      "rest": 60,  "effort": "RPE 6-7"},
+            "isolation":          {"sets": 2, "reps": "12-15",      "rest": 60,  "effort": "RPE 6-7"},
+            "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 60,  "effort": "RPE 7"},
+            "core":               {"sets": 2, "reps": "10-15",      "rest": 45,  "effort": "Controlled"},
+            "conditioning":       {"sets": 1, "reps": "10-20 min",  "rest": 0,   "effort": "Moderate — enjoyable pace"},
+            "explosive":          {"sets": 2, "reps": "5-8",        "rest": 75,  "effort": "Moderate — movement quality focus"},
         },
         "athletic_performance": {
-            "primary_compound":   {"sets": 4, "reps": "4-6",   "rest": 180, "effort": "RPE 8"},
-            "secondary_compound": {"sets": 3, "reps": "6-10",  "rest": 120, "effort": "RIR 2-3"},
-            "accessory":          {"sets": 3, "reps": "8-12",  "rest": 90,  "effort": "RIR 2-3"},
-            "isolation":          {"sets": 2, "reps": "12-15", "rest": 60,  "effort": "RIR 2-3"},
-            "unilateral":         {"sets": 3, "reps": "6-8 each", "rest": 90, "effort": "RIR 2-3"},
-            "core":               {"sets": 3, "reps": "8-10",  "rest": 60,  "effort": "Controlled – maximal tension"},
-            "conditioning":       {"sets": 5, "reps": "20s max effort / 40s rest", "rest": 40, "effort": "Near-maximal intensity"},
+            # Power and performance: low reps, long rest on main lifts
+            "primary_compound":   {"sets": 4, "reps": "4-6",        "rest": 180, "effort": "RPE 8 — max intent, bar speed"},
+            "secondary_compound": {"sets": 3, "reps": "4-8",        "rest": 120, "effort": "RPE 8 — controlled power"},
+            "accessory":          {"sets": 3, "reps": "8-15",       "rest": 75,  "effort": "RPE 7-8"},
+            "isolation":          {"sets": 2, "reps": "10-15",      "rest": 60,  "effort": "RIR 2-3"},
+            "unilateral":         {"sets": 3, "reps": "6-10 each",  "rest": 90,  "effort": "RPE 7-8 — balance and control"},
+            "core":               {"sets": 3, "reps": "8-12",       "rest": 60,  "effort": "Max tension — anti-rotation emphasis"},
+            "conditioning":       {"sets": 1, "reps": "15-20 min",  "rest": 0,   "effort": "High intensity — sport-specific intervals"},
+            "explosive":          {"sets": 4, "reps": "3-5",        "rest": 150, "effort": "Max intent — plyometric power output"},
         },
+    }
+
+    # ── Master volume framework ────────────────────────────────────────────────
+    # (min_working_sets, max_working_sets, max_exercises) per goal × level × duration_bucket
+    VOLUME_FRAMEWORK = {
+        "build_muscle": {
+            "beginner":     {30: (10,14,5), 45: (12,16,6), 60: (14,18,6), 75: (16,20,7)},
+            "intermediate": {30: (12,15,5), 45: (14,18,6), 60: (16,20,7), 75: (18,22,8)},
+            "advanced":     {30: (12,16,5), 45: (14,18,6), 60: (16,22,7), 75: (18,24,8)},
+        },
+        "lose_fat": {
+            "beginner":     {30: (10,13,4), 45: (12,15,5), 60: (14,18,6), 75: (15,19,6)},
+            "intermediate": {30: (11,14,5), 45: (13,16,6), 60: (15,19,6), 75: (16,20,7)},
+            "advanced":     {30: (12,15,5), 45: (14,18,6), 60: (16,20,6), 75: (17,21,7)},
+        },
+        "body_recomp": {
+            "beginner":     {30: (10,13,4), 45: (12,16,5), 60: (14,18,6), 75: (15,19,7)},
+            "intermediate": {30: (11,14,5), 45: (13,17,6), 60: (15,19,7), 75: (16,21,8)},
+            "advanced":     {30: (12,15,5), 45: (14,18,6), 60: (16,20,7), 75: (17,22,8)},
+        },
+        "strength": {
+            "beginner":     {30: (8,12,4),  45: (10,14,4), 60: (12,16,5), 75: (14,18,5)},
+            "intermediate": {30: (9,12,4),  45: (11,15,5), 60: (13,18,5), 75: (15,20,6)},
+            "advanced":     {30: (10,13,4), 45: (12,16,5), 60: (14,20,5), 75: (16,22,6)},
+        },
+        "general_fitness": {
+            "beginner":     {30: (8,12,4),  45: (10,14,5), 60: (12,16,6), 75: (13,17,7)},
+            "intermediate": {30: (9,13,5),  45: (11,15,5), 60: (13,17,6), 75: (14,18,7)},
+            "advanced":     {30: (10,14,5), 45: (12,16,6), 60: (14,18,7), 75: (15,20,7)},
+        },
+        "athletic_performance": {
+            "beginner":     {30: (8,11,4),  45: (10,14,5), 60: (12,16,5), 75: (13,17,6)},
+            "intermediate": {30: (9,12,4),  45: (11,15,5), 60: (13,17,6), 75: (14,19,7)},
+            "advanced":     {30: (10,13,5), 45: (12,16,5), 60: (14,18,6), 75: (15,20,7)},
+        },
+        # Style-keyed entries used for hybrid/functional/calisthenics
+        "hybrid":       {
+            "beginner":     {30: (8,11,4),  45: (10,14,5), 60: (12,16,5), 75: (13,17,6)},
+            "intermediate": {30: (9,12,4),  45: (11,15,5), 60: (13,17,6), 75: (14,19,7)},
+            "advanced":     {30: (10,13,5), 45: (12,16,5), 60: (14,18,6), 75: (15,20,7)},
+        },
+        "functional":   {
+            "beginner":     {30: (8,11,4),  45: (10,14,5), 60: (12,16,6), 75: (13,17,6)},
+            "intermediate": {30: (9,12,5),  45: (11,15,5), 60: (13,17,6), 75: (14,19,7)},
+            "advanced":     {30: (10,13,5), 45: (12,16,6), 60: (14,18,6), 75: (15,20,7)},
+        },
+        "calisthenics": {
+            "beginner":     {30: (8,12,4),  45: (10,14,5), 60: (12,16,6), 75: (13,18,7)},
+            "intermediate": {30: (9,13,5),  45: (11,15,6), 60: (13,17,6), 75: (14,19,7)},
+            "advanced":     {30: (10,14,5), 45: (12,16,6), 60: (14,18,7), 75: (15,20,8)},
+        },
+    }
+
+    # Sets per exercise type × level — used to allocate sets within the session budget
+    # (min_sets_for_type, max_sets_for_type)
+    SETS_PER_EXERCISE = {
+        "primary_compound":   {"beginner": (2,4), "intermediate": (3,4), "advanced": (3,5)},
+        "secondary_compound": {"beginner": (2,3), "intermediate": (3,4), "advanced": (3,4)},
+        "accessory":          {"beginner": (2,3), "intermediate": (2,4), "advanced": (2,4)},
+        "isolation":          {"beginner": (2,3), "intermediate": (2,4), "advanced": (2,4)},
+        "unilateral":         {"beginner": (2,3), "intermediate": (3,4), "advanced": (3,4)},
+        "core":               {"beginner": (2,3), "intermediate": (2,3), "advanced": (2,4)},
+        "conditioning":       {"beginner": (1,1), "intermediate": (1,1), "advanced": (1,1)},
+        "explosive":          {"beginner": (2,3), "intermediate": (3,4), "advanced": (4,5)},
+    }
+
+    # Goal-specific minimum rest floors for primary compounds (never reduce below this)
+    STRENGTH_REST_FLOORS = {
+        "strength":             150,  # 2.5 min absolute minimum
+        "athletic_performance": 120,  # 2 min minimum
+        "build_muscle":         90,
+        "body_recomp":          75,
+        "lose_fat":             60,
+        "general_fitness":      60,
     }
 
     # Exercises that should be excluded for certain limitations
@@ -1720,12 +1806,14 @@ class EliteCoachingEngine:
         return sessions[:days]
 
     def adjust_volume_for_level(self, ex_type: str, level: str, params: dict) -> dict:
-        """Adjust sets slightly based on experience level."""
+        """
+        Clamps sets to the level-appropriate range from SETS_PER_EXERCISE.
+        Never exceeds the max for the level; never goes below the min.
+        """
         adjusted = dict(params)
-        if level == 'beginner':
-            adjusted['sets'] = max(2, params['sets'] - 1)
-        elif level == 'advanced':
-            adjusted['sets'] = min(6, params['sets'] + 1)
+        ranges = self.SETS_PER_EXERCISE.get(ex_type, {}).get(level, (2, 4))
+        s_min, s_max = ranges
+        adjusted['sets'] = max(s_min, min(s_max, params['sets']))
         return adjusted
 
     def get_progression_model(self, goal: str, level: str) -> tuple:
@@ -1782,58 +1870,140 @@ class EliteCoachingEngine:
 
         for i, session_type in enumerate(session_types):
             archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
-            slots = list(archetype['slots'])
+            # Start with all slots (base + optional), trim later by budget
+            slots = list(archetype['slots']) + list(archetype.get('optional_slots', []))
 
-            # Add optional slots based on time budget (>50min) and level
-            if req.duration_minutes >= 50 and level != 'beginner':
-                slots += archetype.get('optional_slots', [])
-
-            # ── Improvement #5a: Duration → max slots and rest scaling ──────
-            # Short sessions: fewer slots. Very short: minimal slots.
-            if req.duration_minutes <= 30:
-                max_slots  = 4
-                rest_scale = 0.55
-            elif req.duration_minutes <= 45:
-                max_slots  = max(4, req.duration_minutes // 10)
-                rest_scale = 0.75
+            # ── Determine duration bucket ────────────────────────────────────
+            dur = req.duration_minutes
+            if dur <= 30:
+                dur_bucket = 30
+            elif dur <= 45:
+                dur_bucket = 45
+            elif dur <= 60:
+                dur_bucket = 60
             else:
-                max_slots  = req.duration_minutes // 10
-                rest_scale = 1.0
-            slots = slots[:max(4, min(len(slots), max_slots))]
+                dur_bucket = 75
 
-            # Build exercise slot specifications
+            # ── Get session budget from VOLUME_FRAMEWORK ─────────────────────
+            # Use style-keyed entry for hybrid/functional/calisthenics, else goal-keyed
+            if style in ('hybrid', 'functional', 'calisthenics'):
+                vol_key = style
+            else:
+                vol_key = goal
+            level_vol = self.VOLUME_FRAMEWORK.get(vol_key, self.VOLUME_FRAMEWORK['general_fitness'])
+            budget_tuple = level_vol.get(level, level_vol.get('intermediate', {})).get(dur_bucket, (10, 16, 6))
+            min_sets, max_sets, max_ex = budget_tuple
+            target_sets = (min_sets + max_sets) // 2
+
+            # ── Anti-bloat: conditioning finisher takes a slot ───────────────
+            # If we're going to inject a conditioning finisher (not already in archetype),
+            # pre-reduce the exercise count by 1 to make room.
+            will_inject_cond = (
+                goal in ('lose_fat', 'body_recomp')
+                and style not in ('hybrid', 'functional')
+                and not any(s[1] == 'conditioning' for s in slots)
+                and ((goal == 'lose_fat') or (i % 2 == 0))
+            )
+            if will_inject_cond:
+                max_ex = max(3, max_ex - 1)   # reserve one slot for finisher
+                max_sets = max(min_sets, max_sets - 2)  # reduce set budget slightly
+                target_sets = (min_sets + max_sets) // 2
+
+            # Trim slots to max_exercises
+            slots = slots[:max_ex]
+
+            # ── Build slot specs with budget-aware set allocation ────────────
+            excluded_exercises = set()
+            for lim in limitations:
+                lim_key = lim.lower().replace(' ', '_').replace('-', '_')
+                for excl_key, excl_list in self.LIMITATION_EXCLUSIONS.items():
+                    if excl_key in lim_key:
+                        excluded_exercises.update(excl_list)
+
             slot_specs = []
+            total_sets_allocated = 0
+
             for pattern, ex_type, coaching_note in slots:
-                params  = goal_params.get(ex_type, goal_params['accessory'])
-                params  = self.adjust_volume_for_level(ex_type, level, params)
+                remaining_budget = target_sets - total_sets_allocated
+
+                # How many sets should this slot get?
+                base_params = goal_params.get(ex_type, goal_params.get('accessory', {}))
+                ranges      = self.SETS_PER_EXERCISE.get(ex_type, {}).get(level, (2, 4))
+                s_min, s_max = ranges
+                base_sets   = base_params.get('sets', 3)
+                # Clamp to level range
+                ideal_sets  = max(s_min, min(s_max, base_sets))
+                # Don't overshoot the session budget
+                if ex_type == 'primary_compound':
+                    # Primary compound always gets its full ideal allocation
+                    assigned_sets = max(s_min, min(ideal_sets, max(s_min, remaining_budget)))
+                elif remaining_budget <= s_min:
+                    # Almost out of budget — give minimum or skip (use 1 as absolute floor)
+                    assigned_sets = max(1, remaining_budget)
+                else:
+                    assigned_sets = min(ideal_sets, remaining_budget)
+
+                assigned_sets = max(1, assigned_sets)
+                total_sets_allocated += assigned_sets
+
+                # ── Goal-specific rest with duration-adjusted floors ─────────
+                base_rest   = base_params.get('rest', 90)
+                floor       = self.STRENGTH_REST_FLOORS.get(goal, 60)
+
+                if dur_bucket <= 30:
+                    # Short session — shorten accessory/isolation rests aggressively
+                    # but never violate strength floor on primary compounds
+                    if ex_type == 'primary_compound' and goal == 'strength':
+                        rest = max(floor, int(base_rest * 0.85))  # gentle reduction for strength
+                    elif ex_type in ('primary_compound', 'secondary_compound'):
+                        rest = max(floor, int(base_rest * 0.65))
+                    else:
+                        rest = max(30, int(base_rest * 0.55))
+                elif dur_bucket <= 45:
+                    if ex_type == 'primary_compound' and goal == 'strength':
+                        rest = max(floor, int(base_rest * 0.90))  # minimal reduction
+                    elif ex_type in ('primary_compound', 'secondary_compound'):
+                        rest = max(floor, int(base_rest * 0.80))
+                    else:
+                        rest = max(45, int(base_rest * 0.70))
+                else:
+                    # 60+ min — use goal-prescribed rest unchanged
+                    rest = base_rest
+
                 options = self.get_exercise_options(pattern, equipment, style, limitations, level)
 
                 slot_specs.append({
                     "pattern":       pattern,
                     "type":          ex_type,
                     "coaching_note": coaching_note,
-                    "sets":          params['sets'],
-                    "reps":          params['reps'],
-                    "rest_seconds":  params['rest'],
-                    "effort":        params['effort'],
+                    "sets":          assigned_sets,
+                    "reps":          base_params.get('reps', '8-12'),
+                    "rest_seconds":  rest,
+                    "effort":        base_params.get('effort', 'RPE 7'),
                     "options":       options,
-                    "excluded":      [e for lim in limitations
-                                      for excl_key, excl_list in self.LIMITATION_EXCLUSIONS.items()
-                                      if excl_key in lim.lower()
-                                      for e in excl_list],
+                    "excluded":      list(excluded_exercises),
                 })
 
-            # ── Improvement #3: Focus area volume boost ──────────────────────
-            # +1 set for primary focus patterns (cap 6), +1 for secondary (cap 5)
+                # Hard stop if over budget (except always include all primary_compounds)
+                if ex_type != 'primary_compound' and total_sets_allocated >= target_sets:
+                    break
+
+            # ── Focus area volume boost (within budget) ───────────────────────
+            # Boost primary focus +1 set (cap max_sets+2), secondary +0 (already at budget)
+            focus_boost_headroom = 2  # allow slight over-target for focus areas
             for slot in slot_specs:
                 if slot['pattern'] in primary_patterns:
-                    slot['sets'] = min(slot['sets'] + 1, 6)
+                    boosted = min(slot['sets'] + 1, slot['sets'] + 1)
+                    # Only boost if within reasonable headroom
+                    if total_sets_allocated - slot['sets'] + boosted <= max_sets + focus_boost_headroom:
+                        total_sets_allocated += (boosted - slot['sets'])
+                        slot['sets'] = min(boosted, 6)
                 elif slot['pattern'] in secondary_patterns:
-                    slot['sets'] = min(slot['sets'] + 1, 5)
+                    if total_sets_allocated < max_sets:
+                        slot['sets'] = min(slot['sets'] + 1, 5)
+                        total_sets_allocated += 1
 
-            # Reorder within session: primary_compound always first, then
-            # primary focus patterns, then secondary focus, then rest.
-            # Uses stable sort so relative internal order is preserved.
+            # Reorder: primary_compound → primary focus → secondary focus → rest
             def _slot_priority(s: dict) -> int:
                 if s['type'] == 'primary_compound':
                     return 0
@@ -1844,38 +2014,26 @@ class EliteCoachingEngine:
                 return 3
             slot_specs.sort(key=_slot_priority)
 
-            # ── Improvement #4: Conditioning finisher for fat loss / recomp ──
-            # Hybrid/functional already contain conditioning slots — skip them.
-            # For lose_fat: inject every session.
-            # For body_recomp: inject every other session (odd days).
-            if goal in ('lose_fat', 'body_recomp') and style not in ('hybrid', 'functional'):
-                has_conditioning = any(s['type'] == 'conditioning' for s in slot_specs)
-                if not has_conditioning:
-                    should_inject = (goal == 'lose_fat') or (i % 2 == 0)
-                    if should_inject:
-                        cond_params  = goal_params.get(
-                            'conditioning',
-                            {"sets": 3, "reps": "40s on / 20s off", "rest": 20, "effort": "High intensity"}
-                        )
-                        cond_options = self.get_exercise_options(
-                            'conditioning', equipment, style, limitations, level
-                        )
-                        slot_specs.append({
-                            "pattern":       "conditioning",
-                            "type":          "conditioning",
-                            "coaching_note": "metabolic finisher — elevate heart rate and maximise calorie burn",
-                            "sets":          cond_params['sets'],
-                            "reps":          cond_params['reps'],
-                            "rest_seconds":  cond_params['rest'],
-                            "effort":        cond_params['effort'],
-                            "options":       cond_options,
-                            "excluded":      [],
-                        })
-
-            # ── Improvement #5b: Apply rest scaling for short sessions ───────
-            if rest_scale < 1.0:
-                for slot in slot_specs:
-                    slot['rest_seconds'] = max(20, int(slot['rest_seconds'] * rest_scale))
+            # ── Conditioning finisher injection ───────────────────────────────
+            if will_inject_cond:
+                cond_params  = goal_params.get(
+                    'conditioning',
+                    {"sets": 1, "reps": "10-20 min intervals", "rest": 0, "effort": "High intensity"}
+                )
+                cond_options = self.get_exercise_options(
+                    'conditioning', equipment, style, limitations, level
+                )
+                slot_specs.append({
+                    "pattern":       "conditioning",
+                    "type":          "conditioning",
+                    "coaching_note": "metabolic finisher — elevate heart rate, maximise calorie burn",
+                    "sets":          1,
+                    "reps":          cond_params.get('reps', '10-20 min'),
+                    "rest_seconds":  0,
+                    "effort":        cond_params.get('effort', 'High intensity'),
+                    "options":       cond_options,
+                    "excluded":      [],
+                })
 
             day_blueprints.append({
                 "session_number": i + 1,
