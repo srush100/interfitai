@@ -565,6 +565,20 @@ export default function WorkoutDetail() {
               </View>
             )}
 
+            {/* RIR explanation — always shown when progression mentions RIR */}
+            <View style={styles.coachingRow}>
+              <View style={styles.coachingIcon}>
+                <Ionicons name="bulb" size={16} color={colors.primary} />
+              </View>
+              <View style={styles.coachingContent}>
+                <Text style={styles.coachingLabel}>What is RIR?</Text>
+                <Text style={styles.coachingValue}>
+                  Reps In Reserve — how many reps you could still do at the end of a set before true failure.
+                  RIR 2 = 2 reps left in the tank. RIR 0 = failure.
+                </Text>
+              </View>
+            </View>
+
             {workout.progression_method && (
               <View style={styles.coachingRow}>
                 <View style={styles.coachingIcon}>

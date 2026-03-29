@@ -692,7 +692,7 @@ async def get_exercise_gif_from_api(exercise_name: str) -> str:
                                 best_score = score
                                 best_exercise = ex
                         
-                        if best_exercise and best_score >= 20:
+                        if best_exercise and best_score >= 40:  # raised from 20 — prevents wrong GIF matches
                             exercise_id = best_exercise.get("id", "")
                             if exercise_id:
                                 proxy_url = f"/api/exercises/gif/{exercise_id}"
@@ -1414,6 +1414,78 @@ class EliteCoachingEngine:
             ],
             "optional_slots": [],
         },
+
+        # ── True Bro Split archetypes — one muscle group per session ─────────
+        "bro_chest": {
+            "label": "Chest Day",
+            "focus": "Chest & Triceps",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "flat pressing – chest mass and strength foundation"),
+                ("incline_push",     "secondary_compound",  "incline angle – upper chest focus and fullness"),
+                ("incline_push",     "accessory",           "flye or crossover – chest isolation and stretch"),
+                ("tricep_push",      "isolation",           "tricep isolation – full elbow extension and pump"),
+            ],
+            "optional_slots": [
+                ("lateral_raise",    "accessory",           "medial delt – shoulder width complement to chest"),
+                ("tricep_push",      "isolation",           "overhead extension – long head stretch"),
+            ],
+        },
+        "bro_back": {
+            "label": "Back Day",
+            "focus": "Back & Biceps",
+            "slots": [
+                ("vertical_pull",    "primary_compound",   "vertical pull – lat width and upper back thickness"),
+                ("horizontal_pull",  "primary_compound",   "heavy row – mid-back density and rhomboid strength"),
+                ("horizontal_pull",  "secondary_compound",  "second row variation – upper or lower back emphasis"),
+                ("rear_delt",        "accessory",           "rear delt – shoulder health and upper back detail"),
+                ("bicep_curl",       "isolation",           "bicep curl – elbow flexion strength and peak"),
+            ],
+            "optional_slots": [
+                ("bicep_curl",       "isolation",           "hammer or reverse curl – brachialis and grip"),
+            ],
+        },
+        "bro_shoulders": {
+            "label": "Shoulders Day",
+            "focus": "Deltoids & Traps",
+            "slots": [
+                ("vertical_push",    "primary_compound",   "overhead press – deltoid mass and pressing strength"),
+                ("lateral_raise",    "accessory",           "lateral raise – medial delt width"),
+                ("lateral_raise",    "secondary_compound",  "second lateral raise variation – cable or dumbbell"),
+                ("rear_delt",        "accessory",           "rear delt – posterior shoulder and rotator health"),
+                ("tricep_push",      "isolation",           "tricep isolation – supports pressing strength"),
+            ],
+            "optional_slots": [
+                ("carry",            "accessory",           "shrug – upper trap development and neck thickness"),
+            ],
+        },
+        "bro_arms": {
+            "label": "Arms Day",
+            "focus": "Biceps & Triceps",
+            "slots": [
+                ("bicep_curl",       "primary_compound",   "barbell or dumbbell curl – bicep mass and peak"),
+                ("tricep_push",      "primary_compound",   "close-grip press or dip – tricep mass and strength"),
+                ("bicep_curl",       "secondary_compound",  "incline or preacher curl – stretch and peak development"),
+                ("tricep_push",      "secondary_compound",  "skull crusher or overhead extension – long head focus"),
+                ("bicep_curl",       "isolation",           "concentration curl or hammer – brachialis and detail"),
+                ("tricep_push",      "isolation",           "cable pushdown – tricep isolation and pump"),
+            ],
+            "optional_slots": [],
+        },
+        "bro_legs": {
+            "label": "Legs Day",
+            "focus": "Quads, Hamstrings, Glutes & Calves",
+            "slots": [
+                ("squat",            "primary_compound",   "squat – bilateral lower body mass and strength"),
+                ("hip_hinge",        "secondary_compound",  "deadlift variation – hamstring and glute mass"),
+                ("lunge",            "secondary_compound",  "lunge or leg press – quad volume and unilateral work"),
+                ("hamstring_curl",   "isolation",           "leg curl – hamstring isolation and peak"),
+                ("glute",            "accessory",           "hip thrust – glute isolation and activation"),
+                ("calf",             "isolation",           "calf raise – calves and soleus strength"),
+            ],
+            "optional_slots": [
+                ("knee_extension",   "isolation",           "leg extension – quad isolation and detail"),
+            ],
+        },
     }
 
     # ----- Split → session type mapping (days_per_week → session sequence) -----
@@ -1424,18 +1496,23 @@ class EliteCoachingEngine:
             4: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy"],
         },
         "upper_lower": {
+            2: ["upper_full", "lower_full"],
+            3: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy"],
             4: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus"],
             5: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_full"],
             6: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_push_volume", "lower_full"],
         },
         "push_pull_legs": {
             3: ["push_session", "pull_session", "legs_session"],
+            4: ["push_session", "pull_session", "legs_session", "push_session"],
             5: ["push_session", "pull_session", "legs_session", "push_session", "pull_session"],
             6: ["push_session", "pull_session", "legs_session", "upper_push_volume", "upper_pull_volume", "lower_full"],
         },
         "bro_split": {
-            5: ["upper_push_heavy", "upper_pull_heavy", "legs_session", "push_session", "pull_session"],
-            6: ["upper_push_heavy", "upper_pull_heavy", "legs_session", "upper_push_volume", "upper_pull_volume", "lower_hip_focus"],
+            3: ["bro_chest", "bro_legs", "bro_back"],
+            4: ["bro_chest", "bro_back", "bro_legs", "bro_shoulders"],
+            5: ["bro_chest", "bro_back", "bro_shoulders", "bro_legs", "bro_arms"],
+            6: ["bro_chest", "bro_back", "bro_shoulders", "bro_legs", "bro_arms", "bro_back"],
         },
         "athletic_split": {
             4: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full"],
@@ -1661,32 +1738,59 @@ class EliteCoachingEngine:
     def select_split(self, days: int, goal: str, style: str, level: str,
                      preferred_split: str, focus_areas: list) -> tuple:
         """Returns (split_id, split_display_name, rationale)"""
-        if preferred_split != 'ai_choose':
-            names = {
-                'full_body':       'Full Body',
-                'upper_lower':     'Upper / Lower',
-                'push_pull_legs':  'Push Pull Legs',
-                'bro_split':       'Bro Split',
-            }
-            return preferred_split, names.get(preferred_split, preferred_split), "User-selected split — adapted to your goal and schedule."
 
-        # Style-specific overrides — these always take precedence over days/goal logic
+        # ── Style-first overrides: calisthenics/functional/hybrid always own their split ──
         if style == 'calisthenics':
             return 'calisthenics_split', 'Calisthenics Split', \
                 "Bodyweight training is best structured as dedicated upper/lower sessions to maximise push/pull frequency and calisthenics skill progression."
         if style == 'functional':
             return 'functional_split', 'Functional A/B Split', \
-                "Functional training alternates a Movement Quality session (unilateral strength, trunk control, loaded carries, aerobic capacity) with a Strength & Capacity session (compound strength, power output, high-intensity conditioning) — developing real-world athletic function across all physical qualities."
+                "Functional training alternates a Movement Quality session (unilateral strength, trunk control, loaded carries, aerobic capacity) with a Strength & Capacity session (compound strength, power output, high-intensity conditioning) — developing real-world athletic function."
         if style == 'hybrid':
             return 'hybrid_split', 'Hybrid Strength + Conditioning', \
                 "Hybrid training alternates structured resistance sessions (each ending with a metabolic conditioning finisher) with dedicated Power & Conditioning sessions — building strength, muscular development, and cardiovascular capacity in the same program."
 
-        # Athletic performance always uses athletic split regardless of style
+        # ── Athletic performance: always uses its own split ──────────────────
         if goal == 'athletic_performance':
             return 'athletic_split', 'Athletic Performance Split', \
                 "Athletic performance training alternates full-body strength sessions with power and conditioning sessions — developing maximal strength, explosive power, and structural balance simultaneously."
 
-        # Standard logic by days
+        # ── Preferred split: honour it if valid for the day count ────────────
+        if preferred_split != 'ai_choose':
+            # Validate day compatibility and override gracefully with explanation if needed
+            if preferred_split == 'bro_split':
+                if days < 3:
+                    return 'full_body', 'Full Body', \
+                        f"Bro Split needs at least 3 training days. With {days} day(s)/week, Full Body is the correct choice to ensure adequate weekly volume across all muscle groups."
+                split_rationale = (
+                    f"Bro Split selected — each major muscle group gets its own dedicated session "
+                    f"with maximum focus and volume. {days} days/week allows "
+                    + ("Chest / Back / Legs / Shoulders." if days == 4 else
+                       "Chest / Back / Shoulders / Legs / Arms." if days == 5 else
+                       "Chest / Back / Shoulders / Legs / Arms + extra Back day." if days == 6 else
+                       "Chest / Legs / Back rotation.")
+                )
+                return 'bro_split', 'Bro Split', split_rationale
+
+            if preferred_split == 'push_pull_legs':
+                if days < 3:
+                    return 'full_body', 'Full Body', \
+                        f"Push / Pull / Legs needs at least 3 days. With {days} day(s)/week, Full Body is recommended instead."
+                return 'push_pull_legs', 'Push / Pull / Legs', \
+                    f"Push/Pull/Legs selected — pushing, pulling, and leg patterns each get a dedicated session. {days} days/week gives a clean PPL rotation with balanced recovery."
+
+            if preferred_split == 'upper_lower':
+                if days < 2:
+                    return 'full_body', 'Full Body', \
+                        f"Upper/Lower needs at least 2 days. Full Body recommended instead."
+                return 'upper_lower', 'Upper / Lower', \
+                    f"Upper/Lower selected — upper and lower body each trained {max(1, days//2)} times per week with clear structural separation between pushing, pulling, and lower body work."
+
+            if preferred_split == 'full_body':
+                return 'full_body', 'Full Body', \
+                    f"Full Body selected — every muscle group stimulated each session, {days} times per week. Ideal for maximum weekly frequency and movement pattern practice."
+
+        # ── AI-selected split logic (days × goal × level) ────────────────────
         if days <= 2:
             return 'full_body', 'Full Body', \
                 f"{days}-day training requires Full Body sessions to ensure every muscle is stimulated twice per week — the minimum for meaningful adaptation."
@@ -1695,7 +1799,7 @@ class EliteCoachingEngine:
                 return 'full_body', 'Full Body', \
                     "3-day Full Body is ideal for strength — the big compounds (squat, bench, deadlift) are trained multiple times per week for maximum neural adaptation."
             if goal in ['build_muscle', 'body_recomp'] and level in ['intermediate', 'advanced']:
-                return 'push_pull_legs', 'Push Pull Legs', \
+                return 'push_pull_legs', 'Push / Pull / Legs', \
                     "3-day PPL cleanly separates pushing, pulling, and leg patterns — each session fully focused on its muscle group with ideal recovery before the next session."
             return 'full_body', 'Full Body', \
                 "3-day Full Body gives every muscle group 2-3x weekly stimulus with appropriate recovery, perfect for your goal and level combination."
@@ -1713,12 +1817,12 @@ class EliteCoachingEngine:
                 "4-day Upper/Lower is the most well-balanced split at this frequency — twice-weekly per muscle, clear push/pull structure, and excellent recovery management."
         elif days == 5:
             if goal == 'build_muscle' and level == 'advanced':
-                return 'push_pull_legs', 'Push Pull Legs', \
+                return 'push_pull_legs', 'Push / Pull / Legs', \
                     "5-day PPL (A/B rotation) gives advanced trainees near-twice-weekly frequency per pattern with higher total volume — ideal for maximising hypertrophy."
-            return 'push_pull_legs', 'Push Pull Legs', \
+            return 'push_pull_legs', 'Push / Pull / Legs', \
                 "5-day PPL provides each movement pattern its own dedicated session plus an extra session in the rotation — very high weekly frequency with targeted volume."
-        else:  # 6 days
-            return 'push_pull_legs', 'Push Pull Legs (x2)', \
+        else:  # 6+ days
+            return 'push_pull_legs', 'Push / Pull / Legs (×2)', \
                 "6-day PPL (Push/Pull/Legs × 2) provides maximum weekly volume and frequency — every pattern trained twice per week. Only appropriate with elite recovery capacity."
 
     def get_exercise_options(self, pattern: str, equipment: list, style: str,
@@ -1987,6 +2091,21 @@ class EliteCoachingEngine:
                 # Hard stop if over budget (except always include all primary_compounds)
                 if ex_type != 'primary_compound' and total_sets_allocated >= target_sets:
                     break
+
+            # ── Minimum set floors — remove exercises that can't hit floor ────
+            # A 1-set bench press is not coaching. Remove rather than include awkwardly.
+            MIN_SETS_FLOOR = {
+                "primary_compound":   3,
+                "secondary_compound": 2,
+                "accessory":          2,
+                "isolation":          2,
+                "unilateral":         2,
+                "core":               2,
+                "explosive":          2,
+                "conditioning":       1,   # finisher can be 1 block
+            }
+            slot_specs = [s for s in slot_specs if s['sets'] >= MIN_SETS_FLOOR.get(s['type'], 2)]
+            total_sets_allocated = sum(s['sets'] for s in slot_specs)
 
             # ── Focus area volume boost (within budget) ───────────────────────
             # Boost primary focus +1 set (cap max_sets+2), secondary +0 (already at budget)
