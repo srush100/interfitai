@@ -927,15 +927,28 @@ metadata:
         agent: "main"
         comment: "ADDITIONAL FIX (2026-03-26): Fixed two more accuracy issues: 1) Stage 4 'last-meal balance' was forcing exact macro VALUES (e.g. 1.7g fat) onto the last meal without matching the ingredient amounts (6g peanut butter gives 3g fat, not 1.7g). Fixed by replacing forced values with honest recalc_day_macros() call — now ingredients always match displayed macros. 2) AI-generated instructions were mentioning specific gram amounts that become inconsistent after scaling (e.g. '15g olive oil' in instructions while ingredient shows '12g olive oil'). Fixed by adding explicit rule to AI prompt: 'NEVER mention specific gram/ml amounts in instructions'. Both fixes verified: all 7/7 tests pass, instructions show zero gram amount violations, per-meal macros now honestly derived from ingredient amounts."
 
+  - task: "Elite Coaching Engine - Final Tightening (Min Sets, Bro Split, GIF Thresholds, RIR)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Previous agent applied 6 search_replace edits to server.py and workout-detail.tsx:
+          1. Minimum set floors: primary compounds min 3 sets, accessories min 2 sets (no more 1-set lifts).
+          2. Bro Split mapping: added accurate 'bro_split' SPLIT_MAP entry (chest/back/shoulder/arm/leg days).
+          3. ExerciseDB GIF accuracy thresholds raised (fuzzy match threshold improved).
+          4. RIR explanation added to workout-detail.tsx frontend.
+          Backend syntax verified clean. Backend restarted. Needs end-to-end testing.
+
 test_plan:
   current_focus:
-    - "Macro Accuracy Fix - Honest Ingredient-Level Scaling"
-    - "Alternate Meal foods_to_avoid Compliance"
-    - "Template-Based Meal Name Filtering (foods_to_avoid)"
-    - "Keto Meal Plan Carb Compliance (< 50g)"
-    - "Vegan Meal Plan Protein Accuracy"
-  stuck_tasks:
-    - "Alternate Meal foods_to_avoid Compliance"
+    - "Elite Coaching Engine - Final Tightening (Min Sets, Bro Split, GIF Thresholds, RIR)"
+  stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
