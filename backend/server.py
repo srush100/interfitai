@@ -632,11 +632,7 @@ CACHED_EXERCISE_GIFS = {
     "running": "3666",
     "assault bike": "2612",            # no exact ExerciseDB match — jump rope as closest cardio
     "assault bike intervals": "2612",  # ADDED
-    "rowing machine": "2142",          # ski ergometer — closest cardio machine in ExerciseDB
-    "rowing machine intervals": "2142",
-    "rowing": "2142",
-    "row machine": "2142",
-    "rower": "2142",
+    # rowing machine — no match in ExerciseDB; intentionally unmapped so UI shows exercise without GIF
     
     # Machine exercises
     "pec deck": "0613",
