@@ -352,7 +352,8 @@ CACHED_EXERCISE_GIFS = {
     "pushup": "0662",
     "wide push up": "0672",
     "diamond push up": "0279",
-    "decline push up": "1302",
+    "decline push up": "0279",       # FIXED: 0279 = decline push-up
+    "decline push-up": "0279",
     "incline push up": "0671",
     "knee push up": "0670",
     "chest dip": "0251",
@@ -443,9 +444,10 @@ CACHED_EXERCISE_GIFS = {
     "side raise": "0334",
     "front raise": "0310",
     "dumbbell front raise": "0310",
-    "rear delt fly": "0578",
-    "reverse fly": "0578",
-    "rear delt": "0578",
+    "rear delt fly": "0203",          # FIXED: was 0578 (lever deadlift). 0203 = cable rear delt row (rope)
+    "rear delt machine fly": "0203",  # ADDED
+    "reverse fly": "0203",            # FIXED
+    "rear delt": "0203",              # FIXED
     "face pull": "0233",  # cable standing rear delt row (with rope) - the face pull movement
     "cable face pull": "0233",
     "cable face pulls": "0233",
@@ -473,8 +475,8 @@ CACHED_EXERCISE_GIFS = {
     "preacher curl": "0092",  # barbell preacher curl
     "concentration curl": "0274",
     "incline dumbbell curl": "0313",
-    "cable curl": "0163",
-    "cable bicep curl": "0163",
+    "cable curl": "0868",             # FIXED: was 0163 (broken). 0868 = cable curl
+    "cable bicep curl": "0868",       # FIXED
     
     # Arm exercises - Triceps
     "tricep pushdown": "0241",  # cable triceps pushdown (v-bar)
@@ -486,6 +488,8 @@ CACHED_EXERCISE_GIFS = {
     "tricep extension": "0860",
     "overhead tricep extension": "0860",
     "dumbbell tricep extension": "0860",
+    "overhead cable extension": "0194",          # ADDED: cable overhead triceps extension (rope)
+    "overhead cable tricep extension": "0194",   # ADDED
     "skull crusher": "0055",
     "lying tricep extension": "0055",
     "barbell skull crusher": "0055",
@@ -512,9 +516,11 @@ CACHED_EXERCISE_GIFS = {
     "goblet squats": "0534",
     "kettlebell goblet squat": "0534",
     "dumbbell goblet squat": "1760",
-    "leg press": "0738",
-    "sled leg press": "0738",
-    "hack squat": "0473",
+    "leg press": "0739",               # FIXED: was 0738 (sled calf press). 0739 = sled 45° leg press
+    "sled leg press": "0739",          # FIXED
+    "leg press (feet high)": "0739",   # ADDED
+    "hack squat": "0743",              # FIXED: was 0473 (hanging pike). 0743 = sled hack squat
+    "smith machine squat": "0755",     # ADDED
     "leg extension": "0585",
     "seated leg extension": "0585",
     "leg curl": "0586",
@@ -524,25 +530,40 @@ CACHED_EXERCISE_GIFS = {
     "lever seated leg curl": "0599",
     "calf raise": "1373",
     "standing calf raise": "1373",
-    "seated calf raise": "0720",
+    "calf raise machine": "0594",      # ADDED: lever seated calf raise
+    "seated calf raise": "0594",       # FIXED: was 0720 (side-to-side chin). 0594 = lever seated calf raise
+    "lever seated calf raise": "0594",
     "lunge": "0336",  # dumbbell lunge
     "dumbbell lunge": "0336",
     "lunges": "0336",
     "walking lunge": "1460",  # walking lunge
     "walking lunges": "1460",
-    "reverse lunge": "0381",  # dumbbell rear lunge
-    "barbell lunge": "0054",  # barbell lunge
-    "bulgarian split squat": "0130",
-    "split squat": "0130",
-    "step up": "0758",
-    "box step up": "0758",
-    "hip thrust": "0046",
-    "barbell hip thrust": "0046",
-    "glute bridge": "0446",
-    "glute kickback": "0482",
-    "cable kickback": "0482",
-    "good morning": "0440",
-    "barbell good morning": "0440",
+    "reverse lunge": "0381",           # dumbbell rear lunge
+    "dumbbell reverse lunge": "0381",  # ADDED
+    "barbell lunge": "0054",
+    "bulgarian split squat": "0099",   # FIXED: was 0130 (bench hip extension). 0099 = barbell single leg split squat
+    "dumbbell bulgarian split squat": "0410",  # ADDED
+    "smith machine split squat": "0768",       # ADDED
+    "split squat": "0099",             # FIXED
+    "step up": "1684",                 # FIXED: was 0758 (smith incline reverse-grip press). 1684 = dumbbell step up
+    "box step up": "1684",             # FIXED
+    "dumbbell step up": "1684",        # ADDED
+    "hip thrust": "1409",              # FIXED: was 0046 (barbell hack squat). 1409 = barbell glute bridge
+    "barbell hip thrust": "1409",      # FIXED
+    "hip thrust machine": "1409",      # ADDED
+    "dumbbell hip thrust": "1409",     # ADDED
+    "glute bridge": "1409",            # FIXED
+    "barbell glute bridge": "1409",    # CORRECT
+    "single leg glute bridge": "3013", # ADDED: low glute bridge on floor
+    "single-leg glute bridge": "3013", # ADDED
+    "glute kickback": "0860",          # FIXED: was 0482 (broken). 0860 = cable kickback
+    "cable kickback": "0860",          # FIXED
+    "good morning": "0044",            # FIXED: was 0440 (broken). 0044 = barbell good morning
+    "barbell good morning": "0044",    # FIXED
+    "pistol squat": "0544",            # ADDED: kettlebell pistol squat
+    "piston squat (assisted)": "0544", # ADDED
+    "single leg romanian deadlift": "1757",  # ADDED: dumbbell single leg deadlift
+    "single-leg romanian deadlift": "1757",  # ADDED
     
     # Core exercises
     "plank": "2135",  # weighted front plank (shows plank position)
@@ -560,16 +581,19 @@ CACHED_EXERCISE_GIFS = {
     "weighted russian twist": "0846",
     "leg raise": "1472",
     "lying leg raise": "1472",
-    "hanging leg raise": "1760",
+    "hanging leg raise": "0472",       # FIXED: was 1760 (dumbbell goblet squat). 0472 = hanging leg raise
     "hanging knee raise": "0485",
     "knee raise": "0485",
-    "mountain climber": "0601",
-    "mountain climbers": "0601",
+    "mountain climber": "0630",        # FIXED: was 0601 (lever seated reverse fly). 0630 = mountain climber
+    "mountain climbers": "0630",       # FIXED
+    "mountain climbers emom": "0630",  # ADDED
     "ab wheel rollout": "0001",
-    "cable crunch": "0155",
+    "ab rollout": "0001",              # ADDED
+    "cable crunch": "0840",            # FIXED: was 0155 (cable cross-over). 0840 = cable woodchopper (cable core)
     "woodchopper": "0840",
     "cable woodchopper": "0840",
-    "dead bug": "1474",
+    "dead bug": "0276",                # FIXED: was 1474 (broken). 0276 = dead bug
+    "bird dog": "0276",                # ADDED: similar stability pattern
     "flutter kick": "0395",
     "sit up": "0735",
     "v up": "1604",
@@ -579,8 +603,10 @@ CACHED_EXERCISE_GIFS = {
     "burpees": "1160",
     "box jump": "1374",  # box jump down with one leg stabilization
     "box jumps": "1374",
-    "jump squat": "0631",
-    "jump squats": "0631",
+    "jump squat": "0514",              # FIXED: was 0631 (muscle up). 0514 = jump squat
+    "jump squats": "0514",             # FIXED
+    "broad jump": "0514",              # ADDED: closest plyometric
+    "broadjump": "0514",               # ADDED
     "kettlebell swing": "0549",
     "kettlebell swings": "0549",
     "clean and press": "1209",
@@ -604,18 +630,30 @@ CACHED_EXERCISE_GIFS = {
     "treadmill sprint": "3666",
     "treadmill sprints": "3666",
     "running": "3666",
-    "assault bike": "2612",  # jump rope (similar cardio movement - no exact match)
-    "rowing machine": "1866",
-    "rowing": "1866",
-    "row machine": "1866",
-    "rower": "1866",
+    "assault bike": "2612",            # no exact ExerciseDB match — jump rope as closest cardio
+    "assault bike intervals": "2612",  # ADDED
+    "rowing machine": "0128",          # FIXED: was 1866 (broken). Battle ropes as closest cardio
+    "rowing machine intervals": "0128",# ADDED
+    "rowing": "0128",                  # FIXED
+    "row machine": "0128",             # FIXED
+    "rower": "0128",                   # FIXED
     
-    # Machine exercises (moved from chest section to avoid duplicates)
+    # Machine exercises
     "pec deck": "0613",
     "machine fly": "0613",
-    "shoulder press machine": "0718",
-    "machine shoulder press": "0718",
-    "cable lateral raise": "0175",
+    "shoulder press machine": "0603",  # FIXED: was 0718 (broken). 0603 = lever shoulder press
+    "machine shoulder press": "0603",  # FIXED
+    "cable shoulder press": "0603",    # ADDED
+    "lever shoulder press": "0603",    # ADDED
+    "cable lateral raise": "0178",     # FIXED: was 0175 (cable kneeling crunch). 0178 = cable lateral raise
+    "machine lateral raise": "0584",   # ADDED: lever lateral raise
+    "machine lateral raises": "0584",  # ADDED
+    "rear delt machine fly": "0203",   # ADDED
+    "farmer's carry": "2133",          # ADDED: farmers walk
+    "farmers carry": "2133",           # ADDED
+    "farmer's walk": "2133",           # ADDED
+    "farmers walk": "2133",            # ADDED
+    "suitcase carry": "2133",          # ADDED: farmers walk as closest
 }
 
 # Cache for exercise GIFs to avoid repeated API calls
@@ -1105,9 +1143,7 @@ class EliteCoachingEngine:
                 ("lateral_raise",    "accessory",           "medial delt isolation – shoulder width"),
                 ("tricep_push",      "isolation",           "tricep isolation – elbow extension"),
             ],
-            "optional_slots": [
-                ("rear_delt",        "accessory",           "rear delt for shoulder health balance"),
-            ],
+            "optional_slots": [],
         },
         "upper_push_volume": {
             "label": "Upper – Push (Volume)",
@@ -1119,9 +1155,7 @@ class EliteCoachingEngine:
                 ("lateral_raise",    "accessory",           "medial delt isolation"),
                 ("tricep_push",      "isolation",           "tricep isolation – volume day"),
             ],
-            "optional_slots": [
-                ("rear_delt",        "accessory",           "rear delt for balance"),
-            ],
+            "optional_slots": [],
         },
         "upper_pull_heavy": {
             "label": "Upper – Pull (Heavy)",
@@ -1187,9 +1221,7 @@ class EliteCoachingEngine:
                 ("lateral_raise",    "accessory",           "lateral raise – medial delt width"),
                 ("tricep_push",      "isolation",           "tricep isolation – full elbow extension"),
             ],
-            "optional_slots": [
-                ("rear_delt",        "accessory",           "rear delt health"),
-            ],
+            "optional_slots": [],
         },
         "pull_session": {
             "label": "Pull",
