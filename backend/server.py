@@ -445,7 +445,7 @@ CACHED_EXERCISE_GIFS = {
     "front raise": "0310",
     "dumbbell front raise": "0310",
     "rear delt fly": "0203",          # FIXED: was 0578 (lever deadlift). 0203 = cable rear delt row (rope)
-    "rear delt machine fly": "0203",  # ADDED
+    "rear delt machine fly": "0202",  # FIXED: cable rear delt row (stirrups) — lateral fly pattern
     "reverse fly": "0203",            # FIXED
     "rear delt": "0203",              # FIXED
     "face pull": "0233",  # cable standing rear delt row (with rope) - the face pull movement
@@ -475,6 +475,8 @@ CACHED_EXERCISE_GIFS = {
     "preacher curl": "0092",  # barbell preacher curl
     "concentration curl": "0274",
     "incline dumbbell curl": "0313",
+    "incline dumbbell curl": "0318",  # FIXED: dumbbell incline curl
+    "incline curl": "0318",            # ADDED
     "cable curl": "0868",             # FIXED: was 0163 (broken). 0868 = cable curl
     "cable bicep curl": "0868",       # FIXED
     
@@ -1750,6 +1752,23 @@ class EliteCoachingEngine:
         "endurance":    ["conditioning"],
     }
 
+    # Primary focus → preferred split when AI is choosing (ai_choose mode only)
+    # Keys match focus_area slugs; value is the preferred split_id.
+    FOCUS_SPLIT_PREFERENCE: dict = {
+        'chest':        'push_pull_legs',   # dedicated push day = more chest frequency
+        'back':         'push_pull_legs',   # dedicated pull day = more back frequency
+        'shoulders':    'push_pull_legs',   # push day + isolation session
+        'arms':         'push_pull_legs',   # arms on push/pull days twice per rotation
+        'legs':         'upper_lower',      # 2× lower per week = most leg volume
+        'glutes':       'upper_lower',      # 2× lower per week = most glute frequency
+        'hamstrings':   'upper_lower',      # lower day twice hits hamstrings optimally
+        'quads':        'upper_lower',      # lower day twice hits quads optimally
+        'calves':       'upper_lower',      # lower day twice = calf frequency
+        'core':         'full_body',        # core every session = maximum frequency
+        'upper_body':   'upper_lower',      # upper day twice per week
+        'lower_body':   'upper_lower',      # lower day twice per week
+    }
+
     # Bodyweight exercise difficulty tiers for level-based ordering in calisthenics
     BODYWEIGHT_DIFFICULTY: dict = {
         # Tier 1 — Beginner
@@ -1826,7 +1845,11 @@ class EliteCoachingEngine:
                 return 'full_body', 'Full Body', \
                     f"Full Body selected — every muscle group stimulated each session, {days} times per week. Ideal for maximum weekly frequency and movement pattern practice."
 
-        # ── AI-selected split logic (days × goal × level) ────────────────────
+        # ── AI-selected split logic ─────────────────────────────────────────────
+        # Primary focus biases split choice when AI is deciding (structural modifier).
+        focus_key = (focus_areas[0] if focus_areas else '').lower().replace(' ', '_')
+        focus_preferred_split = self.FOCUS_SPLIT_PREFERENCE.get(focus_key)
+
         if days <= 2:
             return 'full_body', 'Full Body', \
                 f"{days}-day training requires Full Body sessions to ensure every muscle is stimulated twice per week — the minimum for meaningful adaptation."
@@ -1835,14 +1858,29 @@ class EliteCoachingEngine:
                 return 'full_body', 'Full Body', \
                     "3-day Full Body is ideal for strength — the big compounds (squat, bench, deadlift) are trained multiple times per week for maximum neural adaptation."
             if goal in ['build_muscle', 'body_recomp'] and level in ['intermediate', 'advanced']:
+                # Focus-aware: legs/glutes/core prefer full_body for 3-day frequency; push/pull areas prefer PPL
+                if focus_preferred_split == 'full_body':
+                    return 'full_body', 'Full Body', \
+                        f"3-day Full Body is the best structure for {focus_key} focus — every session includes {focus_key} work, maximising weekly frequency for that target."
                 return 'push_pull_legs', 'Push / Pull / Legs', \
                     "3-day PPL cleanly separates pushing, pulling, and leg patterns — each session fully focused on its muscle group with ideal recovery before the next session."
+            # Focus-aware for beginners/general
+            if focus_preferred_split == 'push_pull_legs':
+                return 'push_pull_legs', 'Push / Pull / Legs', \
+                    f"3-day PPL gives {focus_key} its own dedicated day for maximum focus, volume, and recovery."
             return 'full_body', 'Full Body', \
                 "3-day Full Body gives every muscle group 2-3x weekly stimulus with appropriate recovery, perfect for your goal and level combination."
         elif days == 4:
             if goal == 'strength':
                 return 'upper_lower', 'Upper / Lower', \
                     "4-day Upper/Lower perfectly pairs the major strength lifts — upper body (bench, OHP, row) and lower body (squat, deadlift) each get two dedicated sessions per week."
+            # Focus-aware for 4-day
+            if focus_preferred_split == 'upper_lower':
+                return 'upper_lower', 'Upper / Lower', \
+                    f"4-day Upper/Lower gives {focus_key} twice-weekly dedicated sessions — the gold standard frequency for your primary focus."
+            if focus_preferred_split == 'push_pull_legs':
+                return 'push_pull_legs', 'Push / Pull / Legs', \
+                    f"4-day PPL rotation gives {focus_key} a dedicated session plus overlap in the second rotation — building clear focus priority."
             if goal in ['build_muscle', 'body_recomp']:
                 return 'upper_lower', 'Upper / Lower', \
                     "4-day Upper/Lower provides twice-weekly frequency for every muscle group — the gold standard for hypertrophy and recomposition at this training frequency."
@@ -1855,6 +1893,10 @@ class EliteCoachingEngine:
             if goal == 'build_muscle' and level == 'advanced':
                 return 'push_pull_legs', 'Push / Pull / Legs', \
                     "5-day PPL (A/B rotation) gives advanced trainees near-twice-weekly frequency per pattern with higher total volume — ideal for maximising hypertrophy."
+            # Focus-aware: arms/glutes benefit from Bro Split at 5 days
+            if focus_preferred_split and focus_key in ('arms', 'glutes', 'legs') and level in ('intermediate', 'advanced'):
+                return 'bro_split', 'Bro Split', \
+                    f"5-day Bro Split gives {focus_key} a fully dedicated training day with maximum isolation volume — the ideal structure when a single muscle group is the priority."
             return 'push_pull_legs', 'Push / Pull / Legs', \
                 "5-day PPL provides each movement pattern its own dedicated session plus an extra session in the rotation — very high weekly frequency with targeted volume."
         else:  # 6+ days
@@ -2060,8 +2102,26 @@ class EliteCoachingEngine:
                 max_sets = max(min_sets, max_sets - 2)  # reduce set budget slightly
                 target_sets = (min_sets + max_sets) // 2
 
-            # Trim slots to max_exercises
+            # ── Primary focus: prioritise slots before trimming ──────────────
+            # Sort BEFORE the max_ex trim so primary focus patterns survive cuts.
+            def _slot_importance(s_tuple):
+                pattern, ex_type, _ = s_tuple
+                if ex_type == 'primary_compound':       return 0
+                if pattern in primary_patterns:         return 1   # primary focus survives trim
+                if ex_type == 'secondary_compound':     return 2
+                if pattern in secondary_patterns:       return 3
+                return 4
+            slots.sort(key=_slot_importance)
             slots = slots[:max_ex]
+
+            # ── Inject one extra primary focus slot if budget allows ──────────
+            # Ensure primary focus has ≥ 2 slots per session when budget permits.
+            focus_slot_count = sum(1 for p, _, _ in slots if p in primary_patterns)
+            if primary_patterns and focus_slot_count < 2 and len(slots) < max_ex:
+                for fp in primary_patterns:
+                    if fp not in [s[0] for s in slots]:
+                        slots.append((fp, 'accessory', f'primary focus — extra {fp.replace("_"," ")} volume'))
+                        break
 
             # ── Build slot specs with budget-aware set allocation ────────────
             excluded_exercises = set()
@@ -2102,23 +2162,20 @@ class EliteCoachingEngine:
                 floor       = self.STRENGTH_REST_FLOORS.get(goal, 60)
 
                 if dur_bucket <= 30:
-                    # Short session — shorten accessory/isolation rests aggressively
-                    # but never violate strength floor on primary compounds
                     if ex_type == 'primary_compound' and goal == 'strength':
-                        rest = max(floor, int(base_rest * 0.85))  # gentle reduction for strength
+                        rest = max(floor, int(base_rest * 0.85))
                     elif ex_type in ('primary_compound', 'secondary_compound'):
                         rest = max(floor, int(base_rest * 0.65))
                     else:
                         rest = max(30, int(base_rest * 0.55))
                 elif dur_bucket <= 45:
                     if ex_type == 'primary_compound' and goal == 'strength':
-                        rest = max(floor, int(base_rest * 0.90))  # minimal reduction
+                        rest = max(floor, int(base_rest * 0.90))
                     elif ex_type in ('primary_compound', 'secondary_compound'):
                         rest = max(floor, int(base_rest * 0.80))
                     else:
                         rest = max(45, int(base_rest * 0.70))
                 else:
-                    # 60+ min — use goal-prescribed rest unchanged
                     rest = base_rest
 
                 options = self.get_exercise_options(pattern, equipment, style, limitations, level)
@@ -2135,12 +2192,10 @@ class EliteCoachingEngine:
                     "excluded":      list(excluded_exercises),
                 })
 
-                # Hard stop if over budget (except always include all primary_compounds)
                 if ex_type != 'primary_compound' and total_sets_allocated >= target_sets:
                     break
 
-            # ── Minimum set floors — remove exercises that can't hit floor ────
-            # A 1-set bench press is not coaching. Remove rather than include awkwardly.
+            # ── Minimum set floors ────────────────────────────────────────────
             MIN_SETS_FLOOR = {
                 "primary_compound":   3,
                 "secondary_compound": 2,
@@ -2149,30 +2204,72 @@ class EliteCoachingEngine:
                 "unilateral":         2,
                 "core":               2,
                 "explosive":          2,
-                "conditioning":       1,   # finisher can be 1 block
+                "conditioning":       1,
             }
             slot_specs = [s for s in slot_specs if s['sets'] >= MIN_SETS_FLOOR.get(s['type'], 2)]
             total_sets_allocated = sum(s['sets'] for s in slot_specs)
 
-            # ── Focus area volume boost (within budget) ───────────────────────
-            # Boost primary focus +1 set (cap max_sets+2), secondary +0 (already at budget)
-            focus_boost_headroom = 2  # allow slight over-target for focus areas
+            # ── Primary focus volume boost: +2 sets (structural modifier) ────
+            # Secondary focus: +1 set (moderate visible refinement).
+            # Both are capped to avoid bloating sessions.
+            focus_boost_headroom = 2
             for slot in slot_specs:
                 if slot['pattern'] in primary_patterns:
-                    boosted = min(slot['sets'] + 1, slot['sets'] + 1)
-                    # Only boost if within reasonable headroom
+                    boost = 2  # primary is a major structural modifier
+                    boosted = min(slot['sets'] + boost, 6)
                     if total_sets_allocated - slot['sets'] + boosted <= max_sets + focus_boost_headroom:
                         total_sets_allocated += (boosted - slot['sets'])
-                        slot['sets'] = min(boosted, 6)
+                        slot['sets'] = boosted
+                        slot['coaching_note'] += ' [PRIMARY FOCUS — elevated volume]'
                 elif slot['pattern'] in secondary_patterns:
-                    if total_sets_allocated < max_sets:
-                        slot['sets'] = min(slot['sets'] + 1, 5)
-                        total_sets_allocated += 1
+                    if total_sets_allocated < max_sets + 1:
+                        boosted = min(slot['sets'] + 1, 5)
+                        total_sets_allocated += (boosted - slot['sets'])
+                        slot['sets'] = boosted
+                        slot['coaching_note'] += ' [secondary emphasis]'
 
-            # Reorder: primary_compound → primary focus → secondary focus → accessories → conditioning last
+            # ── Secondary focus: inject one extra accessory slot ─────────────
+            # Adds direct volume for secondary muscles if session budget allows.
+            if secondary_patterns and total_sets_allocated < max_sets + focus_boost_headroom - 1:
+                already_covered = {s['pattern'] for s in slot_specs}
+                for sf_pattern in secondary_patterns:
+                    if sf_pattern not in already_covered:
+                        sec_base = goal_params.get('accessory', {})
+                        sec_opts = self.get_exercise_options(sf_pattern, equipment, style, limitations, level)
+                        extra_sets = min(2, max_sets + focus_boost_headroom - total_sets_allocated)
+                        if extra_sets >= 2 and sec_opts:
+                            slot_specs.append({
+                                "pattern":       sf_pattern,
+                                "type":          "accessory",
+                                "coaching_note": f"secondary emphasis — extra direct {secondary[0] if secondary else sf_pattern} volume [secondary emphasis]",
+                                "sets":          extra_sets,
+                                "reps":          sec_base.get('reps', '10-15'),
+                                "rest_seconds":  60,
+                                "effort":        sec_base.get('effort', 'RPE 7'),
+                                "options":       sec_opts,
+                                "excluded":      list(excluded_exercises),
+                            })
+                            total_sets_allocated += extra_sets
+                        break
+
+            # ── Superset pairing for time-constrained sessions ───────────────
+            # When session ≤ 45 min AND secondary focus is active, pair secondary
+            # isolation/accessory slots as supersets to save time.
+            # Main compounds are NEVER supersetted — straight sets only.
+            if dur_bucket <= 45 and secondary_patterns:
+                secondary_iso = [
+                    s for s in slot_specs
+                    if s['pattern'] in secondary_patterns
+                    and s['type'] in ('accessory', 'isolation', 'unilateral')
+                ]
+                for idx in range(0, len(secondary_iso) - 1, 2):
+                    secondary_iso[idx]['superset_note'] = 'A'
+                    secondary_iso[idx + 1]['superset_note'] = 'B'
+
+            # Reorder: primary_compound → primary focus → secondary → accessories → conditioning last
             def _slot_priority(s: dict) -> int:
                 if s['type'] == 'conditioning':
-                    return 99  # Always the finisher — never before weights
+                    return 99
                 if s['type'] == 'primary_compound':
                     return 0
                 if s['pattern'] in primary_patterns:

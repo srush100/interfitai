@@ -105,6 +105,28 @@
 user_problem_statement: "Build InterFitAI - a comprehensive AI fitness app with user profile & macro calculation, AI workout generation, AI meal plan generation, food tracking with image recognition, Ask InterFitAI chat, subscription payments with Stripe, step tracking, and device connections. Current focus: Build world-class Elite Coaching Engine for workout generation - Python backend rules, not LLM guessing. Goal/style/focus_areas must drive split selection, volume, sets/reps/rest/effort. LLM only fills exercise names and form cues."
 
 backend:
+  - task: "Elite Coaching Engine Focus Area Overhaul (primary +2 sets, secondary +1 set, FOCUS_SPLIT_PREFERENCE)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL 17 TESTS PASSED (100%): Focus area overhaul fully verified.
+          1. SPLIT SELECTION: chest+3days+ai_choose → 'Push / Pull / Legs' ✅ (FOCUS_SPLIT_PREFERENCE['chest']='push_pull_legs')
+          2. SPLIT SELECTION: legs+4days+ai_choose → 'Upper / Lower' ✅ (FOCUS_SPLIT_PREFERENCE['legs']='upper_lower')
+          3. PRIMARY VOLUME BOOST: chest primary → Barbell Bench Press=6 sets (4+2), Incline Press=5 sets (3+2). Both >= 5 ✅
+          4. SECONDARY EFFECT: secondary_focus_areas=['shoulders'] → 7 shoulder exercises present, Cable Face Pull=4 sets (3+1 boost) ✅
+          5. SMOKE TEST: 200 OK, all required fields, valid exercises with sets/reps/rest ✅
+          KNOWN LIMITATION: coaching_note field is internal (blueprint only), NOT in Exercise HTTP response model.
+          '[secondary emphasis]' and '[PRIMARY FOCUS — elevated volume]' markers are passed to LLM as prompt context
+          but do not appear in JSON response. Secondary effect verified via exercise presence and sets instead.
+          Test file: /app/backend/tests/test_focus_area_overhaul.py
+
   - task: "Elite Coaching Engine - 6 structural improvements"
     implemented: true
     working: "NA"

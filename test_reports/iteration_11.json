@@ -1,0 +1,42 @@
+{
+  "summary": "Backend-only testing of the InterFitAI workout engine focus area overhaul. All 17 tests PASSED (100%) in 109s. Verified: (1) FOCUS_SPLIT_PREFERENCE dict drives split selection correctly — chest+3days+ai_choose → Push/Pull/Legs, legs+4days+ai_choose → Upper/Lower; (2) Primary focus chest gets +2 sets boost — Barbell Bench Press 6 sets (4+2), Incline Press 5 sets (3+2), both >= 5 threshold; (3) Secondary focus shoulders results in 7 shoulder exercises present including Cable Face Pull at 4 sets (base 3 +1 boost); (4) coaching_note with '[secondary emphasis]' is confirmed as INTERNAL ONLY — not in HTTP response Exercise model — effect verified via exercise presence and sets; (5) Smoke test passes with all required fields and valid exercise structure.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/workouts/generate",
+        "issue": "coaching_note field (containing '[secondary emphasis]' and '[PRIMARY FOCUS — elevated volume]') is an internal blueprint concept and NOT exposed in the Exercise HTTP response model. The test specification asked to 'verify coaching_note containing secondary' but this field is not in the JSON response. Secondary focus effect is verifiable only indirectly via exercise presence and set counts."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_focus_area_overhaul.py",
+    "/app/test_reports/pytest/focus_area_overhaul_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: If coaching_note with 'secondary emphasis' needs to be testable, add a coaching_note field to the Exercise model so it appears in HTTP responses.",
+    "OPTIONAL: The FOCUS_SPLIT_PREFERENCE has 'core' → 'full_body' but full_body split is not explicitly handled in the ai_choose path for days==3 when goal is build_muscle/body_recomp (it returns PPL). This is fine but may need documentation."
+  ],
+  "critical_code_review_comments": [
+    "coaching_note is built and appended in slot_specs (lines 2223, 2229) but is NOT included in the final Exercise model or the exercises_with_gifs dict (lines 2865-2878). The field is used only in the LLM prompt (line 2707). If stakeholders need to verify '[secondary emphasis]' from the API, coaching_note must be added to Exercise model.",
+    "Test result confirms: primary focus +2 sets working correctly (Bench=6, Incline=5). Secondary focus +1 set confirmed on Cable Face Pull (3→4). Split selection from FOCUS_SPLIT_PREFERENCE dict working perfectly for chest→PPL and legs→upper_lower."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_focus_area_overhaul.py"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 tests passed)",
+    "frontend": "N/A — backend-only testing requested"
+  },
+  "seed_data_creation": "None. Used existing test user: cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Focus area overhaul fully verified: (1) FOCUS_SPLIT_PREFERENCE drives AI split selection correctly; (2) Primary focus gets +2 sets (cap 6); (3) Secondary focus gets +1 set and injects extra accessory slot; (4) coaching_note is internal only — NOT in HTTP response. Test file: /app/backend/tests/test_focus_area_overhaul.py. All 5 requested feature tests pass.",
+  "rca_of_issue": "No issues found. All features working as designed."
+}
