@@ -976,9 +976,30 @@ metadata:
           4. SMOKE TEST: 200 OK, 3 workout days, 5 exercises each with sets/reps/rest_seconds.
           All 6 tightening edits confirmed working correctly end-to-end.
 
+  - task: "Weighted Split Selection System (focus area overhaul)"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Weighted scoring system implemented in select_split() in server.py.
+          Key changes:
+          1. VIABLE_BY_DAYS dict: 3-day → [full_body, push_pull_legs], 4-day → [upper_lower, push_pull_legs, full_body], 5-day → [push_pull_legs, upper_lower, bro_split]
+          2. GOAL_SCORE: 0-4 pts per split per goal (e.g. upper_lower gets 4pts for build_muscle/body_recomp/strength)
+          3. LEVEL_SCORE: 0-2 pts per split per level (beginner → full_body scores 2; advanced → bro_split scores 2)
+          4. FOCUS_BIAS: 0-2 pts per split per focus area (chest/back/shoulders → push_pull_legs +2; legs/glutes/quads → upper_lower +2; core/full_body → full_body +2)
+          5. All three scores summed and highest score wins (ties broken by sort stability)
+          Validated via bash script for 14 user test cases (chest+3days, full_body+arms+5days, etc.) - all passed.
+          Backend restarted and running (pid 1723). Needs formal testing agent run.
+
 test_plan:
   current_focus:
-    - "Elite Coaching Engine - Final Tightening (Min Sets, Bro Split, GIF Thresholds, RIR)"
+    - "Weighted Split Selection System (focus area overhaul)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -1030,6 +1051,8 @@ test_plan:
 # Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b
 
 agent_communication:
+  - agent: "main"
+    message: "NEW FORK (2026-04) - WEIGHTED SPLIT SELECTION FORMAL TESTING: Backend is running (pid 1723, uptime healthy). The weighted scoring system in select_split() has been implemented and validated via bash script for 14 test cases. Now running formal testing agent. KEY TESTS TO RUN: (1) POST /api/workouts/generate with goal=build_muscle, focus_areas=['chest'], days=3, level=beginner → expect push_pull_legs split. (2) goal=build_muscle, focus_areas=['legs'], days=4, level=intermediate → expect upper_lower split. (3) goal=lose_fat, focus_areas=['core'], days=3, level=beginner → expect full_body split. (4) goal=build_muscle, focus_areas=['arms'], days=5, level=advanced → expect push_pull_legs or bro_split. (5) Smoke test: various combos return 200 OK with workout_days, sets >= 3 for primary compounds. ACCEPTANCE: All splits match weighted scoring logic. No 500 errors. Workout structure valid (sets, reps, rest_seconds, gif_url). Test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b"
   - agent: "main"
     message: "NEW FORK 2026-02 FINAL: Backend running (pid 8841). All code changes have been reviewed and confirmed in place. FULL IMPLEMENTATION VERIFIED: (1) Template path: scale_day_to_targets() uses 4-step ingredient-level scaling (calorie → protein → carb → fat). Honest output only - no artificial inflation. is_plant_based_diet param present. (2) AI path: 4 stages (calorie scale, protein correction, carb correction, fat correction) + Stage 4 last-meal balance to guarantee EXACT daily totals for non-keto plans. (3) Keto/carnivore: skips stages 2,3,4 - honest ingredient macros only. (4) generate_alternate_meal(): PROTEIN_GROUPS filtering + 3-attempt retry + post-validation all in place. TESTS TO RUN: (A) Template plans (no preferred_foods): balanced, vegan, keto - verify macros accurate. (B) AI plans (with preferred_foods): balanced with chicken/rice/eggs - verify exact target matching. (C) foods_to_avoid='chicken' - verify NO chicken in template meals or alternate meals. Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. Run pytest /app/backend/tests/test_ai_generation_fixes.py -v"
   - agent: "main"
