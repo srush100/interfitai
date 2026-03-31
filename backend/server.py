@@ -1845,63 +1845,105 @@ class EliteCoachingEngine:
                 return 'full_body', 'Full Body', \
                     f"Full Body selected — every muscle group stimulated each session, {days} times per week. Ideal for maximum weekly frequency and movement pattern practice."
 
-        # ── AI-selected split logic ─────────────────────────────────────────────
-        # Primary focus biases split choice when AI is deciding (structural modifier).
+        # ── Weighted split selection — considers the full context hierarchy ────
+        # Focus area influences but never overrides goal / level / days / style.
+        # Every split is scored across all dimensions; highest score wins.
         focus_key = (focus_areas[0] if focus_areas else '').lower().replace(' ', '_')
-        focus_preferred_split = self.FOCUS_SPLIT_PREFERENCE.get(focus_key)
 
+        # Hard minimum: ≤2 days only makes Full Body viable
         if days <= 2:
             return 'full_body', 'Full Body', \
-                f"{days}-day training requires Full Body sessions to ensure every muscle is stimulated twice per week — the minimum for meaningful adaptation."
-        elif days == 3:
-            if goal == 'strength' and level in ['intermediate', 'advanced']:
-                return 'full_body', 'Full Body', \
-                    "3-day Full Body is ideal for strength — the big compounds (squat, bench, deadlift) are trained multiple times per week for maximum neural adaptation."
-            if goal in ['build_muscle', 'body_recomp'] and level in ['intermediate', 'advanced']:
-                # Focus-aware: legs/glutes/core prefer full_body for 3-day frequency; push/pull areas prefer PPL
-                if focus_preferred_split == 'full_body':
-                    return 'full_body', 'Full Body', \
-                        f"3-day Full Body is the best structure for {focus_key} focus — every session includes {focus_key} work, maximising weekly frequency for that target."
-                return 'push_pull_legs', 'Push / Pull / Legs', \
-                    "3-day PPL cleanly separates pushing, pulling, and leg patterns — each session fully focused on its muscle group with ideal recovery before the next session."
-            # Focus-aware for beginners/general
-            if focus_preferred_split == 'push_pull_legs':
-                return 'push_pull_legs', 'Push / Pull / Legs', \
-                    f"3-day PPL gives {focus_key} its own dedicated day for maximum focus, volume, and recovery."
-            return 'full_body', 'Full Body', \
-                "3-day Full Body gives every muscle group 2-3x weekly stimulus with appropriate recovery, perfect for your goal and level combination."
-        elif days == 4:
-            if goal == 'strength':
-                return 'upper_lower', 'Upper / Lower', \
-                    "4-day Upper/Lower perfectly pairs the major strength lifts — upper body (bench, OHP, row) and lower body (squat, deadlift) each get two dedicated sessions per week."
-            # Focus-aware for 4-day
-            if focus_preferred_split == 'upper_lower':
-                return 'upper_lower', 'Upper / Lower', \
-                    f"4-day Upper/Lower gives {focus_key} twice-weekly dedicated sessions — the gold standard frequency for your primary focus."
-            if focus_preferred_split == 'push_pull_legs':
-                return 'push_pull_legs', 'Push / Pull / Legs', \
-                    f"4-day PPL rotation gives {focus_key} a dedicated session plus overlap in the second rotation — building clear focus priority."
-            if goal in ['build_muscle', 'body_recomp']:
-                return 'upper_lower', 'Upper / Lower', \
-                    "4-day Upper/Lower provides twice-weekly frequency for every muscle group — the gold standard for hypertrophy and recomposition at this training frequency."
-            if goal == 'lose_fat':
-                return 'upper_lower', 'Upper / Lower', \
-                    "4-day Upper/Lower maximises muscle retention during a fat loss phase — high frequency per muscle group combined with manageable session volume."
-            return 'upper_lower', 'Upper / Lower', \
-                "4-day Upper/Lower is the most well-balanced split at this frequency — twice-weekly per muscle, clear push/pull structure, and excellent recovery management."
-        elif days == 5:
-            if goal == 'build_muscle' and level == 'advanced':
-                return 'push_pull_legs', 'Push / Pull / Legs', \
-                    "5-day PPL (A/B rotation) gives advanced trainees near-twice-weekly frequency per pattern with higher total volume — ideal for maximising hypertrophy."
-            # Focus-aware: arms/glutes benefit from Bro Split at 5 days
-            if focus_preferred_split and focus_key in ('arms', 'glutes', 'legs') and level in ('intermediate', 'advanced'):
-                return 'bro_split', 'Bro Split', \
-                    f"5-day Bro Split gives {focus_key} a fully dedicated training day with maximum isolation volume — the ideal structure when a single muscle group is the priority."
-            return 'push_pull_legs', 'Push / Pull / Legs', \
-                "5-day PPL provides each movement pattern its own dedicated session plus an extra session in the rotation — very high weekly frequency with targeted volume."
-        else:  # 6+ days
-            return 'push_pull_legs', 'Push / Pull / Legs (×2)', \
-                "6-day PPL (Push/Pull/Legs × 2) provides maximum weekly volume and frequency — every pattern trained twice per week. Only appropriate with elite recovery capacity."
+                f"{days}-day training requires Full Body sessions — the only split that achieves minimum weekly stimulus across all muscle groups."
+
+        # ── Viable splits per day count ───────────────────────────────────────
+        # These are the structurally appropriate options; weights rank among them.
+        VIABLE_BY_DAYS = {
+            3: ['full_body', 'push_pull_legs'],
+            4: ['upper_lower', 'push_pull_legs', 'full_body'],
+            5: ['push_pull_legs', 'upper_lower', 'bro_split'],
+        }
+        viable = VIABLE_BY_DAYS.get(days, ['push_pull_legs'])
+
+        # ── Goal affinity (0-4 pts) ───────────────────────────────────────────
+        # How well each split structurally serves the training goal.
+        GOAL_SCORE = {
+            'full_body':      {'build_muscle': 2, 'body_recomp': 3, 'lose_fat': 4, 'strength': 3, 'general_fitness': 4, 'athletic_performance': 3},
+            'upper_lower':    {'build_muscle': 4, 'body_recomp': 4, 'lose_fat': 3, 'strength': 4, 'general_fitness': 3, 'athletic_performance': 3},
+            'push_pull_legs': {'build_muscle': 4, 'body_recomp': 3, 'lose_fat': 3, 'strength': 3, 'general_fitness': 3, 'athletic_performance': 3},
+            'bro_split':      {'build_muscle': 3, 'body_recomp': 2, 'lose_fat': 1, 'strength': 1, 'general_fitness': 2, 'athletic_performance': 1},
+        }
+
+        # ── Level affinity (0-2 pts) ──────────────────────────────────────────
+        # More advanced athletes benefit from higher specialisation.
+        LEVEL_SCORE = {
+            'full_body':      {'beginner': 2, 'intermediate': 1, 'advanced': 0},
+            'upper_lower':    {'beginner': 1, 'intermediate': 2, 'advanced': 2},
+            'push_pull_legs': {'beginner': 0, 'intermediate': 2, 'advanced': 2},
+            'bro_split':      {'beginner': 0, 'intermediate': 1, 'advanced': 2},
+        }
+
+        # ── Focus bias (0-2 pts) ──────────────────────────────────────────────
+        # Focus area nudges the split decision but does not override goal or level.
+        # Max 2 pts — cannot dominate a goal/level mismatch (max 6 pts there).
+        FOCUS_BIAS = {
+            'chest':        {'push_pull_legs': 2},
+            'back':         {'push_pull_legs': 2},
+            'shoulders':    {'push_pull_legs': 2},
+            'arms':         {'push_pull_legs': 1, 'bro_split': 2},
+            'biceps':       {'push_pull_legs': 1, 'bro_split': 2},
+            'triceps':      {'push_pull_legs': 1, 'bro_split': 2},
+            'legs':         {'upper_lower': 2, 'push_pull_legs': 1},
+            'glutes':       {'upper_lower': 2, 'push_pull_legs': 1},
+            'hamstrings':   {'upper_lower': 2, 'push_pull_legs': 1},
+            'quads':        {'upper_lower': 2, 'push_pull_legs': 1},
+            'calves':       {'upper_lower': 1},
+            'core':         {'full_body': 2, 'upper_lower': 1},
+            'upper_body':   {'upper_lower': 2, 'push_pull_legs': 1},
+            'lower_body':   {'upper_lower': 2, 'push_pull_legs': 1},
+            'full_body':    {'full_body': 2, 'upper_lower': 1},
+            'conditioning': {'full_body': 1, 'push_pull_legs': 1},
+            'power':        {'upper_lower': 1, 'push_pull_legs': 1},
+        }
+
+        # ── Score and rank ────────────────────────────────────────────────────
+        scored = sorted(
+            viable,
+            key=lambda sid: (
+                GOAL_SCORE.get(sid, {}).get(goal, 2) +
+                LEVEL_SCORE.get(sid, {}).get(level, 1) +
+                FOCUS_BIAS.get(focus_key, {}).get(sid, 0)
+            ),
+            reverse=True
+        )
+        best = scored[0]
+
+        # ── Generate contextual rationale ─────────────────────────────────────
+        focus_label = focus_key.replace('_', ' ') if focus_key else goal.replace('_', ' ')
+        goal_label  = goal.replace('_', ' ')
+        RATIONALE = {
+            'full_body': (
+                f"Full Body sessions give {focus_label} maximum weekly frequency — every session trains the whole body, "
+                f"ideal for {goal_label} and your {days}-day schedule."
+            ),
+            'upper_lower': (
+                f"Upper/Lower gives {focus_label} twice-weekly dedicated sessions with the clearest structural division. "
+                f"The gold standard for {goal_label} at {days} days per week."
+            ),
+            'push_pull_legs': (
+                f"Push/Pull/Legs gives {focus_label} a dedicated training session each rotation with full recovery before revisiting. "
+                f"The highest-volume option for {goal_label} at {days} days."
+            ),
+            'bro_split': (
+                f"Bro Split gives {focus_label} a fully dedicated training day with maximum isolation volume. "
+                f"Appropriate for {goal_label} at advanced level across {days} sessions per week."
+            ),
+        }
+        return best, {
+            'full_body': 'Full Body',
+            'upper_lower': 'Upper / Lower',
+            'push_pull_legs': 'Push / Pull / Legs',
+            'bro_split': 'Bro Split',
+        }.get(best, best), RATIONALE.get(best, '')
 
     def get_exercise_options(self, pattern: str, equipment: list, style: str,
                               limitations: list, level: str = 'intermediate') -> list:
