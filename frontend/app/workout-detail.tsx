@@ -10,6 +10,7 @@ import {
   Modal,
   Alert,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -17,13 +18,18 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
-import DraggableFlatList, {
-  ScaleDecorator,
-  NestableScrollContainer,
-  NestableDraggableFlatList,
-  RenderItemParams,
-} from 'react-native-draggable-flatlist';
 import * as Haptics from 'expo-haptics';
+
+// Drag-to-reorder — native only (react-native-draggable-flatlist uses findNodeHandle which isn't supported on web)
+let ScaleDecorator: any = ({ children }: any) => children;
+let NestableScrollContainer: any = ScrollView;
+let NestableDraggableFlatList: any = null;
+if (Platform.OS !== 'web') {
+  const DragLib = require('react-native-draggable-flatlist');
+  ScaleDecorator = DragLib.ScaleDecorator;
+  NestableScrollContainer = DragLib.NestableScrollContainer;
+  NestableDraggableFlatList = DragLib.NestableDraggableFlatList;
+}
 
 // Get backend URL for constructing full GIF URLs
 const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 
@@ -510,6 +516,134 @@ export default function WorkoutDetail() {
     );
   }
 
+  // Renders the inner content of each exercise card (shared by drag list and web fallback)
+  const renderExerciseInner = (exercise: Exercise, exIdx: number) => (
+    <>
+      <View style={styles.exerciseHeader}>
+        <View style={styles.dragHandle}>
+          <Ionicons name="reorder-three" size={20} color={colors.textSecondary} />
+        </View>
+        {exercise.gif_url ? (
+          <Image
+            source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
+            style={styles.exerciseThumbnail}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.exerciseNumber}>
+            <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
+          </View>
+        )}
+        <View style={styles.exerciseInfo}>
+          <Text style={styles.exerciseName}>{exercise.name}</Text>
+          <Text style={styles.exerciseMeta}>
+            {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
+          </Text>
+        </View>
+        <Ionicons
+          name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
+          size={20}
+          color={colors.textSecondary}
+        />
+      </View>
+
+      {expandedExercise === `${expandedDay}-${exIdx}` && (
+        <View style={styles.exerciseDetails}>
+          {exercise.gif_url && (
+            <View style={styles.gifContainer}>
+              <Image
+                source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
+                style={styles.exerciseGif}
+                resizeMode="contain"
+              />
+            </View>
+          )}
+          <View style={styles.detailSection}>
+            <Text style={styles.detailLabel}>Instructions</Text>
+            <Text style={styles.detailText}>{exercise.instructions}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Equipment</Text>
+              <Text style={styles.detailValue}>{exercise.equipment || 'varies'}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Muscles</Text>
+              <Text style={styles.detailValue}>
+                {Array.isArray(exercise.muscle_groups)
+                  ? exercise.muscle_groups.join(', ')
+                  : exercise.muscle_groups || 'various'}
+              </Text>
+            </View>
+          </View>
+          {exercise.substitution_hint && (
+            <View style={styles.substitutionRow}>
+              <Ionicons name="swap-horizontal" size={14} color={colors.textSecondary} />
+              <Text style={styles.substitutionText}>
+                <Text style={styles.substitutionLabel}>Alternatives: </Text>
+                {exercise.substitution_hint}
+              </Text>
+            </View>
+          )}
+          <View style={styles.trackingSection}>
+            <View style={styles.trackingHeader}>
+              <Text style={styles.trackingTitle}>Log Your Sets</Text>
+              <TouchableOpacity style={styles.addSetBtn} onPress={() => addSet(expandedDay, exIdx)}>
+                <Ionicons name="add" size={18} color={colors.primary} />
+                <Text style={styles.addSetText}>Add Set</Text>
+              </TouchableOpacity>
+            </View>
+            {Array.from({ length: exercise.sets }, (_, setIdx) => {
+              const key = `${expandedDay}-${exIdx}-${setIdx}`;
+              const perf = performance[key] || { weight: '', reps: '', completed: false };
+              return (
+                <View key={setIdx} style={styles.setRow}>
+                  <TouchableOpacity
+                    style={[styles.setCheckbox, perf.completed && styles.setCheckboxChecked]}
+                    onPress={() => updatePerformance(key, { ...perf, completed: !perf.completed })}
+                  >
+                    {perf.completed && <Ionicons name="checkmark" size={16} color={colors.background} />}
+                  </TouchableOpacity>
+                  <Text style={styles.setLabel}>Set {setIdx + 1}</Text>
+                  <TextInput
+                    style={styles.setInput}
+                    placeholder="kg"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="decimal-pad"
+                    value={perf.weight}
+                    onChangeText={(text) => updatePerformance(key, { ...perf, weight: text })}
+                  />
+                  <Text style={styles.setX}>×</Text>
+                  <TextInput
+                    style={styles.setInput}
+                    placeholder="reps"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="number-pad"
+                    value={perf.reps}
+                    onChangeText={(text) => updatePerformance(key, { ...perf, reps: text })}
+                  />
+                  <TouchableOpacity style={styles.removeSetBtn} onPress={() => removeSet(expandedDay, exIdx)}>
+                    <Ionicons name="close-circle" size={22} color={colors.error} />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.exerciseActions}>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => openReplaceExerciseModal(expandedDay, exIdx)}>
+              <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
+              <Text style={styles.actionBtnText}>Replace</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionBtn, styles.actionBtnDanger]} onPress={() => deleteExercise(expandedDay, exIdx)}>
+              <Ionicons name="trash-outline" size={18} color={colors.error} />
+              <Text style={[styles.actionBtnText, styles.actionBtnTextDanger]}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
@@ -688,182 +822,45 @@ export default function WorkoutDetail() {
               </View>
             )}
 
-            {/* Exercises — drag handle to reorder */}
-            <NestableDraggableFlatList
-              data={workout.workout_days[expandedDay].exercises}
-              keyExtractor={(item, index) => `${item.name}-${index}`}
-              onDragBegin={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-              onDragEnd={({ data }) => handleReorderExercises(expandedDay, data)}
-              renderItem={({ item: exercise, getIndex, drag, isActive }: RenderItemParams<Exercise>) => {
-                const exIdx = getIndex() ?? 0;
-                return (
-                  <ScaleDecorator>
-                    <TouchableOpacity
-                      style={[styles.exerciseCard, isActive && styles.exerciseCardDragging]}
-                      onPress={() =>
-                        setExpandedExercise(
-                          expandedExercise === `${expandedDay}-${exIdx}` ? null : `${expandedDay}-${exIdx}`
-                        )
-                      }
-                      onLongPress={() => { drag(); }}
-                      delayLongPress={400}
-                    >
-                      <View style={styles.exerciseHeader}>
-                        {/* Drag handle */}
-                        <View style={styles.dragHandle}>
-                          <Ionicons name="reorder-three" size={18} color={colors.textSecondary} />
-                        </View>
-                        {/* Exercise Illustration Thumbnail */}
-                        {exercise.gif_url && (
-                          <Image
-                            source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
-                            style={styles.exerciseThumbnail}
-                            resizeMode="cover"
-                          />
-                        )}
-                        {!exercise.gif_url && (
-                          <View style={styles.exerciseNumber}>
-                            <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
-                          </View>
-                        )}
-                        <View style={styles.exerciseInfo}>
-                          <Text style={styles.exerciseName}>{exercise.name}</Text>
-                          <Text style={styles.exerciseMeta}>
-                            {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
-                          </Text>
-                        </View>
-                        <Ionicons
-                          name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
-                          size={20}
-                          color={colors.textSecondary}
-                        />
-                      </View>
-
-                      {expandedExercise === `${expandedDay}-${exIdx}` && (
-                  <View style={styles.exerciseDetails}>
-                    {exercise.gif_url && (
-                      <View style={styles.gifContainer}>
-                        <Image
-                          source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
-                          style={styles.exerciseGif}
-                          resizeMode="contain"
-                        />
-                      </View>
-                    )}
-                    <View style={styles.detailSection}>
-                      <Text style={styles.detailLabel}>Instructions</Text>
-                      <Text style={styles.detailText}>{exercise.instructions}</Text>
-                    </View>
-                    <View style={styles.detailRow}>
-                      <View style={styles.detailItem}>
-                        <Text style={styles.detailLabel}>Equipment</Text>
-                        <Text style={styles.detailValue}>{exercise.equipment || 'varies'}</Text>
-                      </View>
-                      <View style={styles.detailItem}>
-                        <Text style={styles.detailLabel}>Muscles</Text>
-                        <Text style={styles.detailValue}>
-                          {Array.isArray(exercise.muscle_groups)
-                            ? exercise.muscle_groups.join(', ')
-                            : exercise.muscle_groups || 'various'}
-                        </Text>
-                      </View>
-                    </View>
-                    
-                    {/* Substitution hint */}
-                    {exercise.substitution_hint && (
-                      <View style={styles.substitutionRow}>
-                        <Ionicons name="swap-horizontal" size={14} color={colors.textSecondary} />
-                        <Text style={styles.substitutionText}>
-                          <Text style={styles.substitutionLabel}>Alternatives: </Text>
-                          {exercise.substitution_hint}
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Performance Tracking */}
-                    <View style={styles.trackingSection}>
-                      <View style={styles.trackingHeader}>
-                        <Text style={styles.trackingTitle}>Log Your Sets</Text>
-                        <TouchableOpacity
-                          style={styles.addSetBtn}
-                          onPress={() => addSet(expandedDay, exIdx)}
-                        >
-                          <Ionicons name="add" size={18} color={colors.primary} />
-                          <Text style={styles.addSetText}>Add Set</Text>
-                        </TouchableOpacity>
-                      </View>
-                      {Array.from({ length: exercise.sets }, (_, setIdx) => {
-                        const key = `${expandedDay}-${exIdx}-${setIdx}`;
-                        const perf = performance[key] || { weight: '', reps: '', completed: false };
-                        return (
-                          <View key={setIdx} style={styles.setRow}>
-                            <TouchableOpacity
-                              style={[styles.setCheckbox, perf.completed && styles.setCheckboxChecked]}
-                              onPress={() => {
-                                updatePerformance(key, { ...perf, completed: !perf.completed });
-                              }}
-                            >
-                              {perf.completed && <Ionicons name="checkmark" size={16} color={colors.background} />}
-                            </TouchableOpacity>
-                            <Text style={styles.setLabel}>Set {setIdx + 1}</Text>
-                            <TextInput
-                              style={styles.setInput}
-                              placeholder="kg"
-                              placeholderTextColor={colors.textMuted}
-                              keyboardType="decimal-pad"
-                              value={perf.weight}
-                              onChangeText={(text) => {
-                                updatePerformance(key, { ...perf, weight: text });
-                              }}
-                            />
-                            <Text style={styles.setX}>×</Text>
-                            <TextInput
-                              style={styles.setInput}
-                              placeholder="reps"
-                              placeholderTextColor={colors.textMuted}
-                              keyboardType="number-pad"
-                              value={perf.reps}
-                              onChangeText={(text) => {
-                                updatePerformance(key, { ...perf, reps: text });
-                              }}
-                            />
-                            {/* Remove Set Button */}
-                            <TouchableOpacity
-                              style={styles.removeSetBtn}
-                              onPress={() => removeSet(expandedDay, exIdx)}
-                            >
-                              <Ionicons name="close-circle" size={22} color={colors.error} />
-                            </TouchableOpacity>
-                          </View>
-                        );
-                      })}
-                    </View>
-
-                    {/* Exercise Actions */}
-                    <View style={styles.exerciseActions}>
+            {/* Exercises — drag to reorder on native, plain list on web */}
+            {NestableDraggableFlatList ? (
+              <NestableDraggableFlatList
+                data={workout.workout_days[expandedDay].exercises}
+                keyExtractor={(item: Exercise, index: number) => `${item.name}-${index}`}
+                onDragBegin={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
+                onDragEnd={({ data }: { data: Exercise[] }) => handleReorderExercises(expandedDay, data)}
+                renderItem={({ item: exercise, getIndex, drag, isActive }: any) => {
+                  const exIdx = getIndex() ?? 0;
+                  return (
+                    <ScaleDecorator>
                       <TouchableOpacity
-                        style={styles.actionBtn}
-                        onPress={() => openReplaceExerciseModal(expandedDay, exIdx)}
-                      >
-                        <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
-                        <Text style={styles.actionBtnText}>Replace</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.actionBtnDanger]}
-                        onPress={() => deleteExercise(expandedDay, exIdx)}
-                      >
-                        <Ionicons name="trash-outline" size={18} color={colors.error} />
-                        <Text style={[styles.actionBtnText, styles.actionBtnTextDanger]}>Delete</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </ScaleDecorator>
-                );
-              }}
-            />
-            
+                        style={[styles.exerciseCard, isActive && styles.exerciseCardDragging]}
+                        onPress={() =>
+                          setExpandedExercise(
+                            expandedExercise === `${expandedDay}-${exIdx}` ? null : `${expandedDay}-${exIdx}`
+                          )
+                        }
+                        onLongPress={drag}
+                        delayLongPress={400}
+                      >{renderExerciseInner(exercise, exIdx)}</TouchableOpacity>
+                    </ScaleDecorator>
+                  );
+                }}
+              />
+            ) : (
+              workout.workout_days[expandedDay].exercises.map((exercise, exIdx) => (
+                <TouchableOpacity
+                  key={`${exercise.name}-${exIdx}`}
+                  style={styles.exerciseCard}
+                  onPress={() =>
+                    setExpandedExercise(
+                      expandedExercise === `${expandedDay}-${exIdx}` ? null : `${expandedDay}-${exIdx}`
+                    )
+                  }
+                >{renderExerciseInner(exercise, exIdx)}</TouchableOpacity>
+              ))
+            )}
+
             {/* Add Exercise Button - at the end of exercise list */}
             <TouchableOpacity
               style={styles.addExerciseBtn}
