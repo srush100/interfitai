@@ -40,9 +40,17 @@ Build InterFitAI - a comprehensive AI fitness app with:
 - **SPLIT_MAP**: Days/week × goal/style → optimal split (PPL, Upper/Lower, Full Body, Athletic Hybrid, etc.)
 - **GOAL_PARAMS**: 6 goals × 7 exercise types → precise sets/reps/rest/effort
 - **LIMITATION_EXCLUSIONS**: 8 limitation types → excluded exercise names
-- **select_split()**: Intelligent split selection with detailed rationale
+- **select_split()**: WEIGHTED SCORING SYSTEM (implemented + VERIFIED 18/18 tests)
+  - VIABLE_BY_DAYS: 3d→[full_body, PPL], 4d→[upper_lower, PPL, full_body], 5d→[PPL, upper_lower, bro_split]
+  - GOAL_SCORE: 0-4pts per split per goal
+  - LEVEL_SCORE: 0-2pts per split per level
+  - FOCUS_BIAS: 0-2pts per split per focus area (chest→PPL, legs→upper_lower, core→full_body)
+  - Style overrides always win (calisthenics, hybrid, functional, athletic_performance)
 - **build_blueprint()**: Main entry → complete day-by-day blueprint
 - **generate_workout()**: Wired to engine. Blueprint first, LLM second (names+form cues only)
+- **Focus area volume**: Primary +2 sets (min 3 on compounds, min 2 on accessories), Secondary +1 set
+- **Beginner bias**: Machines/cables/stable dumbbells favored over free weights
+- **Drag-to-reorder**: PATCH /api/workout/{id}/exercise/reorder endpoint (native drag-and-drop)
 
 ## Key Technical Details
 - All AI calls use `call_claude_sonnet()` helper → emergentintegrations → `claude-sonnet-4-5-20250929`
