@@ -34,7 +34,6 @@ const GOALS = [
 const GENDERS = [
   { id: 'male', label: 'Male' },
   { id: 'female', label: 'Female' },
-  { id: 'other', label: 'Other' },
 ];
 
 export default function Onboarding() {

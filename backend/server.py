@@ -587,8 +587,8 @@ CACHED_EXERCISE_GIFS = {
     "mountain climber": "0630",        # FIXED: was 0601 (lever seated reverse fly). 0630 = mountain climber
     "mountain climbers": "0630",       # FIXED
     "mountain climbers emom": "0630",  # ADDED
-    "ab wheel rollout": "0001",
-    "ab rollout": "0001",              # ADDED
+    "ab wheel rollout": "0857",        # FIXED: wheel rollout (correct exercise)
+    "ab rollout": "0857",              # FIXED: was 0001 (sit-up)
     "cable crunch": "0840",            # FIXED: was 0155 (cable cross-over). 0840 = cable woodchopper (cable core)
     "woodchopper": "0840",
     "cable woodchopper": "0840",
@@ -630,17 +630,17 @@ CACHED_EXERCISE_GIFS = {
     "treadmill sprint": "3666",
     "treadmill sprints": "3666",
     "running": "3666",
-    "assault bike": "2612",            # no exact ExerciseDB match — jump rope as closest cardio
-    "assault bike intervals": "2612",  # ADDED
+    "assault bike": "0003",            # FIXED: air bike (body weight, waist — correct movement)
+    "assault bike intervals": "0003",  # FIXED: was 2612 (jump rope/skipping)
     # rowing machine — no match in ExerciseDB; intentionally unmapped so UI shows exercise without GIF
     
     # Machine exercises
     "pec deck": "0613",
     "machine fly": "0613",
-    "shoulder press machine": "0603",  # FIXED: was 0718 (broken). 0603 = lever shoulder press
-    "machine shoulder press": "0603",  # FIXED
-    "cable shoulder press": "0603",    # ADDED
-    "lever shoulder press": "0603",    # ADDED
+    "shoulder press machine": "0587",  # lever military press (leverage machine, seated)
+    "machine shoulder press": "0587",
+    "cable shoulder press": "0587",
+    "lever shoulder press": "0587",
     "cable lateral raise": "0178",     # FIXED: was 0175 (cable kneeling crunch). 0178 = cable lateral raise
     "machine lateral raise": "0584",   # ADDED: lever lateral raise
     "machine lateral raises": "0584",  # ADDED
@@ -2169,8 +2169,10 @@ class EliteCoachingEngine:
                         slot['sets'] = min(slot['sets'] + 1, 5)
                         total_sets_allocated += 1
 
-            # Reorder: primary_compound → primary focus → secondary focus → rest
+            # Reorder: primary_compound → primary focus → secondary focus → accessories → conditioning last
             def _slot_priority(s: dict) -> int:
+                if s['type'] == 'conditioning':
+                    return 99  # Always the finisher — never before weights
                 if s['type'] == 'primary_compound':
                     return 0
                 if s['pattern'] in primary_patterns:
