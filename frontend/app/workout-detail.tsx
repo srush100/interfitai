@@ -3,13 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   ActivityIndicator,
   Image,
   TextInput,
   Modal,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -17,6 +17,13 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
+import DraggableFlatList, {
+  ScaleDecorator,
+  NestableScrollContainer,
+  NestableDraggableFlatList,
+  RenderItemParams,
+} from 'react-native-draggable-flatlist';
+import * as Haptics from 'expo-haptics';
 
 // Get backend URL for constructing full GIF URLs
 const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 
@@ -97,6 +104,8 @@ export default function WorkoutDetail() {
   const [replaceTarget, setReplaceTarget] = useState<{dayIdx: number, exIdx: number} | null>(null);
   const [isAddMode, setIsAddMode] = useState(false);  // true = adding new, false = replacing
   const [addToDayIdx, setAddToDayIdx] = useState<number | null>(null);  // which day to add exercise to
+  // Drag-to-reorder state
+  const [reordering, setReordering] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
@@ -409,6 +418,34 @@ export default function WorkoutDetail() {
     }
   };
 
+  // Handle drag-to-reorder: persist new exercise order to backend
+  const handleReorderExercises = useCallback(async (dayIdx: number, newData: Exercise[]) => {
+    if (!workout) return;
+    setReordering(true);
+    try {
+      // Build original → new index map
+      const originalExercises = workout.workout_days[dayIdx].exercises;
+      const newOrder = newData.map((ex) =>
+        originalExercises.findIndex((o) => o.name === ex.name)
+      );
+      // Optimistically update local state
+      const updatedDays = workout.workout_days.map((day, i) =>
+        i === dayIdx ? { ...day, exercises: newData } : day
+      );
+      setWorkout({ ...workout, workout_days: updatedDays });
+      await api.patch(`/workout/${workout.id}/reorder-exercises`, {
+        day_index: dayIdx,
+        exercise_order: newOrder,
+      });
+    } catch (e) {
+      // Silent fail — local state is still updated
+    } finally {
+      setReordering(false);
+    }
+  }, [workout]);
+
+
+
   // Open modal in add mode
   const openAddExerciseModal = (dayIdx: number) => {
     setIsAddMode(true);
@@ -484,7 +521,7 @@ export default function WorkoutDetail() {
         <View style={styles.backBtn} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <NestableScrollContainer contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Program Info */}
         <View style={styles.infoCard}>
           <TouchableOpacity 
@@ -651,45 +688,58 @@ export default function WorkoutDetail() {
               </View>
             )}
 
-            {/* Exercises */}
-            {workout.workout_days[expandedDay].exercises.map((exercise, exIdx) => (
-              <TouchableOpacity
-                key={exIdx}
-                style={styles.exerciseCard}
-                onPress={() =>
-                  setExpandedExercise(
-                    expandedExercise === `${expandedDay}-${exIdx}` ? null : `${expandedDay}-${exIdx}`
-                  )
-                }
-              >
-                <View style={styles.exerciseHeader}>
-                  {/* Exercise Illustration Thumbnail */}
-                  {exercise.gif_url && (
-                    <Image
-                      source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
-                      style={styles.exerciseThumbnail}
-                      resizeMode="cover"
-                    />
-                  )}
-                  {!exercise.gif_url && (
-                    <View style={styles.exerciseNumber}>
-                      <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
-                    </View>
-                  )}
-                  <View style={styles.exerciseInfo}>
-                    <Text style={styles.exerciseName}>{exercise.name}</Text>
-                    <Text style={styles.exerciseMeta}>
-                      {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
-                    size={20}
-                    color={colors.textSecondary}
-                  />
-                </View>
+            {/* Exercises — drag handle to reorder */}
+            <NestableDraggableFlatList
+              data={workout.workout_days[expandedDay].exercises}
+              keyExtractor={(item, index) => `${item.name}-${index}`}
+              onDragBegin={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
+              onDragEnd={({ data }) => handleReorderExercises(expandedDay, data)}
+              renderItem={({ item: exercise, getIndex, drag, isActive }: RenderItemParams<Exercise>) => {
+                const exIdx = getIndex() ?? 0;
+                return (
+                  <ScaleDecorator>
+                    <TouchableOpacity
+                      style={[styles.exerciseCard, isActive && styles.exerciseCardDragging]}
+                      onPress={() =>
+                        setExpandedExercise(
+                          expandedExercise === `${expandedDay}-${exIdx}` ? null : `${expandedDay}-${exIdx}`
+                        )
+                      }
+                      onLongPress={() => { drag(); }}
+                      delayLongPress={400}
+                    >
+                      <View style={styles.exerciseHeader}>
+                        {/* Drag handle */}
+                        <View style={styles.dragHandle}>
+                          <Ionicons name="reorder-three" size={18} color={colors.textSecondary} />
+                        </View>
+                        {/* Exercise Illustration Thumbnail */}
+                        {exercise.gif_url && (
+                          <Image
+                            source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
+                            style={styles.exerciseThumbnail}
+                            resizeMode="cover"
+                          />
+                        )}
+                        {!exercise.gif_url && (
+                          <View style={styles.exerciseNumber}>
+                            <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
+                          </View>
+                        )}
+                        <View style={styles.exerciseInfo}>
+                          <Text style={styles.exerciseName}>{exercise.name}</Text>
+                          <Text style={styles.exerciseMeta}>
+                            {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
+                          size={20}
+                          color={colors.textSecondary}
+                        />
+                      </View>
 
-                {expandedExercise === `${expandedDay}-${exIdx}` && (
+                      {expandedExercise === `${expandedDay}-${exIdx}` && (
                   <View style={styles.exerciseDetails}>
                     {exercise.gif_url && (
                       <View style={styles.gifContainer}>
@@ -809,7 +859,10 @@ export default function WorkoutDetail() {
                   </View>
                 )}
               </TouchableOpacity>
-            ))}
+            </ScaleDecorator>
+                );
+              }}
+            />
             
             {/* Add Exercise Button - at the end of exercise list */}
             <TouchableOpacity
@@ -821,7 +874,7 @@ export default function WorkoutDetail() {
             </TouchableOpacity>
           </View>
         )}
-      </ScrollView>
+      </NestableScrollContainer>
 
       {/* Rename Modal */}
       <Modal
@@ -1275,6 +1328,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
+  },
+  exerciseCardDragging: {
+    opacity: 0.95,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+  },
+  dragHandle: {
+    paddingRight: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   exerciseHeader: {
     flexDirection: 'row',

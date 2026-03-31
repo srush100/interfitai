@@ -630,8 +630,8 @@ CACHED_EXERCISE_GIFS = {
     "treadmill sprint": "3666",
     "treadmill sprints": "3666",
     "running": "3666",
-    "assault bike": "0003",            # FIXED: air bike (body weight, waist — correct movement)
-    "assault bike intervals": "0003",  # FIXED: was 2612 (jump rope/skipping)
+    "assault bike": "2331",            # cycle cross trainer
+    "assault bike intervals": "2331",  # cycle cross trainer
     # rowing machine — no match in ExerciseDB; intentionally unmapped so UI shows exercise without GIF
     
     # Machine exercises
@@ -2984,6 +2984,31 @@ async def delete_exercise(workout_id: str, request: DeleteExerciseRequest):
 class AddExerciseRequest(BaseModel):
     day_index: int
     exercise: dict  # Exercise object with name, sets, reps, etc.
+
+class ReorderExercisesRequest(BaseModel):
+    day_index: int
+    exercise_order: List[int]  # New order as list of original indices
+
+@api_router.patch("/workout/{workout_id}/reorder-exercises")
+async def reorder_exercises(workout_id: str, request: ReorderExercisesRequest):
+    """Reorder exercises within a workout day"""
+    workout = await db.workouts.find_one({"id": workout_id})
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    workout_days = workout.get("workout_days", [])
+    if request.day_index >= len(workout_days):
+        raise HTTPException(status_code=400, detail="Invalid day index")
+    exercises = workout_days[request.day_index].get("exercises", [])
+    if len(request.exercise_order) != len(exercises):
+        raise HTTPException(status_code=400, detail="Order length mismatch")
+    workout_days[request.day_index]["exercises"] = [exercises[i] for i in request.exercise_order]
+    await db.workouts.update_one(
+        {"id": workout_id},
+        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+    )
+    return {"message": "Exercises reordered successfully"}
+
+
 
 @api_router.post("/workout/{workout_id}/exercise")
 async def add_exercise(workout_id: str, request: AddExerciseRequest):
