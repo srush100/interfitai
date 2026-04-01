@@ -1014,9 +1014,35 @@ metadata:
           upper_lower is a valid choice. Optional: remove 'upper_lower': 1 from FOCUS_BIAS['full_body']
           to make PPL win in that case.
 
+  - task: "Full-Body Focus Emphasis in Upper/Lower Split"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          3 changes implemented:
+          1. FOCUS_AREA_PATTERNS['full_body'] now has actual patterns:
+             ['squat', 'hip_hinge', 'horizontal_push', 'vertical_pull', 'core_stability']
+             Previously was empty [] so full_body focus had NO volume boost or slot protection.
+          2. Rationale override in build_blueprint(): when full_body + upper_lower,
+             split_rationale explicitly explains coaching logic (recovery structure + cross-body stimulus).
+          3. Cross-body compound injection in every session:
+             - Upper sessions → squat (odd days) or hip_hinge (even days) as secondary_compound
+             - Lower sessions → horizontal_push (odd days) or horizontal_pull (even days) as secondary_compound
+             - Deduplication check prevents double-adding if 'extra primary focus slot' already covered it.
+          Local validation confirmed:
+          - All 5 sessions in 5-day program have both upper AND lower patterns ✅
+          - Chest focus (3-day) has ZERO cross-body slots (no regression) ✅
+          - 4-day full_body focus: all 4 sessions have upper+lower ✅
+
 test_plan:
   current_focus:
-    - "Weighted Split Selection System (focus area overhaul)"
+    - "Full-Body Focus Emphasis in Upper/Lower Split"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

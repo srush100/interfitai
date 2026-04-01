@@ -1,0 +1,53 @@
+{
+  "summary": "Backend-only testing for full_body focus cross-body compound injection feature. All 26 tests pass (19 blueprint-level deterministic + 7 API smoke). Key findings: cross-body injection is working correctly, with a subtle interaction where Day 1 (upper_push_heavy) receives the squat pattern via the PRIMARY FOCUS injection path (full_body's FOCUS_AREA_PATTERNS includes squat) rather than the cross-body injection path — the guard prevents duplicate injection. The functional outcome is identical: every upper session has a lower-body compound and every lower session has an upper-body compound.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "build_blueprint (internal)",
+        "issue": "For full_body + upper_lower, the first upper session (upper_push_heavy, i=0) gets 'squat' injected via the PRIMARY FOCUS injection (lines 2178-2183) before the cross-body injection runs. The cross-body injection guard ('squat not in slot_specs') then skips Day 1. Functionally correct (squat IS present) but the coaching_note says 'primary focus — extra squat volume' instead of 'cross-pattern'. This is a cosmetic/logging difference, not a bug."
+      }
+    ]
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+
+  "test_report_links": [
+    "/app/backend/tests/test_full_body_cross_compound.py",
+    "/app/test_reports/pytest/test_full_body_cross_compound.xml"
+  ],
+
+  "action_items": [
+    "OPTIONAL (cosmetic): For Day 1 upper_push_heavy with full_body focus, the cross-body lower compound (squat) gets its note set as 'primary focus — extra squat volume' because primary-focus injection runs before cross-body injection. If the coaching note should always say 'cross-pattern' for cross-body injected slots, consider adding a dedicated override or reordering the injection logic. Not a functional issue."
+  ],
+
+  "critical_code_review_comments": [
+    "Cross-body injection guard at line 2287 correctly prevents duplicate slots, but a side effect is that sessions where primary-focus injection adds the same pattern (e.g. squat for full_body focus) will show the pattern with a 'primary focus' coaching note instead of 'cross-pattern'. This is cosmetic-only — the slot IS present with correct sets/reps.",
+    "FOCUS_AREA_PATTERNS['full_body'] now correctly populated with ['squat', 'hip_hinge', 'horizontal_push', 'vertical_pull', 'core_stability'] — no longer empty as it was before the fix.",
+    "is_full_body_ul flag correctly scoped to (primary_focus_key == 'full_body' and split_id == 'upper_lower'), ensuring legs/chest/arms focus areas never trigger cross-body injection even when upper_lower split is chosen."
+  ],
+
+  "updated_files": [
+    "/app/backend/tests/test_full_body_cross_compound.py"
+  ],
+
+  "success_rate": {
+    "backend": "100% (26/26 tests passed)",
+    "frontend": "N/A (not tested)"
+  },
+
+  "seed_data_creation": "No seed data created. Used existing test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
+
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_full_body_cross_compound.py covers: 1) full_body+5days blueprint selects upper_lower, 2) full_body+4days blueprint selects upper_lower, 3) every upper session has a lower-body pattern, 4) every lower session has an upper-body pattern, 5) cross-pattern coaching notes present, 6) split_rationale mentions cross-body/whole-body language, 7) chest+3days selects PPL with zero cross-body injection, 8) legs+4days selects upper_lower with zero cross-body injection, 9) API smoke test 200 OK with 5 workout_days / sets>=2 / gif_url / split_rationale. All 26 pass in ~33s.",
+
+  "rca_of_issue": "SUBTLE INTERACTION FOUND (not a bug): For full_body focus, FOCUS_AREA_PATTERNS['full_body'] includes 'squat'. For the first upper session (upper_push_heavy, i=0), the primary-focus injection at lines 2178-2183 inserts ('squat', 'accessory', 'primary focus — extra squat volume') because horizontal_push is the only primary pattern already present (count=1 < 2). When cross-body injection runs next (line 2287), the guard `if cb_pattern not in {s['pattern'] for s in slot_specs}` evaluates to False (squat already added) and skips injection. Result: Day 1 upper session has squat but with 'primary focus' note, not 'cross-pattern' note. 4 of 5 sessions show explicit 'cross-pattern' notes. This is intended behavior — the squat IS present, just via a different injection path."
+}

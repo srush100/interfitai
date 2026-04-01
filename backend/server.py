@@ -1746,7 +1746,7 @@ class EliteCoachingEngine:
         "core":         ["core_stability", "core_flexion", "carry"],
         "upper_body":   ["horizontal_push", "vertical_pull", "horizontal_pull", "vertical_push"],
         "lower_body":   ["squat", "hip_hinge", "glute", "lunge", "hamstring_curl"],
-        "full_body":    [],
+        "full_body":    ["squat", "hip_hinge", "horizontal_push", "vertical_pull", "core_stability"],
         "conditioning": ["conditioning", "explosive"],
         "power":        ["explosive", "squat", "hip_hinge"],
         "endurance":    ["conditioning"],
@@ -2103,6 +2103,23 @@ class EliteCoachingEngine:
                 self.FOCUS_AREA_PATTERNS.get(sf.lower().replace(' ', '_'), [])
             )
 
+        # ── Full-body focus: rationale override when paired with upper/lower ──
+        # Upper/Lower is the best recovery structure for full-body goals.
+        # But every session must include a cross-body compound so users FEEL
+        # the full-body emphasis — upper days get a lower lift, lower days get
+        # an upper lift. The rationale text makes this coaching logic explicit.
+        is_full_body_ul = (primary_focus_key == 'full_body' and split_id == 'upper_lower')
+        if is_full_body_ul:
+            split_rationale = (
+                f"Upper / Lower is the coaching choice for your full-body training goal — "
+                f"it gives every major movement pattern dedicated attention with clear structural "
+                f"separation and optimal recovery between sessions. To preserve full-body stimulus, "
+                f"every session is programmed with a cross-body compound: upper days include a key "
+                f"lower body lift (squat or hinge), lower days include a key upper body press or pull. "
+                f"Over the week, every major pattern — squat, hinge, push, pull, and core — is "
+                f"trained at least twice. The split is Upper / Lower; the emphasis is unmistakably full body."
+            )
+
         for i, session_type in enumerate(session_types):
             archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
             # Start with all slots (base + optional), trim later by budget
@@ -2250,6 +2267,40 @@ class EliteCoachingEngine:
             }
             slot_specs = [s for s in slot_specs if s['sets'] >= MIN_SETS_FLOOR.get(s['type'], 2)]
             total_sets_allocated = sum(s['sets'] for s in slot_specs)
+
+            # ── Full-body focus: cross-body compound injection ────────────────
+            # When full_body is primary focus with upper/lower split, each session
+            # must contain a cross-body compound so users feel the full-body emphasis:
+            # • Upper sessions → add a lower compound (squat or hip hinge)
+            # • Lower sessions → add an upper compound (horizontal push or pull)
+            # Pattern IS in primary_patterns so it naturally gets the +2 set boost below.
+            if is_full_body_ul:
+                is_upper = session_type.startswith('upper_')
+                is_lower = session_type.startswith('lower_')
+                cb_pattern = None
+                if is_upper:
+                    cb_pattern = 'squat' if i % 2 == 0 else 'hip_hinge'
+                    cb_note = 'full-body emphasis — lower compound cross-pattern (whole-body weekly stimulus)'
+                elif is_lower:
+                    cb_pattern = 'horizontal_push' if i % 2 == 0 else 'horizontal_pull'
+                    cb_note = 'full-body emphasis — upper compound cross-pattern (whole-body weekly stimulus)'
+                if cb_pattern and cb_pattern not in {s['pattern'] for s in slot_specs}:
+                    cb_base = goal_params.get('secondary_compound', goal_params.get('accessory', {}))
+                    cb_opts = self.get_exercise_options(cb_pattern, equipment, style, limitations, level)
+                    cb_sets = max(2, min(cb_base.get('sets', 3), 3))
+                    if cb_opts:
+                        slot_specs.append({
+                            "pattern":       cb_pattern,
+                            "type":          "secondary_compound",
+                            "coaching_note": cb_note,
+                            "sets":          cb_sets,
+                            "reps":          cb_base.get('reps', '8-12'),
+                            "rest_seconds":  cb_base.get('rest', 90),
+                            "effort":        cb_base.get('effort', 'RPE 7'),
+                            "options":       cb_opts,
+                            "excluded":      list(excluded_exercises),
+                        })
+                        total_sets_allocated += cb_sets
 
             # ── Primary focus volume boost: +2 sets (structural modifier) ────
             # Secondary focus: +1 set (moderate visible refinement).
