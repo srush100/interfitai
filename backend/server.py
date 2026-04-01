@@ -2123,7 +2123,15 @@ class EliteCoachingEngine:
         for i, session_type in enumerate(session_types):
             archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
             # Start with all slots (base + optional), trim later by budget
-            slots = list(archetype['slots']) + list(archetype.get('optional_slots', []))
+            # Deduplicate optional slots: skip any optional that shares a pattern
+            # with a regular slot (e.g. prevents duplicate bicep_curl in upper_pull_heavy
+            # when the archetype has both a barbell curl and an optional hammer curl).
+            regular_patterns = {s[0] for s in archetype['slots']}
+            optional_deduped = [
+                s for s in archetype.get('optional_slots', [])
+                if s[0] not in regular_patterns
+            ]
+            slots = list(archetype['slots']) + optional_deduped
 
             # ── Determine duration bucket ────────────────────────────────────
             dur = req.duration_minutes
@@ -2173,14 +2181,22 @@ class EliteCoachingEngine:
             slots.sort(key=_slot_importance)
             slots = slots[:max_ex]
 
-            # ── Inject one extra primary focus slot if budget allows ──────────
-            # Ensure primary focus has ≥ 2 slots per session when budget permits.
+            # ── Inject missing primary focus slots if budget allows ───────────
+            # Ensures every primary focus pattern has ≥ 1 slot per session.
+            # For multi-pattern focuses (arms = bicep_curl + tricep_push),
+            # inject ALL missing patterns, not just one.
+            # For full_body focus, cap at 1 cross-body injection per session
+            # so the session identity (Push/Pull/Quad/Hip) is preserved.
             focus_slot_count = sum(1 for p, _, _ in slots if p in primary_patterns)
-            if primary_patterns and focus_slot_count < 2 and len(slots) < max_ex:
+            if primary_patterns and focus_slot_count < len(primary_patterns) and len(slots) < max_ex:
+                max_inject = 1 if primary_focus_key == 'full_body' else min(2, len(primary_patterns))
+                injected = 0
                 for fp in primary_patterns:
-                    if fp not in [s[0] for s in slots]:
-                        slots.append((fp, 'accessory', f'primary focus — extra {fp.replace("_"," ")} volume'))
+                    if injected >= max_inject or len(slots) >= max_ex:
                         break
+                    if fp not in [s[0] for s in slots]:
+                        slots.append((fp, 'accessory', f'primary focus — {fp.replace("_", " ")} direct volume'))
+                        injected += 1
 
             # ── Build slot specs with budget-aware set allocation ────────────
             excluded_exercises = set()
@@ -2268,40 +2284,6 @@ class EliteCoachingEngine:
             slot_specs = [s for s in slot_specs if s['sets'] >= MIN_SETS_FLOOR.get(s['type'], 2)]
             total_sets_allocated = sum(s['sets'] for s in slot_specs)
 
-            # ── Full-body focus: cross-body compound injection ────────────────
-            # When full_body is primary focus with upper/lower split, each session
-            # must contain a cross-body compound so users feel the full-body emphasis:
-            # • Upper sessions → add a lower compound (squat or hip hinge)
-            # • Lower sessions → add an upper compound (horizontal push or pull)
-            # Pattern IS in primary_patterns so it naturally gets the +2 set boost below.
-            if is_full_body_ul:
-                is_upper = session_type.startswith('upper_')
-                is_lower = session_type.startswith('lower_')
-                cb_pattern = None
-                if is_upper:
-                    cb_pattern = 'squat' if i % 2 == 0 else 'hip_hinge'
-                    cb_note = 'full-body emphasis — lower compound cross-pattern (whole-body weekly stimulus)'
-                elif is_lower:
-                    cb_pattern = 'horizontal_push' if i % 2 == 0 else 'horizontal_pull'
-                    cb_note = 'full-body emphasis — upper compound cross-pattern (whole-body weekly stimulus)'
-                if cb_pattern and cb_pattern not in {s['pattern'] for s in slot_specs}:
-                    cb_base = goal_params.get('secondary_compound', goal_params.get('accessory', {}))
-                    cb_opts = self.get_exercise_options(cb_pattern, equipment, style, limitations, level)
-                    cb_sets = max(2, min(cb_base.get('sets', 3), 3))
-                    if cb_opts:
-                        slot_specs.append({
-                            "pattern":       cb_pattern,
-                            "type":          "secondary_compound",
-                            "coaching_note": cb_note,
-                            "sets":          cb_sets,
-                            "reps":          cb_base.get('reps', '8-12'),
-                            "rest_seconds":  cb_base.get('rest', 90),
-                            "effort":        cb_base.get('effort', 'RPE 7'),
-                            "options":       cb_opts,
-                            "excluded":      list(excluded_exercises),
-                        })
-                        total_sets_allocated += cb_sets
-
             # ── Primary focus volume boost: +2 sets (structural modifier) ────
             # Secondary focus: +1 set (moderate visible refinement).
             # Both are capped to avoid bloating sessions.
@@ -2321,20 +2303,24 @@ class EliteCoachingEngine:
                         slot['sets'] = boosted
                         slot['coaching_note'] += ' [secondary emphasis]'
 
-            # ── Secondary focus: inject one extra accessory slot ─────────────
+            # ── Secondary focus: inject missing accessory slots ───────────────
             # Adds direct volume for secondary muscles if session budget allows.
+            # For multi-pattern secondary focuses (arms = bicep_curl + tricep_push),
+            # inject ALL missing patterns — not just the first one found.
             if secondary_patterns and total_sets_allocated < max_sets + focus_boost_headroom - 1:
                 already_covered = {s['pattern'] for s in slot_specs}
                 for sf_pattern in secondary_patterns:
                     if sf_pattern not in already_covered:
+                        if total_sets_allocated >= max_sets + focus_boost_headroom - 1:
+                            break
                         sec_base = goal_params.get('accessory', {})
                         sec_opts = self.get_exercise_options(sf_pattern, equipment, style, limitations, level)
-                        extra_sets = min(2, max_sets + focus_boost_headroom - total_sets_allocated)
+                        extra_sets = min(3, max_sets + focus_boost_headroom - total_sets_allocated)
                         if extra_sets >= 2 and sec_opts:
                             slot_specs.append({
                                 "pattern":       sf_pattern,
                                 "type":          "accessory",
-                                "coaching_note": f"secondary emphasis — extra direct {secondary[0] if secondary else sf_pattern} volume [secondary emphasis]",
+                                "coaching_note": f"secondary emphasis — direct {sf_pattern.replace('_', ' ')} volume [{secondary[0] if secondary else sf_pattern} focus]",
                                 "sets":          extra_sets,
                                 "reps":          sec_base.get('reps', '10-15'),
                                 "rest_seconds":  60,
@@ -2343,7 +2329,6 @@ class EliteCoachingEngine:
                                 "excluded":      list(excluded_exercises),
                             })
                             total_sets_allocated += extra_sets
-                        break
 
             # ── Superset pairing for time-constrained sessions ───────────────
             # When session ≤ 45 min AND secondary focus is active, pair secondary
@@ -2393,13 +2378,124 @@ class EliteCoachingEngine:
                     "excluded":      [],
                 })
 
+            # ── Label consistency validation ───────────────────────────────────
+            # If a session archetype labelled "Upper" picks up lower-body compounds
+            # (e.g. squat via full_body FOCUS_AREA_PATTERNS), or vice-versa, update
+            # the day label so users never see a mismatch.
+            # Only COMPOUND mismatches trigger relabelling — arm isolation
+            # (bicep_curl, tricep_push) added to a leg day is normal and expected.
+            LOWER_COMPOUNDS = {'squat', 'hip_hinge', 'lunge'}
+            UPPER_COMPOUNDS = {'horizontal_push', 'incline_push', 'vertical_push',
+                               'vertical_pull', 'horizontal_pull'}
+            day_patterns = {s['pattern'] for s in slot_specs}
+            has_lower_compound = bool(day_patterns & LOWER_COMPOUNDS)
+            has_upper_compound = bool(day_patterns & UPPER_COMPOUNDS)
+            day_label = archetype['label']
+            day_focus = archetype['focus']
+            if session_type.startswith('upper_') and has_lower_compound:
+                # Upper session picked up a lower compound — relabel
+                if 'push' in session_type:
+                    day_label = 'Full Body — Push-Led'
+                    day_focus = archetype['focus'] + ', Lower Compound Cross-Pattern'
+                elif 'pull' in session_type:
+                    day_label = 'Full Body — Pull-Led'
+                    day_focus = archetype['focus'] + ', Lower Compound Cross-Pattern'
+                else:
+                    day_label = 'Full Body — Upper-Led'
+                    day_focus = archetype['focus'] + ', Lower Compound Cross-Pattern'
+            elif session_type.startswith('lower_') and has_upper_compound:
+                # Lower session picked up an upper compound — relabel
+                if 'quad' in session_type:
+                    day_label = 'Full Body — Quad-Led'
+                    day_focus = archetype['focus'] + ', Upper Compound Cross-Pattern'
+                elif 'hip' in session_type:
+                    day_label = 'Full Body — Hip-Led'
+                    day_focus = archetype['focus'] + ', Upper Compound Cross-Pattern'
+                else:
+                    day_label = 'Full Body — Lower-Led'
+                    day_focus = archetype['focus'] + ', Upper Compound Cross-Pattern'
+
             day_blueprints.append({
                 "session_number": i + 1,
                 "archetype_id":   session_type,
-                "label":          archetype['label'],
-                "focus":          archetype['focus'],
+                "label":          day_label,
+                "focus":          day_focus,
                 "slots":          slot_specs,
             })
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # PYTHON VALIDATION GATE — runs after ALL days are built
+        # Ensures minimum direct focus-area volume is present across the week.
+        # Applies to ISOLATION-type focus patterns only (bicep_curl, tricep_push,
+        # lateral_raise, rear_delt, etc.) — compound movements (squat, hip_hinge,
+        # horizontal_push) are structurally covered by the split design and do NOT
+        # need per-week set minimums enforced here.
+        # Also checks secondary focus patterns with a slightly lower minimum.
+        # ═══════════════════════════════════════════════════════════════════════
+        # Patterns that ARE isolation/accessory type and need weekly volume enforcement
+        ISOLATION_VALIDATE = {
+            'bicep_curl', 'tricep_push', 'lateral_raise', 'rear_delt',
+            'face_pull', 'calf', 'knee_extension', 'chest_fly',
+            'core_stability', 'core_flexion', 'hamstring_curl',
+        }
+
+        # Minimum weekly sets per isolation focus pattern by level
+        MIN_WEEKLY_SETS = {'beginner': 6, 'intermediate': 9, 'advanced': 12}
+        min_weekly_primary   = MIN_WEEKLY_SETS.get(level, 9)
+        min_weekly_secondary = max(6, min_weekly_primary - 3)  # slightly lower for secondary
+
+        # Build the list of patterns + minimums to validate
+        patterns_to_validate = []
+        if primary_patterns:
+            patterns_to_validate += [
+                (p, min_weekly_primary)
+                for p in primary_patterns
+                if p in ISOLATION_VALIDATE
+            ]
+        if secondary_patterns:
+            patterns_to_validate += [
+                (p, min_weekly_secondary)
+                for p in secondary_patterns
+                if p in ISOLATION_VALIDATE
+                and p not in {pp for pp, _ in patterns_to_validate}  # don't double-count
+            ]
+
+        for pat, min_sets in patterns_to_validate:
+            weekly_sets = sum(
+                s['sets'] for d in day_blueprints
+                for s in d['slots'] if s['pattern'] == pat
+            )
+            if weekly_sets < min_sets:
+                # Strategy 1 (preferred): Fresh injection into a session WITHOUT this pattern.
+                # Fresh is better — adds exercise variety and distributes volume across the week.
+                inject_fresh_day = None
+                for d in day_blueprints:
+                    if not any(s['pattern'] == pat for s in d['slots']):
+                        inject_fresh_day = d
+                        break
+                if inject_fresh_day:
+                    inj_opts = self.get_exercise_options(pat, equipment, style, limitations, level)
+                    inj_base = goal_params.get('accessory', {})
+                    if inj_opts:
+                        inject_fresh_day['slots'].append({
+                            "pattern":       pat,
+                            "type":          "accessory",
+                            "coaching_note": f'volume gate — {pat.replace("_", " ")} direct work (weekly minimum enforcement)',
+                            "sets":          max(3, inj_base.get('sets', 3)),
+                            "reps":          inj_base.get('reps', '10-15'),
+                            "rest_seconds":  inj_base.get('rest', 60),
+                            "effort":        inj_base.get('effort', 'RPE 7'),
+                            "options":       inj_opts,
+                            "excluded":      [],
+                        })
+                else:
+                    # Strategy 2 (fallback): Topup an existing slot (cap at 6 sets max).
+                    for d in day_blueprints:
+                        existing = [s for s in d['slots'] if s['pattern'] == pat and s['sets'] < 6]
+                        if existing:
+                            existing[0]['sets'] = min(existing[0]['sets'] + 2, 6)
+                            existing[0]['coaching_note'] += f' [volume gate: {pat.replace("_", " ")} below weekly min, sets increased]'
+                            break
 
         return {
             "split_id":          split_id,
