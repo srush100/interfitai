@@ -1014,9 +1014,31 @@ metadata:
           upper_lower is a valid choice. Optional: remove 'upper_lower': 1 from FOCUS_BIAS['full_body']
           to make PPL win in that case.
 
-  - task: "Full-Body Focus Emphasis in Upper/Lower Split"
+  - task: "Full-Body + Arms Focus Tightening (Label Consistency, Arms Volume, Volume Gate)"
     implemented: true
     working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ 31/31 TESTS PASSED (test_elite_coaching_fixes.py):
+          1. Label consistency: upper sessions with squat → 'Full Body — Push-Led' ✅
+          2. Label consistency: lower sessions with horizontal_push → 'Full Body — Quad-Led' ✅
+          3. Chest focus (3-day): ZERO label changes (no regression) ✅
+          4. Legs focus: lower sessions keep labels, upper sessions correctly relabeled when squat injected ✅
+          5. full_body + arms (5-day advanced): weekly bicep = 10s, tricep = 9s (both >= 9 minimum) ✅
+          6. arms primary (4-day intermediate): bicep=13s, tricep=10s ✅
+          7. API smoke test: 200 OK, 5 days, gif_url present, sets >= 2 ✅
+          KEY FIXES:
+          - Optional slots deduplicated (no more double bicep_curl in upper_pull_heavy)
+          - Secondary injection now covers ALL missing patterns (bicep_curl + tricep_push both injected)
+          - Volume gate: isolation-only, covers secondary_patterns with min_weekly_secondary = max(6, primary-3)
+          - Volume gate strategy: fresh injection first, topup fallback
+          - Label relabeler: only compound mismatches trigger rename (not isolations like bicep_curl on leg day)
     file: "backend/server.py"
     stuck_count: 0
     priority: "high"
