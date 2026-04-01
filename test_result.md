@@ -1016,11 +1016,11 @@ metadata:
 
   - task: "Full-Body Focus Emphasis in Upper/Lower Split"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -1035,10 +1035,18 @@ metadata:
              - Upper sessions → squat (odd days) or hip_hinge (even days) as secondary_compound
              - Lower sessions → horizontal_push (odd days) or horizontal_pull (even days) as secondary_compound
              - Deduplication check prevents double-adding if 'extra primary focus slot' already covered it.
-          Local validation confirmed:
-          - All 5 sessions in 5-day program have both upper AND lower patterns ✅
-          - Chest focus (3-day) has ZERO cross-body slots (no regression) ✅
-          - 4-day full_body focus: all 4 sessions have upper+lower ✅
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ 26/26 TESTS PASSED (test_full_body_cross_compound.py):
+          1. full_body + 5 days → Upper/Lower with cross-body in ALL 5 sessions ✅
+          2. full_body + 4 days → Upper/Lower with cross-body in ALL 4 sessions ✅
+          3. split_rationale mentions 'cross-body compound' and 'full-body stimulus' ✅
+          4. chest focus 3-day → PPL with ZERO cross-body (regression check) ✅
+          5. legs focus 4-day → Upper/Lower with ZERO cross-body (regression check) ✅
+          6. Smoke test: 200 OK, 5 days, sets>=2, gif_url present ✅
+          MINOR: Day 1 upper_push_heavy shows squat via PRIMARY FOCUS injection (not 'cross-pattern' note)
+          since FOCUS_AREA_PATTERNS['full_body'] now includes squat. Functionally correct — squat IS there.
 
 test_plan:
   current_focus:
