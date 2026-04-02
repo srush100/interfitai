@@ -523,9 +523,10 @@ export default function WorkoutDetail() {
     <>
       <View style={styles.exerciseHeader}>
         {drag ? (
-          // Native: explicit grab handle — touch it to start dragging
+          // Native: hold the handle briefly to start dragging (150ms — intentional but quick)
           <Pressable
-            onPressIn={drag}
+            onLongPress={drag}
+            delayLongPress={150}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.dragHandle}
           >
