@@ -2334,17 +2334,20 @@ class EliteCoachingEngine:
                     secondary_iso[idx]['superset_note'] = 'A'
                     secondary_iso[idx + 1]['superset_note'] = 'B'
 
-            # Reorder: primary_compound → primary focus → secondary → accessories → conditioning last
+            # Reorder slots: primary compounds first → secondary compounds → focus accessories
+            # → other accessories → ARM ISOLATION LAST → CORE LAST → conditioning finisher
+            # This gives clean coach-built session flow: big lifts first, finish with arms/core.
+            ARM_ISO  = {'bicep_curl', 'tricep_push'}
+            CORE_PAT = {'core_stability', 'core_flexion', 'carry'}
             def _slot_priority(s: dict) -> int:
-                if s['type'] == 'conditioning':
-                    return 99
-                if s['type'] == 'primary_compound':
-                    return 0
-                if s['pattern'] in primary_patterns:
-                    return 1
-                if s['pattern'] in secondary_patterns:
-                    return 2
-                return 3
+                if s['type'] == 'conditioning':            return 99  # always last
+                if s['pattern'] in CORE_PAT:               return 6   # core just before conditioning
+                if s['pattern'] in ARM_ISO:                return 5   # arm isolation before core
+                if s['type'] == 'primary_compound':        return 0   # heavy main lifts first
+                if s['type'] == 'secondary_compound':      return 1   # secondary heavy movements
+                if s['pattern'] in primary_patterns:       return 2   # primary focus accessories
+                if s['pattern'] in secondary_patterns:     return 3   # secondary focus accessories
+                return 4                                              # other accessories / isolation
             slot_specs.sort(key=_slot_priority)
 
             # ── Conditioning finisher injection ───────────────────────────────

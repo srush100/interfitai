@@ -1,0 +1,54 @@
+{
+  "summary": "Tested 3 workout-detail changes: (1) exercise ordering via _slot_priority, (2) drag-handle-only trigger, (3) 'How Hard to Train' removed. All 11 backend tests passed, all frontend UI checks passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "workout-detail.tsx",
+        "issue": "No data-testid attributes on any exercise cards, drag handles, or coaching rows — automated selection relies entirely on text/screenshot inspection. Not a functional bug but makes future regression testing difficult."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_exercise_ordering_v16.py",
+    "/app/test_reports/pytest/exercise_ordering_v16.xml"
+  ],
+  "action_items": [
+    "Consider adding testID attributes to exercise cards (e.g. testID='exercise-card-0'), drag handles (testID='drag-handle-0'), and coaching rows (testID='coaching-why-this-split', 'coaching-progression', 'coaching-weekly-blueprint') for future automated testing."
+  ],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_exercise_ordering_v16.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 tests passed)",
+    "frontend": "100% — all 5 UI checks passed"
+  },
+  "seed_data_creation": "Generated workout via API: id=b628ad1c-5c2e-458e-9718-eca3cdaeed34, user_id=cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 3 iteration-16 changes confirmed working. Exercise ordering: _slot_priority returns primary_compound=0, secondary_compound=1, accessories=2-4, ARM_ISO(bicep_curl/tricep_push)=5, CORE_PAT(core_stability/core_flexion/carry)=6, conditioning=99 — verified via unit tests on EliteCoachingEngine.build_blueprint() and via live API. Drag handle renders as View (decorative) on web, Pressable with onPressIn={drag} on native — visible as three-line icon on left of each card. Card tap (not handle) expands to show INSTRUCTIONS/EQUIPMENT/MUSCLES — verified. 'How Hard to Train' section confirmed absent from coaching breakdown. Coaching breakdown correctly shows WHY THIS SPLIT, PROGRESSION METHOD, DELOAD PROTOCOL, WEEKLY BLUEPRINT.",
+  "verified_changes": {
+    "exercise_ordering": {
+      "verified": true,
+      "sample_day1_order": ["Barbell Bench Press (primary_compound)", "Incline Dumbbell Press (secondary_compound)", "Barbell Overhead Press (secondary_compound)", "Cable Lateral Raise (accessory)", "Cable Tricep Pushdown (ARM_ISO - last weighted)"],
+      "unit_tests_passed": 6,
+      "api_tests_passed": 3
+    },
+    "drag_handle_only_trigger": {
+      "verified": true,
+      "note": "Three-line drag handle icon visible on left of every exercise card. Card tap (center/right) expands card correctly. On web, handle is View (decorative) — drag is native-only."
+    },
+    "how_hard_to_train_removed": {
+      "verified": true,
+      "coaching_breakdown_present": ["WHY THIS SPLIT", "PROGRESSION METHOD", "DELOAD PROTOCOL", "WEEKLY BLUEPRINT"],
+      "how_hard_to_train_absent": true
+    }
+  }
+}

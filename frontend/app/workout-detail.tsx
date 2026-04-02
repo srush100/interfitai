@@ -517,12 +517,25 @@ export default function WorkoutDetail() {
   }
 
   // Renders the inner content of each exercise card (shared by drag list and web fallback)
-  const renderExerciseInner = (exercise: Exercise, exIdx: number) => (
+  // drag: when provided (native), touching the handle icon immediately starts the drag.
+  const renderExerciseInner = (exercise: Exercise, exIdx: number, drag?: () => void) => (
     <>
       <View style={styles.exerciseHeader}>
-        <View style={styles.dragHandle}>
-          <Ionicons name="reorder-three" size={20} color={colors.textSecondary} />
-        </View>
+        {drag ? (
+          // Native: explicit grab handle — touch it to start dragging
+          <Pressable
+            onPressIn={drag}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.dragHandle}
+          >
+            <Ionicons name="reorder-three" size={22} color={colors.textSecondary} />
+          </Pressable>
+        ) : (
+          // Web fallback: decorative indicator (no drag on web)
+          <View style={styles.dragHandle}>
+            <Ionicons name="reorder-three" size={22} color={colors.textMuted} />
+          </View>
+        )}
         {exercise.gif_url ? (
           <Image
             source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
@@ -736,18 +749,7 @@ export default function WorkoutDetail() {
               </View>
             )}
 
-            {/* Effort guideline — plain-English, no jargon */}
-            <View style={styles.coachingRow}>
-              <View style={styles.coachingIcon}>
-                <Ionicons name="flame" size={16} color={colors.primary} />
-              </View>
-              <View style={styles.coachingContent}>
-                <Text style={styles.coachingLabel}>How Hard to Train</Text>
-                <Text style={styles.coachingValue}>
-                  Each set should feel genuinely challenging. Finish with 1–3 reps still in you — not easy, not total failure. When a weight stops feeling hard, add a little more next session.
-                </Text>
-              </View>
-            </View>
+            {/* Effort guideline removed per product philosophy — keep it simple */}
 
             {workout.progression_method && (
               <View style={styles.coachingRow}>
@@ -840,9 +842,8 @@ export default function WorkoutDetail() {
                             expandedExercise === `${expandedDay}-${exIdx}` ? null : `${expandedDay}-${exIdx}`
                           )
                         }
-                        onLongPress={drag}
-                        delayLongPress={400}
-                      >{renderExerciseInner(exercise, exIdx)}</TouchableOpacity>
+                        activeOpacity={0.85}
+                      >{renderExerciseInner(exercise, exIdx, drag)}</TouchableOpacity>
                     </ScaleDecorator>
                   );
                 }}
