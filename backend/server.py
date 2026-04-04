@@ -2532,6 +2532,45 @@ class EliteCoachingEngine:
                 clean_slots.append(slot)
             d['slots'] = clean_slots
 
+        # ═══════════════════════════════════════════════════════════════════════
+        # TIME-ESTIMATION VALIDATION — trim sessions that exceed the target duration.
+        # Estimates: ~40s per working set (work + transitions) + rest between sets.
+        # Conditioning finishers estimated at 10 min. Warm-up: 5 min overhead.
+        # If estimated time exceeds target by >15%, trim lowest-priority slots.
+        # ═══════════════════════════════════════════════════════════════════════
+        target_minutes = req.duration_minutes
+        WORK_PER_SET_SEC = 40  # avg set execution + transition time
+        WARMUP_SEC = 300       # 5 min warm-up overhead
+        COND_FINISHER_SEC = 600  # 10 min conditioning finisher estimate
+
+        for d in day_blueprints:
+            slots = d['slots']
+            est_sec = WARMUP_SEC
+            for slot in slots:
+                if slot['type'] == 'conditioning':
+                    est_sec += COND_FINISHER_SEC
+                else:
+                    est_sec += slot['sets'] * (WORK_PER_SET_SEC + slot['rest_seconds'])
+            est_minutes = est_sec / 60.0
+            overflow_threshold = target_minutes * 1.15
+            while est_minutes > overflow_threshold and len(slots) > 3:
+                removable = [
+                    (idx, s) for idx, s in enumerate(slots)
+                    if s['type'] not in ('primary_compound', 'conditioning')
+                ]
+                if not removable:
+                    break
+                remove_idx = removable[-1][0]
+                removed = slots.pop(remove_idx)
+                est_sec = WARMUP_SEC
+                for slot in slots:
+                    if slot['type'] == 'conditioning':
+                        est_sec += COND_FINISHER_SEC
+                    else:
+                        est_sec += slot['sets'] * (WORK_PER_SET_SEC + slot['rest_seconds'])
+                est_minutes = est_sec / 60.0
+            d['slots'] = slots
+
         return {
             "split_id":          split_id,
             "split_name":        split_name,
