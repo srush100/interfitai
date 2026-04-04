@@ -652,6 +652,90 @@ CACHED_EXERCISE_GIFS = {
     "farmer's walk": "2133",           # ADDED
     "farmers walk": "2133",            # ADDED
     "suitcase carry": "2133",          # ADDED: farmers walk as closest
+
+    # ── Additional PATTERNS coverage ────────────────────────────────
+    # Bodyweight / Calisthenics
+    "archer push up": "3011",
+    "pike push up": "1307",
+    "decline push up": "0293",
+    "australian pull up": "3293",
+    "inverted row": "3293",
+    "nordic hamstring curl": "1766",
+    "pistol squat (assisted)": "3661",
+    "pistol squat": "3661",
+    "sissy squat": "3667",
+    "plyo push up": "3011",
+    "bodyweight squat": "3669",
+    "bodyweight calf raise": "0304",
+    "single leg calf raise": "0304",
+    "lateral lunge": "0291",
+    "swiss ball leg curl": "2403",
+    "supinated row": "3293",
+    "handstand push up (wall assisted)": "1307",
+
+    # Cable exercises
+    "cable pull through": "0175",
+    "cable hip extension": "0175",
+    "cable wood chop": "0217",
+    "cable rear delt fly": "0203",
+    "cable leg curl": "0170",
+    "high to low cable fly": "0150",
+    "single arm cable row": "0873",
+    "single arm lat pulldown": "0175",
+    "ab pulldown": "0007",
+
+    # Machine exercises
+    "machine row": "0872",
+    "machine preacher curl": "0579",
+    "machine incline press": "0583",
+    "face pull machine": "0203",
+    "reverse pec deck": "0620",
+    "assisted pull up machine": "0017",
+
+    # Dumbbell exercises
+    "dumbbell incline press": "0314",
+    "dumbbell romanian deadlift": "0339",
+    "dumbbell front squat": "0336",
+    "dumbbell rear delt fly": "0329",
+    "dumbbell calf raise": "0304",
+    "dumbbell leg curl": "0331",
+    "dumbbell pullover": "0334",
+    "overhead dumbbell extension": "0340",
+    "chest supported row": "0310",
+    "bent over rear delt raise": "0329",
+
+    # Barbell exercises
+    "incline barbell press": "0047",
+    "barbell bulgarian split squat": "3214",
+    "barbell calf raise": "0032",
+    "pause squat": "0043",
+    "pendlay row": "3017",
+    "push press": "0055",
+    "trap bar farmer's carry": "2133",
+
+    # Kettlebell exercises
+    "kettlebell floor press": "1205",
+    "kettlebell press": "0541",
+    "kettlebell row": "0545",
+    "kettlebell lunge": "0542",
+    "kettlebell step up": "0546",
+    "kettlebell romanian deadlift": "1455",
+    "kettlebell farmer's carry": "2133",
+    "kettlebell farmers carry": "2133",
+    "kettlebell overhead carry": "2133",
+
+    # Stability / Core
+    "pallof press": "3697",
+    "plank walk": "1686",
+    "spanish squat": "3667",
+    "terminal knee extension": "3667",
+
+    # Conditioning
+    "medicine ball slam": "1306",
+    "burpee intervals": "1160",
+    "rowing machine intervals": "3671",
+    "kettlebell swing intervals": "0548",
+    "mountain climbers emom": "0658",
 }
 
 # Cache for exercise GIFs to avoid repeated API calls
@@ -1532,6 +1616,8 @@ class EliteCoachingEngine:
             2: ["full_body_heavy", "full_body_moderate"],
             3: ["full_body_heavy", "full_body_moderate", "full_body_light"],
             4: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy"],
+            5: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy", "full_body_moderate"],
+            6: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy", "full_body_moderate", "full_body_light"],
         },
         "upper_lower": {
             2: ["upper_full", "lower_full"],
@@ -1542,7 +1628,7 @@ class EliteCoachingEngine:
         },
         "push_pull_legs": {
             3: ["push_session", "pull_session", "legs_session"],
-            4: ["push_session", "pull_session", "legs_session", "push_session"],
+            4: ["push_session", "pull_session", "legs_session", "upper_full"],
             5: ["push_session", "pull_session", "legs_session", "push_session", "pull_session"],
             6: ["push_session", "pull_session", "legs_session", "upper_push_volume", "upper_pull_volume", "lower_full"],
         },
@@ -1553,24 +1639,32 @@ class EliteCoachingEngine:
             6: ["bro_chest", "bro_back", "bro_shoulders", "bro_legs", "bro_arms", "bro_back"],
         },
         "athletic_split": {
+            2: ["full_body_heavy", "athletic_conditioning"],
+            3: ["full_body_heavy", "athletic_conditioning", "lower_full"],
             4: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full"],
             5: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full", "athletic_conditioning"],
+            6: ["full_body_heavy", "athletic_conditioning", "upper_push_heavy", "lower_quad_focus", "athletic_conditioning", "lower_hip_focus"],
         },
         "functional_split": {
+            2: ["functional_movement_quality", "functional_strength_capacity"],
             3: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality"],
             4: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity"],
             5: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity", "functional_movement_quality"],
+            6: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity"],
         },
         "hybrid_split": {
+            2: ["hybrid_strength_push", "hybrid_strength_lower"],
             3: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_power_conditioning"],
             4: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning"],
             5: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_lower"],
             6: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_push", "hybrid_strength_pull"],
         },
         "calisthenics_split": {
+            2: ["calisthenics_upper", "calisthenics_lower"],
             3: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper"],
             4: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower"],
             5: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower", "calisthenics_upper"],
+            6: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower"],
         },
     }
 
@@ -1861,6 +1955,7 @@ class EliteCoachingEngine:
             3: ['full_body', 'push_pull_legs'],
             4: ['upper_lower', 'push_pull_legs', 'full_body'],
             5: ['push_pull_legs', 'upper_lower', 'bro_split'],
+            6: ['push_pull_legs', 'upper_lower', 'bro_split'],
         }
         viable = VIABLE_BY_DAYS.get(days, ['push_pull_legs'])
 
@@ -2105,16 +2200,8 @@ class EliteCoachingEngine:
 
         for i, session_type in enumerate(session_types):
             archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
-            # Start with all slots (base + optional), trim later by budget
-            # Deduplicate optional slots: skip any optional that shares a pattern
-            # with a regular slot (e.g. prevents duplicate bicep_curl in upper_pull_heavy
-            # when the archetype has both a barbell curl and an optional hammer curl).
-            regular_patterns = {s[0] for s in archetype['slots']}
-            optional_deduped = [
-                s for s in archetype.get('optional_slots', [])
-                if s[0] not in regular_patterns
-            ]
-            slots = list(archetype['slots']) + optional_deduped
+            # Start with all slots (base + optional) — deduplication happens via session_native gate
+            slots = list(archetype['slots']) + list(archetype.get('optional_slots', []))
 
             # ── Determine duration bucket ────────────────────────────────────
             dur = req.duration_minutes
@@ -2139,13 +2226,16 @@ class EliteCoachingEngine:
             target_sets = (min_sets + max_sets) // 2
 
             # ── Anti-bloat: conditioning finisher takes a slot ───────────────
-            # If we're going to inject a conditioning finisher (not already in archetype),
-            # pre-reduce the exercise count by 1 to make room.
+            has_existing_cond = any(s[1] == 'conditioning' for s in slots)
             will_inject_cond = (
-                goal in ('lose_fat', 'body_recomp')
+                not has_existing_cond
                 and style not in ('hybrid', 'functional')
-                and not any(s[1] == 'conditioning' for s in slots)
-                and ((goal == 'lose_fat') or (i % 2 == 0))
+                and (
+                    (goal == 'lose_fat')
+                    or (goal == 'body_recomp' and i % 2 == 0)
+                    or (goal == 'general_fitness' and i % 3 == 0)
+                    or (goal == 'athletic_performance' and i % 2 == 0)
+                )
             )
             if will_inject_cond:
                 max_ex = max(3, max_ex - 1)   # reserve one slot for finisher
@@ -2220,22 +2310,26 @@ class EliteCoachingEngine:
                 base_rest   = base_params.get('rest', 90)
                 floor       = self.STRENGTH_REST_FLOORS.get(goal, 60)
 
+                def _round_rest(val: int) -> int:
+                    """Round rest to nearest 5s for clean presentation."""
+                    return int(round(val / 5) * 5)
+
                 if dur_bucket <= 30:
                     if ex_type == 'primary_compound' and goal == 'strength':
-                        rest = max(floor, int(base_rest * 0.85))
+                        rest = _round_rest(max(floor, int(base_rest * 0.85)))
                     elif ex_type in ('primary_compound', 'secondary_compound'):
-                        rest = max(floor, int(base_rest * 0.65))
+                        rest = _round_rest(max(floor, int(base_rest * 0.65)))
                     else:
-                        rest = max(30, int(base_rest * 0.55))
+                        rest = _round_rest(max(30, int(base_rest * 0.55)))
                 elif dur_bucket <= 45:
                     if ex_type == 'primary_compound' and goal == 'strength':
-                        rest = max(floor, int(base_rest * 0.90))
+                        rest = _round_rest(max(floor, int(base_rest * 0.90)))
                     elif ex_type in ('primary_compound', 'secondary_compound'):
-                        rest = max(floor, int(base_rest * 0.80))
+                        rest = _round_rest(max(floor, int(base_rest * 0.80)))
                     else:
-                        rest = max(45, int(base_rest * 0.70))
+                        rest = _round_rest(max(45, int(base_rest * 0.70)))
                 else:
-                    rest = base_rest
+                    rest = _round_rest(base_rest)
 
                 options = self.get_exercise_options(pattern, equipment, style, limitations, level)
 
@@ -2307,10 +2401,16 @@ class EliteCoachingEngine:
                         sec_opts = self.get_exercise_options(sf_pattern, equipment, style, limitations, level)
                         extra_sets = min(3, max_sets + focus_boost_headroom - total_sets_allocated)
                         if extra_sets >= 2 and sec_opts:
+                        _pattern_to_secondary = {}
+                        for sf in secondary:
+                            sf_key = sf.lower().replace(' ', '_')
+                            for p in self.FOCUS_AREA_PATTERNS.get(sf_key, []):
+                                _pattern_to_secondary.setdefault(p, sf)
+                        sec_label = _pattern_to_secondary.get(sf_pattern, sf_pattern.replace('_', ' '))
                             slot_specs.append({
                                 "pattern":       sf_pattern,
                                 "type":          "accessory",
-                                "coaching_note": f"secondary emphasis — direct {sf_pattern.replace('_', ' ')} volume [{secondary[0] if secondary else sf_pattern} focus]",
+                                "coaching_note": f"secondary emphasis — direct {sf_pattern.replace('_', ' ')} volume [{sec_label} focus]",
                                 "sets":          extra_sets,
                                 "reps":          sec_base.get('reps', '10-15'),
                                 "rest_seconds":  60,
