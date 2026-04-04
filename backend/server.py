@@ -2401,12 +2401,12 @@ class EliteCoachingEngine:
                         sec_opts = self.get_exercise_options(sf_pattern, equipment, style, limitations, level)
                         extra_sets = min(3, max_sets + focus_boost_headroom - total_sets_allocated)
                         if extra_sets >= 2 and sec_opts:
-                        _pattern_to_secondary = {}
-                        for sf in secondary:
-                            sf_key = sf.lower().replace(' ', '_')
-                            for p in self.FOCUS_AREA_PATTERNS.get(sf_key, []):
-                                _pattern_to_secondary.setdefault(p, sf)
-                        sec_label = _pattern_to_secondary.get(sf_pattern, sf_pattern.replace('_', ' '))
+                            _pattern_to_secondary = {}
+                            for sf in secondary:
+                                sf_key = sf.lower().replace(' ', '_')
+                                for p in self.FOCUS_AREA_PATTERNS.get(sf_key, []):
+                                    _pattern_to_secondary.setdefault(p, sf)
+                            sec_label = _pattern_to_secondary.get(sf_pattern, sf_pattern.replace('_', ' '))
                             slot_specs.append({
                                 "pattern":       sf_pattern,
                                 "type":          "accessory",
