@@ -6956,6 +6956,39 @@ async def search_foods(query: str):
     logger.info(f"Returning {len(combined_results)} combined results (local: {len(local_results)}, api: {len(api_results)})")
     return combined_results[:50]
 
+@api_router.get("/food/ai-search")
+async def ai_food_search(query: str):
+    """Use Claude Haiku to estimate macros when database search returns nothing"""
+    try:
+        content = await call_claude_haiku(
+            system_message="""You are a nutrition expert. Provide accurate macronutrient data for the requested food.
+Respond ONLY with valid JSON in this exact format, no other text:
+{"food_name": "", "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "serving_size": "100g"}
+Use per-100g values. Be accurate and realistic.""",
+            user_message=f"Give me the nutritional information for: {query}",
+            temperature=0.2,
+            max_tokens=300,
+        )
+        # Strip markdown code fences if present
+        import re as _re
+        content = content.strip()
+        if content.startswith("```"):
+            content = _re.sub(r'```(?:json)?\n?', '', content).strip('`').strip()
+        data = json.loads(content)
+        return {
+            "name": data.get("food_name", query.title()),
+            "calories": round(float(data.get("calories", 0))),
+            "protein":  round(float(data.get("protein_g", 0)), 1),
+            "carbs":    round(float(data.get("carbs_g", 0)), 1),
+            "fats":     round(float(data.get("fat_g", 0)), 1),
+            "is_ai_estimate": True,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"AI food search error: {e}")
+        raise HTTPException(status_code=500, detail="AI search failed. Please try adding manually.")
+
 # ==================== GROCERY LIST ENDPOINTS ====================
 
 @api_router.get("/mealplan/{meal_plan_id}/grocery-list")

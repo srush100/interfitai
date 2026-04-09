@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -51,6 +52,30 @@ interface FavoriteMeal {
   };
   created_at: string;
 }
+
+// Animated skeleton placeholder card
+function SkeletonCard() {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.7, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  return (
+    <Animated.View style={[skeletonStyles.card, { opacity }]}>
+      <View style={skeletonStyles.title} />
+      <View style={skeletonStyles.macros} />
+    </Animated.View>
+  );
+}
+const skeletonStyles = StyleSheet.create({
+  card:   { backgroundColor: '#2a2a2a', borderRadius: 12, padding: 14, marginBottom: 2 },
+  title:  { height: 15, width: '60%', backgroundColor: '#3a3a3a', borderRadius: 6, marginBottom: 8 },
+  macros: { height: 12, width: '80%', backgroundColor: '#3a3a3a', borderRadius: 6 },
+});
 
 export default function FoodLog() {
   const router = useRouter();
@@ -109,6 +134,12 @@ export default function FoodLog() {
   const [removingFavoriteId, setRemovingFavoriteId] = useState<string | null>(null);
   const [resettingLogs, setResettingLogs] = useState(false);
   const [savingSearchFavorite, setSavingSearchFavorite] = useState<number | null>(null);
+  // New: custom serving, AI fallback
+  const [customAmount, setCustomAmount] = useState('');
+  const [aiResult, setAiResult] = useState<SearchResult | null>(null);
+  const [aiSearching, setAiSearching] = useState(false);
+  const [aiResultExpanded, setAiResultExpanded] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadTodayLogs();
@@ -240,16 +271,102 @@ export default function FoodLog() {
     );
   };
 
-  const searchFood = async () => {
-    if (!searchQuery.trim()) return;
+  const searchFood = async (query?: string) => {
+    const q = (query ?? searchQuery).trim();
+    if (!q) return;
     setSearching(true);
+    setSearchResults([]);
+    setAiResult(null);
     try {
-      const response = await api.get(`/food/search?query=${encodeURIComponent(searchQuery)}`);
+      const response = await api.get(`/food/search?query=${encodeURIComponent(q)}`);
       setSearchResults(response.data);
     } catch (error) {
       console.log('Error searching food:', error);
     } finally {
       setSearching(false);
+    }
+  };
+
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    setAiResult(null);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!text.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(() => searchFood(text), 400);
+  };
+
+  const searchWithAI = async () => {
+    if (!searchQuery.trim()) return;
+    setAiSearching(true);
+    try {
+      const response = await api.get(`/food/ai-search?query=${encodeURIComponent(searchQuery)}`);
+      setAiResult(response.data);
+      setAiResultExpanded(false);
+    } catch (error) {
+      Alert.alert('AI search failed', 'Try adding the food manually.');
+    } finally {
+      setAiSearching(false);
+    }
+  };
+
+  // Extract serving grams from food name, e.g. "(100g)" → 100
+  const getServingGrams = (name: string): number => {
+    const m = name.match(/\((\d+)\s*g\)/i);
+    return m ? parseInt(m[1]) : 100;
+  };
+
+  const getScaledMacros = (food: SearchResult, qty: number, customGrams: string) => {
+    const grams = parseFloat(customGrams);
+    if (!isNaN(grams) && grams > 0) {
+      const scale = grams / getServingGrams(food.name);
+      return {
+        calories: Math.round(food.calories * scale),
+        protein:  Math.round(food.protein * scale * 10) / 10,
+        carbs:    Math.round(food.carbs * scale * 10) / 10,
+        fats:     Math.round(food.fats * scale * 10) / 10,
+        label:    `${grams}g`,
+      };
+    }
+    return {
+      calories: Math.round(food.calories * qty),
+      protein:  Math.round(food.protein * qty * 10) / 10,
+      carbs:    Math.round(food.carbs * qty * 10) / 10,
+      fats:     Math.round(food.fats * qty * 10) / 10,
+      label:    qty === 1 ? '1 serving' : `${qty} servings`,
+    };
+  };
+
+  const logFoodWithCustom = async (food: SearchResult, qty: number, customGrams: string) => {
+    if (!profile?.id) return;
+    const scaled = getScaledMacros(food, qty, customGrams);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await api.post('/food/log', {
+        user_id: profile.id,
+        food_name: food.name,
+        serving_size: scaled.label,
+        calories: scaled.calories,
+        protein: scaled.protein,
+        carbs: scaled.carbs,
+        fats: scaled.fats,
+        meal_type: selectedMealType,
+        logged_date: today,
+      });
+      Alert.alert('Logged!', `${food.name} — ${scaled.calories} cal`);
+      loadTodayLogs();
+      setSearchQuery('');
+      setSearchResults([]);
+      setSelectedSearchIdx(null);
+      setSearchQty(1);
+      setCustomAmount('');
+      setAiResult(null);
+      setAiResultExpanded(false);
+      setActiveTab('log');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to log food');
     }
   };
 
@@ -677,7 +794,7 @@ export default function FoodLog() {
             {/* Saved Meals Section */}
             {savedMeals.length > 0 && (
               <View style={styles.savedMealsSection}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.savedMealsHeader}
                   onPress={() => setShowSavedMeals(!showSavedMeals)}
                 >
@@ -688,13 +805,13 @@ export default function FoodLog() {
                       <Text style={styles.savedMealsBadgeText}>{savedMeals.length}</Text>
                     </View>
                   </View>
-                  <Ionicons 
-                    name={showSavedMeals ? 'chevron-up' : 'chevron-down'} 
-                    size={20} 
-                    color={colors.textSecondary} 
+                  <Ionicons
+                    name={showSavedMeals ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color={colors.textSecondary}
                   />
                 </TouchableOpacity>
-                
+
                 {showSavedMeals && (
                   <View style={styles.savedMealsList}>
                     {loadingSavedMeals ? (
@@ -733,13 +850,14 @@ export default function FoodLog() {
               </View>
             )}
 
-            {/* Divider with "or search" text */}
+            {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>or search food database</Text>
               <View style={styles.dividerLine} />
             </View>
 
+            {/* Search bar — live search, spinner replaces clear button while loading */}
             <View style={styles.searchBar}>
               <Ionicons name="search" size={20} color={colors.textMuted} />
               <TextInput
@@ -747,42 +865,74 @@ export default function FoodLog() {
                 placeholder="Search for food..."
                 placeholderTextColor={colors.textMuted}
                 value={searchQuery}
-                onChangeText={setSearchQuery}
-                onSubmitEditing={searchFood}
+                onChangeText={handleSearchChange}
+                onSubmitEditing={() => searchFood()}
                 returnKeyType="search"
               />
-              {searchQuery && (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
+              {searching ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : searchQuery ? (
+                <TouchableOpacity onPress={() => {
+                  setSearchQuery('');
+                  setSearchResults([]);
+                  setAiResult(null);
+                  if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                }}>
                   <Ionicons name="close-circle" size={20} color={colors.textMuted} />
                 </TouchableOpacity>
-              )}
+              ) : null}
             </View>
 
-            <TouchableOpacity style={styles.searchBtn} onPress={searchFood} disabled={searching}>
-              {searching ? (
-                <ActivityIndicator size="small" color={colors.background} />
-              ) : (
-                <Text style={styles.searchBtnText}>Search</Text>
-              )}
-            </TouchableOpacity>
+            {/* Suggestion chips — shown before first search */}
+            {!searchQuery && !searching && searchResults.length === 0 && (
+              <View style={styles.suggestionsContainer}>
+                <Text style={styles.suggestionsLabel}>Try searching for...</Text>
+                <View style={styles.suggestionChips}>
+                  {['Chicken breast', 'Oats', "McDonald's Big Mac", 'Greek yogurt'].map((s) => (
+                    <TouchableOpacity
+                      key={s}
+                      style={styles.suggestionChip}
+                      onPress={() => {
+                        setSearchQuery(s);
+                        searchFood(s);
+                      }}
+                    >
+                      <Text style={styles.suggestionChipText}>{s}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
 
-            {searchResults.length > 0 && (
+            {/* Skeleton loading — 3 cards while searching */}
+            {searching && (
+              <View style={styles.resultsContainer}>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </View>
+            )}
+
+            {/* Regular search results */}
+            {!searching && searchResults.length > 0 && (
               <View style={styles.resultsContainer}>
                 {searchResults.map((food, idx) => {
                   const isSelected = selectedSearchIdx === idx;
-                  const qty = isSelected ? searchQty : 1;
+                  const scaled = getScaledMacros(food, isSelected ? searchQty : 1, isSelected ? customAmount : '');
                   return (
                     <View key={idx} style={[styles.resultItem, isSelected && styles.resultItemExpanded]}>
-                      {/* Food name row — tap to expand/collapse */}
+                      {/* Tap to expand/collapse */}
                       <TouchableOpacity
                         style={styles.resultContent}
                         onPress={() => {
                           if (isSelected) {
                             setSelectedSearchIdx(null);
                             setSearchQty(1);
+                            setCustomAmount('');
                           } else {
                             setSelectedSearchIdx(idx);
                             setSearchQty(1);
+                            setCustomAmount('');
                           }
                         }}
                         activeOpacity={0.7}
@@ -791,7 +941,7 @@ export default function FoodLog() {
                           <Text style={styles.resultName}>{food.name}</Text>
                           <Text style={styles.resultMacros}>
                             {isSelected
-                              ? `${Math.round(food.calories * qty)} cal • ${Math.round(food.protein * qty * 10) / 10}g P • ${Math.round(food.carbs * qty * 10) / 10}g C • ${Math.round(food.fats * qty * 10) / 10}g F`
+                              ? `${scaled.calories} cal • ${scaled.protein}g P • ${scaled.carbs}g C • ${scaled.fats}g F`
                               : `${food.calories} cal • ${food.protein}g P • ${food.carbs}g C • ${food.fats}g F`}
                           </Text>
                         </View>
@@ -802,39 +952,53 @@ export default function FoodLog() {
                         />
                       </TouchableOpacity>
 
-                      {/* Inline quantity + add row — only shown when expanded */}
+                      {/* Expanded: stepper + custom amount + add button */}
                       {isSelected && (
-                        <View style={styles.inlineQtyRow}>
-                          <View style={styles.inlineQtyControls}>
+                        <>
+                          <View style={styles.inlineQtyRow}>
+                            <View style={styles.inlineQtyControls}>
+                              <TouchableOpacity
+                                style={[styles.inlineQtyBtn, searchQty <= 1 && styles.inlineQtyBtnDisabled]}
+                                onPress={() => { setSearchQty(q => Math.max(1, q - 1)); setCustomAmount(''); }}
+                                disabled={searchQty <= 1}
+                              >
+                                <Ionicons name="remove" size={18} color={searchQty <= 1 ? colors.textSecondary : colors.text} />
+                              </TouchableOpacity>
+                              <Text style={styles.inlineQtyValue}>{searchQty}</Text>
+                              <TouchableOpacity
+                                style={[styles.inlineQtyBtn, searchQty >= 10 && styles.inlineQtyBtnDisabled]}
+                                onPress={() => { setSearchQty(q => Math.min(10, q + 1)); setCustomAmount(''); }}
+                                disabled={searchQty >= 10}
+                              >
+                                <Ionicons name="add" size={18} color={searchQty >= 10 ? colors.textSecondary : colors.text} />
+                              </TouchableOpacity>
+                            </View>
                             <TouchableOpacity
-                              style={[styles.inlineQtyBtn, searchQty <= 1 && styles.inlineQtyBtnDisabled]}
-                              onPress={() => setSearchQty(q => Math.max(1, q - 1))}
-                              disabled={searchQty <= 1}
+                              style={styles.inlineAddBtn}
+                              onPress={() => logFoodWithCustom(food, searchQty, customAmount)}
                             >
-                              <Ionicons name="remove" size={18} color={searchQty <= 1 ? colors.textSecondary : colors.text} />
-                            </TouchableOpacity>
-                            <Text style={styles.inlineQtyValue}>{searchQty}</Text>
-                            <TouchableOpacity
-                              style={[styles.inlineQtyBtn, searchQty >= 10 && styles.inlineQtyBtnDisabled]}
-                              onPress={() => setSearchQty(q => Math.min(10, q + 1))}
-                              disabled={searchQty >= 10}
-                            >
-                              <Ionicons name="add" size={18} color={searchQty >= 10 ? colors.textSecondary : colors.text} />
+                              <Text style={styles.inlineAddBtnText}>
+                                Add {customAmount ? `(${customAmount}g)` : searchQty > 1 ? `×${searchQty}` : ''}
+                              </Text>
                             </TouchableOpacity>
                           </View>
 
-                          <TouchableOpacity
-                            style={styles.inlineAddBtn}
-                            onPress={() => logFood(food, searchQty)}
-                          >
-                            <Text style={styles.inlineAddBtnText}>
-                              Add {searchQty > 1 ? `×${searchQty}` : ''}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
+                          {/* Custom gram input */}
+                          <View style={styles.customAmountRow}>
+                            <Text style={styles.customAmountLabel}>or enter custom amount (g/ml)</Text>
+                            <TextInput
+                              style={styles.customAmountInput}
+                              placeholder="e.g. 150"
+                              placeholderTextColor={colors.textMuted}
+                              value={customAmount}
+                              onChangeText={setCustomAmount}
+                              keyboardType="numeric"
+                            />
+                          </View>
+                        </>
                       )}
 
-                      {/* Save to favourites — always visible */}
+                      {/* Save to favourites — collapsed only */}
                       {!isSelected && (
                         <TouchableOpacity
                           style={styles.saveFavoriteBtn}
@@ -851,6 +1015,113 @@ export default function FoodLog() {
                     </View>
                   );
                 })}
+              </View>
+            )}
+
+            {/* Empty state + AI fallback */}
+            {!searching && searchQuery.trim() !== '' && searchResults.length === 0 && !aiResult && (
+              <View style={styles.emptySearchState}>
+                <Ionicons name="search-outline" size={40} color={colors.textMuted} />
+                <Text style={styles.emptySearchTitle}>No results for "{searchQuery}"</Text>
+                <TouchableOpacity
+                  style={styles.aiSearchBtn}
+                  onPress={searchWithAI}
+                  disabled={aiSearching}
+                >
+                  {aiSearching ? (
+                    <ActivityIndicator size="small" color={colors.background} />
+                  ) : (
+                    <>
+                      <Ionicons name="sparkles" size={18} color={colors.background} />
+                      <Text style={styles.aiSearchBtnText}>Search with AI</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addManuallyBtn}
+                  onPress={() => setActiveTab('manual')}
+                >
+                  <Text style={styles.addManuallyBtnText}>Add Manually</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* AI estimate result card */}
+            {!searching && aiResult && (
+              <View style={styles.resultsContainer}>
+                <View style={[styles.resultItem, aiResultExpanded && styles.resultItemExpanded]}>
+                  <TouchableOpacity
+                    style={styles.resultContent}
+                    onPress={() => {
+                      setAiResultExpanded(e => !e);
+                      setSearchQty(1);
+                      setCustomAmount('');
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.resultInfo}>
+                      <View style={styles.aiResultNameRow}>
+                        <Text style={styles.resultName}>{aiResult.name}</Text>
+                        <View style={styles.aiEstimateBadge}>
+                          <Text style={styles.aiEstimateBadgeText}>AI Estimate</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.resultMacros}>
+                        {aiResultExpanded
+                          ? (() => { const s = getScaledMacros(aiResult, searchQty, customAmount); return `${s.calories} cal • ${s.protein}g P • ${s.carbs}g C • ${s.fats}g F`; })()
+                          : `${aiResult.calories} cal • ${aiResult.protein}g P • ${aiResult.carbs}g C • ${aiResult.fats}g F`}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={aiResultExpanded ? 'chevron-up' : 'add-circle'}
+                      size={26}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+
+                  {aiResultExpanded && (
+                    <>
+                      <View style={styles.inlineQtyRow}>
+                        <View style={styles.inlineQtyControls}>
+                          <TouchableOpacity
+                            style={[styles.inlineQtyBtn, searchQty <= 1 && styles.inlineQtyBtnDisabled]}
+                            onPress={() => { setSearchQty(q => Math.max(1, q - 1)); setCustomAmount(''); }}
+                            disabled={searchQty <= 1}
+                          >
+                            <Ionicons name="remove" size={18} color={searchQty <= 1 ? colors.textSecondary : colors.text} />
+                          </TouchableOpacity>
+                          <Text style={styles.inlineQtyValue}>{searchQty}</Text>
+                          <TouchableOpacity
+                            style={[styles.inlineQtyBtn, searchQty >= 10 && styles.inlineQtyBtnDisabled]}
+                            onPress={() => { setSearchQty(q => Math.min(10, q + 1)); setCustomAmount(''); }}
+                            disabled={searchQty >= 10}
+                          >
+                            <Ionicons name="add" size={18} color={searchQty >= 10 ? colors.textSecondary : colors.text} />
+                          </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.inlineAddBtn}
+                          onPress={() => logFoodWithCustom(aiResult, searchQty, customAmount)}
+                        >
+                          <Text style={styles.inlineAddBtnText}>
+                            Add {customAmount ? `(${customAmount}g)` : searchQty > 1 ? `×${searchQty}` : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.customAmountRow}>
+                        <Text style={styles.customAmountLabel}>or enter custom amount (g/ml)</Text>
+                        <TextInput
+                          style={styles.customAmountInput}
+                          placeholder="e.g. 150"
+                          placeholderTextColor={colors.textMuted}
+                          value={customAmount}
+                          onChangeText={setCustomAmount}
+                          keyboardType="numeric"
+                        />
+                      </View>
+                    </>
+                  )}
+                </View>
               </View>
             )}
           </View>
@@ -1482,6 +1753,9 @@ const styles = StyleSheet.create({
   snapSection: {
     gap: 16,
   },
+  manualSection: {
+    gap: 16,
+  },
   captureContainer: {
     alignItems: 'center',
     paddingVertical: 40,
@@ -1827,5 +2101,109 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: colors.error,
+  },
+  // Suggestion chips
+  suggestionsContainer: {
+    gap: 10,
+  },
+  suggestionsLabel: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  suggestionChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  suggestionChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  suggestionChipText: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  // Empty search state + AI fallback
+  emptySearchState: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 16,
+  },
+  emptySearchTitle: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  aiSearchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 13,
+    borderRadius: 28,
+  },
+  aiSearchBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.background,
+  },
+  addManuallyBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  addManuallyBtnText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  // AI estimate badge
+  aiResultNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  aiEstimateBadge: {
+    backgroundColor: '#4ECDC420',
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#4ECDC460',
+  },
+  aiEstimateBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#4ECDC4',
+    letterSpacing: 0.3,
+  },
+  // Custom gram input
+  customAmountRow: {
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    gap: 6,
+  },
+  customAmountLabel: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  customAmountInput: {
+    backgroundColor: colors.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.text,
   },
 });
