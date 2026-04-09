@@ -37,6 +37,9 @@ interface SearchResult {
   protein: number;
   carbs: number;
   fats: number;
+  is_ai_estimate?: boolean;
+  source?: string;
+  confidence?: 'high' | 'medium' | 'low';
 }
 
 interface FavoriteMeal {
@@ -1060,17 +1063,42 @@ export default function FoodLog() {
                     activeOpacity={0.7}
                   >
                     <View style={styles.resultInfo}>
+                      {/* Name + confidence badge */}
                       <View style={styles.aiResultNameRow}>
                         <Text style={styles.resultName}>{aiResult.name}</Text>
-                        <View style={styles.aiEstimateBadge}>
-                          <Text style={styles.aiEstimateBadgeText}>AI Estimate</Text>
+                        <View style={[
+                          styles.aiEstimateBadge,
+                          aiResult.confidence === 'high'   && styles.aiEstimateBadgeHigh,
+                          aiResult.confidence === 'medium' && styles.aiEstimateBadgeMedium,
+                          aiResult.confidence === 'low'    && styles.aiEstimateBadgeLow,
+                        ]}>
+                          <Text style={[
+                            styles.aiEstimateBadgeText,
+                            aiResult.confidence === 'high'   && styles.aiEstimateBadgeTextHigh,
+                            aiResult.confidence === 'medium' && styles.aiEstimateBadgeTextMedium,
+                            aiResult.confidence === 'low'    && styles.aiEstimateBadgeTextLow,
+                          ]}>
+                            AI {aiResult.confidence === 'high' ? '✓ Verified' : aiResult.confidence === 'medium' ? '~ Estimate' : '⚠ Low confidence'}
+                          </Text>
                         </View>
                       </View>
+                      {/* Source line */}
+                      {aiResult.source && (
+                        <Text style={styles.aiSourceText} numberOfLines={1}>
+                          Source: {aiResult.source}
+                        </Text>
+                      )}
                       <Text style={styles.resultMacros}>
                         {aiResultExpanded
                           ? (() => { const s = getScaledMacros(aiResult, searchQty, customAmount); return `${s.calories} cal • ${s.protein}g P • ${s.carbs}g C • ${s.fats}g F`; })()
                           : `${aiResult.calories} cal • ${aiResult.protein}g P • ${aiResult.carbs}g C • ${aiResult.fats}g F`}
                       </Text>
+                      {/* Low-confidence warning */}
+                      {aiResult.confidence === 'low' && (
+                        <Text style={styles.aiLowConfidenceWarning}>
+                          ⚠ Macros are approximate — verify if tracking strictly
+                        </Text>
+                      )}
                     </View>
                     <Ionicons
                       name={aiResultExpanded ? 'chevron-up' : 'add-circle'}
@@ -2165,7 +2193,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '500',
   },
-  // AI estimate badge
+  // AI estimate badge — base + confidence variants
   aiResultNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2173,18 +2201,44 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   aiEstimateBadge: {
-    backgroundColor: '#4ECDC420',
     borderRadius: 8,
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderWidth: 1,
+    backgroundColor: '#4ECDC420',
     borderColor: '#4ECDC460',
+  },
+  aiEstimateBadgeHigh: {
+    backgroundColor: '#22c55e20',
+    borderColor: '#22c55e60',
+  },
+  aiEstimateBadgeMedium: {
+    backgroundColor: '#f9731620',
+    borderColor: '#f9731660',
+  },
+  aiEstimateBadgeLow: {
+    backgroundColor: '#ef444420',
+    borderColor: '#ef444460',
   },
   aiEstimateBadgeText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#4ECDC4',
     letterSpacing: 0.3,
+    color: '#4ECDC4',
+  },
+  aiEstimateBadgeTextHigh:   { color: '#22c55e' },
+  aiEstimateBadgeTextMedium: { color: '#f97316' },
+  aiEstimateBadgeTextLow:    { color: '#ef4444' },
+  aiSourceText: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginBottom: 2,
+    fontStyle: 'italic',
+  },
+  aiLowConfidenceWarning: {
+    fontSize: 11,
+    color: '#f97316',
+    marginTop: 3,
   },
   // Custom gram input
   customAmountRow: {
