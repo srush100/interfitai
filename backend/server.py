@@ -334,11 +334,11 @@ CACHED_EXERCISE_GIFS = {
     "flat dumbbell press": "0289",
     "incline dumbbell press": "0314",
     "incline dumbbell bench press": "0314",
-    "decline dumbbell press": "0281",
+    "decline dumbbell press": "2452",
     "dumbbell fly": "0308",
     "flat dumbbell fly": "0308",
     "incline dumbbell fly": "0316",
-    "decline dumbbell fly": "0280",
+    "decline dumbbell fly": "0302",
     "cable fly": "0227",  # cable standing fly
     "cable flys": "0227",
     "cable crossover": "0227",
@@ -349,16 +349,14 @@ CACHED_EXERCISE_GIFS = {
     "push-ups": "0662",
     "pushup": "0662",
     "pushups": "0662",
-    "pushup": "0662",
-    "wide push up": "0672",
+    "wide push up": "1311",
     "diamond push up": "0279",
     "decline push up": "0279",       # FIXED: 0279 = decline push-up
     "decline push-up": "0279",
-    "incline push up": "0671",
+    "incline push up": "0493",
     "knee push up": "0670",
     "chest dip": "0251",
     "parallel bar dip": "0251",
-    "weighted dip": "0251",
     "assisted dip": "0009",
     "assisted chest dip": "0009",
     "machine chest press": "0576",  # lever chest press
@@ -392,7 +390,7 @@ CACHED_EXERCISE_GIFS = {
     "lat pulldown": "0198",
     "cable lat pulldown": "0198",
     "wide grip lat pulldown": "0198",
-    "close grip lat pulldown": "0196",
+    "close grip lat pulldown": "1047",
     "bent over row": "0027",
     "barbell row": "0027",
     "barbell bent over row": "0027",
@@ -413,7 +411,7 @@ CACHED_EXERCISE_GIFS = {
     "conventional deadlift": "0032",
     "romanian deadlift": "0085",
     "stiff leg deadlift": "0116",
-    "sumo deadlift": "0118",
+    "sumo deadlift": "0117",
     
     # Shoulder exercises - OVERHEAD PRESS is standing barbell military press
     "overhead press": "1456",  # barbell standing close grip military press (the true standing barbell OHP)
@@ -436,8 +434,8 @@ CACHED_EXERCISE_GIFS = {
     "seated dumbbell shoulder press": "0405",
     "standing dumbbell overhead press": "0426",
     "standing dumbbell shoulder press": "0426",
-    "arnold press": "0262",
-    "dumbbell arnold press": "0262",
+    "arnold press": "2137",
+    "dumbbell arnold press": "2137",
     "lateral raise": "0334",
     "dumbbell lateral raise": "0334",
     "side lateral raise": "0334",
@@ -445,7 +443,7 @@ CACHED_EXERCISE_GIFS = {
     "front raise": "0310",
     "dumbbell front raise": "0310",
     "rear delt fly": "0203",          # FIXED: was 0578 (lever deadlift). 0203 = cable rear delt row (rope)
-    "rear delt machine fly": "0202",  # FIXED: cable rear delt row (stirrups) — lateral fly pattern
+    "rear delt machine fly": "0203",  # FIXED: correct ID
     "reverse fly": "0203",            # FIXED
     "rear delt": "0203",              # FIXED
     "face pull": "0233",  # cable standing rear delt row (with rope) - the face pull movement
@@ -453,10 +451,10 @@ CACHED_EXERCISE_GIFS = {
     "cable face pulls": "0233",
     "face pulls": "0233",
     "rope face pull": "0233",
-    "upright row": "0122",
-    "barbell upright row": "0122",
-    "shrug": "0091",
-    "barbell shrug": "0091",
+    "upright row": "0121",
+    "barbell upright row": "0121",
+    "shrug": "0095",
+    "barbell shrug": "0095",
     "dumbbell shrug": "0406",
     
     # Arm exercises - Biceps
@@ -472,9 +470,8 @@ CACHED_EXERCISE_GIFS = {
     "hammer curl": "0313",  # dumbbell hammer curl
     "dumbbell hammer curl": "0313",
     "cable hammer curl": "0165",
-    "preacher curl": "0092",  # barbell preacher curl
-    "concentration curl": "0274",
-    "incline dumbbell curl": "0313",
+    "preacher curl": "0070",  # barbell preacher curl
+    "concentration curl": "0297",
     "incline dumbbell curl": "0318",  # FIXED: dumbbell incline curl
     "incline curl": "0318",            # ADDED
     "cable curl": "0868",             # FIXED: was 0163 (broken). 0868 = cable curl
@@ -487,9 +484,9 @@ CACHED_EXERCISE_GIFS = {
     "rope pushdown": "0200",
     "cable tricep pushdown": "0241",
     "triceps pushdown": "0241",
-    "tricep extension": "0860",
-    "overhead tricep extension": "0860",
-    "dumbbell tricep extension": "0860",
+    "tricep extension": "0352",
+    "overhead tricep extension": "2390",
+    "dumbbell tricep extension": "0352",
     "overhead cable extension": "0194",          # ADDED: cable overhead triceps extension (rope)
     "overhead cable tricep extension": "0194",   # ADDED
     "skull crusher": "0055",
@@ -502,8 +499,8 @@ CACHED_EXERCISE_GIFS = {
     "weighted dips": "1755",
     "bench dip": "0129",
     "bench dips": "0129",
-    "tricep kickback": "0347",
-    "dumbbell kickback": "0347",
+    "tricep kickback": "0333",
+    "dumbbell kickback": "0333",
     "close grip bench press": "0030",  # barbell close-grip bench press
     "close grip bench": "0030",
     "close-grip bench press": "0030",
@@ -563,7 +560,7 @@ CACHED_EXERCISE_GIFS = {
     "good morning": "0044",            # FIXED: was 0440 (broken). 0044 = barbell good morning
     "barbell good morning": "0044",    # FIXED
     "pistol squat": "0544",            # ADDED: kettlebell pistol squat
-    "piston squat (assisted)": "0544", # ADDED
+    "pistol squat (assisted)": "0544", # ADDED
     "single leg romanian deadlift": "1757",  # ADDED: dumbbell single leg deadlift
     "single-leg romanian deadlift": "1757",  # ADDED
     
@@ -575,10 +572,10 @@ CACHED_EXERCISE_GIFS = {
     "plank hold": "2135",
     "side plank": "1775",  # side plank hip adduction
     "side plank hip": "1775",
-    "crunch": "0267",
-    "ab crunch": "0267",
-    "bicycle crunch": "0139",
-    "reverse crunch": "0690",
+    "crunch": "0274",
+    "ab crunch": "0274",
+    "bicycle crunch": "6211",
+    "reverse crunch": "0671",
     "russian twist": "0687",  # russian twist
     "weighted russian twist": "0846",
     "leg raise": "1472",
@@ -591,12 +588,10 @@ CACHED_EXERCISE_GIFS = {
     "mountain climbers emom": "0630",  # ADDED
     "ab wheel rollout": "0857",        # FIXED: wheel rollout (correct exercise)
     "ab rollout": "0857",              # FIXED: was 0001 (sit-up)
-    "cable crunch": "0840",            # FIXED: was 0155 (cable cross-over). 0840 = cable woodchopper (cable core)
-    "woodchopper": "0840",
-    "cable woodchopper": "0840",
+    "cable crunch": "0175",
     "dead bug": "0276",                # FIXED: was 1474 (broken). 0276 = dead bug
-    "bird dog": "0276",                # ADDED: similar stability pattern
-    "flutter kick": "0395",
+    "bird dog": "3141",
+    "flutter kick": "0459",
     "sit up": "0735",
     "v up": "1604",
     
@@ -611,9 +606,9 @@ CACHED_EXERCISE_GIFS = {
     "broadjump": "0514",               # ADDED
     "kettlebell swing": "0549",
     "kettlebell swings": "0549",
-    "clean and press": "1209",
-    "clean and jerk": "1212",
-    "snatch": "0104",
+    "clean and press": "0028",
+    "clean and jerk": "5122",
+    "snatch": "1533",
     "thruster": "2143",
     "thrusters": "2143",
     "wall ball": "2399",
@@ -646,7 +641,6 @@ CACHED_EXERCISE_GIFS = {
     "cable lateral raise": "0178",     # FIXED: was 0175 (cable kneeling crunch). 0178 = cable lateral raise
     "machine lateral raise": "0584",   # ADDED: lever lateral raise
     "machine lateral raises": "0584",  # ADDED
-    "rear delt machine fly": "0203",   # ADDED
     "farmer's carry": "2133",          # ADDED: farmers walk
     "farmers carry": "2133",           # ADDED
     "farmer's walk": "2133",           # ADDED
@@ -655,37 +649,33 @@ CACHED_EXERCISE_GIFS = {
 
     # ── Additional PATTERNS coverage ────────────────────────────────
     # Bodyweight / Calisthenics
-    "archer push up": "3011",
-    "pike push up": "1307",
-    "decline push up": "0293",
-    "australian pull up": "3293",
-    "inverted row": "3293",
+    "archer push up": "3294",
+    "pike push up": "2921",
+    "australian pull up": "0499",
+    "inverted row": "0499",
     "nordic hamstring curl": "1766",
-    "pistol squat (assisted)": "3661",
-    "pistol squat": "3661",
-    "sissy squat": "3667",
-    "plyo push up": "3011",
-    "bodyweight squat": "3669",
-    "bodyweight calf raise": "0304",
-    "single leg calf raise": "0304",
-    "lateral lunge": "0291",
+    "sissy squat": "4722",
+    "plyo push up": "1306",
+    "bodyweight squat": "1197",
+    "bodyweight calf raise": "1373",
+    "single leg calf raise": "1373",
+    "lateral lunge": "2972",
     "swiss ball leg curl": "2403",
-    "supinated row": "3293",
-    "handstand push up (wall assisted)": "1307",
+    "supinated row": "0499",
+    "handstand push up (wall assisted)": "2921",
 
     # Cable exercises
-    "cable pull through": "0175",
-    "cable hip extension": "0175",
-    "cable wood chop": "0217",
+    "cable pull through": "0196",
+    "cable hip extension": "0196",
     "cable rear delt fly": "0203",
-    "cable leg curl": "0170",
-    "high to low cable fly": "0150",
-    "single arm cable row": "0873",
-    "single arm lat pulldown": "0175",
-    "ab pulldown": "0007",
+    "cable leg curl": "1547",
+    "high to low cable fly": "6542",
+    "single arm cable row": "0189",
+    "single arm lat pulldown": "3596",
+    "ab pulldown": "0175",
 
     # Machine exercises
-    "machine row": "0872",
+    "machine row": "1350",
     "machine preacher curl": "0579",
     "machine incline press": "0583",
     "face pull machine": "0203",
@@ -694,27 +684,27 @@ CACHED_EXERCISE_GIFS = {
 
     # Dumbbell exercises
     "dumbbell incline press": "0314",
-    "dumbbell romanian deadlift": "0339",
-    "dumbbell front squat": "0336",
-    "dumbbell rear delt fly": "0329",
-    "dumbbell calf raise": "0304",
-    "dumbbell leg curl": "0331",
-    "dumbbell pullover": "0334",
-    "overhead dumbbell extension": "0340",
-    "chest supported row": "0310",
-    "bent over rear delt raise": "0329",
+    "dumbbell romanian deadlift": "1459",
+    "dumbbell front squat": "2966",
+    "dumbbell rear delt fly": "2487",
+    "dumbbell calf raise": "1373",
+    "dumbbell leg curl": "4292",
+    "dumbbell pullover": "5330",
+    "overhead dumbbell extension": "2390",
+    "chest supported row": "0327",
+    "bent over rear delt raise": "2487",
 
     # Barbell exercises
     "incline barbell press": "0047",
-    "barbell bulgarian split squat": "3214",
-    "barbell calf raise": "0032",
+    "barbell bulgarian split squat": "5331",
+    "barbell calf raise": "1372",
     "pause squat": "0043",
     "pendlay row": "3017",
-    "push press": "0055",
+    "push press": "1200",
     "trap bar farmer's carry": "2133",
 
     # Kettlebell exercises
-    "kettlebell floor press": "1205",
+    "kettlebell floor press": "4845",
     "kettlebell press": "0541",
     "kettlebell row": "0545",
     "kettlebell lunge": "0542",
@@ -725,17 +715,14 @@ CACHED_EXERCISE_GIFS = {
     "kettlebell overhead carry": "2133",
 
     # Stability / Core
-    "pallof press": "3697",
-    "plank walk": "1686",
-    "spanish squat": "3667",
-    "terminal knee extension": "3667",
+    "pallof press": "1202",
+    "plank walk": "2793",
 
     # Conditioning
-    "medicine ball slam": "1306",
+    "medicine ball slam": "1354",
     "burpee intervals": "1160",
-    "rowing machine intervals": "3671",
-    "kettlebell swing intervals": "0548",
-    "mountain climbers emom": "0658",
+    "rowing machine intervals": "1161",
+    "kettlebell swing intervals": "0549",
 }
 
 # Cache for exercise GIFs to avoid repeated API calls
