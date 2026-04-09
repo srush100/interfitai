@@ -831,7 +831,11 @@ frontend:
     file: "app/food-log.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Enhanced food search with 4 improvements: (1) Live search with 400ms debounce - removed Search button, spinner in bar; (2) Custom serving size input - gram/ml TextInput in expanded card with proportional macro recalculation; (3) AI fallback empty state - 'Search with AI' calls /food/ai-search endpoint (Claude Haiku), result shows 'AI Estimate' badge; (4) Suggestion chips before first search + animated skeleton cards during loading. Backend endpoint /food/ai-search added."
 
   - task: "Subscription Screen"
     implemented: true
