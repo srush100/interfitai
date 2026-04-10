@@ -1,0 +1,54 @@
+{
+  "summary": "Tested 4 workout engine fix scenarios (POST /api/workouts/generate) for the 7 Critical Fixes audit. ALL 26 ENGINE LOGIC TESTS PASSED when using correct field names (preferred_split/training_style/fitness_level/injuries). However, a CRITICAL field name mismatch was found: the review spec (and likely the frontend) sends split_type/style/experience_level/limitations which are silently ignored by Pydantic, causing preferred_split to always default to 'ai_choose'.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/workouts/generate",
+        "issue": "WorkoutGenerateRequest model field name mismatch. The model uses preferred_split/training_style/fitness_level/injuries but the review spec (and frontend) sends split_type/style/experience_level/limitations. Pydantic silently ignores unknown fields so preferred_split always defaults to 'ai_choose'. Impact: (1) PPL 5-day: AI picks 'Upper/Lower' instead of 'Push/Pull/Legs'. (2) Bro split 3-day: AI picks 'Push/Pull/Legs' (incidental pass but wrong archetype). (3) Full body 5-day: AI picks 'Upper/Lower' instead of 'Full Body' — Day 5 first_ex = same as Day 1 (Archer Push-Up), repeating. (4) Calisthenics 4-day: training_style='calisthenics' never set (style ignored), so no calisthenics override fires, AI picks 'Upper/Lower' with weights archetypes instead of Calisthenics Upper/Lower/Skill/Conditioning.",
+        "priority": "CRITICAL",
+        "fix": "Add split_type as alias for preferred_split AND style as alias for training_style AND experience_level as alias for fitness_level AND limitations as alias for injuries in WorkoutGenerateRequest model. Quick fix: add @validator or use_enum_values, or add model_validator that maps the old names."
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Workout generation - split_type mapping",
+        "issue": "Frontend/client sends split_type/style/experience_level/limitations but backend WorkoutGenerateRequest model expects preferred_split/training_style/fitness_level/injuries. Calisthenics workouts will use weights archetypes. User-specified split is ignored (always uses AI choice).",
+        "affected_testIDs": []
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_7_critical_fixes_workout.py",
+    "/app/test_reports/pytest/critical_fixes_workout.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Fix WorkoutGenerateRequest model to accept split_type as alias for preferred_split. Pydantic v2 approach: use model_validator or Field(alias='split_type') with model_config.populate_by_name=True",
+    "CRITICAL: Fix WorkoutGenerateRequest to accept style as alias for training_style (frontend sends 'calisthenics' as style, not training_style)",
+    "Fix WorkoutGenerateRequest to accept experience_level as alias for fitness_level",
+    "Fix WorkoutGenerateRequest to accept limitations as alias for injuries",
+    "All 4 engine logic fixes (PPL 5-day non-repeat, Bro 3-day Chest+Shoulders archetype, Full Body 5-day unique leads, Calisthenics Skill+Conditioning) are CORRECTLY implemented and pass when correct field names are used — no engine logic changes needed"
+  ],
+  "critical_code_review_comments": [
+    "WorkoutGenerateRequest model (lines 992-1004) does not have aliases for the older field names (split_type, style, experience_level, limitations) used by the frontend/test spec. Pydantic V2 silently drops unknown fields, breaking split selection.",
+    "The 7 engine fixes are correctly implemented in SESSION_ARCHETYPES/SPLIT_MAP (lines 1283-1732) but the integration is broken at the request model level.",
+    "push_session label is 'Push' not 'Push Day' — labels are correct per the archetype definitions (the test spec phrasing 'Push Day' was just descriptive, not the literal label)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_7_critical_fixes_workout.py"
+  ],
+  "success_rate": {
+    "backend": "Engine logic: 100% (26/26 with correct field names). Field name integration: 0% (0/4 — split_type silently ignored)",
+    "frontend": "Not tested (backend-only)"
+  },
+  "seed_data_creation": "No seed data created. Used existing user cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 4 engine fixes verified working via 26 pytest tests using correct model field names (preferred_split/training_style/fitness_level). The fix needed is ONLY in WorkoutGenerateRequest model — add aliases or model_validator to map split_type→preferred_split, style→training_style, experience_level→fitness_level, limitations→injuries. After fix, run test_7_critical_fixes_workout.py with the original spec payloads (split_type, style, etc.) to confirm integration.",
+  "rca_of_issue": "ROOT CAUSE: WorkoutGenerateRequest Pydantic model defines fields as preferred_split/training_style/fitness_level/injuries (lines 992-1004 of server.py). The review test spec AND likely the frontend send split_type/style/experience_level/limitations. Pydantic V2 by default ignores extra/unknown fields (model_config extra='ignore'), so these are silently dropped. preferred_split stays 'ai_choose', training_style stays 'weights'. This breaks all 4 test scenarios when using the spec payloads. MITIGATION: Add model_validator in WorkoutGenerateRequest that maps split_type → preferred_split, style → training_style, experience_level → fitness_level, limitations → injuries before Pydantic validates. OR use Pydantic Field aliases with populate_by_name=True."
+}

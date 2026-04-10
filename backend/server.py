@@ -1359,6 +1359,32 @@ class EliteCoachingEngine:
             ],
             "optional_slots": [],
         },
+        "full_body_heavy_b": {
+            "label": "Full Body D",
+            "focus": "Full Body – Posterior Chain & Overhead Emphasis",
+            "slots": [
+                ("hip_hinge",        "primary_compound",   "deadlift variation – posterior chain dominance"),
+                ("vertical_push",    "primary_compound",   "overhead press – shoulder strength and stability"),
+                ("vertical_pull",    "primary_compound",   "pull-up or pulldown – lat width and upper back"),
+                ("lunge",            "secondary_compound",  "unilateral lower – single-leg strength and balance"),
+                ("lateral_raise",    "accessory",           "medial delt isolation – shoulder width"),
+                ("core_flexion",     "core",                "core flexion – direct ab work"),
+            ],
+            "optional_slots": [],
+        },
+        "full_body_moderate_b": {
+            "label": "Full Body E",
+            "focus": "Full Body – Volume & Isolation Emphasis",
+            "slots": [
+                ("squat",            "primary_compound",   "squat variation – quad and glute development"),
+                ("horizontal_pull",  "primary_compound",   "row variation – mid-back thickness"),
+                ("incline_push",     "secondary_compound",  "incline press – upper chest volume"),
+                ("glute",            "accessory",           "hip thrust or bridge – glute isolation"),
+                ("tricep_push",      "isolation",           "tricep isolation – lockout and arm mass"),
+                ("core_stability",   "core",                "anti-rotation core – plank or Pallof variation"),
+            ],
+            "optional_slots": [],
+        },
         "upper_full": {
             "label": "Upper Body",
             "focus": "Chest, Back, Shoulders & Arms",
@@ -1436,6 +1462,30 @@ class EliteCoachingEngine:
                 ("glute",            "accessory",           "glute bridge – hip extension"),
                 ("core_stability",   "core",                "plank progression – trunk stability"),
                 ("core_flexion",     "core",                "hanging or floor core flexion"),
+            ],
+            "optional_slots": [],
+        },
+        "calisthenics_skill": {
+            "label": "Calisthenics Skill",
+            "focus": "Progressions, Holds & Skill Work",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "push-up progression – planche prep, deficit, or weighted"),
+                ("vertical_pull",    "primary_compound",   "pull-up skill – weighted, archer, or one-arm progression"),
+                ("core_stability",   "primary_compound",   "front lever, L-sit, or dragon flag progression – static strength"),
+                ("squat",            "secondary_compound",  "pistol squat or shrimp squat progression – single-leg mastery"),
+                ("horizontal_pull",  "accessory",           "row variation – slow eccentrics for pulling strength"),
+            ],
+            "optional_slots": [],
+        },
+        "calisthenics_conditioning": {
+            "label": "Calisthenics Conditioning",
+            "focus": "Muscular Endurance & Work Capacity",
+            "slots": [
+                ("horizontal_push",  "secondary_compound",  "push-up volume – high rep submaximal sets"),
+                ("vertical_pull",    "secondary_compound",  "pull-up volume – submaximal rep accumulation"),
+                ("lunge",            "secondary_compound",  "lunge variation – lower body endurance"),
+                ("core_flexion",     "accessory",           "core endurance – time under tension and reps"),
+                ("conditioning",     "conditioning",        "bodyweight circuit or EMOM – sustained work capacity"),
             ],
             "optional_slots": [],
         },
@@ -1523,6 +1573,19 @@ class EliteCoachingEngine:
             ],
             "optional_slots": [],
         },
+        "functional_power_endurance": {
+            "label": "Functional C – Power & Endurance",
+            "focus": "Explosive Power, Rotational Strength & Sustained Output",
+            "slots": [
+                ("explosive",        "primary_compound",   "plyometric power – box jump, broad jump, or med ball throw"),
+                ("hip_hinge",        "primary_compound",   "hinge pattern – posterior chain power and strength"),
+                ("carry",            "accessory",           "loaded carry – trunk integrity under fatigue"),
+                ("horizontal_push",  "secondary_compound",  "push pattern – upper body pressing capacity"),
+                ("core_flexion",     "core",                "rotational core – anti-rotation or chop pattern"),
+                ("conditioning",     "conditioning",        "high-intensity intervals – sustain power output"),
+            ],
+            "optional_slots": [],
+        },
 
         # ── True Bro Split archetypes — one muscle group per session ─────────
         "bro_chest": {
@@ -1537,6 +1600,20 @@ class EliteCoachingEngine:
             "optional_slots": [
                 ("lateral_raise",    "accessory",           "medial delt – shoulder width complement to chest"),
                 ("tricep_push",      "isolation",           "overhead extension – long head stretch"),
+            ],
+        },
+        "bro_chest_shoulders": {
+            "label": "Chest & Shoulders Day",
+            "focus": "Chest, Shoulders & Triceps",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "flat pressing – chest mass and strength foundation"),
+                ("incline_push",     "secondary_compound",  "incline angle – upper chest focus and fullness"),
+                ("vertical_push",    "secondary_compound",  "overhead press – shoulder strength and mass"),
+                ("lateral_raise",    "accessory",           "lateral raise – medial delt width and roundness"),
+                ("tricep_push",      "isolation",           "tricep isolation – full elbow extension and lockout"),
+            ],
+            "optional_slots": [
+                ("rear_delt",        "accessory",           "rear delt – shoulder health and balanced development"),
             ],
         },
         "bro_back": {
@@ -1602,9 +1679,9 @@ class EliteCoachingEngine:
         "full_body": {
             2: ["full_body_heavy", "full_body_moderate"],
             3: ["full_body_heavy", "full_body_moderate", "full_body_light"],
-            4: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy"],
-            5: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy", "full_body_moderate"],
-            6: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy", "full_body_moderate", "full_body_light"],
+            4: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy_b"],
+            5: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy_b", "full_body_moderate_b"],
+            6: ["full_body_heavy", "full_body_moderate", "full_body_light", "full_body_heavy_b", "full_body_moderate_b", "full_body_light"],
         },
         "upper_lower": {
             2: ["upper_full", "lower_full"],
@@ -1620,7 +1697,7 @@ class EliteCoachingEngine:
             6: ["push_session", "pull_session", "legs_session", "upper_push_volume", "upper_pull_volume", "lower_full"],
         },
         "bro_split": {
-            3: ["bro_chest", "bro_legs", "bro_back"],
+            3: ["bro_chest_shoulders", "bro_back", "bro_legs"],
             4: ["bro_chest", "bro_back", "bro_legs", "bro_shoulders"],
             5: ["bro_chest", "bro_back", "bro_shoulders", "bro_legs", "bro_arms"],
             6: ["bro_chest", "bro_back", "bro_shoulders", "bro_legs", "bro_arms", "bro_back"],
@@ -1635,9 +1712,9 @@ class EliteCoachingEngine:
         "functional_split": {
             2: ["functional_movement_quality", "functional_strength_capacity"],
             3: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality"],
-            4: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity"],
-            5: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity", "functional_movement_quality"],
-            6: ["functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity", "functional_movement_quality", "functional_strength_capacity"],
+            4: ["functional_movement_quality", "functional_strength_capacity", "functional_power_endurance", "functional_movement_quality"],
+            5: ["functional_movement_quality", "functional_strength_capacity", "functional_power_endurance", "functional_movement_quality", "functional_strength_capacity"],
+            6: ["functional_movement_quality", "functional_strength_capacity", "functional_power_endurance", "functional_movement_quality", "functional_strength_capacity", "functional_power_endurance"],
         },
         "hybrid_split": {
             2: ["hybrid_strength_push", "hybrid_strength_lower"],
@@ -1649,9 +1726,9 @@ class EliteCoachingEngine:
         "calisthenics_split": {
             2: ["calisthenics_upper", "calisthenics_lower"],
             3: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper"],
-            4: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower"],
-            5: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower", "calisthenics_upper"],
-            6: ["calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower", "calisthenics_upper", "calisthenics_lower"],
+            4: ["calisthenics_upper", "calisthenics_lower", "calisthenics_skill", "calisthenics_conditioning"],
+            5: ["calisthenics_upper", "calisthenics_lower", "calisthenics_skill", "calisthenics_upper", "calisthenics_conditioning"],
+            6: ["calisthenics_upper", "calisthenics_lower", "calisthenics_skill", "calisthenics_upper", "calisthenics_lower", "calisthenics_conditioning"],
         },
     }
 
@@ -2185,6 +2262,8 @@ class EliteCoachingEngine:
                 self.FOCUS_AREA_PATTERNS.get(sf.lower().replace(' ', '_'), [])
             )
 
+        used_primary_options = set()  # Track first-choice exercises to avoid cross-day repeats
+
         for i, session_type in enumerate(session_types):
             archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
             # Start with all slots (base + optional) — deduplication happens via session_native gate
@@ -2319,6 +2398,12 @@ class EliteCoachingEngine:
                     rest = _round_rest(base_rest)
 
                 options = self.get_exercise_options(pattern, equipment, style, limitations, level)
+                # Rotate options to avoid cross-day exercise duplication
+                if len(options) > 1:
+                    # Move any already-used exercise to the back of the list
+                    fresh = [o for o in options if o not in used_primary_options]
+                    stale = [o for o in options if o in used_primary_options]
+                    options = fresh + stale
 
                 slot_specs.append({
                     "pattern":       pattern,
@@ -2331,6 +2416,9 @@ class EliteCoachingEngine:
                     "options":       options,
                     "excluded":      list(excluded_exercises),
                 })
+                # Track the first-choice exercise to avoid repeating it cross-day
+                if options:
+                    used_primary_options.add(options[0])
 
                 if ex_type != 'primary_compound' and total_sets_allocated >= target_sets:
                     break
@@ -2355,17 +2443,19 @@ class EliteCoachingEngine:
             # SECONDARY focus: +1 set on existing matching slots for visible refinement.
             # Neither should push any slot past 5 sets for accessories / 6 for compounds.
             focus_boost_headroom = 2
-            primary_boosted = False
+            primary_boost_count = 0
+            max_primary_boosts = 2  # boost up to 2 matching slots, not just 1
             for slot in slot_specs:
                 if (slot['pattern'] in primary_patterns
-                        and not primary_boosted
-                        and slot['type'] == 'primary_compound'):
-                    boosted = min(slot['sets'] + 1, 5)
+                        and primary_boost_count < max_primary_boosts
+                        and slot['type'] in ('primary_compound', 'secondary_compound')):
+                    cap = 6 if slot['type'] == 'primary_compound' else 5
+                    boosted = min(slot['sets'] + 1, cap)
                     if total_sets_allocated - slot['sets'] + boosted <= max_sets + focus_boost_headroom:
                         total_sets_allocated += (boosted - slot['sets'])
                         slot['sets'] = boosted
                         slot['coaching_note'] += ' [primary focus — elevated priority]'
-                    primary_boosted = True
+                        primary_boost_count += 1
                 elif slot['pattern'] in secondary_patterns:
                     if total_sets_allocated <= max_sets:
                         boosted = min(slot['sets'] + 1, 4)
