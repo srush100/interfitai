@@ -686,7 +686,7 @@ CACHED_EXERCISE_GIFS = {
     "dumbbell incline press": "0314",
     "dumbbell romanian deadlift": "1459",
     "dumbbell front squat": "0413",     # dumbbell squat (same movement)
-    "dumbbell rear delt fly": "0329",   # dumbbell lying rear delt raise
+    "dumbbell rear delt fly": "0378",   # dumbbell rear fly
     "dumbbell calf raise": "1373",
     "dumbbell leg curl": "0331",        # dumbbell lying leg curl
     "dumbbell pullover": "0375",        # dumbbell pullover
