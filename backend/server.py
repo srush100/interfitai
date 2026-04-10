@@ -1616,7 +1616,7 @@ class EliteCoachingEngine:
         "push_pull_legs": {
             3: ["push_session", "pull_session", "legs_session"],
             4: ["push_session", "pull_session", "legs_session", "upper_full"],
-            5: ["push_session", "pull_session", "legs_session", "push_session", "pull_session"],
+            5: ["push_session", "pull_session", "legs_session", "upper_full", "lower_full"],
             6: ["push_session", "pull_session", "legs_session", "upper_push_volume", "upper_pull_volume", "lower_full"],
         },
         "bro_split": {
