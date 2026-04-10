@@ -5,7 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, date
@@ -1002,6 +1002,24 @@ class WorkoutGenerateRequest(BaseModel):
     fitness_level: str = "intermediate"
     preferred_split: str = "ai_choose"
     exercise_preferences: Optional[str] = None  # free text: favourite/disliked exercises
+
+    # Accept legacy / alternate field names from frontend
+    split_type: Optional[str] = None        # alias for preferred_split
+    style: Optional[str] = None             # alias for training_style
+    experience_level: Optional[str] = None  # alias for fitness_level
+    limitations: Optional[List[str]] = None # alias for injuries
+
+    @model_validator(mode="after")
+    def _apply_aliases(self) -> "WorkoutGenerateRequest":
+        if self.split_type and self.preferred_split == "ai_choose":
+            self.preferred_split = self.split_type
+        if self.style and self.training_style == "weights":
+            self.training_style = self.style
+        if self.experience_level and self.fitness_level == "intermediate":
+            self.fitness_level = self.experience_level
+        if self.limitations and not self.injuries:
+            self.injuries = self.limitations
+        return self
 
 
 # ==================== ELITE COACHING ENGINE ====================
