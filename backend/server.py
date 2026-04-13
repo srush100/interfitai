@@ -557,6 +557,7 @@ CACHED_EXERCISE_GIFS = {
     "single-leg glute bridge": "3013", # ADDED
     "glute kickback": "0860",          # FIXED: was 0482 (broken). 0860 = cable kickback
     "cable kickback": "0860",          # FIXED
+    "cable glute kickback": "0860",    # alias for renamed pattern entry
     "good morning": "0044",            # FIXED: was 0440 (broken). 0044 = barbell good morning
     "barbell good morning": "0044",    # FIXED
     "pistol squat": "0544",            # ADDED: kettlebell pistol squat
@@ -650,8 +651,8 @@ CACHED_EXERCISE_GIFS = {
     # ── Additional PATTERNS coverage ────────────────────────────────
     # Bodyweight / Calisthenics
     "archer push up": "3294",
-    "pike push up": "0473",            # hanging pike (overhead push)
-    "australian pull up": "0499",
+    "pike push up": "2921",            # pike push-up (bodyweight vertical push)
+    "australian pull up": "0499",      # alias kept for legacy programs; not used in new gen
     "inverted row": "0499",
     "nordic hamstring curl": "1766",
     "sissy squat": "1489",             # sissy squat
@@ -1097,7 +1098,7 @@ class EliteCoachingEngine:
             "barbells":  ["Pull-Up", "Chin-Up"],
             "dumbbells": ["Pull-Up", "Dumbbell Pullover"],
             "machines":  ["Lat Pulldown", "Assisted Pull-Up Machine"],
-            "bodyweight":["Pull-Up", "Chin-Up", "Australian Pull-Up"],
+            "bodyweight":["Pull-Up", "Chin-Up"],
             "cables":    ["Lat Pulldown", "Single-Arm Lat Pulldown"],
             "resistance_bands":["Band-Assisted Pull-Up", "Band Lat Pulldown"],
         },
@@ -1108,7 +1109,7 @@ class EliteCoachingEngine:
             "dumbbells": ["Dumbbell Row", "Chest-Supported Row"],
             "machines":  ["Machine Row", "Cable Row"],
             "cables":    ["Cable Row", "Single-Arm Cable Row"],
-            "bodyweight":["Australian Pull-Up", "Inverted Row"],
+            "bodyweight":["Inverted Row"],
             "kettlebells":["Kettlebell Row"],
             "resistance_bands":["Band Row", "Band Pull-Apart"],
         },
@@ -1152,13 +1153,13 @@ class EliteCoachingEngine:
             "cables":    ["Cable Pull-Through"],
         },
         "glute": {
-            "full_gym":  ["Barbell Hip Thrust", "Cable Kickback", "Leg Press (feet high)"],
-            "beginner_gym": ["Hip Thrust Machine", "Dumbbell Hip Thrust", "Cable Kickback"],
+            "full_gym":  ["Barbell Hip Thrust", "Cable Glute Kickback", "Leg Press (feet high)"],
+            "beginner_gym": ["Hip Thrust Machine", "Dumbbell Hip Thrust", "Cable Glute Kickback"],
             "barbells":  ["Barbell Hip Thrust", "Barbell Glute Bridge"],
             "dumbbells": ["Dumbbell Hip Thrust", "Single-Leg Glute Bridge"],
-            "machines":  ["Hip Thrust Machine", "Cable Kickback"],
+            "machines":  ["Hip Thrust Machine", "Cable Glute Kickback"],
             "bodyweight":["Hip Thrust", "Glute Bridge", "Single-Leg Glute Bridge"],
-            "cables":    ["Cable Kickback", "Cable Hip Extension"],
+            "cables":    ["Cable Glute Kickback", "Cable Hip Extension"],
             "resistance_bands":["Band Hip Thrust", "Band Kickback", "Band Clamshell"],
         },
         "hamstring_curl": {
@@ -1706,7 +1707,7 @@ class EliteCoachingEngine:
             3: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy"],
             4: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus"],
             5: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_full"],
-            6: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_push_volume", "lower_full"],
+            6: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_full", "lower_full"],
         },
         "push_pull_legs": {
             3: ["push_session", "pull_session", "legs_session"],

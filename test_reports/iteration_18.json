@@ -1,0 +1,88 @@
+{
+  "summary": "Workout Engine Audit Round 3 — all 16 engine verification tests PASSED (100%). Verified 5 backend fixes: (1) 6-day Upper/Lower advanced body_recomp produces correct 3-upper/3-lower structure with Day 5 as upper_full (both push+pull); (2) Calisthenics 4-day produces correct Upper→Lower→Skill→Conditioning sequence, NOT Upper/Lower/Upper/Lower; (3) Cross-day deduplication prevents Barbell Bench Press from appearing in both Day 1 and Day 4/5; (4) Australian Pull-Up removed from all generated programs; (5) Cable Glute Kickback (qualified name) used throughout — no unqualified 'Cable Kickback'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/workouts/generate",
+        "issue": "Cross-day dedup for cables-only equipment: when only 'cables' are selected, the exercise pool per pattern is very small, causing Cable Crossover, Cable Lateral Raise, and High-to-Low Cable Fly to appear in both Day 1 (Push) and Day 4 (Upper Full) of a 5-day PPL. The dedup logic works per-pattern (first-choice tracking) but different patterns (horizontal_push, incline_push) can both resolve to the same cable exercise. PRIMARY concern (Barbell Bench Press duplication) is FIXED — only minor cable pool overlap for cables-only users.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_workout_engine_round3.py",
+    "/app/test_reports/pytest/round3_audit.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: For cables-only equipment programs, the exercise pool per pattern is small enough that cross-day overlap still occurs for accessories (Cable Crossover in both Day 1 Push and Day 4 Upper Full). Consider expanding cable exercise options per pattern or adding a session-level dedup check across all slots/patterns. LOW priority — the primary compound dedup fix is working."
+  ],
+  "critical_code_review_comments": [
+    "6-day upper_lower SPLIT_MAP correctly maps to ['upper_push_heavy', 'lower_quad_focus', 'upper_pull_heavy', 'lower_hip_focus', 'upper_full', 'lower_full'] — 3 upper/3 lower confirmed",
+    "upper_full archetype label='Upper Body', focus='Chest, Back, Shoulders & Arms' — Day 5 correctly contains both push (chest, shoulder) and pull (back, lat, bicep) muscles as confirmed by muscle_groups in response",
+    "calisthenics_split 4-day correctly maps to ['calisthenics_upper', 'calisthenics_lower', 'calisthenics_skill', 'calisthenics_conditioning'] — Day 3 focus='Progressions, Holds & Skill Work' and Day 4 focus='Muscular Endurance & Work Capacity' confirmed",
+    "used_primary_options set at line 2284 correctly tracks first-choice exercises cross-day and rotates used ones to the back — verified Barbell Bench Press not in both Day 1 and Day 4/5",
+    "BODYWEIGHT_DIFFICULTY dict at line 1960 still contains 'Australian Pull-Up': 2 (difficulty tier entry) but the exercise is NOT present in the EXERCISE_OPTIONS horizontal_pull bodyweight pool (uses 'Inverted Row' instead) — this is correct behavior",
+    "Cable Glute Kickback consistently appears in glute pattern options for full_gym/beginner_gym/machines/cables equipment types — no unqualified 'Cable Kickback' found anywhere in exercise pools"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_workout_engine_round3.py"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 tests passed)",
+    "frontend": "Not tested (backend-only per request)"
+  },
+  "test_results_detail": {
+    "T1_6day_upper_lower": {
+      "status": "PASS",
+      "days_returned": 6,
+      "structure": {
+        "Day 1": "upper_push_heavy — focus: 'Chest, Shoulders & Triceps'",
+        "Day 2": "lower_quad_focus — focus: 'Quads, Hamstrings & Glutes'",
+        "Day 3": "upper_pull_heavy — focus: 'Back & Biceps'",
+        "Day 4": "lower_hip_focus — focus: 'Hamstrings, Glutes & Posterior Chain'",
+        "Day 5": "upper_full — focus: 'Chest, Back, Shoulders & Arms' (BOTH push+pull confirmed)",
+        "Day 6": "lower_full — focus: 'Quads, Hamstrings, Glutes & Calves'"
+      },
+      "upper_days": [1, 3, 5],
+      "lower_days": [2, 4, 6],
+      "push_frequency": 2,
+      "pull_frequency": 2,
+      "day5_muscle_groups": ["chest", "back", "shoulders", "lats", "biceps", "triceps", "rhomboids", "front delts", "medial delts"]
+    },
+    "T2_calisthenics_4day": {
+      "status": "PASS",
+      "days_returned": 4,
+      "structure": {
+        "Day 1": "calisthenics_upper — focus: 'Chest, Back, Shoulders & Arms'",
+        "Day 2": "calisthenics_lower — focus: 'Legs & Core'",
+        "Day 3": "calisthenics_skill — focus: 'Progressions, Holds & Skill Work'",
+        "Day 4": "calisthenics_conditioning — focus: 'Muscular Endurance & Work Capacity'"
+      },
+      "not_plain_upper_lower": true
+    },
+    "T3_cross_day_dedup": {
+      "status": "PASS",
+      "bench_press_day1_day4_overlap": false,
+      "bench_press_day1_day5_overlap": false,
+      "cable_exercise_overlap_with_cables_only": ["Cable Crossover", "Cable Lateral Raise", "High-to-Low Cable Fly"],
+      "note": "3 cable exercises appear in both Day 1 and Day 4 when equipment=cables only. Primary compound dedup fix working."
+    },
+    "T4_exercise_name_fixes": {
+      "australian_pull_up_present": false,
+      "unqualified_cable_kickback_present": false,
+      "cable_glute_kickback_confirmed_in_programs": true
+    }
+  },
+  "seed_data_creation": "No seed data created. Used existing user cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 5 Round 3 fixes verified working: (1) upper_lower 6-day = 3 upper/3 lower with Day 5 = upper_full (both push+pull). (2) calisthenics 4-day = Upper/Lower/Skill/Conditioning correctly. (3) Cross-day dedup prevents primary compound repeats (Barbell Bench Press fix). (4) No Australian Pull-Up in any program. (5) Cable Glute Kickback (not Cable Kickback) is the standard name. Minor note: cables-only programs can still have cable exercise overlap across patterns (different pattern types sharing same cable exercises) — low priority.",
+  "rca_of_issue": "N/A — all Round 3 fixes confirmed working end-to-end"
+}
