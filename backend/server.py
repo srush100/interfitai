@@ -651,7 +651,7 @@ CACHED_EXERCISE_GIFS = {
     # ── Additional PATTERNS coverage ────────────────────────────────
     # Bodyweight / Calisthenics
     "archer push up": "3294",
-    "pike push up": "2921",            # pike push-up (bodyweight vertical push)
+    "pike push up": "0471",            # handstand push-up (closest bodyweight vertical push – pike push-up not in DB)
     "australian pull up": "0499",      # alias kept for legacy programs; not used in new gen
     "inverted row": "0499",
     "nordic hamstring curl": "1766",
