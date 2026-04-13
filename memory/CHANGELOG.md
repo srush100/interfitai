@@ -1,5 +1,13 @@
 
-## 2026-04-10 — Workout Engine Audit: All 7 Critical Fixes
+## 2026-04-13 — Workout Audit Round 3: 5 Fixes + Verification
+- **Fix 1 (Pike Push-Up GIF)**: Corrected ID 0473→2921 (was mapping to "Hanging Pike" abs move, now correctly maps to pike push-up bodyweight vertical press)
+- **Fix 2 (Australian Pull-Up cleanup)**: Removed from `vertical_pull` bodyweight list (wrong pattern), removed from `horizontal_pull` bodyweight list (kept only `Inverted Row`); GIF alias kept in CACHED_EXERCISE_GIFS with legacy comment
+- **Fix 3 (Cable Glute Kickback rename)**: Renamed 5 occurrences of "Cable Kickback" → "Cable Glute Kickback" in glute pattern block; added `"cable glute kickback": "0860"` GIF alias
+- **Fix 4 (Upper/Lower 6-day balance)**: Day 5 changed `upper_push_volume` → `upper_full` giving true 3U/3L split with 2× push, 2× pull frequency (not 3× push, 1× pull)
+- **Assault bike**: Confirmed intact (NOT removed as incorrectly suggested in prior prompt)
+- **Testing**: 16/16 pytest tests pass; all 4 verification scenarios confirmed working
+
+
 - **Fix 1 (PPL 5-day)**: SPLIT_MAP PPL at 5 days now `push → pull → legs → upper_full → lower_full` (each muscle group 2x/week)
 - **Fix 2 (Bro Split 3-day)**: Added `bro_chest_shoulders` archetype (chest + shoulders + OHP). bro_split[3] now uses it so shoulders get direct work
 - **Fix 3 (Full Body 4-6 day)**: Added `full_body_heavy_b` (deadlift/OHP/pull-up focus) and `full_body_moderate_b` (squat/row/incline); no more repeating Day 1 on Day 4
