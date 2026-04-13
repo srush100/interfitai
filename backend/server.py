@@ -651,7 +651,7 @@ CACHED_EXERCISE_GIFS = {
     # ── Additional PATTERNS coverage ────────────────────────────────
     # Bodyweight / Calisthenics
     "archer push up": "3294",
-    "pike push up": "0471",            # handstand push-up (closest bodyweight vertical push – pike push-up not in DB)
+    # "pike push up" intentionally omitted — no accurate GIF in ExerciseDB
     "australian pull up": "0499",      # alias kept for legacy programs; not used in new gen
     "inverted row": "0499",
     "nordic hamstring curl": "1766",
@@ -3524,6 +3524,10 @@ async def refresh_workout_gifs(workout_id: str):
             new_gif_url = await get_exercise_gif_from_api(exercise.get("name", ""))
             if new_gif_url:
                 exercise["gif_url"] = new_gif_url
+                updated = True
+            elif exercise.get("gif_url"):
+                # Clear any existing (potentially broken) GIF URL if no valid one found
+                exercise["gif_url"] = ""
                 updated = True
     
     if updated:
