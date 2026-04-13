@@ -12,6 +12,7 @@ import {
   Alert,
   ScrollView,
   Platform,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -20,17 +21,6 @@ import Constants from 'expo-constants';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 import * as Haptics from 'expo-haptics';
-
-// Drag-to-reorder — native only (react-native-draggable-flatlist uses findNodeHandle which isn't supported on web)
-let ScaleDecorator: any = ({ children }: any) => children;
-let NestableScrollContainer: any = ScrollView;
-let NestableDraggableFlatList: any = null;
-if (Platform.OS !== 'web') {
-  const DragLib = require('react-native-draggable-flatlist');
-  ScaleDecorator = DragLib.ScaleDecorator;
-  NestableScrollContainer = DragLib.NestableScrollContainer;
-  NestableDraggableFlatList = DragLib.NestableDraggableFlatList;
-}
 
 // Get backend URL for constructing full GIF URLs
 const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 
@@ -113,6 +103,9 @@ export default function WorkoutDetail() {
   const [addToDayIdx, setAddToDayIdx] = useState<number | null>(null);  // which day to add exercise to
   // Drag-to-reorder state
   const [reordering, setReordering] = useState(false);
+  const [selectedExIdx, setSelectedExIdx] = useState<number | null>(null);
+  const swapPulse = useRef(new Animated.Value(0)).current;
+  const swapPulseAnim = useRef<Animated.CompositeAnimation | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
@@ -425,31 +418,75 @@ export default function WorkoutDetail() {
     }
   };
 
-  // Handle drag-to-reorder: persist new exercise order to backend
-  const handleReorderExercises = useCallback(async (dayIdx: number, newData: Exercise[]) => {
+  // Pulse animation when an exercise is selected for swapping
+  useEffect(() => {
+    if (selectedExIdx !== null) {
+      swapPulseAnim.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(swapPulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+          Animated.timing(swapPulse, { toValue: 0.3, duration: 700, useNativeDriver: true }),
+        ])
+      );
+      swapPulse.setValue(0.3);
+      swapPulseAnim.current.start();
+    } else {
+      swapPulseAnim.current?.stop();
+      swapPulse.setValue(0);
+    }
+  }, [selectedExIdx]);
+
+  // Long press to select exercise for swapping
+  const handleExerciseLongPress = (exIdx: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSelectedExIdx(exIdx);
+    setExpandedExercise(null); // collapse detail when entering swap mode
+  };
+
+  // Tap handler: if in swap mode, swap or deselect; otherwise expand/collapse
+  const handleExerciseTap = (exIdx: number) => {
+    if (selectedExIdx !== null) {
+      if (selectedExIdx === exIdx) {
+        // Tap same card → cancel
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setSelectedExIdx(null);
+      } else {
+        // Tap different card → swap
+        swapExercises(selectedExIdx, exIdx);
+      }
+    } else {
+      setExpandedExercise(
+        expandedExercise === `${expandedDay}-${exIdx}` ? null : `${expandedDay}-${exIdx}`
+      );
+    }
+  };
+
+  // Swap two exercises and persist
+  const swapExercises = useCallback(async (fromIdx: number, toIdx: number) => {
     if (!workout) return;
-    setReordering(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSelectedExIdx(null);
+
+    const originalExercises = workout.workout_days[expandedDay].exercises;
+    const newExercises = [...originalExercises];
+    [newExercises[fromIdx], newExercises[toIdx]] = [newExercises[toIdx], newExercises[fromIdx]];
+
+    const updatedDays = workout.workout_days.map((day, i) =>
+      i === expandedDay ? { ...day, exercises: newExercises } : day
+    );
+    setWorkout({ ...workout, workout_days: updatedDays });
+
     try {
-      // Build original → new index map
-      const originalExercises = workout.workout_days[dayIdx].exercises;
-      const newOrder = newData.map((ex) =>
+      const newOrder = newExercises.map((ex) =>
         originalExercises.findIndex((o) => o.name === ex.name)
       );
-      // Optimistically update local state
-      const updatedDays = workout.workout_days.map((day, i) =>
-        i === dayIdx ? { ...day, exercises: newData } : day
-      );
-      setWorkout({ ...workout, workout_days: updatedDays });
       await api.patch(`/workout/${workout.id}/reorder-exercises`, {
-        day_index: dayIdx,
+        day_index: expandedDay,
         exercise_order: newOrder,
       });
     } catch (e) {
-      // Silent fail — local state is still updated
-    } finally {
-      setReordering(false);
+      // silent — local state is correct
     }
-  }, [workout]);
+  }, [workout, expandedDay]);
 
 
 
@@ -517,28 +554,20 @@ export default function WorkoutDetail() {
     );
   }
 
-  // Renders the inner content of each exercise card (shared by drag list and web fallback)
-  // drag: when provided (native), touching the handle icon immediately starts the drag.
-  const renderExerciseInner = (exercise: Exercise, exIdx: number, drag?: () => void) => (
+  // Renders the inner content of each exercise card
+  const renderExerciseInner = (exercise: Exercise, exIdx: number, isSelected: boolean, isSwapMode: boolean) => (
     <>
       <View style={styles.exerciseHeader}>
-        {drag ? (
-          // Native: hold the handle briefly to start dragging (150ms — intentional but quick)
-          <Pressable
-            onLongPress={drag}
-            delayLongPress={150}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={styles.dragHandle}
-          >
-            <Ionicons name="reorder-three" size={22} color={colors.textSecondary} />
-          </Pressable>
-        ) : (
-          // Web fallback: decorative indicator (no drag on web)
-          <View style={styles.dragHandle}>
-            <Ionicons name="reorder-three" size={22} color={colors.textMuted} />
+        {/* Position number / swap indicator */}
+        {isSelected ? (
+          <View style={[styles.exerciseNumber, styles.exerciseNumberSelected]}>
+            <Ionicons name="swap-vertical" size={16} color={colors.background} />
           </View>
-        )}
-        {exercise.gif_url ? (
+        ) : isSwapMode ? (
+          <View style={[styles.exerciseNumber, styles.exerciseNumberSwapTarget]}>
+            <Text style={[styles.exerciseNumberText, { color: colors.primary }]}>{exIdx + 1}</Text>
+          </View>
+        ) : exercise.gif_url ? (
           <Image
             source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
             style={styles.exerciseThumbnail}
@@ -549,20 +578,37 @@ export default function WorkoutDetail() {
             <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
           </View>
         )}
+
         <View style={styles.exerciseInfo}>
-          <Text style={styles.exerciseName}>{exercise.name}</Text>
+          <Text style={[styles.exerciseName, isSelected && styles.exerciseNameSelected]}>
+            {exercise.name}
+          </Text>
           <Text style={styles.exerciseMeta}>
             {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
           </Text>
+          {isSelected && (
+            <Text style={styles.swapHint}>Tap another exercise to swap</Text>
+          )}
+          {isSwapMode && !isSelected && (
+            <Text style={styles.swapTargetHint}>Tap to swap here</Text>
+          )}
         </View>
-        <Ionicons
-          name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
-          size={20}
-          color={colors.textSecondary}
-        />
+
+        {isSelected ? (
+          <View style={styles.selectedBadge}>
+            <Ionicons name="checkmark" size={14} color={colors.background} />
+          </View>
+        ) : (
+          <Ionicons
+            name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={isSwapMode ? colors.primary : colors.textSecondary}
+          />
+        )}
       </View>
 
-      {expandedExercise === `${expandedDay}-${exIdx}` && (
+      {/* Detail panel — only shown when NOT in swap mode */}
+      {!isSwapMode && expandedExercise === `${expandedDay}-${exIdx}` && (
         <View style={styles.exerciseDetails}>
           {exercise.gif_url && (
             <View style={styles.gifContainer}>
@@ -670,7 +716,7 @@ export default function WorkoutDetail() {
         <View style={styles.backBtn} />
       </View>
 
-      <NestableScrollContainer contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Program Info */}
         <View style={styles.infoCard}>
           <TouchableOpacity 
@@ -826,43 +872,42 @@ export default function WorkoutDetail() {
               </View>
             )}
 
-            {/* Exercises — drag to reorder on native, plain list on web */}
-            {NestableDraggableFlatList ? (
-              <NestableDraggableFlatList
-                data={workout.workout_days[expandedDay].exercises}
-                keyExtractor={(item: Exercise, index: number) => `${item.name}-${index}`}
-                onDragBegin={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-                onDragEnd={({ data }: { data: Exercise[] }) => handleReorderExercises(expandedDay, data)}
-                renderItem={({ item: exercise, getIndex, drag, isActive }: any) => {
-                  const exIdx = getIndex() ?? 0;
-                  return (
-                    <ScaleDecorator>
-                      <TouchableOpacity
-                        style={[styles.exerciseCard, isActive && styles.exerciseCardDragging]}
-                        onPress={() =>
-                          setExpandedExercise(
-                            expandedExercise === `${expandedDay}-${exIdx}` ? null : `${expandedDay}-${exIdx}`
-                          )
-                        }
-                        activeOpacity={0.85}
-                      >{renderExerciseInner(exercise, exIdx, drag)}</TouchableOpacity>
-                    </ScaleDecorator>
-                  );
-                }}
-              />
-            ) : (
-              workout.workout_days[expandedDay].exercises.map((exercise, exIdx) => (
-                <TouchableOpacity
-                  key={`${exercise.name}-${exIdx}`}
-                  style={styles.exerciseCard}
-                  onPress={() =>
-                    setExpandedExercise(
-                      expandedExercise === `${expandedDay}-${exIdx}` ? null : `${expandedDay}-${exIdx}`
-                    )
-                  }
-                >{renderExerciseInner(exercise, exIdx)}</TouchableOpacity>
-              ))
+            {/* Exercises — long press to select, tap to swap */}
+            {selectedExIdx !== null && (
+              <View style={styles.swapBanner}>
+                <Ionicons name="swap-vertical" size={16} color={colors.background} />
+                <Text style={styles.swapBannerText}>
+                  Tap any exercise to swap • Tap selected again to cancel
+                </Text>
+              </View>
             )}
+            {workout.workout_days[expandedDay].exercises.map((exercise, exIdx) => {
+              const isSelected = selectedExIdx === exIdx;
+              const isSwapMode = selectedExIdx !== null;
+
+              return (
+                <Pressable
+                  key={`${exercise.name}-${exIdx}`}
+                  onPress={() => handleExerciseTap(exIdx)}
+                  onLongPress={() => handleExerciseLongPress(exIdx)}
+                  delayLongPress={300}
+                  style={({ pressed }) => [
+                    styles.exerciseCard,
+                    isSelected && styles.exerciseCardSelected,
+                    isSwapMode && !isSelected && styles.exerciseCardSwapTarget,
+                    pressed && !isSelected && styles.exerciseCardPressed,
+                  ]}
+                >
+                  {isSelected ? (
+                    <Animated.View style={{ opacity: swapPulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }}>
+                      {renderExerciseInner(exercise, exIdx, isSelected, isSwapMode)}
+                    </Animated.View>
+                  ) : (
+                    renderExerciseInner(exercise, exIdx, isSelected, isSwapMode)
+                  )}
+                </Pressable>
+              );
+            })}
 
             {/* Add Exercise Button - at the end of exercise list */}
             <TouchableOpacity
@@ -874,7 +919,7 @@ export default function WorkoutDetail() {
             </TouchableOpacity>
           </View>
         )}
-      </NestableScrollContainer>
+      </ScrollView>
 
       {/* Rename Modal */}
       <Modal
@@ -1328,21 +1373,67 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
-  exerciseCardDragging: {
-    opacity: 0.95,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: colors.primary + '40',
+  exerciseCardSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '18',
   },
-  dragHandle: {
-    paddingRight: 8,
+  exerciseCardSwapTarget: {
+    borderColor: colors.primary + '60',
+    backgroundColor: colors.primary + '08',
+  },
+  exerciseCardPressed: {
+    opacity: 0.85,
+  },
+  // Swap banner
+  swapBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 4,
+  },
+  swapBannerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.background,
+    flex: 1,
+  },
+  swapHint: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  swapTargetHint: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  exerciseNameSelected: {
+    color: colors.primary,
+  },
+  selectedBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  exerciseNumberSelected: {
+    backgroundColor: colors.primary,
+  },
+  exerciseNumberSwapTarget: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+    backgroundColor: 'transparent',
   },
   exerciseHeader: {
     flexDirection: 'row',
