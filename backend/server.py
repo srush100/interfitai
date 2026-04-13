@@ -555,9 +555,9 @@ CACHED_EXERCISE_GIFS = {
     "barbell glute bridge": "1409",    # CORRECT
     "single leg glute bridge": "3013", # ADDED: low glute bridge on floor
     "single-leg glute bridge": "3013", # ADDED
-    "glute kickback": "0860",          # FIXED: was 0482 (broken). 0860 = cable kickback
-    "cable kickback": "0860",          # FIXED
-    "cable glute kickback": "0860",    # alias for renamed pattern entry
+    "glute kickback": "0228",          # cable standing hip extension – glutes (0860 was triceps)
+    "cable kickback": "0228",          # cable standing hip extension – glutes
+    "cable glute kickback": "0228",    # cable standing hip extension – glutes
     "good morning": "0044",            # FIXED: was 0440 (broken). 0044 = barbell good morning
     "barbell good morning": "0044",    # FIXED
     "pistol squat": "0544",            # ADDED: kettlebell pistol squat
