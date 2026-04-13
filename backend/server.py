@@ -2041,6 +2041,12 @@ class EliteCoachingEngine:
             6: ['push_pull_legs', 'upper_lower', 'bro_split'],
         }
         viable = VIABLE_BY_DAYS.get(days, ['push_pull_legs'])
+        # Frequency correction: PPL at 3 days trains each muscle only 1×/week,
+        # which is suboptimal for hypertrophy (Schoenfeld 2016 — 2×/week ≥ 1×/week
+        # at matched volume). For muscle/recomp goals at 3 days, enforce Full Body
+        # (3×/week frequency per muscle).
+        if days == 3 and goal in ('build_muscle', 'body_recomp'):
+            viable = [s for s in viable if s != 'push_pull_legs'] or ['full_body']
 
         # ── Goal affinity (0-4 pts) ───────────────────────────────────────────
         # How well each split structurally serves the training goal.
