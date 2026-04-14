@@ -2919,48 +2919,59 @@ GARMIN_CONSUMER_SECRET = os.environ.get("GARMIN_CONSUMER_SECRET", "")
 # ==================== HELPER FUNCTIONS ====================
 
 def calculate_macros(weight: float, height: float, age: int, gender: str, activity_level: str, goal: str) -> Dict[str, float]:
-    """Calculate personalized macros using Mifflin-St Jeor equation"""
-    # Calculate BMR
+    """Calculate personalized macros using Mifflin-St Jeor equation.
+
+    Protein is prescribed from bodyweight (g/kg) per ISSN guidelines — not as
+    a % of calories — to ensure adequate lean mass preservation during a
+    deficit. Calorie adjustments are percentage-based off TDEE so they scale
+    correctly across body sizes.
+    """
+    # ── BMR: Mifflin-St Jeor ──────────────────────────────────────────
     if gender == "male":
         bmr = 10 * weight + 6.25 * height - 5 * age + 5
-    else:
+    elif gender == "female":
         bmr = 10 * weight + 6.25 * height - 5 * age - 161
-    
-    # Activity multipliers
+    else:
+        # Non-binary / "other" — average of male and female constants (-78)
+        bmr = 10 * weight + 6.25 * height - 5 * age - 78
+
+    # ── TDEE ──────────────────────────────────────────────────────────
     activity_multipliers = {
         "sedentary": 1.2,
         "light": 1.375,
         "moderate": 1.55,
         "active": 1.725,
-        "very_active": 1.9
+        "very_active": 1.9,
     }
-    
     tdee = bmr * activity_multipliers.get(activity_level, 1.55)
-    
-    # Adjust for goal
+
+    # ── Calorie target (percentage-based off TDEE) ────────────────────
     if goal == "weight_loss":
-        calories = tdee - 500
-        protein_ratio = 0.30
-        carb_ratio = 0.40
-        fat_ratio = 0.30
+        calories = tdee * 0.80              # 20% deficit
+        protein_per_kg = 2.2                # high — preserve LBM in deficit
     elif goal == "muscle_building":
-        calories = tdee + 300
-        protein_ratio = 0.30
-        carb_ratio = 0.45
-        fat_ratio = 0.25
+        calories = tdee * 1.10              # 10% surplus (lean bulk)
+        protein_per_kg = 1.8
     else:  # maintenance
         calories = tdee
-        protein_ratio = 0.25
-        carb_ratio = 0.45
-        fat_ratio = 0.30
-    
+        protein_per_kg = 1.6
+
+    # Safety floor — never prescribe below BMR
+    calories = max(calories, bmr * 1.1)
+
+    # ── Macro split: protein from bodyweight, fat at 25% of cals, rest carbs ──
+    protein_g = round(weight * protein_per_kg)
+    fat_g     = round((calories * 0.25) / 9)    # 25% of cals from fat (hormonal minimum)
+    remaining_cals = calories - (protein_g * 4) - (fat_g * 9)
+    carbs_g   = round(max(remaining_cals, 0) / 4)
+
     return {
         "calories": round(calories),
-        "protein": round((calories * protein_ratio) / 4),  # 4 cal per gram protein
-        "carbs": round((calories * carb_ratio) / 4),  # 4 cal per gram carbs
-        "fats": round((calories * fat_ratio) / 9),  # 9 cal per gram fat
-        "bmr": round(bmr),
-        "tdee": round(tdee)
+        "protein":  protein_g,
+        "carbs":    carbs_g,
+        "fats":     fat_g,
+        "bmr":      round(bmr),
+        "tdee":     round(tdee),
     }
 
 # ==================== USER PROFILE ENDPOINTS ====================
