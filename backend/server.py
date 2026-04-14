@@ -2048,6 +2048,16 @@ class EliteCoachingEngine:
         if days == 3 and goal in ('build_muscle', 'body_recomp'):
             viable = [s for s in viable if s != 'push_pull_legs'] or ['full_body']
 
+        # 6-day hypertrophy correction: force PPL for muscle/recomp at 6 days unless
+        # the user has explicitly chosen a lower-body focus area (in which case UL's
+        # 3 lower sessions are warranted). Gives each muscle 2x/week frequency with
+        # high per-session volume — the PPL×2 standard for advanced hypertrophy.
+        LOWER_BODY_FOCUS = {'lower_body', 'legs', 'glutes', 'hamstrings', 'quads', 'calves'}
+        if days == 6 and goal in ('build_muscle', 'body_recomp') \
+                and focus_key not in LOWER_BODY_FOCUS \
+                and 'push_pull_legs' in viable:
+            viable = ['push_pull_legs']
+
         # ── Goal affinity (0-4 pts) ───────────────────────────────────────────
         # How well each split structurally serves the training goal.
         GOAL_SCORE = {
