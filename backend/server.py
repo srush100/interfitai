@@ -872,7 +872,7 @@ async def check_subscription_access(user_id: str) -> dict:
     
     # Check subscription status
     subscription_status = profile.get("subscription_status", "free")
-    if subscription_status in ["trial", "monthly", "quarterly", "yearly", "active"]:
+    if subscription_status in ["trial", "monthly", "quarterly", "yearly", "active", "free_access", "complimentary"]:
         return {"has_access": True, "reason": "subscribed"}
     
     return {"has_access": False, "reason": "no_subscription"}
@@ -2989,8 +2989,14 @@ async def create_profile(profile_data: UserProfileCreate):
         calculated_macros=macros
     )
     
-    await db.profiles.insert_one(profile.model_dump())
-    return profile
+    # Check if this email was pre-granted free access by admin before signup
+    profile_dict = profile.model_dump()
+    free_access_entry = await db.free_access.find_one({"email": profile_data.email.lower()})
+    if free_access_entry:
+        profile_dict["subscription_status"] = "free_access"
+    
+    await db.profiles.insert_one(profile_dict)
+    return UserProfile(**profile_dict)
 
 @api_router.get("/profile/{user_id}", response_model=UserProfile)
 async def get_profile(user_id: str):

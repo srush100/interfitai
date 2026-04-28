@@ -47,7 +47,8 @@ export default function LoginScreen() {
           { text: 'Cancel', style: 'cancel' },
           { 
             text: 'Create Account', 
-            onPress: () => router.push('/onboarding')
+            // Pass the email so onboarding pre-fills it — keeps free-access grants working
+            onPress: () => router.push({ pathname: '/onboarding', params: { prefillEmail: email.trim().toLowerCase() } })
           }
         ]
       );

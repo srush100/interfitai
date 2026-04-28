@@ -12,7 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
@@ -38,12 +38,13 @@ const GENDERS = [
 
 export default function Onboarding() {
   const router = useRouter();
+  const { prefillEmail } = useLocalSearchParams<{ prefillEmail?: string }>();
   const { createProfile, isLoading } = useUserStore();
   const [step, setStep] = useState(1);
   const [useMetric, setUseMetric] = useState(true); // Toggle for metric/imperial
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
+    email: prefillEmail || '',
     weight: '',
     height: '',
     age: '',

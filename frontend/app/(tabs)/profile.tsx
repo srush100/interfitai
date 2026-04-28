@@ -601,6 +601,8 @@ export default function ProfileScreen() {
               <Text style={styles.subscriptionStatus}>
                 {profile?.subscription_status === 'free'
                   ? 'Upgrade for full access'
+                  : profile?.subscription_status === 'free_access' || profile?.subscription_status === 'complimentary'
+                  ? 'Complimentary access active ✓'
                   : `${profile?.subscription_status} plan active`}
               </Text>
             </View>
