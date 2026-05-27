@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -47,7 +47,8 @@ export default function BodyAnalyzer() {
     const now = new Date();
     return String(now.getMonth() + 1).padStart(2, '0') + '/' + now.getFullYear();
   };
-  const [afterDate, setAfterDate] = useState(getDefaultAfterDate);
+  // Use empty string for SSR; useEffect sets the correct date client-side
+  const [afterDate, setAfterDate] = useState('');
   // Enhancement 4 — optional weight inputs
   const [beforeWeight, setBeforeWeight] = useState('');
   const [afterWeight, setAfterWeight] = useState('');
@@ -57,6 +58,11 @@ export default function BodyAnalyzer() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   // Feature 2 — share ref
   const shareRef = useRef<View>(null);
+
+  // Fix SSR date bug: set afterDate client-side only
+  useEffect(() => {
+    setAfterDate(getDefaultAfterDate());
+  }, []);
 
   // Bug 3 — quality raised from 0.5 to 0.85
   const pickImage = async (type: 'before' | 'after') => {
@@ -150,7 +156,10 @@ export default function BodyAnalyzer() {
 
   // Feature 3 — load analysis history
   const loadHistory = async () => {
-    if (!profile?.id) return;
+    if (!profile?.id) {
+      Alert.alert('Profile Required', 'Please complete your profile setup to view history.');
+      return;
+    }
     setLoadingHistory(true);
     try {
       const response = await api.get(`/body/history/${profile.id}`);

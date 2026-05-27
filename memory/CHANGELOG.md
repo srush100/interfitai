@@ -28,3 +28,11 @@
 - **Fixed (this session)**: Backend IndentationError at line 2403 in server.py (`_pattern_to_secondary` block)
 - **Added**: Time-estimation validation loop in EliteCoachingEngine (trims sessions exceeding target_minutes × 1.15)
 
+
+## [2026-05-27] Body Analyzer 3 Feature Additions
+- **Feature 1**: Replaced hardcoded time period chips with two free-form MM/YYYY date inputs. `calculateTimePeriod()` computes exact duration string passed to AI.
+- **Feature 2**: Share Results button using `react-native-view-shot` + `expo-sharing`. Shareable area: photos + score + BF% + watermark.
+- **Feature 3**: Past Analyses history viewer using `GET /api/body/history/{user_id}`. Score circle, date, period, summary per entry. Empty state + profile guard.
+- **Bug fix**: Fixed MongoDB `ObjectId` serialization in `/api/body/history` endpoint (was returning 500).
+- **Polish A**: Analyze button loading: spinner + "Analyzing your transformation..." text.
+- **Polish B**: Weight delta badge below progress score when both weights entered.
