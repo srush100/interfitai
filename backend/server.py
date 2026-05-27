@@ -2951,16 +2951,16 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
         protein_per_kg = 2.2                # high — preserve LBM in deficit
     elif goal == "muscle_building":
         calories = tdee * 1.10              # 10% surplus (lean bulk)
-        protein_per_kg = 1.8
+        protein_per_kg = 2.0                # industry standard for hypertrophy (RP/MacroFactor)
     else:  # maintenance
         calories = tdee
-        protein_per_kg = 1.6
+        protein_per_kg = 1.8                # above MPS ceiling with comfortable margin
 
     # Safety floor — never prescribe below BMR
     calories = max(calories, bmr * 1.1)
 
     # ── Macro split: protein from bodyweight, fat at 25% of cals, rest carbs ──
-    protein_g = round(weight * protein_per_kg)
+    protein_g = round(min(weight * protein_per_kg, 220))
     fat_g     = round((calories * 0.25) / 9)    # 25% of cals from fat (hormonal minimum)
     remaining_cals = calories - (protein_g * 4) - (fat_g * 9)
     carbs_g   = round(max(remaining_cals, 0) / 4)
