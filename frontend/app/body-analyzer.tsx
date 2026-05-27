@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
@@ -39,12 +41,22 @@ export default function BodyAnalyzer() {
   const [analyzing, setAnalyzing] = useState(false);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [timePeriod, setTimePeriod] = useState('3 months');
+  // Feature 1 — date pickers replace time period chips
+  const [beforeDate, setBeforeDate] = useState('');
+  const getDefaultAfterDate = () => {
+    const now = new Date();
+    return String(now.getMonth() + 1).padStart(2, '0') + '/' + now.getFullYear();
+  };
+  const [afterDate, setAfterDate] = useState(getDefaultAfterDate);
   // Enhancement 4 — optional weight inputs
   const [beforeWeight, setBeforeWeight] = useState('');
   const [afterWeight, setAfterWeight] = useState('');
-
-  const TIME_PERIODS = ['1 month', '3 months', '6 months', '1 year'];
+  // Feature 3 — history viewer
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  // Feature 2 — share ref
+  const shareRef = useRef<View>(null);
 
   // Bug 3 — quality raised from 0.5 to 0.85
   const pickImage = async (type: 'before' | 'after') => {
@@ -87,6 +99,71 @@ export default function BodyAnalyzer() {
     }
   };
 
+  // Feature 1 — compute human-readable duration from MM/YYYY strings
+  const calculateTimePeriod = (): string => {
+    if (!beforeDate || !afterDate) return '3 months';
+    try {
+      const parseParts = (s: string) => {
+        if (s.includes('/')) {
+          const parts = s.split('/');
+          return { m: parseInt(parts[0], 10), y: parseInt(parts[1], 10) };
+        }
+        return { m: 1, y: 2024 };
+      };
+      const b = parseParts(beforeDate);
+      const a = parseParts(afterDate);
+      const totalMonths = (a.y - b.y) * 12 + (a.m - b.m);
+      if (totalMonths <= 1) return '1 month';
+      if (totalMonths < 12) return `${totalMonths} months`;
+      const years = Math.floor(totalMonths / 12);
+      const rem = totalMonths % 12;
+      if (rem === 0) return years === 1 ? '1 year' : `${years} years`;
+      return `${years} year${years > 1 ? 's' : ''} and ${rem} month${rem > 1 ? 's' : ''}`;
+    } catch {
+      return '3 months';
+    }
+  };
+
+  // Feature 2 — capture shareable area and share
+  const shareResults = async () => {
+    if (!shareRef.current) return;
+    try {
+      const uri = await captureRef(shareRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle: 'Share your progress',
+        });
+      } else {
+        Alert.alert('Sharing not available', 'Sharing is not supported on this device.');
+      }
+    } catch (error) {
+      console.log('Share error:', error);
+      Alert.alert('Error', 'Could not share results. Please try again.');
+    }
+  };
+
+  // Feature 3 — load analysis history
+  const loadHistory = async () => {
+    if (!profile?.id) return;
+    setLoadingHistory(true);
+    try {
+      const response = await api.get(`/body/history/${profile.id}`);
+      setHistory(response.data || []);
+      setShowHistory(true);
+    } catch (error) {
+      console.log('History load error:', error);
+      Alert.alert('Error', 'Could not load analysis history.');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   const analyzeProgress = async () => {
     if (!beforeImage || !afterImage || !profile?.id) {
       Alert.alert('Missing Photos', 'Please upload both before and after photos');
@@ -123,7 +200,7 @@ export default function BodyAnalyzer() {
         user_id: profile.id,
         before_image_base64: beforeImage,
         after_image_base64: afterImage,
-        time_period: timePeriod,
+        time_period: calculateTimePeriod(),
         before_weight_kg: beforeWeight ? parseFloat(beforeWeight) : undefined,
         after_weight_kg: afterWeight ? parseFloat(afterWeight) : undefined,
       });
@@ -144,6 +221,8 @@ export default function BodyAnalyzer() {
     setAnalysis(null);
     setBeforeWeight('');
     setAfterWeight('');
+    setBeforeDate('');
+    setAfterDate(getDefaultAfterDate());
   };
 
   const renderPhotoUpload = (type: 'before' | 'after', image: string | null) => (
@@ -193,8 +272,55 @@ export default function BodyAnalyzer() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {!analysis ? (
+        {showHistory ? (
           <>
+            <View style={styles.historyHeader}>
+              <Text style={styles.historyTitle}>Analysis History</Text>
+              <TouchableOpacity onPress={() => setShowHistory(false)}>
+                <Text style={styles.historyBackText}>Back</Text>
+              </TouchableOpacity>
+            </View>
+            {history.length === 0 ? (
+              <View style={styles.emptyHistory}>
+                <Ionicons name="analytics-outline" size={48} color={colors.textMuted} />
+                <Text style={styles.emptyHistoryText}>No past analyses yet</Text>
+              </View>
+            ) : (
+              history.map((item: any, idx: number) => (
+                <View key={item.id || idx} style={styles.historyCard}>
+                  <View style={styles.historyScoreCircle}>
+                    <Text style={styles.historyScoreValue}>
+                      {item.analysis?.estimated_progress_score || '—'}
+                    </Text>
+                  </View>
+                  <View style={styles.historyInfo}>
+                    <Text style={styles.historyDate}>
+                      {new Date(item.created_at).toLocaleDateString('en-GB', {
+                        day: 'numeric', month: 'short', year: 'numeric',
+                      })}
+                    </Text>
+                    <Text style={styles.historyPeriod}>{item.time_period}</Text>
+                    <Text style={styles.historySummary} numberOfLines={2}>
+                      {item.analysis?.overall_assessment || 'Analysis completed'}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </>
+        ) : !analysis ? (
+          <>
+            {/* Past Analyses button */}
+            <TouchableOpacity style={styles.historyBtn} onPress={loadHistory}>
+              {loadingHistory ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <Ionicons name="time" size={18} color={colors.primary} />
+                  <Text style={styles.historyBtnText}>Past Analyses</Text>
+                </>
+              )}
+            </TouchableOpacity>
             {/* Enhancement 2 — expanded info card with pose guidance */}
             <View style={styles.infoCard}>
               <Ionicons name="sparkles" size={24} color={colors.primary} />
@@ -238,21 +364,34 @@ export default function BodyAnalyzer() {
               </View>
             </View>
 
-            {/* Time Period Selector */}
-            <Text style={styles.sectionLabel}>Time Between Photos</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.periodContainer}>
-              {TIME_PERIODS.map((period) => (
-                <TouchableOpacity
-                  key={period}
-                  style={[styles.periodBtn, timePeriod === period && styles.periodBtnActive]}
-                  onPress={() => setTimePeriod(period)}
-                >
-                  <Text style={[styles.periodText, timePeriod === period && styles.periodTextActive]}>
-                    {period}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {/* Feature 1 — Date pickers replace time period chips */}
+            <Text style={styles.sectionLabel}>Photo Dates</Text>
+            <View style={styles.dateRow}>
+              <View style={styles.dateInputWrapper}>
+                <Text style={styles.dateLabel}>Before photo</Text>
+                <TextInput
+                  style={styles.dateInput}
+                  placeholder="MM/YYYY"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="numbers-and-punctuation"
+                  value={beforeDate}
+                  onChangeText={setBeforeDate}
+                  maxLength={7}
+                />
+              </View>
+              <View style={styles.dateInputWrapper}>
+                <Text style={styles.dateLabel}>After photo</Text>
+                <TextInput
+                  style={styles.dateInput}
+                  placeholder="MM/YYYY"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="numbers-and-punctuation"
+                  value={afterDate}
+                  onChangeText={setAfterDate}
+                  maxLength={7}
+                />
+              </View>
+            </View>
 
             {/* Photo Upload */}
             <View style={styles.photosRow}>
@@ -270,7 +409,10 @@ export default function BodyAnalyzer() {
               disabled={!beforeImage || !afterImage || analyzing || checkingSubscription}
             >
               {analyzing || checkingSubscription ? (
-                <ActivityIndicator size="small" color={colors.background} />
+                <View style={styles.analyzingState}>
+                  <ActivityIndicator size="small" color={colors.background} />
+                  <Text style={styles.analyzingText}>Analyzing your transformation...</Text>
+                </View>
               ) : (
                 <>
                   <Ionicons name="analytics" size={22} color={colors.background} />
@@ -284,55 +426,70 @@ export default function BodyAnalyzer() {
             {/* Analysis Results */}
             <View style={styles.resultsCard}>
 
-              {/* Enhancement 3 — side-by-side photos in results */}
-              <View style={styles.resultPhotosRow}>
-                <View style={styles.resultPhotoCell}>
-                  <Text style={styles.resultPhotoLabel}>Before</Text>
-                  {beforeImage && (
-                    <Image
-                      source={{ uri: `data:image/jpeg;base64,${beforeImage}` }}
-                      style={styles.resultPhoto}
-                    />
-                  )}
-                </View>
-                <View style={styles.resultPhotoCell}>
-                  <Text style={styles.resultPhotoLabel}>After</Text>
-                  {afterImage && (
-                    <Image
-                      source={{ uri: `data:image/jpeg;base64,${afterImage}` }}
-                      style={styles.resultPhoto}
-                    />
-                  )}
-                </View>
-              </View>
-
-              {/* Progress Score */}
-              <View style={styles.scoreContainer}>
-                <View style={styles.scoreCircle}>
-                  <Text style={styles.scoreValue}>{analysis.estimated_progress_score}</Text>
-                  <Text style={styles.scoreMax}>/10</Text>
-                </View>
-                <Text style={styles.scoreLabel}>Progress Score</Text>
-              </View>
-
-              {/* Enhancement 1 — BF% estimates */}
-              {analysis.estimated_body_fat_before && analysis.estimated_body_fat_after && (
-                <>
-                  <View style={styles.bfRow}>
-                    <View style={styles.bfCell}>
-                      <Text style={styles.bfLabel}>Before BF%</Text>
-                      <Text style={styles.bfValue}>{analysis.estimated_body_fat_before}</Text>
-                    </View>
-                    <View style={styles.bfCell}>
-                      <Text style={styles.bfLabel}>After BF%</Text>
-                      <Text style={styles.bfValue}>{analysis.estimated_body_fat_after}</Text>
-                    </View>
+              {/* Feature 2 — Shareable area captured for share image */}
+              <View ref={shareRef} collapsable={false} style={styles.shareableArea}>
+                {/* Enhancement 3 — side-by-side photos in results */}
+                <View style={styles.resultPhotosRow}>
+                  <View style={styles.resultPhotoCell}>
+                    <Text style={styles.resultPhotoLabel}>Before</Text>
+                    {beforeImage && (
+                      <Image
+                        source={{ uri: `data:image/jpeg;base64,${beforeImage}` }}
+                        style={styles.resultPhoto}
+                      />
+                    )}
                   </View>
-                  <Text style={styles.bfDisclaimer}>Estimates only — not clinical measurements.</Text>
-                </>
-              )}
+                  <View style={styles.resultPhotoCell}>
+                    <Text style={styles.resultPhotoLabel}>After</Text>
+                    {afterImage && (
+                      <Image
+                        source={{ uri: `data:image/jpeg;base64,${afterImage}` }}
+                        style={styles.resultPhoto}
+                      />
+                    )}
+                  </View>
+                </View>
 
-              {/* Enhancement 1 — confidence banner when medium/low */}
+                {/* Progress Score */}
+                <View style={styles.scoreContainer}>
+                  <View style={styles.scoreCircle}>
+                    <Text style={styles.scoreValue}>{analysis.estimated_progress_score}</Text>
+                    <Text style={styles.scoreMax}>/10</Text>
+                  </View>
+                  <Text style={styles.scoreLabel}>Progress Score</Text>
+                  {/* Polish B — weight delta badge */}
+                  {beforeWeight && afterWeight && (
+                    <View style={styles.weightDeltaBadge}>
+                      <Text style={styles.weightDeltaText}>
+                        {(parseFloat(afterWeight) - parseFloat(beforeWeight)) >= 0 ? '+' : ''}
+                        {(parseFloat(afterWeight) - parseFloat(beforeWeight)).toFixed(1)} kg
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Enhancement 1 — BF% estimates */}
+                {analysis.estimated_body_fat_before && analysis.estimated_body_fat_after && (
+                  <>
+                    <View style={styles.bfRow}>
+                      <View style={styles.bfCell}>
+                        <Text style={styles.bfLabel}>Before BF%</Text>
+                        <Text style={styles.bfValue}>{analysis.estimated_body_fat_before}</Text>
+                      </View>
+                      <View style={styles.bfCell}>
+                        <Text style={styles.bfLabel}>After BF%</Text>
+                        <Text style={styles.bfValue}>{analysis.estimated_body_fat_after}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.bfDisclaimer}>Estimates only — not clinical measurements.</Text>
+                  </>
+                )}
+
+                {/* Branding watermark */}
+                <Text style={styles.watermark}>Analyzed by InterFitAI</Text>
+              </View>
+
+              {/* Enhancement 1 — confidence banner when medium/low (outside shareable) */}
               {analysis.analysis_confidence && analysis.analysis_confidence !== 'high' && (
                 <View style={styles.confidenceBanner}>
                   <Ionicons name="information-circle" size={16} color={colors.warning} />
@@ -385,6 +542,12 @@ export default function BodyAnalyzer() {
             <TouchableOpacity style={styles.resetBtn} onPress={resetAnalysis}>
               <Ionicons name="refresh" size={20} color={colors.text} />
               <Text style={styles.resetBtnText}>Analyze New Photos</Text>
+            </TouchableOpacity>
+
+            {/* Feature 2 — Share Results button */}
+            <TouchableOpacity style={styles.shareBtn} onPress={shareResults}>
+              <Ionicons name="share-social" size={20} color={colors.primary} />
+              <Text style={styles.shareBtnText}>Share Results</Text>
             </TouchableOpacity>
           </>
         )}
@@ -489,26 +652,30 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 12,
   },
-  periodContainer: {
+  // Feature 1 — date picker styles
+  dateRow: {
+    flexDirection: 'row',
+    gap: 12,
     marginBottom: 24,
   },
-  periodBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    marginRight: 10,
+  dateInputWrapper: {
+    flex: 1,
   },
-  periodBtnActive: {
-    backgroundColor: colors.primary,
-  },
-  periodText: {
-    fontSize: 14,
+  dateLabel: {
+    fontSize: 13,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.text,
+    marginBottom: 6,
   },
-  periodTextActive: {
-    color: colors.background,
+  dateInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   photosRow: {
     flexDirection: 'row',
@@ -780,10 +947,146 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     padding: 16,
     borderRadius: 12,
+    marginBottom: 12,
   },
   resetBtnText: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.text,
+  },
+  // Feature 2 — shareable area + share button
+  shareableArea: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  watermark: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: 12,
+    letterSpacing: 0.5,
+  },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary + '15',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  shareBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  // Feature 3 — history styles
+  historyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  historyBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  historyBackText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  emptyHistory: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyHistoryText: {
+    fontSize: 15,
+    color: colors.textMuted,
+    marginTop: 12,
+  },
+  historyCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    alignItems: 'center',
+    gap: 14,
+  },
+  historyScoreCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  historyScoreValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyDate: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  historyPeriod: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  historySummary: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  // Polish A — analyzing state
+  analyzingState: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  analyzingText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  // Polish B — weight delta badge
+  weightDeltaBadge: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  weightDeltaText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.background,
   },
 });

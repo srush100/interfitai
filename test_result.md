@@ -502,20 +502,24 @@ backend:
         agent: "main"
         comment: "MAJOR FIX: Completely rewrote the generate_alternate_meal endpoint to include: 1) PROTEIN_GROUPS dictionary for grouping related foods (banning 'chicken' now bans 'turkey', 'poultry' too), 2) Extensive logging to trace banned foods through the entire process, 3) Retry loop (up to 3 attempts) if banned foods detected in AI response, 4) Post-generation validation that strips any remaining banned ingredients. The endpoint now matches the strictness of the main meal generation function."
 
-  - task: "Body Analyzer - AI Progress Comparison"
+  - task: "Body Analyzer - 3 Feature Additions (Date Pickers, Share, History)"
     implemented: true
-    working: true
-    file: "server.py"
+    working: "NA"
+    file: "frontend/app/body-analyzer.tsx"
     stuck_count: 0
-    priority: "medium"
-    needs_retesting: false
+    priority: "high"
+    needs_retesting: true
     status_history:
-      - working: NA
+      - working: "NA"
         agent: "main"
-        comment: "NEW FEATURE: Added Body Analyzer endpoints (POST /api/body/analyze) to compare before/after progress photos using AI vision. Created frontend body-analyzer.tsx with photo upload and AI analysis results display."
-      - working: true
-        agent: "testing"
-        comment: "✅ TESTED: Body Analyzer endpoints working. GET /api/body/progress/{user_id} and GET /api/body/history/{user_id} return proper responses. POST /api/body/analyze skipped as testing agent cannot provide real before/after images."
+        comment: |
+          Implemented 3 features + 2 polish items in body-analyzer.tsx:
+          1. Feature 1: Replaced TIME_PERIODS chips with two MM/YYYY date inputs (Before photo / After photo). Added calculateTimePeriod() helper that converts date difference to human-readable string (e.g. '4 months', '1 year and 2 months'). Fallback to '3 months' if dates not entered.
+          2. Feature 2: Added Share Results button. Used react-native-view-shot + expo-sharing (newly installed). Wraps photos + score + BF% + 'Analyzed by InterFitAI' watermark in a ref={shareRef} View (collapsable=false). Share button appears below 'Analyze New Photos' button.
+          3. Feature 3: Added Past Analyses history viewer. Uses existing GET /api/body/history/{user_id} endpoint. 'Past Analyses' button loads history as a conditional view replacing the upload form. Shows date, score, time period, and one-line summary per entry. Empty state handled.
+          4. Polish A: Loading state shows ActivityIndicator + 'Analyzing your transformation...' text instead of bare spinner.
+          5. Polish B: Weight delta badge (e.g. '-5.0 kg') shown below Progress Score label when both weights entered.
+          Dependencies installed: react-native-view-shot@4.0.3, expo-sharing@14.0.8
 
   - task: "Food Logging Delete & Favorite"
     implemented: true

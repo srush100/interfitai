@@ -8167,6 +8167,9 @@ Respond with valid JSON only — no markdown fences:
 async def get_analysis_history(user_id: str):
     """Get body analysis history for a user"""
     analyses = await db.body_analyses.find({"user_id": user_id}).sort("created_at", -1).to_list(20)
+    for item in analyses:
+        if '_id' in item:
+            item['_id'] = str(item['_id'])
     return analyses
 
 # ==================== REVENUECAT WEBHOOKS ====================
