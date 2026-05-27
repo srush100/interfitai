@@ -105,26 +105,42 @@ export default function BodyAnalyzer() {
     }
   };
 
-  // Feature 1 — compute human-readable duration from MM/YYYY strings
+  // Feature 1 — compute human-readable duration from date strings (DD/MM/YYYY or MM/YYYY)
   const calculateTimePeriod = (): string => {
     if (!beforeDate || !afterDate) return '3 months';
     try {
-      const parseParts = (s: string) => {
-        if (s.includes('/')) {
-          const parts = s.split('/');
-          return { m: parseInt(parts[0], 10), y: parseInt(parts[1], 10) };
+      const parseDate = (input: string): Date => {
+        const parts = input.split('/').map(Number);
+        if (parts.length === 3) {
+          // DD/MM/YYYY
+          return new Date(parts[2], parts[1] - 1, parts[0]);
+        } else if (parts.length === 2) {
+          // MM/YYYY
+          return new Date(parts[1], parts[0] - 1, 1);
         }
-        return { m: 1, y: 2024 };
+        return new Date();
       };
-      const b = parseParts(beforeDate);
-      const a = parseParts(afterDate);
-      const totalMonths = (a.y - b.y) * 12 + (a.m - b.m);
-      if (totalMonths <= 1) return '1 month';
-      if (totalMonths < 12) return `${totalMonths} months`;
+
+      const before = parseDate(beforeDate);
+      const after = parseDate(afterDate);
+      const diffMs = after.getTime() - before.getTime();
+      if (diffMs <= 0) return '1 month';
+
+      const totalDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+      if (totalDays < 14) return `${totalDays} days`;
+      if (totalDays < 60) {
+        const weeks = Math.round(totalDays / 7);
+        return `${weeks} week${weeks !== 1 ? 's' : ''}`;
+      }
+
+      const totalMonths = Math.round(totalDays / 30.44);
+      if (totalMonths < 12) return `${totalMonths} month${totalMonths !== 1 ? 's' : ''}`;
+
       const years = Math.floor(totalMonths / 12);
-      const rem = totalMonths % 12;
-      if (rem === 0) return years === 1 ? '1 year' : `${years} years`;
-      return `${years} year${years > 1 ? 's' : ''} and ${rem} month${rem > 1 ? 's' : ''}`;
+      const remaining = totalMonths % 12;
+      if (remaining === 0) return `${years} year${years !== 1 ? 's' : ''}`;
+      return `${years} year${years !== 1 ? 's' : ''} and ${remaining} month${remaining !== 1 ? 's' : ''}`;
     } catch {
       return '3 months';
     }
@@ -377,27 +393,27 @@ export default function BodyAnalyzer() {
             <Text style={styles.sectionLabel}>Photo Dates</Text>
             <View style={styles.dateRow}>
               <View style={styles.dateInputWrapper}>
-                <Text style={styles.dateLabel}>Before photo</Text>
+                <Text style={styles.dateLabel}>Before photo date</Text>
                 <TextInput
                   style={styles.dateInput}
-                  placeholder="MM/YYYY"
+                  placeholder="DD/MM/YYYY or MM/YYYY"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="numbers-and-punctuation"
                   value={beforeDate}
                   onChangeText={setBeforeDate}
-                  maxLength={7}
+                  maxLength={10}
                 />
               </View>
               <View style={styles.dateInputWrapper}>
-                <Text style={styles.dateLabel}>After photo</Text>
+                <Text style={styles.dateLabel}>After photo date</Text>
                 <TextInput
                   style={styles.dateInput}
-                  placeholder="MM/YYYY"
+                  placeholder="DD/MM/YYYY or MM/YYYY"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="numbers-and-punctuation"
                   value={afterDate}
                   onChangeText={setAfterDate}
-                  maxLength={7}
+                  maxLength={10}
                 />
               </View>
             </View>
