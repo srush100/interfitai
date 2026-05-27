@@ -7992,19 +7992,21 @@ class BodyAnalysisRequest(BaseModel):
     before_image_base64: str
     after_image_base64: str
     time_period: str = "3 months"
+    before_weight_kg: Optional[float] = None
+    after_weight_kg: Optional[float] = None
 
 @api_router.post("/body/upload-progress")
 async def upload_progress_photo(user_id: str, image_base64: str, label: str = "progress", notes: str = None, weight: float = None):
-    """Upload a progress photo"""
+    """Upload a progress photo. Stores the full image for future comparison."""
     photo = ProgressPhoto(
         user_id=user_id,
-        image_base64=image_base64[:200] + "...",  # Store truncated for reference
+        image_base64=image_base64,  # store full image — needed for history + analysis
         label=label,
         notes=notes,
         weight=weight,
         date=datetime.now().strftime("%Y-%m-%d")
     )
-    
+
     await db.progress_photos.insert_one(photo.model_dump())
     return {"message": "Progress photo uploaded", "id": photo.id}
 
@@ -8016,34 +8018,86 @@ async def get_progress_photos(user_id: str):
 
 @api_router.post("/body/analyze")
 async def analyze_body_progress(request: BodyAnalysisRequest):
-    """AI-powered body transformation analysis comparing before/after photos"""
+    """AI-powered body transformation analysis comparing before/after photos.
+
+    Enriches the prompt with the user's profile (weight, height, goal) so the AI
+    can calibrate its feedback — a 4kg change means different things for a 60kg
+    vs a 110kg person, and a cutter vs a bulker.
+    """
+    # ── Pull user profile for context ────────────────────────────────
+    profile = await db.profiles.find_one({"id": request.user_id})
+    ctx_lines = [f"Time period between photos: {request.time_period}"]
+    goal_framing = "overall body composition"
+    if profile:
+        weight = profile.get("weight")
+        height = profile.get("height")
+        age    = profile.get("age")
+        gender = profile.get("gender", "unspecified")
+        goal   = profile.get("goal", "maintenance")
+
+        if weight: ctx_lines.append(f"Current weight: {weight} kg")
+        if height: ctx_lines.append(f"Height: {height} cm")
+        if age:    ctx_lines.append(f"Age: {age}")
+        ctx_lines.append(f"Gender: {gender}")
+        ctx_lines.append(f"Training goal: {goal.replace('_', ' ')}")
+
+        goal_framing = {
+            "weight_loss":     "visible fat loss while preserving muscle",
+            "muscle_building": "visible muscle growth with controlled fat gain",
+            "maintenance":     "body recomposition — simultaneous fat loss and muscle gain",
+        }.get(goal, "overall body composition")
+
+    # Optional explicit weight delta from the user
+    if request.before_weight_kg and request.after_weight_kg:
+        delta = request.after_weight_kg - request.before_weight_kg
+        ctx_lines.append(
+            f"Weight at Before: {request.before_weight_kg} kg | "
+            f"Weight at After: {request.after_weight_kg} kg | "
+            f"Delta: {'+' if delta >= 0 else ''}{delta:.1f} kg"
+        )
+
+    user_context = "\n".join(ctx_lines)
+
     try:
         content = await call_claude_sonnet(
-            system_message="""You are a professional fitness coach and body composition expert. 
-Analyze the before and after progress photos provided. Give constructive, encouraging, and detailed feedback.
-Focus on visible improvements in:
-1. Muscle definition and tone
-2. Body composition changes
-3. Posture improvements
-4. Overall physique transformation
+            system_message=f"""You are a professional fitness coach and body composition expert analysing before/after progress photos.
 
-Be positive and motivating while being realistic. Provide actionable advice for continued progress.
-Respond with valid JSON only:
-{
-    "overall_assessment": "Brief overall assessment",
-    "visible_changes": ["Change 1", "Change 2", "Change 3"],
-    "areas_improved": ["Area 1", "Area 2"],
-    "recommendations": ["Recommendation 1", "Recommendation 2"],
-    "motivation_message": "Encouraging message",
-    "estimated_progress_score": 8
-}""",
-            user_message=f"Please analyze these before and after progress photos taken over {request.time_period}. Provide detailed feedback on the visible transformation.",
-            max_tokens=1000,
+USER CONTEXT:
+{user_context}
+
+PRIMARY GOAL FRAMING: Focus feedback on {goal_framing}.
+
+SCORING RUBRIC (estimated_progress_score, 1-10):
+  10 = near-complete physique transformation — dramatic change aligned with goal
+  8  = clear, significant progress — obvious visible change
+  6  = moderate progress — visible but modest change
+  4  = minor changes — small shifts in composition or tone
+  2  = very little visible change
+  1  = no change or regression
+
+Provide a body fat % ESTIMATE as a range (e.g. "18-21%") for each photo. Prefix with "Estimate: " — do not claim clinical precision. If the photos do not allow confident estimation (bad angle, clothing obscuring, poor lighting), say so honestly in overall_assessment and lower the confidence accordingly.
+
+Be encouraging but HONEST. Do not inflate scores. If there is little change, say so and give specific actionable next steps.
+
+Respond with valid JSON only — no markdown fences:
+{{
+    "overall_assessment": "2-3 sentence assessment calibrated to the user's goal and stats",
+    "estimated_body_fat_before": "e.g. 18-21%",
+    "estimated_body_fat_after":  "e.g. 14-17%",
+    "visible_changes": ["Specific change 1", "Specific change 2", "Specific change 3"],
+    "areas_improved": ["Specific muscle group or region 1", "Area 2"],
+    "recommendations": ["Actionable recommendation 1", "Recommendation 2", "Recommendation 3"],
+    "motivation_message": "Encouraging but honest message",
+    "estimated_progress_score": 8,
+    "analysis_confidence": "high | medium | low"
+}}""",
+            user_message=f"Analyze these before and after progress photos taken over {request.time_period}. Provide the full JSON response per the system prompt.",
+            max_tokens=1200,
             image_base64=request.before_image_base64,
             image_base64_2=request.after_image_base64
         )
-        
-        # Clean markdown code blocks if present
+
+        # ── Clean markdown fences ────────────────────────────────────
         content = content.strip() if content else ""
         if content.startswith("```"):
             lines = content.split("\n")
@@ -8051,42 +8105,60 @@ Respond with valid JSON only:
             in_json = False
             for line in lines:
                 if line.startswith("```json"):
-                    in_json = True
-                    continue
+                    in_json = True; continue
                 elif line.startswith("```"):
-                    in_json = False
-                    continue
+                    in_json = False; continue
                 if in_json or not line.startswith("```"):
                     json_lines.append(line)
             content = "\n".join(json_lines)
-        
         content = content.strip()
-        
+
         analysis_data = json.loads(content)
-        
-        # Save analysis to database
+
         analysis_record = {
             "id": str(uuid.uuid4()),
             "user_id": request.user_id,
             "time_period": request.time_period,
             "analysis": analysis_data,
-            "created_at": datetime.utcnow()
+            "created_at": datetime.utcnow(),
         }
         await db.body_analyses.insert_one(analysis_record)
-        
         return {"analysis": analysis_data, "id": analysis_record["id"]}
-        
-    except json.JSONDecodeError:
-        return {
-            "analysis": {
-                "overall_assessment": "Great progress! Keep up the amazing work on your fitness journey.",
-                "visible_changes": ["Improved muscle definition", "Better posture", "Enhanced overall tone"],
-                "areas_improved": ["Core strength", "Upper body definition"],
-                "recommendations": ["Continue with consistent training", "Ensure adequate protein intake", "Get enough sleep for recovery"],
-                "motivation_message": "Your dedication is showing! Every workout brings you closer to your goals.",
-                "estimated_progress_score": 7
+
+    except json.JSONDecodeError as parse_err:
+        logger.error(f"Body analysis JSON parse failed: {parse_err} | raw content: {content[:500]}")
+        # One retry with a stricter instruction
+        try:
+            retry_content = await call_claude_sonnet(
+                system_message="You MUST respond with valid JSON only — no markdown, no prose. Retry the body analysis.",
+                user_message=f"Re-analyze these photos and return ONLY the JSON object with fields: overall_assessment, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). Taken over {request.time_period}.",
+                max_tokens=1000,
+                image_base64=request.before_image_base64,
+                image_base64_2=request.after_image_base64
+            )
+            retry_content = retry_content.strip()
+            if retry_content.startswith("```"):
+                retry_content = retry_content.split("```")[1]
+                if retry_content.startswith("json"):
+                    retry_content = retry_content[4:]
+            retry_content = retry_content.strip()
+            analysis_data = json.loads(retry_content)
+
+            analysis_record = {
+                "id": str(uuid.uuid4()),
+                "user_id": request.user_id,
+                "time_period": request.time_period,
+                "analysis": analysis_data,
+                "created_at": datetime.utcnow(),
             }
-        }
+            await db.body_analyses.insert_one(analysis_record)
+            return {"analysis": analysis_data, "id": analysis_record["id"]}
+        except Exception as retry_err:
+            logger.error(f"Body analysis retry failed: {retry_err}")
+            raise HTTPException(
+                status_code=502,
+                detail="Analysis could not be completed — please try again with clearer photos."
+            )
     except Exception as e:
         logger.error(f"Body analysis error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to analyze progress: {str(e)}")

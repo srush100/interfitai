@@ -8,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -17,13 +18,17 @@ import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 
+// Enhancement 1 — extended interface with new optional fields
 interface AnalysisResult {
   overall_assessment: string;
+  estimated_body_fat_before?: string;
+  estimated_body_fat_after?: string;
   visible_changes: string[];
   areas_improved: string[];
   recommendations: string[];
   motivation_message: string;
   estimated_progress_score: number;
+  analysis_confidence?: 'high' | 'medium' | 'low';
 }
 
 export default function BodyAnalyzer() {
@@ -35,9 +40,13 @@ export default function BodyAnalyzer() {
   const [checkingSubscription, setCheckingSubscription] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [timePeriod, setTimePeriod] = useState('3 months');
+  // Enhancement 4 — optional weight inputs
+  const [beforeWeight, setBeforeWeight] = useState('');
+  const [afterWeight, setAfterWeight] = useState('');
 
   const TIME_PERIODS = ['1 month', '3 months', '6 months', '1 year'];
 
+  // Bug 3 — quality raised from 0.5 to 0.85
   const pickImage = async (type: 'before' | 'after') => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -49,19 +58,16 @@ export default function BodyAnalyzer() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [3, 4],
-      quality: 0.5,
+      quality: 0.85,
       base64: true,
     });
 
     if (!result.canceled && result.assets[0].base64) {
-      if (type === 'before') {
-        setBeforeImage(result.assets[0].base64);
-      } else {
-        setAfterImage(result.assets[0].base64);
-      }
+      type === 'before' ? setBeforeImage(result.assets[0].base64) : setAfterImage(result.assets[0].base64);
     }
   };
 
+  // Bug 3 — quality raised from 0.5 to 0.85
   const takePhoto = async (type: 'before' | 'after') => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
@@ -72,16 +78,12 @@ export default function BodyAnalyzer() {
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [3, 4],
-      quality: 0.5,
+      quality: 0.85,
       base64: true,
     });
 
     if (!result.canceled && result.assets[0].base64) {
-      if (type === 'before') {
-        setBeforeImage(result.assets[0].base64);
-      } else {
-        setAfterImage(result.assets[0].base64);
-      }
+      type === 'before' ? setBeforeImage(result.assets[0].base64) : setAfterImage(result.assets[0].base64);
     }
   };
 
@@ -91,13 +93,11 @@ export default function BodyAnalyzer() {
       return;
     }
 
-    // Check subscription status before analyzing
     setCheckingSubscription(true);
     try {
       const subResponse = await api.get(`/subscription/check/${profile.id}`);
       if (!subResponse.data.has_access) {
         setCheckingSubscription(false);
-        // Redirect to subscription page
         Alert.alert(
           'Subscription Required',
           'Start your free trial to access AI body analysis!',
@@ -110,7 +110,6 @@ export default function BodyAnalyzer() {
       }
     } catch (error) {
       console.log('Subscription check error:', error);
-      // Allow analysis if subscription check fails (failsafe)
     } finally {
       setCheckingSubscription(false);
     }
@@ -119,16 +118,21 @@ export default function BodyAnalyzer() {
     setAnalysis(null);
 
     try {
+      // Enhancement 4 — pass optional weights to backend
       const response = await api.post('/body/analyze', {
         user_id: profile.id,
         before_image_base64: beforeImage,
         after_image_base64: afterImage,
         time_period: timePeriod,
+        before_weight_kg: beforeWeight ? parseFloat(beforeWeight) : undefined,
+        after_weight_kg: afterWeight ? parseFloat(afterWeight) : undefined,
       });
 
       setAnalysis(response.data.analysis);
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to analyze progress');
+      // Bug 2 — show honest 502 message from backend retry logic
+      const msg = error.response?.data?.detail || 'Failed to analyze progress';
+      Alert.alert('Analysis Failed', msg);
     } finally {
       setAnalyzing(false);
     }
@@ -138,6 +142,8 @@ export default function BodyAnalyzer() {
     setBeforeImage(null);
     setAfterImage(null);
     setAnalysis(null);
+    setBeforeWeight('');
+    setAfterWeight('');
   };
 
   const renderPhotoUpload = (type: 'before' | 'after', image: string | null) => (
@@ -161,17 +167,11 @@ export default function BodyAnalyzer() {
           <Ionicons name="body" size={40} color={colors.textMuted} />
           <Text style={styles.uploadText}>Add {type} photo</Text>
           <View style={styles.uploadActions}>
-            <TouchableOpacity
-              style={styles.uploadBtn}
-              onPress={() => pickImage(type)}
-            >
+            <TouchableOpacity style={styles.uploadBtn} onPress={() => pickImage(type)}>
               <Ionicons name="images" size={18} color={colors.primary} />
               <Text style={styles.uploadBtnText}>Gallery</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.uploadBtn}
-              onPress={() => takePhoto(type)}
-            >
+            <TouchableOpacity style={styles.uploadBtn} onPress={() => takePhoto(type)}>
               <Ionicons name="camera" size={18} color={colors.primary} />
               <Text style={styles.uploadBtnText}>Camera</Text>
             </TouchableOpacity>
@@ -195,13 +195,47 @@ export default function BodyAnalyzer() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {!analysis ? (
           <>
-            {/* Instructions */}
+            {/* Enhancement 2 — expanded info card with pose guidance */}
             <View style={styles.infoCard}>
               <Ionicons name="sparkles" size={24} color={colors.primary} />
               <Text style={styles.infoTitle}>AI Progress Analysis</Text>
               <Text style={styles.infoText}>
-                Upload before & after photos to get AI-powered insights on your body transformation journey.
+                Upload before & after photos to get AI-powered insights on your body transformation.
               </Text>
+              <View style={styles.tipsBox}>
+                <Text style={styles.tipsHeader}>For the most accurate analysis:</Text>
+                <Text style={styles.tipItem}>• Use the same angle (front OR side) in both photos</Text>
+                <Text style={styles.tipItem}>• Stand relaxed, arms at your sides — no flexing</Text>
+                <Text style={styles.tipItem}>• Similar lighting in both photos</Text>
+                <Text style={styles.tipItem}>• Form-fitting clothing or shirtless when comfortable</Text>
+                <Text style={styles.tipItem}>• Same time of day (morning preferred, before meals)</Text>
+              </View>
+            </View>
+
+            {/* Enhancement 4 — optional weight inputs */}
+            <View style={styles.weightRow}>
+              <View style={styles.weightInputWrapper}>
+                <Text style={styles.weightLabel}>Before weight (kg)</Text>
+                <TextInput
+                  style={styles.weightInput}
+                  placeholder="e.g. 85"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={beforeWeight}
+                  onChangeText={setBeforeWeight}
+                />
+              </View>
+              <View style={styles.weightInputWrapper}>
+                <Text style={styles.weightLabel}>After weight (kg)</Text>
+                <TextInput
+                  style={styles.weightInput}
+                  placeholder="e.g. 80"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={afterWeight}
+                  onChangeText={setAfterWeight}
+                />
+              </View>
             </View>
 
             {/* Time Period Selector */}
@@ -233,9 +267,9 @@ export default function BodyAnalyzer() {
                 (!beforeImage || !afterImage) && styles.analyzeBtnDisabled,
               ]}
               onPress={analyzeProgress}
-              disabled={!beforeImage || !afterImage || analyzing}
+              disabled={!beforeImage || !afterImage || analyzing || checkingSubscription}
             >
-              {analyzing ? (
+              {analyzing || checkingSubscription ? (
                 <ActivityIndicator size="small" color={colors.background} />
               ) : (
                 <>
@@ -249,6 +283,30 @@ export default function BodyAnalyzer() {
           <>
             {/* Analysis Results */}
             <View style={styles.resultsCard}>
+
+              {/* Enhancement 3 — side-by-side photos in results */}
+              <View style={styles.resultPhotosRow}>
+                <View style={styles.resultPhotoCell}>
+                  <Text style={styles.resultPhotoLabel}>Before</Text>
+                  {beforeImage && (
+                    <Image
+                      source={{ uri: `data:image/jpeg;base64,${beforeImage}` }}
+                      style={styles.resultPhoto}
+                    />
+                  )}
+                </View>
+                <View style={styles.resultPhotoCell}>
+                  <Text style={styles.resultPhotoLabel}>After</Text>
+                  {afterImage && (
+                    <Image
+                      source={{ uri: `data:image/jpeg;base64,${afterImage}` }}
+                      style={styles.resultPhoto}
+                    />
+                  )}
+                </View>
+              </View>
+
+              {/* Progress Score */}
               <View style={styles.scoreContainer}>
                 <View style={styles.scoreCircle}>
                   <Text style={styles.scoreValue}>{analysis.estimated_progress_score}</Text>
@@ -256,6 +314,33 @@ export default function BodyAnalyzer() {
                 </View>
                 <Text style={styles.scoreLabel}>Progress Score</Text>
               </View>
+
+              {/* Enhancement 1 — BF% estimates */}
+              {analysis.estimated_body_fat_before && analysis.estimated_body_fat_after && (
+                <>
+                  <View style={styles.bfRow}>
+                    <View style={styles.bfCell}>
+                      <Text style={styles.bfLabel}>Before BF%</Text>
+                      <Text style={styles.bfValue}>{analysis.estimated_body_fat_before}</Text>
+                    </View>
+                    <View style={styles.bfCell}>
+                      <Text style={styles.bfLabel}>After BF%</Text>
+                      <Text style={styles.bfValue}>{analysis.estimated_body_fat_after}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.bfDisclaimer}>Estimates only — not clinical measurements.</Text>
+                </>
+              )}
+
+              {/* Enhancement 1 — confidence banner when medium/low */}
+              {analysis.analysis_confidence && analysis.analysis_confidence !== 'high' && (
+                <View style={styles.confidenceBanner}>
+                  <Ionicons name="information-circle" size={16} color={colors.warning} />
+                  <Text style={styles.confidenceText}>
+                    Confidence: {analysis.analysis_confidence}. For best results, use well-lit, same-angle, same-pose photos.
+                  </Text>
+                </View>
+              )}
 
               <Text style={styles.assessmentTitle}>Overall Assessment</Text>
               <Text style={styles.assessmentText}>{analysis.overall_assessment}</Text>
@@ -334,6 +419,7 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
+  // Enhancement 2 — info card with tips
   infoCard: {
     backgroundColor: colors.surface,
     borderRadius: 16,
@@ -353,6 +439,49 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 20,
+  },
+  tipsBox: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.primary + '10',
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 14,
+  },
+  tipsHeader: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  tipItem: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 22,
+  },
+  // Enhancement 4 — weight inputs
+  weightRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  weightInputWrapper: {
+    flex: 1,
+  },
+  weightLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 6,
+  },
+  weightInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   sectionLabel: {
     fontSize: 14,
@@ -468,9 +597,31 @@ const styles = StyleSheet.create({
     padding: 24,
     marginBottom: 16,
   },
+  // Enhancement 3 — side-by-side photo styles
+  resultPhotosRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+  },
+  resultPhotoCell: {
+    flex: 1,
+  },
+  resultPhotoLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  resultPhoto: {
+    width: '100%',
+    aspectRatio: 0.75,
+    borderRadius: 10,
+  },
+  // Score
   scoreContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   scoreCircle: {
     width: 100,
@@ -495,6 +646,54 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: 8,
+  },
+  // Enhancement 1 — BF% and confidence styles
+  bfRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 6,
+  },
+  bfCell: {
+    flex: 1,
+    backgroundColor: colors.primary + '10',
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+  },
+  bfLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  bfValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  bfDisclaimer: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  confidenceBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: colors.warning + '18',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  confidenceText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 18,
   },
   assessmentTitle: {
     fontSize: 16,
