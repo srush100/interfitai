@@ -42,6 +42,7 @@ const healthKitPermissions = {
       'BasalEnergyBurned',
       'DistanceWalkingRunning',
       'Workout',
+      'AppleExerciseTime',
     ],
     write: [
       'ActiveEnergyBurned',
@@ -156,21 +157,48 @@ export async function getTodayDistance(): Promise<number> {
   });
 }
 
+export async function getTodayActiveMinutes(): Promise<number> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit) {
+    const stored = await getStoredHealthData();
+    return stored.activeMinutes;
+  }
+
+  return new Promise((resolve) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const options = {
+      startDate: today.toISOString(),
+      endDate: new Date().toISOString(),
+    };
+
+    AppleHealthKit.getAppleExerciseTime(options, (error: any, results: any) => {
+      if (error) {
+        console.log('Error getting active minutes:', error);
+        resolve(0);
+      } else {
+        const total = results?.reduce((sum: number, r: any) => sum + (r.value || 0), 0) || 0;
+        resolve(Math.round(total));
+      }
+    });
+  });
+}
+
 export async function syncHealthData(): Promise<HealthData> {
   const steps = await getTodaySteps();
   const calories = await getTodayCaloriesBurned();
   const distance = await getTodayDistance();
-  
+  const activeMinutes = await getTodayActiveMinutes();
+
   const healthData: HealthData = {
     steps,
     calories,
-    activeMinutes: Math.round(steps / 100), // Estimate
+    activeMinutes,
     distance,
     lastSynced: new Date().toISOString(),
   };
-  
+
   await AsyncStorage.setItem(HEALTH_STORAGE_KEY, JSON.stringify(healthData));
-  
   return healthData;
 }
 
@@ -241,18 +269,32 @@ function mapWorkoutType(type: string): string {
   return mapping[type.toLowerCase()] || mapping['default'];
 }
 
-// Connection status
+// Connection status — reads stored permission flag, not just device availability
 export async function getHealthConnectionStatus(): Promise<{
   available: boolean;
   connected: boolean;
   platform: 'apple_health' | 'health_connect' | 'none';
 }> {
   const available = await isHealthAvailable();
-  
+
+  // Check if we've previously connected (stored flag set by saveDeviceStatus in settings.tsx)
+  let connected = false;
+  if (available) {
+    try {
+      const storedDevices = await AsyncStorage.getItem('@connected_devices');
+      if (storedDevices) {
+        const parsed = JSON.parse(storedDevices);
+        connected = parsed[Platform.OS === 'ios' ? 'apple_health' : 'google_fit'] || false;
+      }
+    } catch {
+      connected = false;
+    }
+  }
+
   return {
     available,
-    connected: available, // If available and we got here, we have permissions
-    platform: Platform.OS === 'ios' ? 'apple_health' : 
+    connected,
+    platform: Platform.OS === 'ios' ? 'apple_health' :
               Platform.OS === 'android' ? 'health_connect' : 'none',
   };
 }

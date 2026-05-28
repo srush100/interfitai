@@ -20,6 +20,7 @@ import ReanimatedModule, { useSharedValue, useAnimatedStyle, withSpring } from '
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
+import { getHealthConnectionStatus, syncHealthData } from '../../src/services/health';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -43,6 +44,18 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadData();
+    // Fix 4 — auto-sync health data on app open if connected
+    const autoSyncHealth = async () => {
+      try {
+        const status = await getHealthConnectionStatus();
+        if (status.connected) {
+          await syncHealthData();
+        }
+      } catch (e) {
+        console.log('Auto health sync failed:', e);
+      }
+    };
+    autoSyncHealth();
   }, []);
 
   const loadData = async () => {

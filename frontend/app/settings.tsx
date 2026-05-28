@@ -59,9 +59,7 @@ export default function SettingsScreen() {
   
   const [connectedDevices, setConnectedDevices] = useState<ConnectedDevice[]>([
     { id: 'apple_health', name: 'Apple Health', icon: 'logo-apple', color: '#FF2D55', connected: false, available: Platform.OS === 'ios' },
-    { id: 'google_fit', name: 'Google Fit', icon: 'fitness', color: '#4285F4', connected: false, available: Platform.OS === 'android' },
-    { id: 'fitbit', name: 'Fitbit', icon: 'watch', color: '#00B0B9', connected: false, available: true },
-    { id: 'garmin', name: 'Garmin', icon: 'navigate', color: '#007CC3', connected: false, available: true },
+    { id: 'google_fit', name: 'Google Health Connect', icon: 'fitness', color: '#4285F4', connected: false, available: Platform.OS === 'android' },
   ]);
 
   useEffect(() => {
@@ -230,80 +228,6 @@ export default function SettingsScreen() {
           ]
         );
       }
-    } else if (deviceId === 'fitbit') {
-      // Fitbit OAuth flow
-      try {
-        const response = await api.post(`/devices/connect?user_id=${userId}&device_type=fitbit`);
-        const data = response.data;
-        
-        if (data.setup_required) {
-          Alert.alert(
-            'Fitbit Setup Required',
-            'Fitbit integration requires developer credentials. Please contact support for assistance.',
-            [{ text: 'OK' }]
-          );
-          return;
-        }
-        
-        if (data.oauth_url) {
-          Alert.alert(
-            'Connect Fitbit',
-            'You will be redirected to Fitbit to authorize the connection.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { 
-                text: 'Continue', 
-                onPress: async () => {
-                  // Open Fitbit OAuth URL
-                  const canOpen = await Linking.canOpenURL(data.oauth_url);
-                  if (canOpen) {
-                    await Linking.openURL(data.oauth_url);
-                  } else {
-                    Alert.alert('Error', 'Unable to open Fitbit authorization page');
-                  }
-                }
-              }
-            ]
-          );
-        }
-      } catch (error) {
-        console.error('Fitbit connect error:', error);
-        Alert.alert('Error', 'Failed to initiate Fitbit connection');
-      }
-    } else if (deviceId === 'garmin') {
-      // Garmin Connect flow
-      try {
-        const response = await api.post(`/devices/connect?user_id=${userId}&device_type=garmin`);
-        const data = response.data;
-        
-        if (data.setup_required) {
-          Alert.alert(
-            'Garmin Setup Required',
-            'Garmin integration requires developer credentials. Please contact support for assistance.',
-            [{ text: 'OK' }]
-          );
-          return;
-        }
-        
-        if (data.oauth_url) {
-          Alert.alert(
-            'Connect Garmin',
-            'You will be redirected to Garmin Connect to authorize.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { 
-                text: 'Continue', 
-                onPress: async () => {
-                  await Linking.openURL(data.oauth_url);
-                }
-              }
-            ]
-          );
-        }
-      } catch (error) {
-        console.error('Garmin connect error:', error);
-        Alert.alert('Error', 'Failed to initiate Garmin connection');
-      }
     }
   };
 
@@ -355,8 +279,8 @@ export default function SettingsScreen() {
         {/* Connected Devices */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="watch" size={22} color={colors.primary} />
-            <Text style={styles.sectionTitle}>Connected Devices</Text>
+            <Ionicons name="heart" size={22} color={colors.primary} />
+            <Text style={styles.sectionTitle}>Health Data</Text>
           </View>
           
           <View style={styles.card}>
@@ -404,7 +328,7 @@ export default function SettingsScreen() {
                 ) : (
                   <>
                     <Ionicons name="sync" size={18} color={colors.primary} />
-                    <Text style={styles.syncButtonText}>Sync All Devices</Text>
+                    <Text style={styles.syncButtonText}>Sync Health Data</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -430,6 +354,11 @@ export default function SettingsScreen() {
                   <Ionicons name="walk" size={24} color="#45B7D1" />
                   <Text style={styles.healthStatValue}>{healthData.distance} km</Text>
                   <Text style={styles.healthStatLabel}>Distance</Text>
+                </View>
+                <View style={styles.healthStat}>
+                  <Ionicons name="timer" size={24} color="#4ECDC4" />
+                  <Text style={styles.healthStatValue}>{healthData.activeMinutes}</Text>
+                  <Text style={styles.healthStatLabel}>Active Min</Text>
                 </View>
               </View>
             </View>

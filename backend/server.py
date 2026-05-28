@@ -2906,15 +2906,14 @@ STRIPE_PRICE_IDS = {
     "yearly": os.environ.get("STRIPE_PRICE_YEARLY", ""),  # Includes 30-day bonus
 }
 
-# Fitbit OAuth Configuration (Register app at https://dev.fitbit.com/)
-# These would be set in production .env file
-FITBIT_CLIENT_ID = os.environ.get("FITBIT_CLIENT_ID", "")
-FITBIT_CLIENT_SECRET = os.environ.get("FITBIT_CLIENT_SECRET", "")
-FITBIT_REDIRECT_URI = os.environ.get("FITBIT_REDIRECT_URI", "")
+# Fitbit OAuth Configuration — removed (iOS launch: Apple Health only)
+# FITBIT_CLIENT_ID = os.environ.get("FITBIT_CLIENT_ID", "")
+# FITBIT_CLIENT_SECRET = os.environ.get("FITBIT_CLIENT_SECRET", "")
+# FITBIT_REDIRECT_URI = os.environ.get("FITBIT_REDIRECT_URI", "")
 
-# Garmin Connect OAuth Configuration (Register at https://developer.garmin.com/)
-GARMIN_CONSUMER_KEY = os.environ.get("GARMIN_CONSUMER_KEY", "")
-GARMIN_CONSUMER_SECRET = os.environ.get("GARMIN_CONSUMER_SECRET", "")
+# Garmin Connect OAuth Configuration — removed (iOS launch: Apple Health only)
+# GARMIN_CONSUMER_KEY = os.environ.get("GARMIN_CONSUMER_KEY", "")
+# GARMIN_CONSUMER_SECRET = os.environ.get("GARMIN_CONSUMER_SECRET", "")
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -7504,105 +7503,8 @@ async def connect_device(user_id: str, device_type: str):
         )
         
         return {"message": f"{device_type} connected successfully", "connection": connection}
-    
-    # For Fitbit - return OAuth URL for user to authorize
-    elif device_type == "fitbit":
-        if not FITBIT_CLIENT_ID:
-            return {
-                "message": "Fitbit integration not configured",
-                "oauth_url": None,
-                "setup_required": True,
-                "instructions": "To enable Fitbit integration, register an app at https://dev.fitbit.com/ and add FITBIT_CLIENT_ID, FITBIT_CLIENT_SECRET, and FITBIT_REDIRECT_URI to your environment variables."
-            }
-        
-        # Generate OAuth authorization URL
-        oauth_url = (
-            f"https://www.fitbit.com/oauth2/authorize?"
-            f"response_type=code&"
-            f"client_id={FITBIT_CLIENT_ID}&"
-            f"redirect_uri={FITBIT_REDIRECT_URI}&"
-            f"scope=activity%20nutrition%20heartrate%20sleep%20weight&"
-            f"state={user_id}"
-        )
-        
-        return {
-            "message": "Redirect user to Fitbit authorization",
-            "oauth_url": oauth_url,
-            "device_type": "fitbit"
-        }
-    
-    # For Garmin - return OAuth URL
-    elif device_type == "garmin":
-        if not GARMIN_CONSUMER_KEY:
-            return {
-                "message": "Garmin integration not configured",
-                "oauth_url": None,
-                "setup_required": True,
-                "instructions": "To enable Garmin integration, register an app at https://developer.garmin.com/ and add GARMIN_CONSUMER_KEY and GARMIN_CONSUMER_SECRET to your environment variables."
-            }
-        
-        # Note: Garmin uses OAuth 1.0a which is more complex
-        # For production, use a library like garminconnect or authlib
-        return {
-            "message": "Garmin OAuth requires additional setup",
-            "oauth_url": None,
-            "setup_required": True,
-            "instructions": "Garmin Connect API requires OAuth 1.0a flow. Contact support for setup assistance."
-        }
-    
-    return {"message": f"Unknown device type: {device_type}"}
 
-@api_router.post("/devices/fitbit/callback")
-async def fitbit_oauth_callback(code: str, state: str):
-    """Handle Fitbit OAuth callback - exchange code for access token"""
-    if not FITBIT_CLIENT_ID or not FITBIT_CLIENT_SECRET:
-        raise HTTPException(status_code=400, detail="Fitbit not configured")
-    
-    user_id = state  # We passed user_id as state parameter
-    
-    # Exchange authorization code for access token
-    async with httpx.AsyncClient() as client:
-        auth_header = base64.b64encode(
-            f"{FITBIT_CLIENT_ID}:{FITBIT_CLIENT_SECRET}".encode()
-        ).decode()
-        
-        response = await client.post(
-            "https://api.fitbit.com/oauth2/token",
-            headers={
-                "Authorization": f"Basic {auth_header}",
-                "Content-Type": "application/x-www-form-urlencoded"
-            },
-            data={
-                "code": code,
-                "grant_type": "authorization_code",
-                "redirect_uri": FITBIT_REDIRECT_URI
-            }
-        )
-        
-        if response.status_code != 200:
-            logger.error(f"Fitbit token error: {response.text}")
-            raise HTTPException(status_code=400, detail="Failed to get Fitbit access token")
-        
-        token_data = response.json()
-        
-        # Save connection with tokens
-        connection = DeviceConnection(
-            user_id=user_id,
-            device_type="fitbit",
-            connected=True,
-            access_token=token_data.get("access_token"),
-            refresh_token=token_data.get("refresh_token"),
-            token_expires_at=datetime.utcnow(),  # Would calculate from expires_in
-            last_sync=datetime.utcnow()
-        )
-        
-        await db.device_connections.update_one(
-            {"user_id": user_id, "device_type": "fitbit"},
-            {"$set": connection.model_dump()},
-            upsert=True
-        )
-        
-        return {"message": "Fitbit connected successfully!", "success": True}
+    return {"message": f"Unknown device type: {device_type}"}
 
 @api_router.get("/devices/sync/{user_id}/{device_type}")
 async def sync_device_data(user_id: str, device_type: str):
