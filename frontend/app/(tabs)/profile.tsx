@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
   Image,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -21,10 +22,8 @@ import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
 
 const DEVICES = [
-  { id: 'apple_health', name: 'Apple Health', icon: 'fitness' },
-  { id: 'google_fit', name: 'Google Fit', icon: 'logo-google' },
-  { id: 'fitbit', name: 'Fitbit', icon: 'watch' },
-  { id: 'garmin', name: 'Garmin', icon: 'navigate' },
+  { id: 'apple_health', name: 'Apple Health', icon: 'logo-apple' },
+  { id: 'google_fit', name: 'Google Health Connect', icon: 'fitness' },
 ];
 
 const GOALS = [
@@ -516,45 +515,50 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {/* Connected Devices - Links to Settings */}
-        <TouchableOpacity 
+        {/* Health Data - Links to Settings */}
+        <TouchableOpacity
           style={styles.card}
           onPress={() => router.push('/settings')}
           activeOpacity={0.7}
         >
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Connected Devices</Text>
+            <Text style={styles.sectionTitle}>Health Data</Text>
             <View style={styles.manageLink}>
               <Text style={styles.manageLinkText}>Manage</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.primary} />
             </View>
           </View>
           <Text style={styles.deviceDescription}>
-            Connect your fitness trackers to sync workouts and activity data
+            {Platform.OS === 'ios'
+              ? 'Sync your steps, calories and workouts with Apple Health'
+              : 'Sync your steps, calories and workouts with Google Health Connect'}
           </Text>
           <View style={styles.deviceIconsRow}>
-            {DEVICES.map((device) => (
-              <View 
-                key={device.id} 
+            {DEVICES.filter(d =>
+              (d.id === 'apple_health' && Platform.OS === 'ios') ||
+              (d.id === 'google_fit' && Platform.OS === 'android')
+            ).map((device) => (
+              <View
+                key={device.id}
                 style={[
                   styles.deviceIconCircle,
                   connectedDevices.includes(device.id) && styles.deviceIconCircleConnected
                 ]}
               >
-                <Ionicons 
-                  name={device.icon as any} 
-                  size={22} 
-                  color={connectedDevices.includes(device.id) ? colors.primary : colors.textMuted} 
+                <Ionicons
+                  name={device.icon as any}
+                  size={22}
+                  color={connectedDevices.includes(device.id) ? colors.primary : colors.textMuted}
                 />
               </View>
             ))}
           </View>
-          {connectedDevices.length > 0 ? (
+          {connectedDevices.includes(Platform.OS === 'ios' ? 'apple_health' : 'google_fit') ? (
             <Text style={styles.connectedCount}>
-              {connectedDevices.length} device{connectedDevices.length > 1 ? 's' : ''} connected
+              {Platform.OS === 'ios' ? 'Apple Health' : 'Google Health Connect'} connected
             </Text>
           ) : (
-            <Text style={styles.noDevicesText}>No devices connected</Text>
+            <Text style={styles.noDevicesText}>Tap to connect</Text>
           )}
         </TouchableOpacity>
 

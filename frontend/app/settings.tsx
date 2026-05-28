@@ -178,7 +178,9 @@ export default function SettingsScreen() {
       if (!available) {
         Alert.alert(
           'Not Available',
-          `${device.name} is not available on this device. This feature requires a physical iOS/Android device with ${device.name} installed.`,
+          Platform.OS === 'ios'
+            ? 'Apple Health requires a native build running on a physical iPhone. It is not available in Expo Go or the iOS Simulator.'
+            : 'Google Health Connect is not available on this device. Please ensure it is installed from the Play Store.',
           [{ text: 'OK' }]
         );
         return;
