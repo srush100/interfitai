@@ -239,6 +239,17 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
+        {/* Migration banner — shown to users without a password */}
+        {profile && profile.has_password === false && (
+          <TouchableOpacity
+            style={styles.migrationBanner}
+            onPress={() => router.push('/change-password')}
+          >
+            <Ionicons name="shield-checkmark-outline" size={20} color="#000" />
+            <Text style={styles.migrationBannerText}>Secure your account — set a password</Text>
+            <Ionicons name="chevron-forward" size={16} color="#000" />
+          </TouchableOpacity>
+        )}
         {/* Logo Header */}
         <View style={styles.logoHeader}>
           <Image
@@ -653,5 +664,20 @@ const styles = StyleSheet.create({
   profilePictureLarge: {
     width: '100%',
     height: '100%',
+  },
+  migrationBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.primary,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  migrationBannerText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
   },
 });

@@ -1,0 +1,83 @@
+{
+  "summary": "Full authentication + biometric + migration banner feature tested. Backend: 17/17 tests pass. Frontend: login screen, onboarding password fields, profile Password card, change-password screen, and migration banner all render and function correctly. Critical finding: Alert.alert() is a no-op in react-native-web — all client-side validation alerts are SILENT on web (no visual feedback), though validation logic still prevents API calls via 'return' statements. Migration banner correctly shows for has_password=false users and hides for has_password=true users.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/profile",
+        "issue": "Duplicate route decorator at lines 2991-2992: @api_router.post(\"/profile\") appears twice. FastAPI may register the route twice causing undefined behavior. Should remove the duplicate decorator.",
+        "priority": "MEDIUM"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/login",
+        "issue": "Legacy users without password_hash get 401 with message 'Please contact support at srush@interfitai.com to set a password.' This may strand users who logged out before the password system was deployed. Consider adding a self-service password reset path.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "login.tsx, onboarding.tsx, change-password.tsx",
+        "issue": "Alert.alert() is a no-op in react-native-web (react-native-web/dist/exports/Alert/index.js: static alert() {}). All client-side validation alerts are SILENT on web. Affected flows: empty email on login, invalid email format, empty password, password < 8 chars on onboarding/change-password, passwords don't match. Validation logic DOES prevent API calls (return statements work), but users see no error message on web.",
+        "testID": null,
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_results_detail": {
+    "login_screen_renders": "PASS - Email Address field, Password field with show/hide toggle, Sign In button, Create New Account button all present",
+    "login_empty_email_alert": "PARTIAL - Validation prevents API call (return works), but Alert.alert is no-op on web so no visual feedback shown",
+    "login_invalid_email_alert": "PARTIAL - Same as above",
+    "login_empty_password_alert": "PARTIAL - Same as above",
+    "login_wrong_email_401": "PASS - API returns 401, inline error 'Invalid email or password.' displayed in UI",
+    "login_wrong_password_401": "PASS - API returns 401, inline error displayed",
+    "login_correct_creds_200": "PASS - Login succeeds and navigates to /(tabs)",
+    "profile_duplicate_409": "PASS - Backend returns 409 with 'An account with this email already exists'",
+    "profile_with_password_has_password_true": "PASS - has_password=true returned for users with password",
+    "profile_without_password_has_password_false": "PASS - has_password=false returned for users without password",
+    "change_password_updates_hash": "PASS - Old password fails 401 after change, new password succeeds 200",
+    "onboarding_password_fields": "PASS - Password and Confirm Password fields visible in step 1",
+    "onboarding_password_short_validation": "PARTIAL - Prevents step advancement, but no visual alert on web",
+    "onboarding_passwords_mismatch_validation": "PARTIAL - Prevents step advancement, but no visual alert on web",
+    "profile_password_card": "PASS - Password card with 'Set or change your password' visible in Profile tab",
+    "profile_password_card_navigation": "PASS - Clicking card navigates to /change-password",
+    "change_password_screen_renders": "PASS - All three fields (Current, New, Confirm) + eye toggle + Update button",
+    "change_password_short_validation": "PARTIAL - Prevents API call, but no visual alert on web",
+    "change_password_mismatch_validation": "PARTIAL - Prevents API call, but no visual alert on web",
+    "migration_banner_shown_no_password": "PASS - 'Secure your account — set a password' banner visible for has_password=false users",
+    "migration_banner_hidden_has_password": "PASS - No banner for has_password=true users",
+    "migration_banner_click_navigation": "PASS - Banner click navigates to /change-password"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_password_features.py",
+    "/app/test_reports/pytest/auth_password_features.xml"
+  ],
+  "action_items": [
+    "HIGH: Alert.alert() is a no-op in react-native-web. All client-side validation errors (empty email, invalid email, short/mismatched passwords) show NO feedback on web. Fix: Replace Alert.alert() calls with inline error state (useState) + conditional error Text component. This pattern already exists in login.tsx for API errors (the 'error' state from userStore). Apply same pattern for form validation.",
+    "MEDIUM: Remove duplicate route decorator at server.py lines 2991-2992. @api_router.post('/profile') is registered twice for create_profile function. Remove one decorator.",
+    "LOW: Legacy users (has_password=false) who were logged out before the password system deployed cannot re-login via the new login screen. They get '401: Please contact support...' Consider adding a 'Forgot password / Continue with email' fallback on the login screen, OR implement a self-service token-based password setup link."
+  ],
+  "critical_code_review_comments": [
+    "react-native-web/dist/exports/Alert/index.js: class Alert { static alert() {} } - Alert is a no-op stub. All Alert.alert() calls in login.tsx, onboarding.tsx, change-password.tsx are silent on web. Replace with inline error states.",
+    "server.py lines 2991-2992: Duplicate @api_router.post('/profile') decorator. FastAPI may register the route twice. Remove duplicate.",
+    "Correct pattern for web-compatible validation: use useState error + conditional render instead of Alert.alert. Example: const [validationError, setValidationError] = useState(''); ... setValidationError('Please enter your email'); ... {validationError && <Text style={errorStyle}>{validationError}</Text>}",
+    "change-password.tsx: Uses GET @user_id from AsyncStorage, which IS set during login (loginWithPassword sets both userId and @user_id). This is correct.",
+    "has_password field computation in backend is correct: bool(profile.get('password_hash', '')) is True only when hash exists. No DB schema change needed.",
+    "MINOR WARNING in backend logs: passlib.handlers.bcrypt - AttributeError: module 'bcrypt' has no attribute '__about__'. This is a compatibility warning between newer bcrypt (4.0+) and passlib. bcrypt still works correctly (all 17 password tests pass). To fix: pip install 'passlib[bcrypt]' with compatible versions OR use bcrypt directly."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (17/17 tests passed)",
+    "frontend": "85% (core flows work, Alert.alert no-op affects 6 validation feedback points on web)"
+  },
+  "seed_data_creation": "Created TEST_frontend_ui@test.com with password 'Frontend123!' (user id: cc2c6903-108d-467a-9c40-cbc897dae3eb) for frontend login testing. Multiple TEST_authtest_*@example.com users created and cleaned up during backend tests.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Auth/biometric/migration banner feature tested. All backend endpoints pass (17/17). Key issue: Alert.alert() is a no-op in react-native-web - validation alerts don't show on web but logic is correct. Migration banner: visible for users without password (has_password=false), hidden for users with password, clicking navigates to /change-password. Login flow: correct credentials navigate to home; wrong creds show inline error. Onboarding: step 1 has Password + Confirm Password fields; validation prevents advancement but no visual alert. Profile tab: Password card present and navigates to change-password. Test user TEST_frontend_ui@test.com / Frontend123! created for login testing.",
+  "rca_of_issue": "Alert.alert no-op RCA: react-native-web provides a minimal stub implementation of Alert that does nothing (static alert() {}). This is by design in the RN web package since native alert dialogs don't exist on web. The fix is to use React state for inline error messages instead. Migration path for legacy users: handled via migration banner on home screen for users who still have an active session (localStorage userId set). Users who were logged out before password system deployed cannot re-login - this is a UX gap."
+}

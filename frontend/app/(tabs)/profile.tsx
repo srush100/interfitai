@@ -614,6 +614,21 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
         </TouchableOpacity>
 
+        {/* Change Password */}
+        <TouchableOpacity
+          style={styles.subscriptionCard}
+          onPress={() => router.push('/change-password')}
+        >
+          <View style={styles.subscriptionInfo}>
+            <Ionicons name="lock-closed" size={24} color={colors.primary} />
+            <View style={styles.subscriptionText}>
+              <Text style={styles.subscriptionTitle}>Password</Text>
+              <Text style={styles.subscriptionStatus}>Set or change your password</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
+        </TouchableOpacity>
+
         {/* Admin Panel - Only visible to admins */}
         {profile?.email && ['sebastianrush5@gmail.com', 'srush@interfitai.com'].includes(profile.email.toLowerCase()) && (
           <TouchableOpacity 

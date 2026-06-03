@@ -26,6 +26,7 @@ interface UserProfile {
   motivation_enabled: boolean;
   calorie_adjustment: number;
   profile_image?: string;
+  has_password?: boolean;
 }
 
 interface UserState {
@@ -34,10 +35,11 @@ interface UserState {
   isLoading: boolean;
   error: string | null;
   loadProfile: () => Promise<void>;
-  createProfile: (data: Partial<UserProfile>) => Promise<void>;
+  createProfile: (data: Partial<UserProfile> & { password?: string }) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
   setOnboarded: (value: boolean) => Promise<void>;
   setProfile: (profile: UserProfile) => void;
+  loginWithPassword: (email: string, password: string) => Promise<boolean>;
   loginWithEmail: (email: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
@@ -52,9 +54,9 @@ export const useUserStore = create<UserState>((set, get) => ({
     try {
       const userId = await AsyncStorage.getItem('userId');
       const onboarded = await AsyncStorage.getItem('isOnboarded');
-      
+
       set({ isOnboarded: onboarded === 'true' });
-      
+
       if (userId) {
         const response = await api.get(`/profile/${userId}`);
         set({ profile: response.data });
@@ -75,7 +77,8 @@ export const useUserStore = create<UserState>((set, get) => ({
       await AsyncStorage.setItem('hasEverOnboarded', 'true');
       set({ profile, isOnboarded: true, isLoading: false });
     } catch (error: any) {
-      set({ error: error.message, isLoading: false });
+      const msg = error?.response?.data?.detail || error.message;
+      set({ error: msg, isLoading: false });
       throw error;
     }
   },
@@ -83,7 +86,7 @@ export const useUserStore = create<UserState>((set, get) => ({
   updateProfile: async (data) => {
     const { profile } = get();
     if (!profile) return;
-    
+
     set({ isLoading: true, error: null });
     try {
       const response = await api.put(`/profile/${profile.id}`, data);
@@ -101,6 +104,24 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   setProfile: (profile) => {
     set({ profile });
+  },
+
+  loginWithPassword: async (email: string, password: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await api.post('/auth/login', { email, password });
+      const profile = response.data;
+      await AsyncStorage.setItem('userId', profile.id);
+      await AsyncStorage.setItem('@user_id', profile.id);
+      await AsyncStorage.setItem('isOnboarded', 'true');
+      await AsyncStorage.setItem('hasEverOnboarded', 'true');
+      set({ profile, isOnboarded: true, isLoading: false });
+      return true;
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.detail || error.message || 'Login failed';
+      set({ error: errorMsg, isLoading: false });
+      return false;
+    }
   },
 
   loginWithEmail: async (email: string) => {

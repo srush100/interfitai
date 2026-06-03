@@ -8,13 +8,17 @@ from pathlib import Path
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional, Dict, Any
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import openai
 import stripe
 import base64
 import json
 import httpx
 import time
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from passlib.context import CryptContext
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 ROOT_DIR = Path(__file__).parent
@@ -24,6 +28,9 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'interfitai')]
+
+# Password hashing context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # OpenAI configuration (kept for fallback/vision)
 openai.api_key = os.environ.get('OPENAI_API_KEY', '')
@@ -910,18 +917,24 @@ class UserProfile(BaseModel):
     reminders_enabled: bool = True
     motivation_enabled: bool = True
     profile_image: Optional[str] = None  # Base64 encoded profile picture
+    has_password: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserProfileCreate(BaseModel):
     name: str = ""
     email: str = ""
+    password: str = ""
     weight: float
     height: float
     age: int
     gender: str = "male"
     activity_level: str = "moderate"
     goal: str = "maintenance"
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 class UserProfileUpdate(BaseModel):
     name: Optional[str] = None
@@ -2976,25 +2989,41 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
 # ==================== USER PROFILE ENDPOINTS ====================
 
 @api_router.post("/profile", response_model=UserProfile)
+@api_router.post("/profile", response_model=UserProfile)
 async def create_profile(profile_data: UserProfileCreate):
-    """Create or update user profile with calculated macros"""
-    macros = calculate_macros(
-        profile_data.weight, profile_data.height, profile_data.age,
-        profile_data.gender, profile_data.activity_level, profile_data.goal
+    """Create a new user profile with password hashing and duplicate email check"""
+    # Check for duplicate email
+    existing = await db.profiles.find_one(
+        {"email": {"$regex": f"^{profile_data.email}$", "$options": "i"}}
     )
-    
-    profile = UserProfile(
-        **profile_data.model_dump(),
-        calculated_macros=macros
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists. Please sign in instead."
+        )
+
+    profile_dict = profile_data.model_dump()
+
+    # Pop password, hash it, store as password_hash
+    raw_password = profile_dict.pop("password", "")
+    if raw_password:
+        profile_dict["password_hash"] = pwd_context.hash(raw_password)
+
+    profile_dict["id"] = str(uuid.uuid4())
+    profile_dict["calculated_macros"] = calculate_macros(
+        profile_dict["weight"], profile_dict["height"], profile_dict["age"],
+        profile_dict["gender"], profile_dict["activity_level"], profile_dict["goal"]
     )
-    
-    # Check if this email was pre-granted free access by admin before signup
-    profile_dict = profile.model_dump()
+    profile_dict["created_at"] = datetime.utcnow()
+    profile_dict["updated_at"] = datetime.utcnow()
+
+    # Check free access list
     free_access_entry = await db.free_access.find_one({"email": profile_data.email.lower()})
     if free_access_entry:
         profile_dict["subscription_status"] = "free_access"
-    
+
     await db.profiles.insert_one(profile_dict)
+    profile_dict["has_password"] = bool(profile_dict.get("password_hash", ""))
     return UserProfile(**profile_dict)
 
 @api_router.get("/profile/{user_id}", response_model=UserProfile)
@@ -3003,6 +3032,7 @@ async def get_profile(user_id: str):
     profile = await db.profiles.find_one({"id": user_id})
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+    profile["has_password"] = bool(profile.get("password_hash", ""))
     return UserProfile(**profile)
 
 @api_router.put("/profile/{user_id}", response_model=UserProfile)
@@ -3044,7 +3074,55 @@ async def get_profile_by_email(email: str):
     profile = await db.profiles.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}})
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found. Please create an account first.")
+    profile["has_password"] = bool(profile.get("password_hash", ""))
     return UserProfile(**profile)
+
+# ==================== AUTH ENDPOINTS ====================
+
+@api_router.post("/auth/login")
+async def login_with_password(credentials: LoginRequest):
+    """Authenticate user with email and password"""
+    profile = await db.profiles.find_one(
+        {"email": {"$regex": f"^{credentials.email}$", "$options": "i"}}
+    )
+    if not profile:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    stored_hash = profile.get("password_hash", "")
+    if not stored_hash:
+        raise HTTPException(
+            status_code=401,
+            detail="This account was created before passwords were required. Please contact support at srush@interfitai.com to set a password."
+        )
+
+    if not pwd_context.verify(credentials.password, stored_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    profile["has_password"] = True
+    return UserProfile(**profile)
+
+@api_router.post("/auth/change-password")
+async def change_password(user_id: str, current_password: str, new_password: str):
+    """Change user's password"""
+    profile = await db.profiles.find_one({"id": user_id})
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stored_hash = profile.get("password_hash", "")
+    if stored_hash and not pwd_context.verify(current_password, stored_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+
+    await db.profiles.update_one(
+        {"id": user_id},
+        {"$set": {
+            "password_hash": pwd_context.hash(new_password),
+            "updated_at": datetime.utcnow(),
+        }}
+    )
+    return {"message": "Password updated successfully"}
 
 # ==================== WORKOUT ENDPOINTS ====================
 

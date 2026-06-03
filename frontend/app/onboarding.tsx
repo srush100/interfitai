@@ -45,6 +45,8 @@ export default function Onboarding() {
   const [formData, setFormData] = useState({
     name: '',
     email: prefillEmail || '',
+    password: '',
+    confirmPassword: '',
     weight: '',
     height: '',
     age: '',
@@ -52,6 +54,7 @@ export default function Onboarding() {
     activity_level: 'moderate',
     goal: 'muscle_building',
   });
+  const [showPassword, setShowPassword] = useState(false);
 
   // Convert imperial to metric
   const convertToMetric = () => {
@@ -69,6 +72,25 @@ export default function Onboarding() {
   };
 
   const handleNext = () => {
+    if (step === 1) {
+      if (!formData.email.trim()) {
+        Alert.alert('Required', 'Please enter your email address.');
+        return;
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email.trim())) {
+        Alert.alert('Invalid Email', 'Please enter a valid email address.');
+        return;
+      }
+      if (formData.password.length < 8) {
+        Alert.alert('Password Too Short', 'Password must be at least 8 characters.');
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        Alert.alert("Passwords Don't Match", 'Please make sure your passwords match.');
+        return;
+      }
+    }
     if (step < 4) {
       setStep(step + 1);
     } else {
@@ -93,14 +115,15 @@ export default function Onboarding() {
     try {
       await createProfile({
         name: formData.name || 'Champion',
-        email: formData.email,
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
         weight: Math.round(weightKg * 10) / 10,
         height: Math.round(heightCm * 10) / 10,
         age: parseInt(formData.age),
         gender: formData.gender,
         activity_level: formData.activity_level,
         goal: formData.goal,
-      });
+      } as any);
       router.replace('/(tabs)');
     } catch (error) {
       Alert.alert('Error', 'Failed to create profile. Please try again.');
@@ -146,6 +169,44 @@ export default function Onboarding() {
           autoCapitalize="none"
           value={formData.email}
           onChangeText={(text) => setFormData({ ...formData, email: text })}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Password</Text>
+        <View style={styles.passwordRow}>
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="Create a password (min 8 chars)"
+            placeholderTextColor={colors.textMuted}
+            secureTextEntry={!showPassword}
+            autoCapitalize="none"
+            value={formData.password}
+            onChangeText={(text) => setFormData({ ...formData, password: text })}
+          />
+          <TouchableOpacity
+            onPress={() => setShowPassword(!showPassword)}
+            style={styles.eyeBtn}
+          >
+            <Ionicons
+              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              color={colors.textMuted}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Confirm Password</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Re-enter your password"
+          placeholderTextColor={colors.textMuted}
+          secureTextEntry={!showPassword}
+          autoCapitalize="none"
+          value={formData.confirmPassword}
+          onChangeText={(text) => setFormData({ ...formData, confirmPassword: text })}
         />
       </View>
     </View>
@@ -659,5 +720,17 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     opacity: 0.5,
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  eyeBtn: {
+    paddingRight: 16,
+    paddingVertical: 16,
   },
 });

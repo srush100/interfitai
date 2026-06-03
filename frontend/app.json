@@ -21,7 +21,8 @@
         "UIBackgroundModes": [
           "fetch",
           "remote-notification"
-        ]
+        ],
+        "NSFaceIDUsageDescription": "Sign in to InterFitAI with Face ID"
       }
     },
     "android": {
@@ -60,7 +61,9 @@
           "color": "#FFD700"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-font",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
