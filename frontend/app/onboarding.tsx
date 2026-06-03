@@ -55,6 +55,7 @@ export default function Onboarding() {
     goal: 'muscle_building',
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState('');
 
   // Convert imperial to metric
   const convertToMetric = () => {
@@ -72,22 +73,23 @@ export default function Onboarding() {
   };
 
   const handleNext = () => {
+    setFormError('');
     if (step === 1) {
       if (!formData.email.trim()) {
-        Alert.alert('Required', 'Please enter your email address.');
+        setFormError('Please enter your email address.');
         return;
       }
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(formData.email.trim())) {
-        Alert.alert('Invalid Email', 'Please enter a valid email address.');
+        setFormError('Please enter a valid email address.');
         return;
       }
       if (formData.password.length < 8) {
-        Alert.alert('Password Too Short', 'Password must be at least 8 characters.');
+        setFormError('Password must be at least 8 characters.');
         return;
       }
       if (formData.password !== formData.confirmPassword) {
-        Alert.alert("Passwords Don't Match", 'Please make sure your passwords match.');
+        setFormError("Passwords don't match. Please check and try again.");
         return;
       }
     }
@@ -405,6 +407,13 @@ export default function Onboarding() {
         </ScrollView>
 
         {/* Navigation */}
+        {step === 1 && formError ? (
+          <View style={styles.formErrorContainer}>
+            <Ionicons name="alert-circle" size={16} color={colors.error} />
+            <Text style={styles.formErrorText}>{formError}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.navContainer}>
           {step > 1 && (
             <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
@@ -732,5 +741,20 @@ const styles = StyleSheet.create({
   eyeBtn: {
     paddingRight: 16,
     paddingVertical: 16,
+  },
+  formErrorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.error + '18',
+    borderRadius: 10,
+    padding: 12,
+    marginHorizontal: 20,
+    marginBottom: 8,
+  },
+  formErrorText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.error,
   },
 });

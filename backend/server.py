@@ -2989,7 +2989,6 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
 # ==================== USER PROFILE ENDPOINTS ====================
 
 @api_router.post("/profile", response_model=UserProfile)
-@api_router.post("/profile", response_model=UserProfile)
 async def create_profile(profile_data: UserProfileCreate):
     """Create a new user profile with password hashing and duplicate email check"""
     # Check for duplicate email

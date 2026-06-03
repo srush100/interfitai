@@ -36,3 +36,26 @@
 - **Bug fix**: Fixed MongoDB `ObjectId` serialization in `/api/body/history` endpoint (was returning 500).
 - **Polish A**: Analyze button loading: spinner + "Analyzing your transformation..." text.
 - **Polish B**: Weight delta badge below progress score when both weights entered.
+
+## [2026-06-03] Password Auth + Biometric Login + Migration Banner
+**Backend (server.py):**
+- Added passlib/bcrypt imports + `pwd_context = CryptContext(schemes=["bcrypt"])
+- Added `has_password: bool` to UserProfile model
+- Added `password: str` to UserProfileCreate model
+- Added `LoginRequest` model
+- `create_profile`: now checks for duplicate email (409), hashes password with bcrypt
+- `get_profile` + `get_profile_by_email`: now compute `has_password` from `password_hash`
+- Added `POST /api/auth/login` endpoint (email+password auth)
+- Added `POST /api/auth/change-password` endpoint
+- Removed duplicate `@api_router.post("/profile")` decorator
+
+**Frontend:**
+- Installed: `expo-local-authentication`, `expo-secure-store`
+- `app.json`: Added `NSFaceIDUsageDescription`
+- `userStore.ts`: Added `loginWithPassword()`, `loginWithEmail()`, `logout()`, `has_password` field
+- `login.tsx`: Replaced with email+password form + Face ID/fingerprint biometric button (shown only after first login) + inline error display
+- `index.tsx` (splash): Replaced with biometric auto-login flow on app launch
+- `onboarding.tsx`: Added password + confirm password fields in step 1 with inline error validation
+- `change-password.tsx`: New file — set/update password from Profile tab
+- `profile.tsx`: Added "Password" card linking to change-password screen
+- `(tabs)/index.tsx`: Added migration banner for users with `has_password=false`

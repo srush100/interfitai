@@ -29,6 +29,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
+  const [validationError, setValidationError] = useState('');
 
   useEffect(() => {
     checkBiometrics();
@@ -82,17 +83,18 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
+    setValidationError('');
     if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email address');
+      setValidationError('Please enter your email address');
       return;
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      setValidationError('Please enter a valid email address');
       return;
     }
     if (!password) {
-      Alert.alert('Error', 'Please enter your password');
+      setValidationError('Please enter your password');
       return;
     }
 
@@ -190,10 +192,10 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            {error && (
+            {(validationError || error) && (
               <View style={styles.errorContainer}>
                 <Ionicons name="alert-circle" size={16} color={colors.error} />
-                <Text style={styles.errorText}>{error}</Text>
+                <Text style={styles.errorText}>{validationError || error}</Text>
               </View>
             )}
 
