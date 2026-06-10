@@ -21,6 +21,7 @@ import Constants from 'expo-constants';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 import * as Haptics from 'expo-haptics';
+import { useUserStore } from '../src/store/userStore';
 
 // Get backend URL for constructing full GIF URLs
 const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 
@@ -86,6 +87,7 @@ interface WorkoutProgram {
 export default function WorkoutDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
+  const { profile } = useUserStore();
   const [workout, setWorkout] = useState<WorkoutProgram | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedDay, setExpandedDay] = useState<number>(0);
@@ -99,8 +101,8 @@ export default function WorkoutDetail() {
   // Exercise replacement/add state
   const [showReplaceModal, setShowReplaceModal] = useState(false);
   const [replaceTarget, setReplaceTarget] = useState<{dayIdx: number, exIdx: number} | null>(null);
-  const [isAddMode, setIsAddMode] = useState(false);  // true = adding new, false = replacing
-  const [addToDayIdx, setAddToDayIdx] = useState<number | null>(null);  // which day to add exercise to
+  const [isAddMode, setIsAddMode] = useState(false);
+  const [addToDayIdx, setAddToDayIdx] = useState<number | null>(null);
   // Drag-to-reorder state
   const [reordering, setReordering] = useState(false);
   const [selectedExIdx, setSelectedExIdx] = useState<number | null>(null);
@@ -111,6 +113,13 @@ export default function WorkoutDetail() {
   const [searching, setSearching] = useState(false);
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Session history state ─────────────────────────────────────────────────
+  const [lastSession, setLastSession] = useState<Record<number, any>>({});
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [completedSessionData, setCompletedSessionData] = useState<{ volume: number; duration: number | null } | null>(null);
+  const [finishing, setFinishing] = useState(false);
 
   // Muscle groups with icons and emoji for professional visual UI
   const muscleGroups = [
@@ -165,10 +174,100 @@ export default function WorkoutDetail() {
   const updatePerformance = (key: string, data: ExercisePerformance) => {
     const newPerformance = { ...performance, [key]: data };
     setPerformance(newPerformance);
-    
+    // Start session timer on first interaction with this day
+    if (!sessionStartTime) {
+      setSessionStartTime(new Date());
+    }
     // Auto-save when checkbox is checked
     if (data.completed) {
       savePerformance(newPerformance);
+    }
+  };
+
+  // ── Session history functions ──────────────────────────────────────────────
+
+  const loadLastSession = async (dayIdx: number) => {
+    if (!id) return;
+    try {
+      const response = await api.get(`/workout/${id}/last-session`, {
+        params: { day_index: dayIdx },
+      });
+      if (response.data) {
+        setLastSession(prev => ({ ...prev, [dayIdx]: response.data }));
+      }
+    } catch {
+      // No previous session — that's fine
+    }
+  };
+
+  // Load last session when day tab switches
+  useEffect(() => {
+    if (workout) {
+      loadLastSession(expandedDay);
+      // Reset timer when switching days
+      setSessionStartTime(new Date());
+    }
+  }, [expandedDay, workout?.id]);
+
+  // Get "last time" hint text for a specific set
+  const getLastTimeHint = (dayIdx: number, exIdx: number, setIdx: number): string | null => {
+    const session = lastSession[dayIdx];
+    if (!session) return null;
+    const ex = session.completed_exercises?.[exIdx];
+    if (!ex) return null;
+    const set = ex.sets?.[setIdx];
+    if (!set || !set.completed) return null;
+    if (set.weight && set.reps) return `${set.weight}kg × ${set.reps}`;
+    if (set.reps) return `${set.reps} reps`;
+    return null;
+  };
+
+  const handleFinishWorkout = async () => {
+    if (!workout || !profile?.id) return;
+    setFinishing(true);
+
+    const day = workout.workout_days[expandedDay];
+
+    // Build completed_exercises from current performance state
+    const completed_exercises = day.exercises.map((exercise: any, exIdx: number) => ({
+      exercise_name: exercise.name,
+      muscle_groups: exercise.muscle_groups || [],
+      sets: Array.from({ length: exercise.sets }, (_, setIdx) => {
+        const key = `${expandedDay}-${exIdx}-${setIdx}`;
+        const perf = performance[key] || { weight: '', reps: '', completed: false };
+        return {
+          set_number: setIdx + 1,
+          weight: perf.weight ? parseFloat(perf.weight) : null,
+          reps: perf.reps ? parseInt(perf.reps) : null,
+          completed: perf.completed,
+        };
+      }),
+    }));
+
+    const durationMinutes = sessionStartTime
+      ? Math.max(1, Math.round((Date.now() - sessionStartTime.getTime()) / 60000))
+      : null;
+
+    try {
+      const response = await api.post(`/workout/${workout.id}/session/complete`, {
+        user_id: profile.id,
+        day_index: expandedDay,
+        day_focus: day.focus || '',
+        duration_minutes: durationMinutes,
+        completed_exercises,
+      });
+
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setCompletedSessionData({ volume: response.data.total_volume, duration: durationMinutes });
+      setShowCompleteModal(true);
+      // Update cached last session so "last time" hints refresh immediately
+      setLastSession(prev => ({ ...prev, [expandedDay]: response.data }));
+      setSessionStartTime(new Date()); // reset timer for a potential second session
+    } catch (error) {
+      console.log('Error completing session:', error);
+      Alert.alert('Error', 'Could not save your session. Please try again.');
+    } finally {
+      setFinishing(false);
     }
   };
 
@@ -657,35 +756,41 @@ export default function WorkoutDetail() {
             {Array.from({ length: exercise.sets }, (_, setIdx) => {
               const key = `${expandedDay}-${exIdx}-${setIdx}`;
               const perf = performance[key] || { weight: '', reps: '', completed: false };
+              const hint = getLastTimeHint(expandedDay, exIdx, setIdx);
               return (
-                <View key={setIdx} style={styles.setRow}>
-                  <TouchableOpacity
-                    style={[styles.setCheckbox, perf.completed && styles.setCheckboxChecked]}
-                    onPress={() => updatePerformance(key, { ...perf, completed: !perf.completed })}
-                  >
-                    {perf.completed && <Ionicons name="checkmark" size={16} color={colors.background} />}
-                  </TouchableOpacity>
-                  <Text style={styles.setLabel}>Set {setIdx + 1}</Text>
-                  <TextInput
-                    style={styles.setInput}
-                    placeholder="kg"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="decimal-pad"
-                    value={perf.weight}
-                    onChangeText={(text) => updatePerformance(key, { ...perf, weight: text })}
-                  />
-                  <Text style={styles.setX}>×</Text>
-                  <TextInput
-                    style={styles.setInput}
-                    placeholder="reps"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="number-pad"
-                    value={perf.reps}
-                    onChangeText={(text) => updatePerformance(key, { ...perf, reps: text })}
-                  />
-                  <TouchableOpacity style={styles.removeSetBtn} onPress={() => removeSet(expandedDay, exIdx)}>
-                    <Ionicons name="close-circle" size={22} color={colors.error} />
-                  </TouchableOpacity>
+                <View key={setIdx}>
+                  <View style={styles.setRow}>
+                    <TouchableOpacity
+                      style={[styles.setCheckbox, perf.completed && styles.setCheckboxChecked]}
+                      onPress={() => updatePerformance(key, { ...perf, completed: !perf.completed })}
+                    >
+                      {perf.completed && <Ionicons name="checkmark" size={16} color={colors.background} />}
+                    </TouchableOpacity>
+                    <Text style={styles.setLabel}>Set {setIdx + 1}</Text>
+                    <TextInput
+                      style={styles.setInput}
+                      placeholder="kg"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="decimal-pad"
+                      value={perf.weight}
+                      onChangeText={(text) => updatePerformance(key, { ...perf, weight: text })}
+                    />
+                    <Text style={styles.setX}>×</Text>
+                    <TextInput
+                      style={styles.setInput}
+                      placeholder="reps"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="number-pad"
+                      value={perf.reps}
+                      onChangeText={(text) => updatePerformance(key, { ...perf, reps: text })}
+                    />
+                    <TouchableOpacity style={styles.removeSetBtn} onPress={() => removeSet(expandedDay, exIdx)}>
+                      <Ionicons name="close-circle" size={22} color={colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                  {hint && (
+                    <Text style={styles.lastTimeHint}>Last time: {hint}</Text>
+                  )}
                 </View>
               );
             })}
@@ -917,9 +1022,66 @@ export default function WorkoutDetail() {
               <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
               <Text style={styles.addExerciseBtnText}>Add Exercise</Text>
             </TouchableOpacity>
+
+            {/* Finish Workout Button */}
+            <TouchableOpacity
+              style={[styles.finishWorkoutBtn, finishing && styles.finishWorkoutBtnDisabled]}
+              onPress={handleFinishWorkout}
+              disabled={finishing}
+            >
+              {finishing ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={22} color="#000" />
+                  <Text style={styles.finishWorkoutBtnText}>Finish Workout</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
+
+      {/* Workout Complete Modal */}
+      <Modal
+        visible={showCompleteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCompleteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, styles.completeModalContent]}>
+            <Text style={styles.completeEmoji}>💪</Text>
+            <Text style={styles.completeTitle}>Workout Complete!</Text>
+            {completedSessionData && (
+              <>
+                {completedSessionData.volume > 0 && (
+                  <View style={styles.completeStatRow}>
+                    <Ionicons name="barbell" size={18} color={colors.primary} />
+                    <Text style={styles.completeStat}>
+                      {completedSessionData.volume.toLocaleString()} kg total volume
+                    </Text>
+                  </View>
+                )}
+                {completedSessionData.duration && (
+                  <View style={styles.completeStatRow}>
+                    <Ionicons name="time" size={18} color={colors.primary} />
+                    <Text style={styles.completeStat}>
+                      {completedSessionData.duration} minutes
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
+            <TouchableOpacity
+              style={styles.completeDoneBtn}
+              onPress={() => setShowCompleteModal(false)}
+            >
+              <Text style={styles.completeDoneBtnText}>Keep Going 🔥</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Rename Modal */}
       <Modal
@@ -1993,5 +2155,71 @@ const styles = StyleSheet.create({
   removeSetBtn: {
     padding: 4,
     marginLeft: 4,
+  },
+  // Session history styles
+  lastTimeHint: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    marginLeft: 44,
+    marginBottom: 6,
+    marginTop: -2,
+  },
+  finishWorkoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    borderRadius: 14,
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  finishWorkoutBtnDisabled: {
+    opacity: 0.6,
+  },
+  finishWorkoutBtnText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#000',
+  },
+  // Complete modal styles
+  completeModalContent: {
+    alignItems: 'center',
+    paddingVertical: 36,
+  },
+  completeEmoji: {
+    fontSize: 56,
+    marginBottom: 12,
+  },
+  completeTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: colors.text,
+    marginBottom: 20,
+  },
+  completeStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  completeStat: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  completeDoneBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 40,
+    paddingVertical: 14,
+    borderRadius: 30,
+    marginTop: 28,
+  },
+  completeDoneBtnText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#000',
   },
 });

@@ -3431,6 +3431,41 @@ async def rename_workout(workout_id: str, request: RenameWorkoutRequest):
 class WorkoutPerformanceRequest(BaseModel):
     performance: dict  # { "dayIndex-exerciseIndex-setIndex": { "weight": "50", "reps": "10", "completed": true } }
 
+# ── Session History Models ────────────────────────────────────────────────────
+
+class SessionSet(BaseModel):
+    set_number: int
+    weight: Optional[float] = None
+    reps: Optional[int] = None
+    completed: bool = False
+
+class SessionExercise(BaseModel):
+    exercise_name: str
+    muscle_groups: List[str] = []
+    sets: List[SessionSet] = []
+
+class CompleteSessionRequest(BaseModel):
+    user_id: str
+    day_index: int
+    day_focus: str = ""
+    duration_minutes: Optional[int] = None
+    completed_exercises: List[SessionExercise] = []
+    notes: Optional[str] = None
+
+class WorkoutSession(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    workout_id: str
+    day_index: int
+    day_focus: str = ""
+    date: datetime = Field(default_factory=datetime.utcnow)
+    duration_minutes: Optional[int] = None
+    completed_exercises: List[SessionExercise] = []
+    total_volume: float = 0.0
+    notes: Optional[str] = None
+    photo_base64: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 @api_router.post("/workout/{workout_id}/performance")
 async def save_workout_performance(workout_id: str, request: WorkoutPerformanceRequest):
     """Save workout performance data (weights, reps, completion status)"""
@@ -3449,6 +3484,62 @@ async def get_workout_performance(workout_id: str):
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found")
     return {"performance": workout.get("performance", {})}
+
+# ── Session History Endpoints ──────────────────────────────────────────────────
+
+@api_router.post("/workout/{workout_id}/session/complete")
+async def complete_workout_session(workout_id: str, request: CompleteSessionRequest):
+    """Record a completed workout session in workout_sessions collection"""
+    workout = await db.workouts.find_one({"id": workout_id})
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    # Compute total volume (weight × reps across all completed sets)
+    total_volume = 0.0
+    for ex in request.completed_exercises:
+        for s in ex.sets:
+            if s.completed and s.weight and s.reps:
+                total_volume += s.weight * s.reps
+
+    session = WorkoutSession(
+        user_id=request.user_id,
+        workout_id=workout_id,
+        day_index=request.day_index,
+        day_focus=request.day_focus,
+        duration_minutes=request.duration_minutes,
+        completed_exercises=request.completed_exercises,
+        total_volume=round(total_volume, 1),
+        notes=request.notes,
+    )
+    session_dict = session.model_dump()
+    await db.workout_sessions.insert_one(session_dict)
+    # Serialize ObjectId if present
+    session_dict.pop("_id", None)
+    return session_dict
+
+@api_router.get("/workout/sessions/{user_id}")
+async def get_user_sessions(user_id: str, limit: int = 20, workout_id: Optional[str] = None):
+    """Get all workout sessions for a user, sorted by date descending"""
+    query: dict = {"user_id": user_id}
+    if workout_id:
+        query["workout_id"] = workout_id
+    cursor = db.workout_sessions.find(query).sort("date", -1).limit(limit)
+    sessions = await cursor.to_list(limit)
+    for s in sessions:
+        s.pop("_id", None)
+    return sessions
+
+@api_router.get("/workout/{workout_id}/last-session")
+async def get_last_session(workout_id: str, day_index: int = 0):
+    """Get the most recent session for a workout + day_index pair"""
+    session = await db.workout_sessions.find_one(
+        {"workout_id": workout_id, "day_index": day_index},
+        sort=[("date", -1)]
+    )
+    if not session:
+        return None
+    session.pop("_id", None)
+    return session
 
 class UpdateExerciseRequest(BaseModel):
     day_index: int
