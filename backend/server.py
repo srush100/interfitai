@@ -950,7 +950,7 @@ class UserProfileUpdate(BaseModel):
     reminders_enabled: Optional[bool] = None
     motivation_enabled: Optional[bool] = None
     profile_image: Optional[str] = None  # Base64 encoded profile picture
-    unit_preference: Optional[str] = None  # "kg" | "lbs"
+    unit_preference: Optional[Literal["kg", "lbs"]] = None
 
 # Workout Models
 class Exercise(BaseModel):
