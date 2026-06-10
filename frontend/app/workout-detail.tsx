@@ -344,13 +344,16 @@ export default function WorkoutDetail() {
       setShowCompleteModal(true);
       // Update cached last session so "last time" hints refresh immediately
       setLastSession(prev => ({ ...prev, [expandedDay]: response.data }));
-      // Reset in-memory state immediately for instant visual feedback
-      // (backend already cleared it server-side above)
+      // Reset in-memory state immediately — keep weight/reps, just uncheck
+      // (backend also clears it server-side to survive reloads)
       const clearedPerformance = { ...performance };
       Object.keys(clearedPerformance).forEach(key => {
-        if (key.startsWith(`${expandedDay}-`)) delete clearedPerformance[key];
+        if (key.startsWith(`${expandedDay}-`)) {
+          clearedPerformance[key] = { ...clearedPerformance[key], completed: false };
+        }
       });
       setPerformance(clearedPerformance);
+      savePerformance(clearedPerformance);
       setSessionStartTime(new Date()); // reset timer for a potential second session
     } catch (error) {
       console.log('Error completing session:', error);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -92,6 +92,18 @@ export default function WorkoutQuestionnaire() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
+  const [quota, setQuota] = useState<{
+    used: number; limit: number | null; remaining: number | null;
+    reset_date: string; is_admin: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (profile?.id) {
+      api.get(`/workouts/generation-quota/${profile.id}`)
+        .then(r => setQuota(r.data))
+        .catch(() => {});
+    }
+  }, [profile?.id]);
   const [formData, setFormData] = useState({
     goal: 'build_muscle',
     training_style: 'weights',
@@ -164,10 +176,14 @@ export default function WorkoutQuestionnaire() {
       router.replace(`/workout-detail?id=${response.data.id}`);
     } catch (error: any) {
       const detail = error.response?.data?.detail;
-      const message = Array.isArray(detail)
-        ? 'Please check your inputs and try again.'
-        : (typeof detail === 'string' ? detail : 'Failed to generate workout. Please try again.');
-      Alert.alert('Error', message);
+      if (detail?.error === 'generation_limit') {
+        Alert.alert('Monthly Limit Reached', detail.message, [{ text: 'Got it' }]);
+      } else {
+        const message = Array.isArray(detail)
+          ? 'Please check your inputs and try again.'
+          : (typeof detail === 'string' ? detail : 'Failed to generate workout. Please try again.');
+        Alert.alert('Error', message);
+      }
     } finally {
       setLoading(false);
     }
@@ -176,7 +192,7 @@ export default function WorkoutQuestionnaire() {
   // Step 1: Goal Selection
   const renderStep1 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>What's your main goal?</Text>
+      <Text style={styles.stepTitle}>{"What's your main goal?"}</Text>
       <Text style={styles.stepSubtitle}>This will shape your entire program</Text>
       
       {GOALS.map((goal) => (
@@ -427,7 +443,7 @@ export default function WorkoutQuestionnaire() {
   const renderStep7 = () => (
     <View style={styles.stepContent}>
       <Text style={styles.stepTitle}>Any injuries or limitations?</Text>
-      <Text style={styles.stepSubtitle}>We'll adjust exercises accordingly</Text>
+      <Text style={styles.stepSubtitle}>{"We'll adjust exercises accordingly"}</Text>
       
       <TextInput
         style={styles.textInput}
@@ -574,6 +590,14 @@ export default function WorkoutQuestionnaire() {
           )}
         </TouchableOpacity>
       </View>
+      {/* Quota counter — only shown on the last step, hidden for admins */}
+      {step === totalSteps && quota && !quota.is_admin && (
+        <Text style={styles.quotaText}>
+          {quota.remaining === 0
+            ? `Monthly limit reached — resets ${quota.reset_date}`
+            : `${quota.remaining} of ${quota.limit} program generations remaining this month`}
+        </Text>
+      )}
     </SafeAreaView>
   );
 }
@@ -999,5 +1023,13 @@ const styles = StyleSheet.create({
   },
   btnDisabled: {
     opacity: 0.7,
+  },
+  quotaText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 4,
+    paddingHorizontal: 24,
   },
 });

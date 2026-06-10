@@ -115,6 +115,13 @@ ADMIN_EMAILS = [
     "srush@interfitai.com"
 ]
 
+def is_admin(email: str) -> bool:
+    """Check if an email is in the admin allowlist (env var takes precedence)."""
+    env_admins = os.getenv("ADMIN_EMAILS", "")
+    all_admins = {e.strip().lower() for e in env_admins.split(",") if e.strip()}
+    all_admins.update(e.lower() for e in ADMIN_EMAILS)
+    return bool(email) and email.strip().lower() in all_admins
+
 # Free access emails - can be granted by admin
 FREE_ACCESS_EMAILS = []
 
@@ -3136,6 +3143,39 @@ async def generate_workout(request: WorkoutGenerateRequest):
     Step 3 (Python): Merge, store coaching metadata, fetch GIFs
     """
 
+    # ─── QUOTA CHECK ─────────────────────────────────────────────────────────
+    profile_doc = await db.profiles.find_one({"id": request.user_id})
+    user_email = profile_doc.get("email", "") if profile_doc else ""
+
+    if not is_admin(user_email):
+        now = datetime.utcnow()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        used = await db.generation_events.count_documents({
+            "user_id": request.user_id,
+            "created_at": {"$gte": month_start},
+        })
+        if used >= 3:
+            # First day of next month
+            if now.month == 12:
+                reset_dt = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            else:
+                reset_dt = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            reset_date = reset_dt.date().isoformat()
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "generation_limit",
+                    "message": (
+                        f"You've used your 3 program generations this month. "
+                        f"They reset on {reset_date}. "
+                        "Stick with your current program — consistency beats the perfect program."
+                    ),
+                    "reset_date": reset_date,
+                    "used": used,
+                    "limit": 3,
+                },
+            )
+
     # ─── STEP 1: Python builds the full blueprint ─────────────────────────────
     blueprint = _coaching_engine.build_blueprint(request)
 
@@ -3392,7 +3432,50 @@ async def generate_workout(request: WorkoutGenerateRequest):
     )
 
     await db.workouts.insert_one(program.model_dump())
+
+    # Record generation event for quota tracking (non-admin users only)
+    if not is_admin(user_email):
+        await db.generation_events.insert_one({
+            "user_id": request.user_id,
+            "email": user_email,
+            "created_at": datetime.utcnow(),
+        })
+
     return program
+
+
+# ─── Generation Quota endpoint (must be before /workouts/{user_id}) ──────────
+
+@api_router.get("/workouts/generation-quota/{user_id}")
+async def get_generation_quota(user_id: str):
+    """Returns the user's monthly program generation quota status."""
+    profile_doc = await db.profiles.find_one({"id": user_id})
+    user_email = profile_doc.get("email", "") if profile_doc else ""
+    admin = is_admin(user_email)
+
+    now = datetime.utcnow()
+    if now.month == 12:
+        reset_dt = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        reset_dt = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    reset_date = reset_dt.date().isoformat()
+
+    if admin:
+        return {"used": 0, "limit": None, "remaining": None, "reset_date": reset_date, "is_admin": True}
+
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    used = await db.generation_events.count_documents({
+        "user_id": user_id,
+        "created_at": {"$gte": month_start},
+    })
+    limit = 3
+    return {
+        "used": used,
+        "limit": limit,
+        "remaining": max(0, limit - used),
+        "reset_date": reset_date,
+        "is_admin": False,
+    }
 
 @api_router.get("/workouts/{user_id}", response_model=List[WorkoutProgram])
 async def get_user_workouts(user_id: str):
@@ -3567,12 +3650,15 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
     session_dict = session.model_dump()
     await db.workout_sessions.insert_one(session_dict)
 
-    # Clear saved performance checkboxes for this day so the next session starts unticked
+    # Clear saved performance checkboxes for this day — keep weight/reps, uncheck only
     workout_doc = await db.workouts.find_one({"id": workout_id})
     if workout_doc:
         current_perf = workout_doc.get("performance", {})
         prefix = f"{request.day_index}-"
-        cleared_perf = {k: v for k, v in current_perf.items() if not k.startswith(prefix)}
+        cleared_perf = {
+            k: ({**v, "completed": False} if isinstance(v, dict) else v) if k.startswith(prefix) else v
+            for k, v in current_perf.items()
+        }
         await db.workouts.update_one(
             {"id": workout_id},
             {"$set": {"performance": cleared_perf}}
