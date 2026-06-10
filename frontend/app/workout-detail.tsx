@@ -344,14 +344,14 @@ export default function WorkoutDetail() {
       setShowCompleteModal(true);
       // Update cached last session so "last time" hints refresh immediately
       setLastSession(prev => ({ ...prev, [expandedDay]: response.data }));
-      // Reset all set ticks/weights/reps for this day so the next session starts clean
-      setPerformance(prev => {
-        const next = { ...prev };
-        Object.keys(next).forEach(key => {
-          if (key.startsWith(`${expandedDay}-`)) delete next[key];
-        });
-        return next;
+      // Reset all set ticks/weights/reps for this day and persist to DB
+      // so the next session opens with a clean slate
+      const clearedPerformance = { ...performance };
+      Object.keys(clearedPerformance).forEach(key => {
+        if (key.startsWith(`${expandedDay}-`)) delete clearedPerformance[key];
       });
+      setPerformance(clearedPerformance);
+      savePerformance(clearedPerformance);
       setSessionStartTime(new Date()); // reset timer for a potential second session
     } catch (error) {
       console.log('Error completing session:', error);
