@@ -13,6 +13,7 @@ import {
   ScrollView,
   Platform,
   Animated,
+  ActionSheetIOS,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -139,6 +140,7 @@ export default function WorkoutDetail() {
   // Post-workout photo
   const [sessionPhotoUri, setSessionPhotoUri] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [showPhotoPickerModal, setShowPhotoPickerModal] = useState(false);
 
   // Muscle groups with icons and emoji for professional visual UI
   const muscleGroups = [
@@ -351,7 +353,39 @@ export default function WorkoutDetail() {
     }
   };
 
-  const handleAddPhoto = async () => {
+  // Shared photo upload helper
+  const uploadPhotoResult = async (asset: { base64: string | null | undefined; uri: string }) => {
+    if (!asset.base64 || !completedSessionData?.session_id) return;
+    setPhotoUploading(true);
+    try {
+      await api.post(`/workout/session/${completedSessionData.session_id}/photo`, {
+        photo_base64: asset.base64,
+      });
+      setSessionPhotoUri(asset.uri);
+    } catch {
+      Alert.alert('Error', 'Could not save photo. You can add one later.');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Camera access needed', 'Allow camera access to take a workout photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.6,
+      base64: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    await uploadPhotoResult(result.assets[0]);
+  };
+
+  const handleChooseFromLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Allow access to your photo library to add a workout photo.');
@@ -364,18 +398,21 @@ export default function WorkoutDetail() {
       quality: 0.6,
       base64: true,
     });
-    if (result.canceled || !result.assets?.[0]?.base64 || !completedSessionData?.session_id) return;
-    const base64 = result.assets[0].base64;
-    setPhotoUploading(true);
-    try {
-      await api.post(`/workout/session/${completedSessionData.session_id}/photo`, {
-        photo_base64: base64,
-      });
-      setSessionPhotoUri(result.assets[0].uri);
-    } catch {
-      Alert.alert('Error', 'Could not save photo. You can add one later.');
-    } finally {
-      setPhotoUploading(false);
+    if (result.canceled || !result.assets?.[0]) return;
+    await uploadPhotoResult(result.assets[0]);
+  };
+
+  const handleAddPhoto = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancel', 'Take Photo', 'Choose from Library'], cancelButtonIndex: 0 },
+        (index) => {
+          if (index === 1) handleTakePhoto();
+          else if (index === 2) handleChooseFromLibrary();
+        }
+      );
+    } else {
+      setShowPhotoPickerModal(true);
     }
   };
 
@@ -2466,6 +2503,29 @@ const styles = StyleSheet.create({
     height: 160,
     borderRadius: 12,
     marginTop: 14,
+  },
+  photoPickerModal: {
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    alignItems: 'stretch',
+    minWidth: 280,
+  },
+  photoPickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  photoPickerOptionText: {
+    fontSize: 16,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  photoPickerDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: 20,
   },
   completeStatRow: {
     flexDirection: 'row',

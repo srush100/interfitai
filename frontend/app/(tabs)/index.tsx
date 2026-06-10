@@ -425,7 +425,7 @@ export default function HomeScreen() {
                 </View>
                 <Text style={styles.workoutStatValue}>{workoutStats.current_streak}</Text>
                 <Text style={styles.workoutStatLabel}>
-                  {workoutStats.current_streak === 1 ? 'workout streak' : 'workout streak'}
+                  {workoutStats.current_streak === 1 ? 'workout streak' : 'workout streaks'}
                 </Text>
               </View>
               <View style={styles.workoutStatDivider} />

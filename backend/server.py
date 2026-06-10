@@ -3504,12 +3504,13 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
             if s.completed and s.weight and s.reps:
                 total_volume += s.weight * s.reps
 
-    # ── Detect Personal Records (query prior sessions before this one is saved) ──
+    # ── Detect Personal Records (fetch prior sessions ONCE before the loop) ──
     personal_records = []
+    prior_cursor = db.workout_sessions.find({"user_id": request.user_id})
+    prior_sessions = await prior_cursor.to_list(None)
+
     for ex in request.completed_exercises:
         name_lower = ex.exercise_name.lower().strip()
-        prior_cursor = db.workout_sessions.find({"user_id": request.user_id})
-        prior_sessions = await prior_cursor.to_list(None)
 
         prior_best_weight = 0.0
         prior_best_reps_at_weight: Dict[float, int] = {}
