@@ -1204,6 +1204,45 @@ export default function WorkoutDetail() {
         )}
       </ScrollView>
 
+      {/* Photo picker modal — Android only (iOS uses ActionSheetIOS) */}
+      <Modal
+        visible={showPhotoPickerModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPhotoPickerModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowPhotoPickerModal(false)}
+        >
+          <View style={[styles.modalContent, styles.photoPickerModal]}>
+            <TouchableOpacity
+              style={styles.photoPickerOption}
+              onPress={() => { setShowPhotoPickerModal(false); handleTakePhoto(); }}
+            >
+              <Ionicons name="camera-outline" size={22} color={colors.text} />
+              <Text style={styles.photoPickerOptionText}>Take Photo</Text>
+            </TouchableOpacity>
+            <View style={styles.photoPickerDivider} />
+            <TouchableOpacity
+              style={styles.photoPickerOption}
+              onPress={() => { setShowPhotoPickerModal(false); handleChooseFromLibrary(); }}
+            >
+              <Ionicons name="images-outline" size={22} color={colors.text} />
+              <Text style={styles.photoPickerOptionText}>Choose from Library</Text>
+            </TouchableOpacity>
+            <View style={styles.photoPickerDivider} />
+            <TouchableOpacity
+              style={styles.photoPickerOption}
+              onPress={() => setShowPhotoPickerModal(false)}
+            >
+              <Text style={[styles.photoPickerOptionText, { color: colors.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Workout Complete Modal */}
       <Modal
         visible={showCompleteModal}
