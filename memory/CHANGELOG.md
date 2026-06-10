@@ -59,3 +59,22 @@
 - `change-password.tsx`: New file — set/update password from Profile tab
 - `profile.tsx`: Added "Password" card linking to change-password screen
 - `(tabs)/index.tsx`: Added migration banner for users with `has_password=false`
+
+## [2026-06-10] Phase 1 — Workout Session Tracking
+**Backend (server.py):**
+- Added `SessionSet`, `SessionExercise`, `CompleteSessionRequest`, `WorkoutSession` Pydantic models
+- New MongoDB collection: `workout_sessions` (one document per completed session — no more overwriting)
+- `POST /api/workout/{id}/session/complete` — records a dated session, computes `total_volume`
+- `GET /api/workout/sessions/{user_id}` — returns all sessions sorted by date desc; supports `?limit=` and `?workout_id=`
+- `GET /api/workout/{id}/last-session?day_index=N` — returns most recent session for that day or null
+
+**Frontend (workout-detail.tsx):**
+- Imported `useUserStore` to get `profile.id`
+- Added session state: `lastSession`, `sessionStartTime`, `showCompleteModal`, `completedSessionData`, `finishing`
+- `loadLastSession(dayIdx)` — called on mount and on day tab switch via `useEffect`
+- `getLastTimeHint()` — returns "Xkg × Y reps" from last session for each set row
+- `handleFinishWorkout()` — builds payload, POSTs to complete endpoint, fires haptic, shows modal
+- "Last time: Xkg × Y reps" faded italic hint below each set row
+- Gold "Finish Workout" button at bottom of each day's exercise list
+- 💪 Workout Complete modal with total volume + duration; "Keep Going 🔥" dismiss
+- Session timer starts on first set interaction; resets when switching day tabs

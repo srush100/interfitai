@@ -1067,7 +1067,7 @@ export default function WorkoutDetail() {
                   <View style={styles.completeStatRow}>
                     <Ionicons name="time" size={18} color={colors.primary} />
                     <Text style={styles.completeStat}>
-                      {completedSessionData.duration} minutes
+                      {completedSessionData.duration} {completedSessionData.duration === 1 ? 'minute' : 'minutes'}
                     </Text>
                   </View>
                 )}
