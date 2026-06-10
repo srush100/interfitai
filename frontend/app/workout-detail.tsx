@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 import * as Haptics from 'expo-haptics';
@@ -127,8 +128,17 @@ export default function WorkoutDetail() {
   const [lastSession, setLastSession] = useState<Record<number, any>>({});
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
-  const [completedSessionData, setCompletedSessionData] = useState<{ volume: number; duration: number | null } | null>(null);
+  const [completedSessionData, setCompletedSessionData] = useState<{
+    volume: number;
+    duration: number | null;
+    personal_records: Array<{ exercise_name: string; type: string; new_value: number; previous_value: number | null; reps: number }>;
+    session_id: string;
+    current_streak: number;
+  } | null>(null);
   const [finishing, setFinishing] = useState(false);
+  // Post-workout photo
+  const [sessionPhotoUri, setSessionPhotoUri] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   // Muscle groups with icons and emoji for professional visual UI
   const muscleGroups = [
@@ -303,8 +313,32 @@ export default function WorkoutDetail() {
         completed_exercises,
       });
 
+      const prs: any[] = response.data.personal_records || [];
+      const hasPR = prs.length > 0;
+
+      // Fetch current streak
+      let currentStreak = 0;
+      try {
+        const statsRes = await api.get(`/workout/stats/${profile.id}`);
+        currentStreak = statsRes.data.current_streak || 0;
+      } catch {
+        // streak is non-critical
+      }
+
+      // Fire haptics — double pulse for a PR
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setCompletedSessionData({ volume: response.data.total_volume, duration: durationMinutes });
+      if (hasPR) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+
+      setSessionPhotoUri(null);
+      setCompletedSessionData({
+        volume: response.data.total_volume,
+        duration: durationMinutes,
+        personal_records: prs,
+        session_id: response.data.id,
+        current_streak: currentStreak,
+      });
       setShowCompleteModal(true);
       // Update cached last session so "last time" hints refresh immediately
       setLastSession(prev => ({ ...prev, [expandedDay]: response.data }));
@@ -314,6 +348,34 @@ export default function WorkoutDetail() {
       Alert.alert('Error', 'Could not save your session. Please try again.');
     } finally {
       setFinishing(false);
+    }
+  };
+
+  const handleAddPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow access to your photo library to add a workout photo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.6,
+      base64: true,
+    });
+    if (result.canceled || !result.assets?.[0]?.base64 || !completedSessionData?.session_id) return;
+    const base64 = result.assets[0].base64;
+    setPhotoUploading(true);
+    try {
+      await api.post(`/workout/session/${completedSessionData.session_id}/photo`, {
+        photo_base64: base64,
+      });
+      setSessionPhotoUri(result.assets[0].uri);
+    } catch {
+      Alert.alert('Error', 'Could not save photo. You can add one later.');
+    } finally {
+      setPhotoUploading(false);
     }
   };
 
@@ -1116,8 +1178,19 @@ export default function WorkoutDetail() {
           <View style={[styles.modalContent, styles.completeModalContent]}>
             <Text style={styles.completeEmoji}>💪</Text>
             <Text style={styles.completeTitle}>Workout Complete!</Text>
+
             {completedSessionData && (
               <>
+                {/* Streak */}
+                {completedSessionData.current_streak > 0 && (
+                  <View style={styles.completeStreakBadge}>
+                    <Text style={styles.completeStreakText}>
+                      🔥 {completedSessionData.current_streak} workout streak!
+                    </Text>
+                  </View>
+                )}
+
+                {/* Volume & Duration */}
                 {completedSessionData.volume > 0 && (
                   <View style={styles.completeStatRow}>
                     <Ionicons name="barbell" size={18} color={colors.primary} />
@@ -1136,8 +1209,43 @@ export default function WorkoutDetail() {
                     </Text>
                   </View>
                 )}
+
+                {/* Personal Records — inline, no modal */}
+                {completedSessionData.personal_records.length > 0 && (
+                  <View style={styles.prSection}>
+                    {completedSessionData.personal_records.map((pr, i) => (
+                      <View key={i} style={styles.prRow}>
+                        <Text style={styles.prTrophy}>🏆</Text>
+                        <View style={styles.prTextBlock}>
+                          <Text style={styles.prExercise}>{pr.exercise_name}</Text>
+                          <Text style={styles.prDetail}>
+                            {pr.type === 'weight'
+                              ? `New PR! ${localUnit === 'lbs' ? kgToDisplay(pr.new_value) : pr.new_value}${localUnit}${pr.previous_value ? ` (was ${localUnit === 'lbs' ? kgToDisplay(pr.previous_value) : pr.previous_value}${localUnit})` : ' — first lift!'}`
+                              : `New reps PR! ${pr.new_value} reps (was ${pr.previous_value})`}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Optional workout photo */}
+                {sessionPhotoUri ? (
+                  <Image source={{ uri: sessionPhotoUri }} style={styles.sessionPhotoThumb} />
+                ) : (
+                  <TouchableOpacity style={styles.addPhotoBtn} onPress={handleAddPhoto} disabled={photoUploading}>
+                    {photoUploading
+                      ? <ActivityIndicator size="small" color={colors.textSecondary} />
+                      : <>
+                          <Ionicons name="camera-outline" size={18} color={colors.textSecondary} />
+                          <Text style={styles.addPhotoBtnText}>Add photo (optional)</Text>
+                        </>
+                    }
+                  </TouchableOpacity>
+                )}
               </>
             )}
+
             <TouchableOpacity
               style={styles.completeDoneBtn}
               onPress={() => setShowCompleteModal(false)}
@@ -2295,6 +2403,69 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text,
     marginBottom: 20,
+  },
+  completeStreakBadge: {
+    backgroundColor: '#FF6B6B20',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  completeStreakText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FF6B6B',
+  },
+  prSection: {
+    width: '100%',
+    marginTop: 12,
+    gap: 8,
+  },
+  prRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: colors.primary + '15',
+    borderRadius: 12,
+    padding: 10,
+  },
+  prTrophy: {
+    fontSize: 18,
+    marginTop: 1,
+  },
+  prTextBlock: {
+    flex: 1,
+  },
+  prExercise: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  prDetail: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  addPhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  addPhotoBtnText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  sessionPhotoThumb: {
+    width: '100%',
+    height: 160,
+    borderRadius: 12,
+    marginTop: 14,
   },
   completeStatRow: {
     flexDirection: 'row',

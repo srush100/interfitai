@@ -105,6 +105,23 @@
 user_problem_statement: "Build InterFitAI - a comprehensive AI fitness app with user profile & macro calculation, AI workout generation, AI meal plan generation, food tracking with image recognition, Ask InterFitAI chat, subscription payments with Stripe, step tracking, and device connections. Current focus: Build world-class Elite Coaching Engine for workout generation - Python backend rules, not LLM guessing. Goal/style/focus_areas must drive split selection, volume, sets/reps/rest/effort. LLM only fills exercise names and form cues."
 
 backend:
+  - task: "Phase 2 — Streaks, Personal Records & Post-Workout Photos"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py, frontend/app/workout-detail.tsx, frontend/app/(tabs)/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          New endpoints: GET /workout/stats/{user_id}, GET /workout/personal-records/{user_id},
+          POST /workout/session/{session_id}/photo. Modified /session/complete to detect PRs.
+          Frontend: streak badge, PR rows, add-photo button on completion modal,
+          workout progress tile (streak + weekly dots) on home screen.
+          Tests: /app/backend/tests/test_phase2_streaks_prs_photos.py (13 tests)
+
   - task: "Elite Coaching Engine Focus Area Overhaul (primary +2 sets, secondary +1 set, FOCUS_SPLIT_PREFERENCE)"
     implemented: true
     working: true

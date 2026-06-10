@@ -31,6 +31,13 @@ export default function HomeScreen() {
   const [motivation, setMotivation] = useState('');
   const [todaySteps, setTodaySteps] = useState(0);
   const [dailySummary, setDailySummary] = useState<any>(null);
+  const [workoutStats, setWorkoutStats] = useState<{
+    current_streak: number;
+    best_streak: number;
+    sessions_this_week: number;
+    weekly_target: number;
+    total_sessions: number;
+  } | null>(null);
   const [showProfilePicture, setShowProfilePicture] = useState(false);
   const [imageScale] = useState(new Animated.Value(0.8));
   
@@ -85,6 +92,14 @@ export default function HomeScreen() {
         const today = new Date().toISOString().split('T')[0];
         const summaryRes = await api.get(`/food/daily-summary/${profile.id}/${today}`);
         setDailySummary(summaryRes.data);
+
+        // Get workout stats (streak + weekly adherence)
+        try {
+          const statsRes = await api.get(`/workout/stats/${profile.id}`);
+          setWorkoutStats(statsRes.data);
+        } catch {
+          // non-critical
+        }
       }
     } catch (error) {
       console.log('Error loading home data:', error);
@@ -378,7 +393,7 @@ export default function HomeScreen() {
 
         {/* Today's Progress */}
         <View style={styles.progressCard}>
-          <Text style={styles.sectionTitle}>Today's Progress</Text>
+          <Text style={styles.sectionTitle}>{"Today's Progress"}</Text>
           <View style={styles.progressRow}>
             <View style={styles.progressItem}>
               <Ionicons name="footsteps" size={24} color={colors.primary} />
@@ -400,6 +415,49 @@ export default function HomeScreen() {
               <Text style={styles.progressLabel}>Protein</Text>
             </View>
           </View>
+
+          {/* Workout streak + weekly progress tile */}
+          {workoutStats && (
+            <View style={styles.workoutStatsTile}>
+              <View style={styles.workoutStatItem}>
+                <View style={styles.workoutStatIcon}>
+                  <Text style={styles.workoutStreakFlame}>🔥</Text>
+                </View>
+                <Text style={styles.workoutStatValue}>{workoutStats.current_streak}</Text>
+                <Text style={styles.workoutStatLabel}>
+                  {workoutStats.current_streak === 1 ? 'workout streak' : 'workout streak'}
+                </Text>
+              </View>
+              <View style={styles.workoutStatDivider} />
+              <View style={styles.workoutStatItem}>
+                <View style={styles.workoutWeeklyBar}>
+                  {Array.from({ length: workoutStats.weekly_target }).map((_, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.workoutWeeklyDot,
+                        i < workoutStats.sessions_this_week && styles.workoutWeeklyDotDone,
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.workoutStatValue}>
+                  {workoutStats.sessions_this_week}/{workoutStats.weekly_target}
+                </Text>
+                <Text style={styles.workoutStatLabel}>this week</Text>
+              </View>
+              {workoutStats.best_streak > 0 && (
+                <>
+                  <View style={styles.workoutStatDivider} />
+                  <View style={styles.workoutStatItem}>
+                    <Ionicons name="trophy" size={20} color={colors.primary} />
+                    <Text style={styles.workoutStatValue}>{workoutStats.best_streak}</Text>
+                    <Text style={styles.workoutStatLabel}>best streak</Text>
+                  </View>
+                </>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Quick Actions - 6 Item Grid */}
@@ -569,6 +627,56 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  workoutStatsTile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    marginTop: 14,
+  },
+  workoutStatItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  workoutStatIcon: {
+    marginBottom: 2,
+  },
+  workoutStreakFlame: {
+    fontSize: 20,
+  },
+  workoutStatValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  workoutStatLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  workoutStatDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: colors.border,
+  },
+  workoutWeeklyBar: {
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 2,
+  },
+  workoutWeeklyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.border,
+  },
+  workoutWeeklyDotDone: {
+    backgroundColor: colors.primary,
   },
   actionsGrid: {
     flexDirection: 'row',
