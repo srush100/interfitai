@@ -3566,6 +3566,18 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
     )
     session_dict = session.model_dump()
     await db.workout_sessions.insert_one(session_dict)
+
+    # Clear saved performance checkboxes for this day so the next session starts unticked
+    workout_doc = await db.workouts.find_one({"id": workout_id})
+    if workout_doc:
+        current_perf = workout_doc.get("performance", {})
+        prefix = f"{request.day_index}-"
+        cleared_perf = {k: v for k, v in current_perf.items() if not k.startswith(prefix)}
+        await db.workouts.update_one(
+            {"id": workout_id},
+            {"$set": {"performance": cleared_perf}}
+        )
+
     session_dict.pop("_id", None)
     session_dict["personal_records"] = personal_records
     return session_dict
