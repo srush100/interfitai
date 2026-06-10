@@ -769,10 +769,17 @@ backend:
     priority: "high"
     needs_retesting: true
     status_history:
-      - working: "NA"
-        agent: "main"
+      - working: true
+        agent: "testing"
         comment: |
-          Completed the kg/lbs unit preference feature end-to-end:
+          ✅ 100% PASS (11 backend + 7 frontend tests):
+          - PUT /api/profile/{user_id} with unit_preference='lbs' saves and returns correctly
+          - Default unit_preference is 'kg' for new profiles
+          - Profile view mode: shows kg or lbs based on preference
+          - Edit mode toggle: converts weight value and saves preference to backend
+          - Workout detail: placeholder shows 'lbs' when preference=lbs
+          - Last-time hints show in preferred unit (e.g. 88.2lbs × 10)
+          - Completion modal volume in preferred unit (e.g. 9,191 lbs total volume)
           WORKOUT-DETAIL.TSX:
           1. Added unitPref = profile?.unit_preference || 'kg'
           2. Added kgToDisplay() and displayToKg() helper functions

@@ -10,6 +10,7 @@ Build InterFitAI - a comprehensive AI fitness app with:
 - Subscription payments with Stripe
 - Step tracking
 - Device connections (Apple Health, Garmin, Fitbit, Google Fit)
+- **kg/lbs unit preference** — global toggle persisted to DB; DB always stores kg, UI converts for display
 
 ## User Personas
 - Primary: Health-conscious individuals wanting personalized AI fitness plans
