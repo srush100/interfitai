@@ -1,0 +1,65 @@
+{
+  "summary": "kg/lbs unit preference feature fully tested end-to-end. Backend: 11/11 tests pass for PUT/GET unit_preference. Frontend: Profile view mode, edit mode toggle, workout detail placeholder, last-time hints, and completion modal all correctly display in user preferred unit. All 7 requested features verified working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PUT /api/profile/{user_id}",
+        "issue": "No strict validation on unit_preference values. Accepts arbitrary strings (e.g. 'invalid_unit') without 422 error. Backend just stores whatever string is sent. Low risk since frontend only sends 'kg' or 'lbs'.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_results_detail": {
+    "backend_unit_pref_field_exists": "PASS - GET /api/profile returns unit_preference field",
+    "backend_default_is_kg": "PASS - New profiles default to unit_preference='kg'",
+    "backend_PUT_lbs": "PASS - PUT with {unit_preference: 'lbs'} saves and returns 'lbs'",
+    "backend_PUT_lbs_persists": "PASS - Subsequent GET confirms 'lbs' saved in DB",
+    "backend_PUT_revert_to_kg": "PASS - PUT with {unit_preference: 'kg'} reverts correctly",
+    "backend_PUT_with_other_fields": "PASS - unit_preference + weight saved together correctly",
+    "backend_weight_storage_unaffected": "PASS - Weight stored in kg regardless of unit_preference",
+    "backend_no_data_loss": "PASS - Other fields preserved when only unit_preference updated",
+    "profile_view_mode_kg": "PASS - Shows '75kg' when unit_preference=kg",
+    "profile_edit_mode_toggle_visible": "PASS - kg/lbs toggle present in edit mode",
+    "profile_toggle_converts_weight": "PASS - Clicking lbs converts weight from 75 to 165.3",
+    "profile_PUT_called_on_toggle": "PASS - API PUT called with unit_preference='lbs' when toggling",
+    "profile_PUT_backend_saved": "PASS - Backend confirms unit_preference='lbs' persisted after toggle",
+    "profile_view_mode_lbs_after_toggle": "PASS - View mode shows '165.3lbs' after toggle + close",
+    "profile_view_mode_lbs_from_api": "PASS - Fresh page load with unit_preference=lbs shows '165.3lbs'",
+    "workout_weight_placeholder_lbs": "PASS - Weight input placeholder shows 'lbs' when unit_preference=lbs",
+    "workout_last_time_hint_lbs": "PASS - 'Last time: 88.2lbs × 10', 'Last time: 92.6lbs × 7' shown correctly",
+    "workout_completion_modal_lbs_volume": "PASS - Modal shows '9,191 lbs total volume' (not kg)"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_unit_preference.py",
+    "/app/test_reports/pytest/unit_preference.xml"
+  ],
+  "action_items": [
+    "LOW: Add input validation to backend for unit_preference field - only accept 'kg' or 'lbs' values (Pydantic validator or Literal type)",
+    "LOW: Add data-testid attributes to profile weight stat, unit toggle, and workout weight input for future automated testing"
+  ],
+  "critical_code_review_comments": [
+    "profile.tsx: useEffect([profile?.unit_preference]) correctly syncs weightUnit on profile load/change - prevents stale display",
+    "profile.tsx: toggleWeightUnit is async and wraps updateProfile in try/catch - correctly preserves local state even on API failure",
+    "workout-detail.tsx: kgToDisplay/displayToKg helpers correctly use unitPref from profile store",
+    "workout-detail.tsx: handleFinishWorkout calls displayToKg before sending to backend - correctly stores weights in kg regardless of display unit",
+    "workout-detail.tsx: getLastTimeHint calls kgToDisplay on session weight - correctly converts stored kg to display unit for hint text",
+    "workout-detail.tsx: Completion modal conditionally formats volume as lbs or kg based on unitPref - logic is correct"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (11/11 tests passed)",
+    "frontend": "100% (all 7 features verified working)"
+  },
+  "seed_data_creation": "No new seed data created. Used existing test user cc2c6903-108d-467a-9c40-cbc897dae3eb (TEST_frontend_ui@test.com/Frontend123!) and workout b4cc23e5-108a-4187-ad2c-18f5f41700bc. Reset user unit_preference back to 'kg' after testing.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "kg/lbs unit preference feature is fully implemented and working. Test user: cc2c6903-108d-467a-9c40-cbc897dae3eb (TEST_frontend_ui@test.com / Frontend123!), unit_preference reset to 'kg'. Test workout: b4cc23e5-108a-4187-ad2c-18f5f41700bc (Advanced Upper/Lower Muscle Building, 5 days/week). To test unit preference: set unit_preference to 'lbs' via PUT /api/profile/{user_id}, load profile page (inject localStorage for auth), check '165.3lbs' in view mode. For workout detail, navigate to /workout-detail?id={workout_id} and expand exercise to see 'lbs' placeholder and last-time hints in lbs.",
+  "rca_of_issue": null
+}

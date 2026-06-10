@@ -44,7 +44,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { profile, updateProfile, setOnboarded } = useUserStore();
   const [editing, setEditing] = useState(false);
-  const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>('kg');
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>(profile?.unit_preference || 'kg');
   const [heightUnit, setHeightUnit] = useState<'cm' | 'in'>('cm');
   const [editData, setEditData] = useState({
     weight: profile?.weight?.toString() || '',
@@ -67,14 +67,20 @@ export default function ProfileScreen() {
   const inToCm = (inches: number) => Math.round(inches * 2.54 * 10) / 10;
 
   // Handle unit toggle for weight
-  const toggleWeightUnit = () => {
+  const toggleWeightUnit = async () => {
     const currentWeight = parseFloat(editData.weight) || 0;
+    const newUnit = weightUnit === 'kg' ? 'lbs' : 'kg';
     if (weightUnit === 'kg') {
       setWeightUnit('lbs');
       setEditData({ ...editData, weight: kgToLbs(currentWeight).toString() });
     } else {
       setWeightUnit('kg');
       setEditData({ ...editData, weight: lbsToKg(currentWeight).toString() });
+    }
+    try {
+      await updateProfile({ unit_preference: newUnit });
+    } catch {
+      // preference saved locally even if backend fails
     }
   };
 
@@ -95,6 +101,20 @@ export default function ProfileScreen() {
     loadDevices();
     loadStepGoal();
   }, []);
+
+  // Sync weightUnit and editData when profile preference loads/changes
+  useEffect(() => {
+    if (profile?.unit_preference) {
+      setWeightUnit(profile.unit_preference);
+      if (profile.weight) {
+        const displayWeight =
+          profile.unit_preference === 'lbs'
+            ? String(Math.round(profile.weight * 2.20462 * 10) / 10)
+            : String(profile.weight);
+        setEditData((prev) => ({ ...prev, weight: displayWeight }));
+      }
+    }
+  }, [profile?.unit_preference]);
 
   const pickProfileImage = async () => {
     try {
@@ -423,7 +443,13 @@ export default function ProfileScreen() {
           ) : (
             <View style={styles.statsRow}>
               <View style={styles.stat}>
-                <Text style={styles.statValue}>{profile?.weight}kg</Text>
+                <Text style={styles.statValue}>
+                  {profile?.weight
+                    ? weightUnit === 'lbs'
+                      ? `${kgToLbs(profile.weight)}lbs`
+                      : `${profile.weight}kg`
+                    : '-'}
+                </Text>
                 <Text style={styles.statLabel}>Weight</Text>
               </View>
               <View style={styles.stat}>

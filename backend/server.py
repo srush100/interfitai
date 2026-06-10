@@ -918,6 +918,7 @@ class UserProfile(BaseModel):
     motivation_enabled: bool = True
     profile_image: Optional[str] = None  # Base64 encoded profile picture
     has_password: bool = False
+    unit_preference: str = "kg"  # "kg" | "lbs"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -949,6 +950,7 @@ class UserProfileUpdate(BaseModel):
     reminders_enabled: Optional[bool] = None
     motivation_enabled: Optional[bool] = None
     profile_image: Optional[str] = None  # Base64 encoded profile picture
+    unit_preference: Optional[str] = None  # "kg" | "lbs"
 
 # Workout Models
 class Exercise(BaseModel):
@@ -3530,12 +3532,12 @@ async def get_user_sessions(user_id: str, limit: int = 20, workout_id: Optional[
     return sessions
 
 @api_router.get("/workout/{workout_id}/last-session")
-async def get_last_session(workout_id: str, day_index: int = 0):
-    """Get the most recent session for a workout + day_index pair"""
-    session = await db.workout_sessions.find_one(
-        {"workout_id": workout_id, "day_index": day_index},
-        sort=[("date", -1)]
-    )
+async def get_last_session(workout_id: str, day_index: int = 0, user_id: Optional[str] = None):
+    """Get the most recent session for a workout + day_index pair, optionally filtered by user_id"""
+    query: dict = {"workout_id": workout_id, "day_index": day_index}
+    if user_id:
+        query["user_id"] = user_id
+    session = await db.workout_sessions.find_one(query, sort=[("date", -1)])
     if not session:
         return None
     session.pop("_id", None)

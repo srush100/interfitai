@@ -88,6 +88,13 @@ export default function WorkoutDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const { profile } = useUserStore();
+
+  // Unit preference helpers
+  const unitPref = profile?.unit_preference || 'kg';
+  const kgToDisplay = (kg: number) =>
+    unitPref === 'lbs' ? Math.round(kg * 2.20462 * 10) / 10 : kg;
+  const displayToKg = (val: number) =>
+    unitPref === 'lbs' ? Math.round((val / 2.20462) * 10) / 10 : val;
   const [workout, setWorkout] = useState<WorkoutProgram | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedDay, setExpandedDay] = useState<number>(0);
@@ -217,7 +224,7 @@ export default function WorkoutDetail() {
     if (!ex) return null;
     const set = ex.sets?.[setIdx];
     if (!set || !set.completed) return null;
-    if (set.weight && set.reps) return `${set.weight}kg × ${set.reps}`;
+    if (set.weight && set.reps) return `${kgToDisplay(set.weight)}${unitPref} × ${set.reps}`;
     if (set.reps) return `${set.reps} reps`;
     return null;
   };
@@ -237,7 +244,7 @@ export default function WorkoutDetail() {
         const perf = performance[key] || { weight: '', reps: '', completed: false };
         return {
           set_number: setIdx + 1,
-          weight: perf.weight ? parseFloat(perf.weight) : null,
+          weight: perf.weight ? displayToKg(parseFloat(perf.weight)) : null,
           reps: perf.reps ? parseInt(perf.reps) : null,
           completed: perf.completed,
         };
@@ -769,7 +776,7 @@ export default function WorkoutDetail() {
                     <Text style={styles.setLabel}>Set {setIdx + 1}</Text>
                     <TextInput
                       style={styles.setInput}
-                      placeholder="kg"
+                      placeholder={unitPref}
                       placeholderTextColor={colors.textMuted}
                       keyboardType="decimal-pad"
                       value={perf.weight}
@@ -1059,7 +1066,9 @@ export default function WorkoutDetail() {
                   <View style={styles.completeStatRow}>
                     <Ionicons name="barbell" size={18} color={colors.primary} />
                     <Text style={styles.completeStat}>
-                      {completedSessionData.volume.toLocaleString()} kg total volume
+                      {unitPref === 'lbs'
+                        ? `${Math.round(kgToDisplay(completedSessionData.volume)).toLocaleString()} lbs total volume`
+                        : `${completedSessionData.volume.toLocaleString()} kg total volume`}
                     </Text>
                   </View>
                 )}

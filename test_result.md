@@ -761,6 +761,31 @@ backend:
         agent: "testing"
         comment: "✅ FOODS TO AVOID FEATURE TESTING COMPLETE: Successfully tested meal plan generation with foods to avoid functionality as specifically requested in review. Tested POST /api/mealplans/generate with user_id 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b', food_preferences 'none', preferred_foods 'steak, eggs, potatoes', and foods_to_avoid 'rice, pasta, bread'. ANALYSIS RESULTS: Generated 3-day meal plan with 12 total meals (4 per day). ✅ FOODS TO AVOID COMPLIANCE: PERFECT - All 12 meals contained ZERO instances of avoided foods (rice, pasta, bread). ✅ PREFERRED FOODS INCLUSION: PERFECT - Found 27 total instances of preferred foods across all meals. Every meal prominently featured steak, eggs, or potatoes as requested. Sample meals: 'Steak and Eggs Breakfast' (150g steak, 3 eggs, 100g potatoes), 'Steak Salad with Potato Croutons' (200g steak, 150g potatoes), 'Egg and Potato Hash' (3 eggs, 200g potatoes, 100g steak). Response time: 27.64s. Backend logs confirm successful OpenAI GPT-4o integration with specific avoid instructions in prompt: '⚠️ CRITICAL - FOODS TO STRICTLY AVOID: rice, pasta, bread. You MUST NOT include any of these foods in ANY meal.' The foods to avoid feature is working perfectly - AI successfully excluded all avoided foods while prominently featuring preferred foods."
 
+  - task: "kg/lbs Unit Preference - Full Implementation"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/workout-detail.tsx, frontend/app/(tabs)/profile.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Completed the kg/lbs unit preference feature end-to-end:
+          WORKOUT-DETAIL.TSX:
+          1. Added unitPref = profile?.unit_preference || 'kg'
+          2. Added kgToDisplay() and displayToKg() helper functions
+          3. getLastTimeHint() now converts stored kg → user's preferred unit for display
+          4. Weight input placeholder now shows 'kg' or 'lbs' based on preference
+          5. handleFinishWorkout() converts lbs input back to kg before sending to backend
+          6. Completion modal volume now shows in user's preferred unit
+          PROFILE.TSX:
+          1. Initialized weightUnit state from profile?.unit_preference
+          2. Added useEffect to sync weightUnit + editData.weight when profile.unit_preference changes
+          3. toggleWeightUnit() is now async and persists new preference to backend via updateProfile({ unit_preference: newUnit })
+          4. Stats row (view mode) now shows weight in user's preferred unit
+
 frontend:
   - task: "Onboarding Flow"
     implemented: true

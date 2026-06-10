@@ -27,6 +27,7 @@ interface UserProfile {
   calorie_adjustment: number;
   profile_image?: string;
   has_password?: boolean;
+  unit_preference?: 'kg' | 'lbs';
 }
 
 interface UserState {
