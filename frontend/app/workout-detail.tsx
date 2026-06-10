@@ -1007,7 +1007,7 @@ export default function WorkoutDetail() {
         {workout.workout_days[expandedDay] && (
           <View style={styles.dayContent}>
             <View style={styles.dayHeader}>
-              <Text style={styles.dayTitle}>{workout.workout_days[expandedDay].day}</Text>
+              <Text style={styles.dayTitle} numberOfLines={1}>{workout.workout_days[expandedDay].day}</Text>
               <View style={styles.dayHeaderRight}>
                 {/* Inline unit pill toggle */}
                 <View style={styles.unitPillContainer}>
@@ -1564,39 +1564,43 @@ const styles = StyleSheet.create({
   },
   dayHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
+    gap: 8,
   },
   dayHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
+    flexShrink: 0,
   },
   unitPillContainer: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
-    borderRadius: 14,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
   },
   unitPillBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
   },
   unitPillBtnActive: {
     backgroundColor: colors.primary,
+    borderRadius: 20,
   },
   unitPillText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textMuted,
+    letterSpacing: 0.3,
   },
   unitPillTextActive: {
-    color: '#fff',
+    color: '#000',
   },
   dayTitle: {
+    flex: 1,
     fontSize: 18,
     fontWeight: '600',
     color: colors.text,
