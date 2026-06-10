@@ -87,14 +87,16 @@ interface WorkoutProgram {
 export default function WorkoutDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { profile } = useUserStore();
+  const { profile, updateProfile } = useUserStore();
 
-  // Unit preference helpers
-  const unitPref = profile?.unit_preference || 'kg';
+  // Unit preference — local state for optimistic updates + inline toggle
+  const [localUnit, setLocalUnit] = useState<'kg' | 'lbs'>(
+    (profile?.unit_preference as 'kg' | 'lbs') || 'kg'
+  );
   const kgToDisplay = (kg: number) =>
-    unitPref === 'lbs' ? Math.round(kg * 2.20462 * 10) / 10 : kg;
+    localUnit === 'lbs' ? Math.round(kg * 2.20462 * 10) / 10 : kg;
   const displayToKg = (val: number) =>
-    unitPref === 'lbs' ? Math.round((val / 2.20462) * 10) / 10 : val;
+    localUnit === 'lbs' ? val / 2.20462 : val;  // full precision — rounded only for display
   const [workout, setWorkout] = useState<WorkoutProgram | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedDay, setExpandedDay] = useState<number>(0);
@@ -216,6 +218,43 @@ export default function WorkoutDetail() {
     }
   }, [expandedDay, workout?.id]);
 
+  // Sync localUnit when profile preference changes (e.g. changed from profile screen)
+  useEffect(() => {
+    if (profile?.unit_preference) {
+      setLocalUnit(profile.unit_preference as 'kg' | 'lbs');
+    }
+  }, [profile?.unit_preference]);
+
+  // Toggle unit inline — converts entered values + persists globally
+  const toggleLocalUnit = async () => {
+    const newUnit = localUnit === 'kg' ? 'lbs' : 'kg';
+    // Convert any already-entered weight values optimistically
+    const converted: Record<string, ExercisePerformance> = {};
+    Object.entries(performance).forEach(([key, perf]) => {
+      if (perf.weight) {
+        const val = parseFloat(perf.weight);
+        if (!isNaN(val) && val > 0) {
+          const newVal =
+            newUnit === 'lbs'
+              ? Math.round(val * 2.20462 * 10) / 10  // kg → lbs
+              : Math.round((val / 2.20462) * 10) / 10; // lbs → kg
+          converted[key] = { ...perf, weight: String(newVal) };
+        } else {
+          converted[key] = perf;
+        }
+      } else {
+        converted[key] = perf;
+      }
+    });
+    setLocalUnit(newUnit);
+    setPerformance(converted);
+    try {
+      await updateProfile({ unit_preference: newUnit });
+    } catch {
+      // silent — optimistic update already applied
+    }
+  };
+
   // Get "last time" hint text for a specific set
   const getLastTimeHint = (dayIdx: number, exIdx: number, setIdx: number): string | null => {
     const session = lastSession[dayIdx];
@@ -224,7 +263,7 @@ export default function WorkoutDetail() {
     if (!ex) return null;
     const set = ex.sets?.[setIdx];
     if (!set || !set.completed) return null;
-    if (set.weight && set.reps) return `${kgToDisplay(set.weight)}${unitPref} × ${set.reps}`;
+    if (set.weight && set.reps) return `${kgToDisplay(set.weight)}${localUnit} × ${set.reps}`;
     if (set.reps) return `${set.reps} reps`;
     return null;
   };
@@ -776,7 +815,7 @@ export default function WorkoutDetail() {
                     <Text style={styles.setLabel}>Set {setIdx + 1}</Text>
                     <TextInput
                       style={styles.setInput}
-                      placeholder={unitPref}
+                      placeholder={localUnit}
                       placeholderTextColor={colors.textMuted}
                       keyboardType="decimal-pad"
                       value={perf.weight}
@@ -969,11 +1008,28 @@ export default function WorkoutDetail() {
           <View style={styles.dayContent}>
             <View style={styles.dayHeader}>
               <Text style={styles.dayTitle}>{workout.workout_days[expandedDay].day}</Text>
-              <View style={styles.dayMeta}>
-                <Ionicons name="time" size={16} color={colors.textSecondary} />
-                <Text style={styles.dayMetaText}>
-                  ~{workout.workout_days[expandedDay].duration_minutes} min
-                </Text>
+              <View style={styles.dayHeaderRight}>
+                {/* Inline unit pill toggle */}
+                <View style={styles.unitPillContainer}>
+                  <TouchableOpacity
+                    style={[styles.unitPillBtn, localUnit === 'kg' && styles.unitPillBtnActive]}
+                    onPress={() => localUnit !== 'kg' && toggleLocalUnit()}
+                  >
+                    <Text style={[styles.unitPillText, localUnit === 'kg' && styles.unitPillTextActive]}>kg</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.unitPillBtn, localUnit === 'lbs' && styles.unitPillBtnActive]}
+                    onPress={() => localUnit !== 'lbs' && toggleLocalUnit()}
+                  >
+                    <Text style={[styles.unitPillText, localUnit === 'lbs' && styles.unitPillTextActive]}>lbs</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.dayMeta}>
+                  <Ionicons name="time" size={16} color={colors.textSecondary} />
+                  <Text style={styles.dayMetaText}>
+                    ~{workout.workout_days[expandedDay].duration_minutes} min
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -1066,7 +1122,7 @@ export default function WorkoutDetail() {
                   <View style={styles.completeStatRow}>
                     <Ionicons name="barbell" size={18} color={colors.primary} />
                     <Text style={styles.completeStat}>
-                      {unitPref === 'lbs'
+                      {localUnit === 'lbs'
                         ? `${Math.round(kgToDisplay(completedSessionData.volume)).toLocaleString()} lbs total volume`
                         : `${completedSessionData.volume.toLocaleString()} kg total volume`}
                     </Text>
@@ -1511,6 +1567,34 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
+  },
+  dayHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  unitPillContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  unitPillBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  unitPillBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  unitPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  unitPillTextActive: {
+    color: '#fff',
   },
   dayTitle: {
     fontSize: 18,

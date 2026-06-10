@@ -6,7 +6,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 import uuid
 from datetime import datetime, date, timedelta
 import openai
@@ -918,7 +918,7 @@ class UserProfile(BaseModel):
     motivation_enabled: bool = True
     profile_image: Optional[str] = None  # Base64 encoded profile picture
     has_password: bool = False
-    unit_preference: str = "kg"  # "kg" | "lbs"
+    unit_preference: Literal["kg", "lbs"] = "kg"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
