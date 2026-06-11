@@ -1142,11 +1142,11 @@ metadata:
 
   - task: "Blank Slate Reset After Workout Completion"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/app/workout-detail.tsx, backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -1166,6 +1166,19 @@ metadata:
             2. Weight and reps inputs are blank (empty string), not pre-filled with previous values
             3. On page reload, the inputs are still blank (DB was cleared server-side)
             4. "Last time" hints still show the historical performance from the completed session
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL 7 FEATURES VERIFIED (backend + frontend):
+          1. Checkboxes immediately unticked after completion ✅
+          2. Weight inputs = '' (empty string) after completion ✅
+          3. Reps inputs = '' (empty string) after completion ✅
+          4. Blank state persists after page reload (DB correctly stores blanks) ✅
+          5. Last Time hints show historical data from just-completed session ✅
+          6. POST /session/complete returns 200 OK with personal_records ✅
+          7. Personal Records detected correctly (first-time lifts and weight PRs) ✅
+          NOTE: Initial stale-bundle issue was fixed by restarting expo service.
+          Test file created: /app/backend/tests/test_blank_slate_reset.py (13 tests)
 
 test_plan:
   current_focus:

@@ -3650,7 +3650,7 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
     session_dict = session.model_dump()
     await db.workout_sessions.insert_one(session_dict)
 
-    # Clear saved performance checkboxes for this day — keep weight/reps, uncheck only
+    # Blank slate: clear weight, reps, AND checkboxes for this day (full reset for next session)
     workout_doc = await db.workouts.find_one({"id": workout_id})
     if workout_doc:
         current_perf = workout_doc.get("performance", {})
