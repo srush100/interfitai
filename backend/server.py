@@ -3656,7 +3656,7 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
         current_perf = workout_doc.get("performance", {})
         prefix = f"{request.day_index}-"
         cleared_perf = {
-            k: ({**v, "completed": False} if isinstance(v, dict) else v) if k.startswith(prefix) else v
+            k: ({"weight": "", "reps": "", "completed": False}) if k.startswith(prefix) else v
             for k, v in current_perf.items()
         }
         await db.workouts.update_one(

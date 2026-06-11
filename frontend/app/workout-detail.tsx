@@ -350,12 +350,12 @@ export default function WorkoutDetail() {
       setShowCompleteModal(true);
       // Update cached last session so "last time" hints refresh immediately
       setLastSession(prev => ({ ...prev, [expandedDay]: response.data }));
-      // Reset in-memory state immediately — keep weight/reps, just uncheck
-      // (backend also clears it server-side to survive reloads)
+      // Blank slate: fully clear weight, reps, and checkboxes for this day
+      // (backend also persists this server-side so it survives reloads)
       const clearedPerformance = { ...performance };
       Object.keys(clearedPerformance).forEach(key => {
         if (key.startsWith(`${expandedDay}-`)) {
-          clearedPerformance[key] = { ...clearedPerformance[key], completed: false };
+          clearedPerformance[key] = { weight: '', reps: '', completed: false };
         }
       });
       setPerformance(clearedPerformance);

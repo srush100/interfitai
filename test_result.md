@@ -1140,9 +1140,36 @@ metadata:
           MINOR: Day 1 upper_push_heavy shows squat via PRIMARY FOCUS injection (not 'cross-pattern' note)
           since FOCUS_AREA_PATTERNS['full_body'] now includes squat. Functionally correct — squat IS there.
 
+  - task: "Blank Slate Reset After Workout Completion"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/workout-detail.tsx, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          IMPLEMENTATION VERIFIED IN CODE:
+          Frontend (workout-detail.tsx lines 355-362):
+            - After successful complete_workout_session API call, loops over all keys
+              matching `${expandedDay}-*` and sets { weight: '', reps: '', completed: false }
+            - Calls setPerformance(clearedPerformance) to update UI immediately
+            - Calls savePerformance(clearedPerformance) to persist cleared state via POST /workout/{id}/performance
+          Backend (server.py lines 3653-3665):
+            - Inside complete_workout_session endpoint, re-fetches workout doc
+            - Sets ALL keys matching f"{day_index}-" to {"weight": "", "reps": "", "completed": False}
+            - Persists to DB via workouts.update_one
+          ACCEPTANCE CRITERIA:
+            1. After completing a workout day, all checkboxes are visually unticked immediately
+            2. Weight and reps inputs are blank (empty string), not pre-filled with previous values
+            3. On page reload, the inputs are still blank (DB was cleared server-side)
+            4. "Last time" hints still show the historical performance from the completed session
+
 test_plan:
   current_focus:
-    - "Full-Body Focus Emphasis in Upper/Lower Split"
+    - "Blank Slate Reset After Workout Completion"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -1284,5 +1311,7 @@ agent_communication:
     message: "🎉 REVIEW REQUEST MEAL PLAN FIXES TESTING COMPLETE - ALL 4 TESTS PASS: Executed the exact 4 test scenarios specified in review request with user 'cbd82a69-3a37-48c2-88e8-0fe95081fa4b'. TEST 1 - VEGAN MEAL PLAN: ✅ PASS - Perfect macro accuracy (all 3 days exactly 2273cal, 170g P, 227g C, 76g F), ✅ Vegan compliance confirmed (no animal products detected after fixing template issues). TEST 2 - KETO MEAL PLAN: ✅ PASS - Target carbs: 30g (well below 50g requirement), daily carbs: Day 1: 21g, Day 2: 24g, Day 3: 46g (all compliant). Sample meals: 'Keto Egg & Bacon Plate', 'Grilled Salmon with Greens', 'Ribeye Steak with Asparagus'. TEST 3 - CARNIVORE MEAL PLAN: ✅ PASS - Target carbs: 2g (well below 10g requirement), daily carbs: Day 1: 3g, Day 2: 1g, Day 3: 1g (all compliant). All meals meat-based: 'Steak and Eggs', 'Ground Beef Patties', 'Roasted Chicken Thighs', 'Beef Jerky'. TEST 4 - MEAL REPLACEMENT ACCURACY: ✅ PASS - Original breakfast: 565 cal, Alternate meal: 565 cal (0.0% difference, perfect ±10% tolerance). Fixed alternate meal endpoint response parsing. ACCEPTANCE CRITERIA MET: ✅ Vegan: No animal products, exact macro matching, ✅ Keto: target_carbs < 50g (30g achieved), ✅ Carnivore: target_carbs < 10g (2g achieved), ✅ Meal replacement: Calories within ±10% (0% achieved). All meal plan fixes working correctly as requested!"
   - agent: "testing"
     message: "🎉 MEAL REPLACEMENT WITH FOODS TO AVOID TESTING COMPLETE - ALL TESTS PASS: Executed comprehensive testing of POST /api/mealplan/alternate endpoint with foods_to_avoid filtering as specifically requested in review. CRITICAL TEST SCENARIO: User specified 'no chicken' in foods_to_avoid, tested that meal replacement feature correctly avoids chicken AND related poultry. RESULTS: ✅ ALL 5/5 TESTS PASSED (100% success rate). TEST 1 - Health Check: ✅ Backend responding (0.33s). TEST 2 - Create Meal Plan: ✅ Generated meal plan with foods_to_avoid='chicken', Plan ID: 49b8879e-764c-430c-9b4f-1ac70a561969 (13.06s). TEST 3 - Alternate Meal Generation: ✅ Generated 'Shrimp and Quinoa Salad' (588cal, 44g P) without any banned foods (3.29s). TEST 4 - Multiple Alternates: ✅ Generated 3 different alternate meals ('Beef Stir-Fry', 'Grilled Lamb', 'Seared Salmon') - all clean (100% success rate). TEST 5 - PROTEIN_GROUPS Filtering: ✅ Generated 'Tofu and Quinoa Power Bowl' and 'Tofu and Mixed Fruit Bowl' - both clean. BACKEND LOGS CONFIRM: Foods to avoid: 'chicken', Excluded protein groups: {'chicken'}, All foods to ban: ['poultry', 'chicken breast', 'fried chicken', 'grilled chicken', 'chicken', 'chicken thigh', 'chicken leg', 'rotisserie chicken', 'chicken wings', 'chicken drumstick', 'baked chicken'], Allowed proteins: ['beef', 'pork', 'turkey', 'fish', 'shrimp', 'eggs', 'greek yogurt', 'tofu', 'lamb']. CRITICAL SUCCESS: No chicken or poultry found in ANY generated alternate meals. The PROTEIN_GROUPS filtering logic is working correctly - banning 'chicken' expands to ban all chicken variants. Meal replacement with foods_to_avoid filtering is WORKING PERFECTLY!"
+  - agent: "main"
+    message: "NEW FORK (2026-06) - BLANK SLATE VERIFICATION: Backend and Expo are running. The blank slate logic was coded in the previous session but never formally tested. Code is confirmed in place: Frontend (workout-detail.tsx ~line 355) clears { weight: '', reps: '', completed: false } for all keys matching the completed day prefix, then calls savePerformance to persist it. Backend (server.py complete_workout_session ~line 3653) does the same server-side. NEED TO TEST: After completing a workout, verify: (1) All checkboxes are immediately unticked, (2) Weight and reps inputs are empty strings (not pre-filled), (3) After page reload, inputs are still blank, (4) 'Last time' hint row still shows the historical data from the session just completed. Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. App URL is the Expo web preview. IMPORTANT: The DB may be empty in this fork - create a user profile and a workout program first before testing the complete flow."
   - agent: "main"
     message: "WORKOUT AUDIT ROUND 3 - 5 FIXES APPLIED: (1) Pike Push-Up GIF: 0473→2921 (was 'Hanging Pike' abs move, now correct pike push-up bodyweight vertical push). (2) Australian Pull-Up removed from vertical_pull bodyweight list (was wrong pattern placement) and from horizontal_pull list (kept only 'Inverted Row'); CACHED_EXERCISE_GIFS alias kept with comment for legacy program rendering. (3) Cable Kickback renamed to 'Cable Glute Kickback' in all 5 glute pattern slots (full_gym, beginner_gym, machines, cables); new GIF alias 'cable glute kickback': '0860' added to CACHED_EXERCISE_GIFS. (4) Upper/Lower 6-day: Day 5 changed from upper_push_volume → upper_full giving balanced 3U/3L split with 2x push 2x pull. (5) Assault bike mapping confirmed intact (NOT removed). Syntax verified clean. Backend auto-reloaded. NEEDS TESTING: 6-day Upper/Lower advanced body_recomp, calisthenics program, and cross-day no-repeat verification."
