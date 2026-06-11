@@ -237,6 +237,12 @@ export default function WorkoutDetail() {
     }
   }, [profile?.unit_preference]);
 
+  // Reset swap mode when the user switches workout days
+  useEffect(() => {
+    setSelectedExIdx(null);
+    longPressActive.current = false;
+  }, [expandedDay]);
+
   // Toggle unit inline — converts entered values + persists globally
   const toggleLocalUnit = async () => {
     const newUnit = localUnit === 'kg' ? 'lbs' : 'kg';
@@ -689,8 +695,12 @@ export default function WorkoutDetail() {
     }
   }, [selectedExIdx]);
 
+  // Ref guard: prevents onPress from firing right after onLongPress (React Native Web fires both)
+  const longPressActive = useRef(false);
+
   // Long press to select exercise for swapping
   const handleExerciseLongPress = (exIdx: number) => {
+    longPressActive.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedExIdx(exIdx);
     setExpandedExercise(null); // collapse detail when entering swap mode
@@ -698,6 +708,11 @@ export default function WorkoutDetail() {
 
   // Tap handler: if in swap mode, swap or deselect; otherwise expand/collapse
   const handleExerciseTap = (exIdx: number) => {
+    // Suppress the onPress that React Native fires immediately after onLongPress
+    if (longPressActive.current) {
+      longPressActive.current = false;
+      return;
+    }
     if (selectedExIdx !== null) {
       if (selectedExIdx === exIdx) {
         // Tap same card → cancel
@@ -1167,7 +1182,7 @@ export default function WorkoutDetail() {
                   key={`${exercise.name}-${exIdx}`}
                   onPress={() => handleExerciseTap(exIdx)}
                   onLongPress={() => handleExerciseLongPress(exIdx)}
-                  delayLongPress={300}
+                  delayLongPress={700}
                   style={({ pressed }) => [
                     styles.exerciseCard,
                     isSelected && styles.exerciseCardSelected,
