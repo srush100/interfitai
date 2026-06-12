@@ -100,13 +100,14 @@ const ConfettiPiece = React.memo(({ color, leftPct, delay, w }: {
   color: string; leftPct: string; delay: number; w: number;
 }) => {
   const y = useRef(new Animated.Value(0)).current;
-  const alpha = useRef(new Animated.Value(1)).current;  // start visible
+  const alpha = useRef(new Animated.Value(0)).current;
   const rot = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const anim = Animated.sequence([
       Animated.delay(delay),
       Animated.parallel([
+        Animated.timing(alpha, { toValue: 1, duration: 80, useNativeDriver: false }),
         Animated.timing(y,     { toValue: 620, duration: 2400, useNativeDriver: false }),
         Animated.timing(rot,   { toValue: 8,   duration: 2400, useNativeDriver: false }),
         Animated.sequence([
@@ -139,11 +140,15 @@ const ConfettiPiece = React.memo(({ color, leftPct, delay, w }: {
 const ConfettiBurst = ({ active }: { active: boolean }) => {
   if (!active) return null;
   return (
-    <>
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+      collapsable={false}
+    >
       {CONFETTI_PIECES.map(p => (
         <ConfettiPiece key={p.id} color={p.color} leftPct={p.leftPct} delay={p.delay} w={p.w} />
       ))}
-    </>
+    </View>
   );
 };
 // ────────────────────────────────────────────────────────────────────────────
@@ -2679,10 +2684,5 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: '#000',
-  },
-  confettiLayer: {
-    zIndex: 9999,
-    pointerEvents: 'none' as const,
-    overflow: 'visible' as const,
   },
 });
