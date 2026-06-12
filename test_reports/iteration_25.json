@@ -1,0 +1,36 @@
+{
+  "summary": "Bug fix verification: Pressable now only wraps exercise header row. TextInput taps in the detail panel no longer bubble up to the Pressable and no longer trigger swap mode. All 8 tests PASS (100%). Tested on workout-detail screen with workout ID 13879b5a-82d5-4fa1-8c68-a7e1a999b750.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only test)",
+    "frontend": "100% (8/8 tests pass)"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fix verified: exercise card Pressable now correctly only wraps the header row. TextInputs in detail panel are outside the Pressable. All tap/long-press/expand/collapse/replace flows working. Workout ID 13879b5a-82d5-4fa1-8c68-a7e1a999b750.",
+  "test_results": {
+    "TEST_1_header_tap_expands": "PASS - Tapping exercise header expands detail panel without entering swap mode",
+    "TEST_2_weight_input_no_swap": "PASS - Tapping weight (kg) TextInput does NOT trigger swap mode or collapse detail",
+    "TEST_3_reps_input_no_swap": "PASS - Tapping reps TextInput does NOT trigger swap mode or collapse detail",
+    "TEST_4_inputs_accept_text": "PASS - weight='80' and reps='10' entered; swap banner never appeared",
+    "TEST_5_replace_button_opens_modal": "PASS - Replace button in detail panel opens Replace Exercise modal with 50 exercises",
+    "TEST_6_long_press_enters_swap": "PASS - Long-press (900ms) on exercise header correctly shows 'Tap any exercise to swap' banner and collapses detail panel",
+    "TEST_7_expand_collapse": "PASS - First tap expands exercise; second tap on same header collapses it",
+    "TEST_8_rapid_input_taps_no_swap": "PASS - 3 rapid alternating weight/reps taps never triggered swap mode"
+  },
+  "rca_of_issue": "Root cause: previously the entire exercise card (including TextInputs) was wrapped in a single <Pressable> with onPress/onLongPress handlers. Touch events on TextInputs inside the Pressable would bubble up and potentially trigger the card's handlers. Fix: the Pressable now only wraps the renderExerciseHeader() component (the header row with exercise name/chevron). The renderExerciseDetailPanel() (containing TextInputs, checkboxes, Replace/Delete buttons) is a sibling <View> placed outside the Pressable at the same card level. Touch events in the detail panel can no longer reach the Pressable handlers."
+}

@@ -104,9 +104,9 @@ const CONFETTI_PIECES = Array.from({ length: 26 }, (_, i) => ({
   w: 7 + (i % 4) * 2,
 }));
 
-const ConfettiPiece = React.memo(({ color, leftPct, delay, w }: {
+const ConfettiPiece = React.memo(function ConfettiPiece({ color, leftPct, delay, w }: {
   color: string; leftPct: string; delay: number; w: number;
-}) => {
+}) {
   const y = useRef(new Animated.Value(0)).current;
   const alpha = useRef(new Animated.Value(0)).current;
   const rot = useRef(new Animated.Value(0)).current;
@@ -921,161 +921,160 @@ export default function WorkoutDetail() {
     );
   }
 
-  // Renders the inner content of each exercise card
-  const renderExerciseInner = (exercise: Exercise, exIdx: number, isSelected: boolean, isSwapMode: boolean) => (
-    <>
-      <View style={styles.exerciseHeader}>
-        {/* Position number / swap indicator */}
-        {isSelected ? (
-          <View style={[styles.exerciseNumber, styles.exerciseNumberSelected]}>
-            <Ionicons name="swap-vertical" size={16} color={colors.background} />
-          </View>
-        ) : isSwapMode ? (
-          <View style={[styles.exerciseNumber, styles.exerciseNumberSwapTarget]}>
-            <Text style={[styles.exerciseNumberText, { color: colors.primary }]}>{exIdx + 1}</Text>
-          </View>
-        ) : exercise.gif_url ? (
-          <Image
-            source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
-            style={styles.exerciseThumbnail}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.exerciseNumber}>
-            <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
-          </View>
-        )}
-
-        <View style={styles.exerciseInfo}>
-          <Text style={[styles.exerciseName, isSelected && styles.exerciseNameSelected]}>
-            {exercise.name}
-          </Text>
-          <Text style={styles.exerciseMeta}>
-            {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
-          </Text>
-          {isSelected && (
-            <Text style={styles.swapHint}>Tap another exercise to swap</Text>
-          )}
-          {isSwapMode && !isSelected && (
-            <Text style={styles.swapTargetHint}>Tap to swap here</Text>
-          )}
+  // Renders ONLY the tappable header row of each exercise card (used inside Pressable)
+  const renderExerciseHeader = (exercise: Exercise, exIdx: number, isSelected: boolean, isSwapMode: boolean) => (
+    <View style={styles.exerciseHeader}>
+      {/* Position number / swap indicator */}
+      {isSelected ? (
+        <View style={[styles.exerciseNumber, styles.exerciseNumberSelected]}>
+          <Ionicons name="swap-vertical" size={16} color={colors.background} />
         </View>
+      ) : isSwapMode ? (
+        <View style={[styles.exerciseNumber, styles.exerciseNumberSwapTarget]}>
+          <Text style={[styles.exerciseNumberText, { color: colors.primary }]}>{exIdx + 1}</Text>
+        </View>
+      ) : exercise.gif_url ? (
+        <Image
+          source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
+          style={styles.exerciseThumbnail}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.exerciseNumber}>
+          <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
+        </View>
+      )}
 
-        {isSelected ? (
-          <View style={styles.selectedBadge}>
-            <Ionicons name="checkmark" size={14} color={colors.background} />
-          </View>
-        ) : (
-          <Ionicons
-            name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
-            size={20}
-            color={isSwapMode ? colors.primary : colors.textSecondary}
-          />
+      <View style={styles.exerciseInfo}>
+        <Text style={[styles.exerciseName, isSelected && styles.exerciseNameSelected]}>
+          {exercise.name}
+        </Text>
+        <Text style={styles.exerciseMeta}>
+          {exercise.sets} sets × {exercise.reps} reps • {exercise.rest_seconds}s rest
+        </Text>
+        {isSelected && (
+          <Text style={styles.swapHint}>Tap another exercise to swap</Text>
+        )}
+        {isSwapMode && !isSelected && (
+          <Text style={styles.swapTargetHint}>Tap to swap here</Text>
         )}
       </View>
 
-      {/* Detail panel — only shown when NOT in swap mode */}
-      {!isSwapMode && expandedExercise === `${expandedDay}-${exIdx}` && (
-        <View style={styles.exerciseDetails}>
-          {exercise.gif_url && (
-            <View style={styles.gifContainer}>
-              <Image
-                source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
-                style={styles.exerciseGif}
-                resizeMode="contain"
-              />
-            </View>
-          )}
-          <View style={styles.detailSection}>
-            <Text style={styles.detailLabel}>Instructions</Text>
-            <Text style={styles.detailText}>{exercise.instructions}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Equipment</Text>
-              <Text style={styles.detailValue}>{exercise.equipment || 'varies'}</Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Muscles</Text>
-              <Text style={styles.detailValue}>
-                {Array.isArray(exercise.muscle_groups)
-                  ? exercise.muscle_groups.join(', ')
-                  : exercise.muscle_groups || 'various'}
-              </Text>
-            </View>
-          </View>
-          {exercise.substitution_hint && (
-            <View style={styles.substitutionRow}>
-              <Ionicons name="swap-horizontal" size={14} color={colors.textSecondary} />
-              <Text style={styles.substitutionText}>
-                <Text style={styles.substitutionLabel}>Alternatives: </Text>
-                {exercise.substitution_hint}
-              </Text>
-            </View>
-          )}
-          <View style={styles.trackingSection}>
-            <View style={styles.trackingHeader}>
-              <Text style={styles.trackingTitle}>Log Your Sets</Text>
-              <TouchableOpacity style={styles.addSetBtn} onPress={() => addSet(expandedDay, exIdx)}>
-                <Ionicons name="add" size={18} color={colors.primary} />
-                <Text style={styles.addSetText}>Add Set</Text>
-              </TouchableOpacity>
-            </View>
-            {Array.from({ length: exercise.sets }, (_, setIdx) => {
-              const key = `${expandedDay}-${exIdx}-${setIdx}`;
-              const perf = performance[key] || { weight: '', reps: '', completed: false };
-              const hint = getLastTimeHint(expandedDay, exIdx, setIdx);
-              return (
-                <View key={setIdx}>
-                  <View style={styles.setRow}>
-                    <TouchableOpacity
-                      style={[styles.setCheckbox, perf.completed && styles.setCheckboxChecked]}
-                      onPress={() => updatePerformance(key, { ...perf, completed: !perf.completed })}
-                    >
-                      {perf.completed && <Ionicons name="checkmark" size={16} color={colors.background} />}
-                    </TouchableOpacity>
-                    <Text style={styles.setLabel}>Set {setIdx + 1}</Text>
-                    <TextInput
-                      style={styles.setInput}
-                      placeholder={localUnit}
-                      placeholderTextColor={colors.textMuted}
-                      keyboardType="decimal-pad"
-                      value={perf.weight}
-                      onChangeText={(text) => updatePerformance(key, { ...perf, weight: text })}
-                    />
-                    <Text style={styles.setX}>×</Text>
-                    <TextInput
-                      style={styles.setInput}
-                      placeholder="reps"
-                      placeholderTextColor={colors.textMuted}
-                      keyboardType="number-pad"
-                      value={perf.reps}
-                      onChangeText={(text) => updatePerformance(key, { ...perf, reps: text })}
-                    />
-                    <TouchableOpacity style={styles.removeSetBtn} onPress={() => removeSet(expandedDay, exIdx)}>
-                      <Ionicons name="close-circle" size={22} color={colors.error} />
-                    </TouchableOpacity>
-                  </View>
-                  {hint && (
-                    <Text style={styles.lastTimeHint}>Last time: {hint}</Text>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-          <View style={styles.exerciseActions}>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => openReplaceExerciseModal(expandedDay, exIdx)}>
-              <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
-              <Text style={styles.actionBtnText}>Replace</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionBtn, styles.actionBtnDanger]} onPress={() => deleteExercise(expandedDay, exIdx)}>
-              <Ionicons name="trash-outline" size={18} color={colors.error} />
-              <Text style={[styles.actionBtnText, styles.actionBtnTextDanger]}>Delete</Text>
-            </TouchableOpacity>
-          </View>
+      {isSelected ? (
+        <View style={styles.selectedBadge}>
+          <Ionicons name="checkmark" size={14} color={colors.background} />
+        </View>
+      ) : (
+        <Ionicons
+          name={expandedExercise === `${expandedDay}-${exIdx}` ? 'chevron-up' : 'chevron-down'}
+          size={20}
+          color={isSwapMode ? colors.primary : colors.textSecondary}
+        />
+      )}
+    </View>
+  );
+
+  // Renders the expanded detail panel — kept OUTSIDE the Pressable so TextInput
+  // touches never bubble up to the exercise card's tap/long-press handler.
+  const renderExerciseDetailPanel = (exercise: Exercise, exIdx: number) => (
+    <View style={styles.exerciseDetails}>
+      {exercise.gif_url && (
+        <View style={styles.gifContainer}>
+          <Image
+            source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
+            style={styles.exerciseGif}
+            resizeMode="contain"
+          />
         </View>
       )}
-    </>
+      <View style={styles.detailSection}>
+        <Text style={styles.detailLabel}>Instructions</Text>
+        <Text style={styles.detailText}>{exercise.instructions}</Text>
+      </View>
+      <View style={styles.detailRow}>
+        <View style={styles.detailItem}>
+          <Text style={styles.detailLabel}>Equipment</Text>
+          <Text style={styles.detailValue}>{exercise.equipment || 'varies'}</Text>
+        </View>
+        <View style={styles.detailItem}>
+          <Text style={styles.detailLabel}>Muscles</Text>
+          <Text style={styles.detailValue}>
+            {Array.isArray(exercise.muscle_groups)
+              ? exercise.muscle_groups.join(', ')
+              : exercise.muscle_groups || 'various'}
+          </Text>
+        </View>
+      </View>
+      {exercise.substitution_hint && (
+        <View style={styles.substitutionRow}>
+          <Ionicons name="swap-horizontal" size={14} color={colors.textSecondary} />
+          <Text style={styles.substitutionText}>
+            <Text style={styles.substitutionLabel}>Alternatives: </Text>
+            {exercise.substitution_hint}
+          </Text>
+        </View>
+      )}
+      <View style={styles.trackingSection}>
+        <View style={styles.trackingHeader}>
+          <Text style={styles.trackingTitle}>Log Your Sets</Text>
+          <TouchableOpacity style={styles.addSetBtn} onPress={() => addSet(expandedDay, exIdx)}>
+            <Ionicons name="add" size={18} color={colors.primary} />
+            <Text style={styles.addSetText}>Add Set</Text>
+          </TouchableOpacity>
+        </View>
+        {Array.from({ length: exercise.sets }, (_, setIdx) => {
+          const key = `${expandedDay}-${exIdx}-${setIdx}`;
+          const perf = performance[key] || { weight: '', reps: '', completed: false };
+          const hint = getLastTimeHint(expandedDay, exIdx, setIdx);
+          return (
+            <View key={setIdx}>
+              <View style={styles.setRow}>
+                <TouchableOpacity
+                  style={[styles.setCheckbox, perf.completed && styles.setCheckboxChecked]}
+                  onPress={() => updatePerformance(key, { ...perf, completed: !perf.completed })}
+                >
+                  {perf.completed && <Ionicons name="checkmark" size={16} color={colors.background} />}
+                </TouchableOpacity>
+                <Text style={styles.setLabel}>Set {setIdx + 1}</Text>
+                <TextInput
+                  style={styles.setInput}
+                  placeholder={localUnit}
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={perf.weight}
+                  onChangeText={(text) => updatePerformance(key, { ...perf, weight: text })}
+                />
+                <Text style={styles.setX}>×</Text>
+                <TextInput
+                  style={styles.setInput}
+                  placeholder="reps"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="number-pad"
+                  value={perf.reps}
+                  onChangeText={(text) => updatePerformance(key, { ...perf, reps: text })}
+                />
+                <TouchableOpacity style={styles.removeSetBtn} onPress={() => removeSet(expandedDay, exIdx)}>
+                  <Ionicons name="close-circle" size={22} color={colors.error} />
+                </TouchableOpacity>
+              </View>
+              {hint && (
+                <Text style={styles.lastTimeHint}>Last time: {hint}</Text>
+              )}
+            </View>
+          );
+        })}
+      </View>
+      <View style={styles.exerciseActions}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => openReplaceExerciseModal(expandedDay, exIdx)}>
+          <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
+          <Text style={styles.actionBtnText}>Replace</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, styles.actionBtnDanger]} onPress={() => deleteExercise(expandedDay, exIdx)}>
+          <Ionicons name="trash-outline" size={18} color={colors.error} />
+          <Text style={[styles.actionBtnText, styles.actionBtnTextDanger]}>Delete</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 
   return (
@@ -1323,26 +1322,36 @@ export default function WorkoutDetail() {
               const isSwapMode = selectedExIdx !== null;
 
               return (
-                <Pressable
+                <View
                   key={`${exercise.name}-${exIdx}`}
-                  onPress={() => handleExerciseTap(exIdx)}
-                  onLongPress={() => handleExerciseLongPress(exIdx)}
-                  delayLongPress={700}
-                  style={({ pressed }) => [
+                  style={[
                     styles.exerciseCard,
                     isSelected && styles.exerciseCardSelected,
                     isSwapMode && !isSelected && styles.exerciseCardSwapTarget,
-                    pressed && !isSelected && styles.exerciseCardPressed,
                   ]}
                 >
-                  {isSelected ? (
-                    <Animated.View style={{ opacity: swapPulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }}>
-                      {renderExerciseInner(exercise, exIdx, isSelected, isSwapMode)}
-                    </Animated.View>
-                  ) : (
-                    renderExerciseInner(exercise, exIdx, isSelected, isSwapMode)
+                  {/* ── Tappable header — Pressable only wraps this row ── */}
+                  <Pressable
+                    onPress={() => handleExerciseTap(exIdx)}
+                    onLongPress={() => handleExerciseLongPress(exIdx)}
+                    delayLongPress={700}
+                    style={({ pressed }) => [pressed && !isSelected && styles.exerciseCardPressed]}
+                  >
+                    {isSelected ? (
+                      <Animated.View style={{ opacity: swapPulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }}>
+                        {renderExerciseHeader(exercise, exIdx, isSelected, isSwapMode)}
+                      </Animated.View>
+                    ) : (
+                      renderExerciseHeader(exercise, exIdx, isSelected, isSwapMode)
+                    )}
+                  </Pressable>
+
+                  {/* ── Detail panel is OUTSIDE the Pressable so TextInput taps
+                        never bubble up to the card's tap/long-press handler ── */}
+                  {!isSwapMode && expandedExercise === `${expandedDay}-${exIdx}` && (
+                    renderExerciseDetailPanel(exercise, exIdx)
                   )}
-                </Pressable>
+                </View>
               );
             })}
 
