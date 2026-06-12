@@ -86,6 +86,68 @@ interface WorkoutProgram {
   training_notes?: string;
 }
 
+// ─── Confetti burst (PR celebration) ────────────────────────────────────────
+const CONFETTI_PALETTE = ['#FFD700','#FFC300','#FF9500','#FFECB3','#FF6B6B','#87CEEB','#98FB98'];
+const CONFETTI_PIECES = Array.from({ length: 26 }, (_, i) => ({
+  id: i,
+  color: CONFETTI_PALETTE[i % CONFETTI_PALETTE.length],
+  leftPct: `${Math.round(2 + (i / 25) * 93 + Math.sin(i * 2.39) * 4)}%`,
+  delay: (i % 7) * 110,
+  w: 7 + (i % 4) * 2,
+}));
+
+const ConfettiPiece = React.memo(({ color, leftPct, delay, w }: {
+  color: string; leftPct: string; delay: number; w: number;
+}) => {
+  const y = useRef(new Animated.Value(0)).current;
+  const alpha = useRef(new Animated.Value(1)).current;  // start visible
+  const rot = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const anim = Animated.sequence([
+      Animated.delay(delay),
+      Animated.parallel([
+        Animated.timing(y,     { toValue: 620, duration: 2400, useNativeDriver: false }),
+        Animated.timing(rot,   { toValue: 8,   duration: 2400, useNativeDriver: false }),
+        Animated.sequence([
+          Animated.delay(1600),
+          Animated.timing(alpha, { toValue: 0, duration: 800, useNativeDriver: false }),
+        ]),
+      ]),
+    ]);
+    anim.start();
+    return () => anim.stop();
+  }, []);
+
+  const rotate = rot.interpolate({ inputRange: [0, 8], outputRange: ['0deg', '1440deg'] });
+
+  return (
+    <Animated.View style={{
+      position: 'absolute',
+      left: leftPct,
+      top: -14,
+      width: w,
+      height: w / 2,
+      backgroundColor: color,
+      borderRadius: 2,
+      opacity: alpha,
+      transform: [{ translateY: y }, { rotate }],
+    }} />
+  );
+});
+
+const ConfettiBurst = ({ active }: { active: boolean }) => {
+  if (!active) return null;
+  return (
+    <>
+      {CONFETTI_PIECES.map(p => (
+        <ConfettiPiece key={p.id} color={p.color} leftPct={p.leftPct} delay={p.delay} w={p.w} />
+      ))}
+    </>
+  );
+};
+// ────────────────────────────────────────────────────────────────────────────
+
 export default function WorkoutDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
@@ -1353,6 +1415,9 @@ export default function WorkoutDetail() {
             >
               <Text style={styles.completeDoneBtnText}>Keep Going 🔥</Text>
             </TouchableOpacity>
+
+            {/* Confetti burst — inside card with overflow visible */}
+            <ConfettiBurst active={!!(completedSessionData?.personal_records?.length)} />
           </View>
         </View>
       </Modal>
@@ -2494,6 +2559,7 @@ const styles = StyleSheet.create({
   completeModalContent: {
     alignItems: 'center',
     paddingVertical: 36,
+    overflow: 'visible',
   },
   completeEmoji: {
     fontSize: 56,
@@ -2613,5 +2679,10 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: '#000',
+  },
+  confettiLayer: {
+    zIndex: 9999,
+    pointerEvents: 'none' as const,
+    overflow: 'visible' as const,
   },
 });
