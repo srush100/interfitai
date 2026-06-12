@@ -86,6 +86,8 @@ const WORKOUT_SPLITS = [
   { id: 'bro_split', label: 'Bro Split', icon: 'calendar', desc: 'One muscle group per day' },
 ];
 
+const START_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 export default function WorkoutQuestionnaire() {
   const router = useRouter();
   const { profile } = useUserStore();
@@ -114,6 +116,7 @@ export default function WorkoutQuestionnaire() {
     fitness_level: 'intermediate',
     preferred_split: 'ai_choose',
     injuries: '',
+    preferred_start_day: 'Monday',
   });
 
   const toggleSelection = (field: 'focus_areas' | 'equipment', value: string) => {
@@ -171,6 +174,7 @@ export default function WorkoutQuestionnaire() {
         duration_minutes: formData.duration_minutes,
         fitness_level: formData.fitness_level,
         preferred_split: formData.preferred_split,
+        preferred_start_day: formData.preferred_start_day,
       });
 
       router.replace(`/workout-detail?id=${response.data.id}`);
@@ -406,36 +410,84 @@ export default function WorkoutQuestionnaire() {
     </View>
   );
 
-  // Step 6: Preferred Split
+  // Step 6: Preferred Split + Start Day
+  const showSplitPicker =
+    formData.training_style === 'weights' && formData.goal !== 'athletic_performance';
+
   const renderStep6 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Preferred workout split?</Text>
-      <Text style={styles.stepSubtitle}>How do you want your program structured</Text>
-      
-      {WORKOUT_SPLITS.map((split) => (
-        <TouchableOpacity
-          key={split.id}
-          style={[styles.optionCard, formData.preferred_split === split.id && styles.optionCardActive]}
-          onPress={() => setFormData({ ...formData, preferred_split: split.id })}
-        >
-          <View style={[styles.optionIcon, formData.preferred_split === split.id && styles.optionIconActive]}>
-            <Ionicons
-              name={split.icon as any}
-              size={22}
-              color={formData.preferred_split === split.id ? colors.background : colors.primary}
-            />
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={[styles.optionLabel, formData.preferred_split === split.id && styles.optionLabelActive]}>
-              {split.label}
+      <Text style={styles.stepTitle}>Program structure</Text>
+      <Text style={styles.stepSubtitle}>How do you want your week structured?</Text>
+
+      {/* Split picker — only for weights + non-athletic goals */}
+      {showSplitPicker ? (
+        <>
+          {WORKOUT_SPLITS.map((split) => (
+            <TouchableOpacity
+              key={split.id}
+              style={[styles.optionCard, formData.preferred_split === split.id && styles.optionCardActive]}
+              onPress={() => setFormData({ ...formData, preferred_split: split.id })}
+            >
+              <View style={[styles.optionIcon, formData.preferred_split === split.id && styles.optionIconActive]}>
+                <Ionicons
+                  name={split.icon as any}
+                  size={22}
+                  color={formData.preferred_split === split.id ? colors.background : colors.primary}
+                />
+              </View>
+              <View style={styles.optionContent}>
+                <Text style={[styles.optionLabel, formData.preferred_split === split.id && styles.optionLabelActive]}>
+                  {split.label}
+                </Text>
+                <Text style={styles.optionDesc}>{split.desc}</Text>
+              </View>
+              {formData.preferred_split === split.id && (
+                <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </>
+      ) : (
+        <View style={styles.splitNoteCard}>
+          <Ionicons name="information-circle" size={20} color={colors.primary} style={{ marginRight: 10 }} />
+          <Text style={styles.splitNoteText}>
+            Your{' '}
+            <Text style={{ fontWeight: '700', color: colors.primary }}>
+              {formData.goal === 'athletic_performance'
+                ? 'athletic performance'
+                : formData.training_style}
             </Text>
-            <Text style={styles.optionDesc}>{split.desc}</Text>
-          </View>
-          {formData.preferred_split === split.id && (
-            <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-          )}
-        </TouchableOpacity>
-      ))}
+            {' '}program uses an optimised split designed for this training style.
+          </Text>
+        </View>
+      )}
+
+      {/* Start Day picker */}
+      <Text style={[styles.stepTitle, { marginTop: 28, fontSize: 16 }]}>
+        Which day do you start training?
+      </Text>
+      <Text style={styles.stepSubtitle}>Rest days will be placed optimally</Text>
+      <View style={styles.startDayRow}>
+        {START_DAYS.map((day) => (
+          <TouchableOpacity
+            key={day}
+            style={[
+              styles.startDayBtn,
+              formData.preferred_start_day === day && styles.startDayBtnActive,
+            ]}
+            onPress={() => setFormData({ ...formData, preferred_start_day: day })}
+          >
+            <Text
+              style={[
+                styles.startDayText,
+                formData.preferred_start_day === day && styles.startDayTextActive,
+              ]}
+            >
+              {day.slice(0, 3)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 
@@ -489,8 +541,21 @@ export default function WorkoutQuestionnaire() {
           <View style={styles.summaryContent}>
             <Text style={styles.summaryLabel}>Split</Text>
             <Text style={styles.summaryValue}>
-              {WORKOUT_SPLITS.find(s => s.id === formData.preferred_split)?.label}
+              {showSplitPicker
+                ? WORKOUT_SPLITS.find(s => s.id === formData.preferred_split)?.label
+                : `Optimised for ${formData.goal === 'athletic_performance' ? 'athletic performance' : formData.training_style}`
+              }
             </Text>
+          </View>
+        </View>
+
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryIcon}>
+            <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+          </View>
+          <View style={styles.summaryContent}>
+            <Text style={styles.summaryLabel}>Starts</Text>
+            <Text style={styles.summaryValue}>{formData.preferred_start_day}</Text>
           </View>
         </View>
 

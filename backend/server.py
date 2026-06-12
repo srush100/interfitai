@@ -1000,6 +1000,9 @@ class WorkoutProgram(BaseModel):
     progression_method: Optional[str] = None
     deload_timing: Optional[str] = None
     weekly_structure: Optional[List[str]] = None
+    weekly_progression: Optional[List[dict]] = None
+    preferred_start_day: str = "Monday"
+    current_week_override: Optional[int] = None
     training_notes: Optional[str] = None
     workout_days: List[WorkoutDay]
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -1025,6 +1028,7 @@ class WorkoutGenerateRequest(BaseModel):
     fitness_level: str = "intermediate"
     preferred_split: str = "ai_choose"
     exercise_preferences: Optional[str] = None  # free text: favourite/disliked exercises
+    preferred_start_day: str = "Monday"          # Day of week to anchor the schedule
 
     # Accept legacy / alternate field names from frontend
     split_type: Optional[str] = None        # alias for preferred_split
@@ -2267,6 +2271,90 @@ class EliteCoachingEngine:
         adjusted['sets'] = max(s_min, min(s_max, params['sets']))
         return adjusted
 
+    @staticmethod
+    def assign_days_of_week(training_labels: list, start_day: str,
+                            fitness_level: str) -> list:
+        """
+        Build a 7-day weekly schedule with rest days placed optimally.
+        Returns strings like "Monday: Push — Chest…", "Thursday: Rest".
+        """
+        WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        n = min(len(training_labels), 6)
+        if n == 0:
+            return []
+        start_idx = next((i for i, d in enumerate(WEEK) if d.lower() == start_day.lower()), 0)
+
+        # Optimal training-slot bitmap: 1 = train, 0 = rest
+        # Patterns chosen to: spread evenly, avoid 3+ consecutive for beginners,
+        # and naturally place a rest day after Wed/Legs in 5-day PPL.
+        PATTERNS = {
+            1: [1, 0, 0, 0, 0, 0, 0],
+            2: [1, 0, 0, 1, 0, 0, 0],   # Mon + Thu
+            3: [1, 0, 1, 0, 1, 0, 0],   # Mon Wed Fri
+            4: [1, 1, 0, 1, 1, 0, 0],   # Mon Tue · Thu Fri
+            5: [1, 1, 1, 0, 1, 1, 0],   # Mon-Wed · Fri-Sat  (Thu/Sun rest)
+            6: [1, 1, 1, 0, 1, 1, 1],   # Mon-Wed · Fri-Sun  (Thu rest)
+        }
+        # Beginners: never more than 2 consecutive training days
+        if fitness_level == 'beginner' and n == 4:
+            pattern = [1, 0, 1, 0, 1, 0, 1]
+        else:
+            pattern = PATTERNS.get(n, PATTERNS[min(n, 6)])
+
+        result = []
+        train_idx = 0
+        for slot in range(7):
+            day_name = WEEK[(start_idx + slot) % 7]
+            if pattern[slot] and train_idx < n:
+                result.append(f"{day_name}: {training_labels[train_idx]}")
+                train_idx += 1
+            else:
+                result.append(f"{day_name}: Rest")
+        return result
+
+    @staticmethod
+    def generate_weekly_progression(goal: str) -> list:
+        """Returns a 4-week block progression plan tailored to the training goal."""
+        plans = {
+            "strength": [
+                {"week": 1, "label": "Foundation", "instruction": "Follow the program as written. Focus on form and hitting prescribed rep ranges with 3-4 RIR."},
+                {"week": 2, "label": "Push", "instruction": "Add 1-2 reps per set, or increase compounds by 2.5 kg. Chase progressive overload."},
+                {"week": 3, "label": "Overreach", "instruction": "Increase load by 2.5-5 kg on compounds. Push to 1-2 RIR — this is the hardest week."},
+                {"week": 4, "label": "Deload", "instruction": "Cut working sets by 50%. Maintain the same weight. Focus on recovery and movement quality."},
+            ],
+            "build_muscle": [
+                {"week": 1, "label": "Foundation", "instruction": "Learn the movements. Train at 3-4 RIR. Log all weights and reps precisely."},
+                {"week": 2, "label": "Build", "instruction": "Add 1-2 reps per set where possible, or slightly increase weight. Maintain strict form."},
+                {"week": 3, "label": "Overreach", "instruction": "Add 1 set to each compound exercise. Push to 1-2 RIR — highest volume week."},
+                {"week": 4, "label": "Deload", "instruction": "Cut working sets by 50%. Keep the same load. Let the body consolidate the adaptations."},
+            ],
+            "lose_fat": [
+                {"week": 1, "label": "Foundation", "instruction": "Build the habit. Stay in your rep ranges. Focus on consistency over intensity."},
+                {"week": 2, "label": "Build", "instruction": "Maintain all weights. Reduce rest by 10 s on accessories to keep heart rate elevated."},
+                {"week": 3, "label": "Intensify", "instruction": "Reduce rest by another 10 s on accessories. Consider a 10-min post-session cardio finisher."},
+                {"week": 4, "label": "Active Recovery", "instruction": "Cut total volume by 40%. Light cardio on rest days. Let the body adapt to the deficit."},
+            ],
+            "body_recomp": [
+                {"week": 1, "label": "Foundation", "instruction": "Set your baseline. Focus on compound lifts with controlled tempo. Log everything."},
+                {"week": 2, "label": "Build", "instruction": "Increase compounds by 2.5 kg where form allows. Maintain accessories volume."},
+                {"week": 3, "label": "Overreach", "instruction": "Max effort across the board. Push both intensity and volume — this drives body composition shifts."},
+                {"week": 4, "label": "Deload", "instruction": "Reduce volume by 40%. Maintain load. Allow muscle protein synthesis to peak during recovery."},
+            ],
+            "athletic_performance": [
+                {"week": 1, "label": "Foundation", "instruction": "Focus on movement quality and bar speed. Build the base patterns with controlled effort."},
+                {"week": 2, "label": "Load", "instruction": "Increase intensity by 5-10%. Prioritise power output and explosiveness on all movements."},
+                {"week": 3, "label": "Peak", "instruction": "Maximum effort on key lifts. Chase speed, power, and top-end performance."},
+                {"week": 4, "label": "Taper", "instruction": "Cut volume by 50%. Maintain intensity. Prepare the body and nervous system for peak output."},
+            ],
+            "general_fitness": [
+                {"week": 1, "label": "Foundation", "instruction": "Get familiar with the movements. Prioritise full range of motion and consistent effort."},
+                {"week": 2, "label": "Progress", "instruction": "Add 1-2 reps per set or a small weight increase. Aim for noticeable improvement."},
+                {"week": 3, "label": "Challenge", "instruction": "Push slightly harder on at least 2 exercises per session. Embrace the discomfort."},
+                {"week": 4, "label": "Active Recovery", "instruction": "Reduce sets by 30%. Stay active. Prioritise sleep and recovery nutrition this week."},
+            ],
+        }
+        return plans.get(goal, plans["general_fitness"])
+
     def get_progression_model(self, goal: str, level: str) -> tuple:
         """Returns (method, description)"""
         if goal == 'strength':
@@ -2719,7 +2807,12 @@ class EliteCoachingEngine:
                 "athletic_performance": "Every 4 weeks: cut volume 50% — use deload week for skill work and mobility.",
                 "general_fitness":      "Every 6-8 weeks: reduce total volume by 30% for 1 week, stay lightly active.",
             }.get(goal, "Every 5-6 weeks: reduce volume by 40% for 1 week to allow full recovery and super-compensation."),
-            "weekly_structure":  [f"Day {d['session_number']}: {d['label']} — {d['focus']}" for d in day_blueprints],
+            "weekly_structure": EliteCoachingEngine.assign_days_of_week(
+                training_labels=[f"{d['label']} — {d['focus']}" for d in day_blueprints],
+                start_day=getattr(req, 'preferred_start_day', 'Monday'),
+                fitness_level=level,
+            ),
+            "weekly_progression": EliteCoachingEngine.generate_weekly_progression(goal),
             "day_blueprints":    day_blueprints,
             "goal":              goal,
             "style":             style,
@@ -3422,6 +3515,8 @@ async def generate_workout(request: WorkoutGenerateRequest):
         progression_method=f"{prog_name} — {prog_desc}",
         deload_timing=blueprint['deload_timing'],
         weekly_structure=blueprint['weekly_structure'],
+        weekly_progression=blueprint.get('weekly_progression'),
+        preferred_start_day=getattr(request, 'preferred_start_day', 'Monday'),
         training_notes=(
             f"Goal: {request.goal.replace('_',' ').title()} | "
             f"Style: {request.training_style.title()} | "
@@ -3512,6 +3607,18 @@ async def rename_workout(workout_id: str, request: RenameWorkoutRequest):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Workout not found")
     return {"message": "Workout renamed successfully", "name": request.name}
+
+class WeekOverrideRequest(BaseModel):
+    current_week_override: Optional[int] = None
+
+@api_router.patch("/workout/{workout_id}/week-override")
+async def update_workout_week_override(workout_id: str, request: WeekOverrideRequest):
+    """Set or clear a manual week override for the 4-week progression block."""
+    await db.workouts.update_one(
+        {"id": workout_id},
+        {"$set": {"current_week_override": request.current_week_override}}
+    )
+    return {"success": True, "current_week_override": request.current_week_override}
 
 class WorkoutPerformanceRequest(BaseModel):
     performance: dict  # { "dayIndex-exerciseIndex-setIndex": { "weight": "50", "reps": "10", "completed": true } }

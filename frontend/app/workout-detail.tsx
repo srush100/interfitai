@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -65,6 +65,12 @@ interface WorkoutDay {
   notes: string;
 }
 
+interface WeekProgression {
+  week: number;
+  label: string;
+  instruction: string;
+}
+
 interface WorkoutProgram {
   id: string;
   name: string;
@@ -83,6 +89,8 @@ interface WorkoutProgram {
   progression_method?: string;
   deload_timing?: string;
   weekly_structure?: string[];
+  weekly_progression?: WeekProgression[];
+  current_week_override?: number | null;
   training_notes?: string;
 }
 
@@ -854,6 +862,17 @@ export default function WorkoutDetail() {
 
   // Refresh GIF URLs for all exercises
   const [refreshingGifs, setRefreshingGifs] = useState(false);
+  // Week progression modal
+  const [showWeekModal, setShowWeekModal] = useState(false);
+
+  // ── Compute current week (auto from created_at, or from manual override) ──
+  const currentWeek = useMemo(() => {
+    if (!workout) return 1;
+    if (workout.current_week_override != null) return workout.current_week_override;
+    const createdAt = new Date(workout.created_at);
+    const daysDiff = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+    return Math.min(4, Math.floor(daysDiff / 7) + 1);
+  }, [workout]);
   
   const refreshGifs = async () => {
     if (!workout) return;
@@ -867,6 +886,18 @@ export default function WorkoutDetail() {
     } finally {
       setRefreshingGifs(false);
     }
+  };
+
+  // Update the manual week override (stored on the program)
+  const updateWeekOverride = async (week: number) => {
+    if (!workout) return;
+    try {
+      await api.patch(`/workout/${workout.id}/week-override`, { current_week_override: week });
+      setWorkout({ ...workout, current_week_override: week });
+    } catch {
+      // silent — optimistic update won't reflect without success, that's fine
+    }
+    setShowWeekModal(false);
   };
 
   if (loading) {
@@ -1119,6 +1150,38 @@ export default function WorkoutDetail() {
           </TouchableOpacity>
         </View>
 
+        {/* ── 4-Week Progression Banner ─────────────────────────────────────── */}
+        {workout.weekly_progression && workout.weekly_progression.length > 0 && (() => {
+          const weekData = workout.weekly_progression![currentWeek - 1];
+          return (
+            <TouchableOpacity
+              style={styles.weekBanner}
+              onPress={() => setShowWeekModal(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.weekBannerTop}>
+                <View style={styles.weekBannerBadge}>
+                  <Ionicons name="calendar-outline" size={13} color={colors.primary} />
+                  <Text style={styles.weekBannerBadgeText}>Week {currentWeek} of 4</Text>
+                </View>
+                <Text style={styles.weekBannerLabel}>{weekData?.label}</Text>
+                <Ionicons name="create-outline" size={15} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
+              </View>
+              <Text style={styles.weekBannerInstruction}>
+                {weekData?.instruction}
+              </Text>
+              {currentWeek === 4 && (
+                <View style={styles.weekCompleteRow}>
+                  <Ionicons name="trophy-outline" size={13} color={colors.warning} />
+                  <Text style={styles.weekCompleteText}>
+                    {`You've completed your 4-week block — regenerate or repeat to keep progressing.`}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })()}
+
         {/* Premium Coaching Panel */}
         {(workout.split_rationale || workout.progression_method || workout.weekly_structure) && (
           <View style={styles.coachingPanel}>
@@ -1168,12 +1231,27 @@ export default function WorkoutDetail() {
             {workout.weekly_structure && workout.weekly_structure.length > 0 && (
               <View style={styles.weeklyStructure}>
                 <Text style={styles.coachingLabel}>Weekly Blueprint</Text>
-                {workout.weekly_structure.map((day, idx) => (
-                  <View key={idx} style={styles.weeklyDayRow}>
-                    <View style={styles.weeklyDayDot} />
-                    <Text style={styles.weeklyDayText}>{day}</Text>
-                  </View>
-                ))}
+                {workout.weekly_structure.map((day, idx) => {
+                  const isRest = day.endsWith(': Rest');
+                  const dayName = day.split(':')[0];
+                  if (isRest) {
+                    return (
+                      <View key={idx} style={styles.weeklyRestRow}>
+                        <Ionicons name="moon-outline" size={14} color={colors.textMuted} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.weeklyRestDayName}>{dayName}</Text>
+                          <Text style={styles.weeklyRestSubText}>Rest & Recovery — Light walk, stretching, or full rest.</Text>
+                        </View>
+                      </View>
+                    );
+                  }
+                  return (
+                    <View key={idx} style={styles.weeklyDayRow}>
+                      <View style={styles.weeklyDayDot} />
+                      <Text style={styles.weeklyDayText}>{day}</Text>
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -1466,6 +1544,44 @@ export default function WorkoutDetail() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Week Picker Modal */}
+      <Modal
+        visible={showWeekModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowWeekModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowWeekModal(false)}
+        >
+          <View style={[styles.modalContent, { maxWidth: 320 }]}>
+            <Text style={styles.modalTitle}>Adjust Current Week</Text>
+            <Text style={[styles.coachingValue, { textAlign: 'center', marginBottom: 20, fontSize: 13 }]}>
+              If you fell behind or took a rest week, set your actual week here.
+            </Text>
+            {workout?.weekly_progression?.map((w) => (
+              <TouchableOpacity
+                key={w.week}
+                style={[styles.weekPickerOption, currentWeek === w.week && styles.weekPickerOptionActive]}
+                onPress={() => updateWeekOverride(w.week)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.weekPickerOptionWeek, currentWeek === w.week && styles.weekPickerOptionWeekActive]}>
+                    Week {w.week}
+                  </Text>
+                  <Text style={styles.weekPickerOptionLabel}>{w.label}</Text>
+                </View>
+                {currentWeek === w.week && (
+                  <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Replace Exercise Modal */}
@@ -1779,6 +1895,113 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     flex: 1,
+  },
+  // Rest day row in weekly blueprint
+  weeklyRestRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 8,
+    opacity: 0.7,
+  },
+  weeklyRestDayName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  weeklyRestSubText: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    lineHeight: 16,
+    marginTop: 1,
+  },
+  // 4-Week Progression Banner
+  weekBanner: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  weekBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  weekBannerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.primary + '20',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  weekBannerBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  weekBannerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  weekBannerInstruction: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 19,
+  },
+  weekCompleteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  weekCompleteText: {
+    fontSize: 12,
+    color: colors.warning,
+    flex: 1,
+    lineHeight: 17,
+  },
+  // Week picker modal options
+  weekPickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  weekPickerOptionActive: {
+    backgroundColor: colors.primary + '15',
+    borderColor: colors.primary + '60',
+  },
+  weekPickerOptionWeek: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  weekPickerOptionWeekActive: {
+    color: colors.primary,
+  },
+  weekPickerOptionLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   // Substitution hint
   substitutionRow: {

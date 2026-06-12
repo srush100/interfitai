@@ -911,11 +911,35 @@ frontend:
     priority: "medium"
     needs_retesting: false
 
+  - task: "4-Week Progression Banner + Rest Days UI in workout-detail.tsx"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/workout-detail.tsx, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Implemented 3 UI features in workout-detail.tsx:
+          1. Week Banner: "Week X of 4 — [Label]" card placed between infoCard and coaching panel.
+             Auto-computes current week from created_at date (days 0-6=Week1, 7-13=Week2 etc., capped at 4).
+             Tapping the banner opens a Week Picker modal where user can manually override.
+             Week 4 shows a special completion prompt.
+          2. Week Picker Modal: Clean modal with 4 options (Week 1-4), current week highlighted with
+             golden border and checkmark. Saves override via PATCH /api/workout/{id}/week-override.
+          3. Rest Days: Updated weekly_structure rendering in coaching panel. Rest days detected via
+             ": Rest" suffix, styled with moon-outline icon, muted colors, italic "Rest & Recovery" label
+             and coaching note. Training days retain existing primary-dot style.
+          Backend: Added current_week_override field to WorkoutProgram model and 
+          PATCH /api/workout/{workout_id}/week-override endpoint.
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
   test_sequence: 1
-  run_ui: false
+  run_ui: true
 
   - task: "Hybrid AI Model - Claude Sonnet 4.5 + Haiku 4.5"
     implemented: true
