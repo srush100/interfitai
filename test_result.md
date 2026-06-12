@@ -913,11 +913,11 @@ frontend:
 
   - task: "4-Week Progression Banner + Rest Days UI in workout-detail.tsx"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/app/workout-detail.tsx, backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -934,6 +934,20 @@ frontend:
              and coaching note. Training days retain existing primary-dot style.
           Backend: Added current_week_override field to WorkoutProgram model and 
           PATCH /api/workout/{workout_id}/week-override endpoint.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL 10 FEATURES VERIFIED (100%):
+          Backend: PATCH /api/workout/{id}/week-override works for all weeks 1-4 and null reset.
+          GET returns weekly_progression, weekly_structure, current_week_override fields correctly.
+          Frontend: Week banner renders correctly between info card and coaching panel.
+          Week picker modal opens on tap, shows all 4 options with correct labels.
+          Current week highlighted with golden border and checkmark.
+          Selecting Week 2 updates banner to 'Week 2 of 4 — Build' with correct instruction.
+          Week 4 shows trophy + completion prompt correctly.
+          Rest days (Wed/Sat/Sun) show moon icon and muted 'Rest & Recovery' italic note.
+          Training days retain primary color dots.
+          Minor: PATCH endpoint doesn't validate workout existence (no 404 for unknown IDs).
 
 metadata:
   created_by: "main_agent"

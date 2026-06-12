@@ -20,7 +20,7 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 
 ## Architecture
 - **Frontend**: Expo / React Native (file-based routing via expo-router)
-- **Backend**: FastAPI (Python) — monolithic server.py (~9000 lines)
+- **Backend**: FastAPI (Python) — monolithic server.py (~9200 lines)
 - **Database**: MongoDB (Motor async driver)
 - **AI**: Claude Sonnet 4.5 (complex) + Claude Haiku 4.5 (fast/food) via Emergent LLM Key
 - **Payments**: Stripe (web), RevenueCat (mobile — P2)
@@ -43,9 +43,47 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 - `GET /api/workout/personal-records/{user_id}` — all-time PRs
 - `GET /workouts/generation-quota/{user_id}` — monthly cap status
 - `POST /api/workout/session/{session_id}/photo` — post-workout photo upload
+- `PATCH /api/workout/{id}/week-override` — set manual week (1-4) for progression block
 
 ## DB Schema Highlights
 - `profiles`: { id, email, name, weight_kg, height_cm, unit_preference, calculated_macros, ... }
-- `workouts`: { id, user_id, name, workout_days, performance: {day-ex-set: {weight, reps, completed}} }
+- `workouts`: { id, user_id, name, workout_days, performance: {day-ex-set: {weight, reps, completed}}, weekly_structure, weekly_progression, current_week_override }
 - `workout_sessions`: { id, user_id, workout_id, completed_exercises, total_volume, photo_base64, date }
+
+## Implemented Features (Changelog)
+- User auth (email + password, JWT)
+- Profile creation with macro calculation
+- AI workout generation with Elite Coaching Engine (split selection, volume, RIR, deload)
+- Workout detail view: exercises, sets/reps, weight tracking, GIFs
+- Session completion with blank-slate reset (all inputs cleared)
+- Personal Record (PR) detection with confetti celebration
+- Workout streaks and weekly adherence stats
+- Meal plan generation (template-based + AI)
+- Food tracking with AI image recognition
+- Ask InterFitAI chat (Claude Sonnet)
+- Subscription flow (Stripe web payments)
+- kg/lbs unit preference toggle
+- Monthly generation quota enforcement (3/month, admin bypass)
+- Post-workout photo upload
+- Workout rename
+- **[Jun 2026] Conditional Split Picker**: Hidden in questionnaire for hybrid/functional/calisthenics training styles and athletic_performance goal
+- **[Jun 2026] Preferred Start Day**: Questionnaire includes start day selector (default Monday)
+- **[Jun 2026] 7-Day Weekly Structure with Explicit Rest Days**: Backend distributes rest days optimally (no 3+ consecutive training days for beginners), displayed in Weekly Blueprint with `moon-outline` icon, muted styling, and coaching note
+- **[Jun 2026] 4-Week Progressive Progression Banner**: Auto-computed week (days 0-6=Wk1...capped at 4), tappable to manually override, shows coaching instruction per week, Week 4 shows completion prompt
+
+## Backlog (Prioritized)
+### P0 — Critical
+- Verify `foods_to_avoid` bug fix in meal replacement (still unverified)
+
+### P1 — High
+- Test `generate_alternate_meal` endpoint with foods_to_avoid filtering
+
+### P2 — Medium
+- Enable Live In-App Purchases (RevenueCat — native build only, not testable in web preview)
+- Build Profile/Stats screen with all-time PRs
+
+### P3 — Low
+- Exercise GIFs in circuit workouts
+- Enhance subscription page UI
+- Google Fit / Fitbit / Garmin device connection logic
 - `generation_events`: { user_id, email, created_at }
