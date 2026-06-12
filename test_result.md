@@ -949,11 +949,25 @@ frontend:
           Training days retain primary color dots.
           Minor: PATCH endpoint doesn't validate workout existence (no 404 for unknown IDs).
 
-metadata:
-  created_by: "main_agent"
-  version: "1.0"
-  test_sequence: 1
-  run_ui: true
+  - task: "Fix: TextInput taps in exercise detail triggering swap mode"
+    implemented: true
+    working: true
+    file: "frontend/app/workout-detail.tsx"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Root cause: The entire exercise card (including TextInputs for weight/reps) was wrapped
+          in a <Pressable> with onPress and onLongPress. Tapping any TextInput bubbled up to the
+          Pressable, triggering handleExerciseTap or handleExerciseLongPress → swap mode activated.
+          Fix: Split renderExerciseInner into two functions:
+          - renderExerciseHeader (header row only) → inside Pressable
+          - renderExerciseDetailPanel (inputs, GIF, instructions, actions) → plain View OUTSIDE Pressable
+          Touch events in the detail panel can no longer reach the card's press handlers.
+          Testing: 8/8 tests pass (100%). Typing into inputs never triggers swap mode.
 
   - task: "Hybrid AI Model - Claude Sonnet 4.5 + Haiku 4.5"
     implemented: true
