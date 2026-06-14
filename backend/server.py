@@ -4128,170 +4128,171 @@ async def refresh_workout_gifs(workout_id: str):
     return {"message": "GIF URLs refreshed successfully", "updated": updated}
 
 @api_router.get("/exercises/search")
-async def search_exercises(search: str = None, muscle: str = None, limit: int = 50):
-    """Search exercises from ExerciseDB with improved search handling"""
-    import httpx
-    import urllib.parse
-    
+async def search_exercises(
+    search: str = None,
+    muscle: str = None,
+    equipment: str = None,
+    body_part: str = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Search exercises from local MongoDB exercise_library (fast, no rate-limit)."""
+
+    # Frontend chip-id → exact ExerciseDB target field values
+    MUSCLE_TARGET_MAP: dict = {
+        "biceps":    ["biceps"],
+        "triceps":   ["triceps"],
+        "chest":     ["pectorals"],
+        "back":      ["lats", "upper back", "lower back", "traps", "spine", "serratus anterior"],
+        "shoulders": ["delts"],
+        "legs":      ["quads", "hamstrings", "calves", "adductors", "abductors"],
+        "glutes":    ["glutes"],
+        "abs":       ["abs", "obliques"],
+        "cardio":    ["cardiovascular system"],
+    }
+
+    query: dict = {}
+
+    # Text search on name (case-insensitive substring)
+    if search and search.strip():
+        query["name"] = {"$regex": search.strip(), "$options": "i"}
+
+    # Muscle target filter
+    if muscle:
+        targets = MUSCLE_TARGET_MAP.get(muscle.lower())
+        if targets:
+            query["target"] = {"$in": targets} if len(targets) > 1 else targets[0]
+        else:
+            # pass-through for direct target values
+            query["target"] = muscle.lower()
+
+    # Optional extra filters
+    if equipment:
+        query["equipment"] = {"$regex": equipment.strip(), "$options": "i"}
+    if body_part:
+        query["body_part"] = {"$regex": body_part.strip(), "$options": "i"}
+
+    # Check if library is populated
+    total_count = await db.exercise_library.count_documents(query)
+    if total_count == 0 and not search and not muscle:
+        # Library may not be seeded yet
+        lib_total = await db.exercise_library.count_documents({})
+        if lib_total == 0:
+            logger.warning("exercise_library collection is empty — run import_exercises.py to seed it")
+            return {"exercises": [], "total_count": 0, "offset": offset, "limit": limit,
+                    "message": "Exercise library not yet seeded. Run the import script."}
+
+    cursor = (
+        db.exercise_library.find(query, {"_id": 0})
+        .sort("name", 1)
+        .skip(offset)
+        .limit(limit)
+    )
+    raw = await cursor.to_list(length=limit)
+
+    exercises = [
+        {
+            "id":               ex.get("exercisedb_id", ""),
+            "name":             ex.get("name", "").title(),
+            "target":           ex.get("target", ""),
+            "equipment":        ex.get("equipment", ""),
+            "bodyPart":         ex.get("body_part", ""),
+            "gifUrl":           f"/api/exercises/gif/{ex['gif_id']}" if ex.get("gif_id") else None,
+            "secondaryMuscles": ex.get("secondary_muscles", []),
+            "instructions":     ex.get("instructions", []),
+        }
+        for ex in raw
+    ]
+
+    return {
+        "exercises":   exercises,
+        "total_count": total_count,
+        "offset":      offset,
+        "limit":       limit,
+    }
+
+
+class ImportExercisesRequest(BaseModel):
+    force_refresh: bool = False
+
+@api_router.post("/admin/import-exercises")
+async def admin_import_exercises(request: ImportExercisesRequest = ImportExercisesRequest()):
+    """Re-runnable endpoint to seed/refresh the exercise_library from ExerciseDB.
+    Safe to call multiple times — uses upsert by exercisedb_id.
+    """
+    import httpx as _httpx
+
     if not EXERCISEDB_API_KEY:
-        return {"exercises": []}
-    
+        raise HTTPException(status_code=503, detail="EXERCISEDB_API_KEY not configured")
+
+    # Skip if already populated and not forced
+    existing_count = await db.exercise_library.count_documents({})
+    if existing_count > 500 and not request.force_refresh:
+        return {"message": "Library already populated", "total": existing_count, "skipped": True}
+
     headers = {
         "X-RapidAPI-Key": EXERCISEDB_API_KEY,
-        "X-RapidAPI-Host": EXERCISEDB_API_HOST
+        "X-RapidAPI-Host": EXERCISEDB_API_HOST,
     }
-    
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            exercises = []
-            
-            # Handle search with muscle filter - combine both
-            if search and muscle:
-                # First get all exercises for the muscle group
-                muscle_map = {
-                    "chest": "chest", "back": "back", "shoulders": "shoulders",
-                    "biceps": "upper arms", "triceps": "upper arms",
-                    "legs": "upper legs", "glutes": "upper legs",
-                    "abs": "waist", "cardio": "cardio"
-                }
-                mapped_muscle = muscle_map.get(muscle.lower(), muscle.lower())
-                response = await client.get(
-                    f"{EXERCISEDB_API_BASE}/exercises/bodyPart/{mapped_muscle}",
-                    headers=headers,
-                    params={"limit": 300}
-                )
-                if response.status_code == 200:
-                    all_exercises = response.json()
-                    # Filter by search term
-                    search_lower = search.lower().replace("-", " ")
-                    for ex in all_exercises:
-                        ex_name = ex.get("name", "").lower()
-                        # Match if search term is in name or name contains key words from search
-                        search_words = set(search_lower.split())
-                        if search_lower in ex_name or any(word in ex_name for word in search_words if len(word) > 2):
-                            exercises.append(ex)
-            
-            elif muscle:
-                # Search by body part/muscle only
-                muscle_map = {
-                    "chest": "chest", "back": "back", "shoulders": "shoulders",
-                    "biceps": "upper arms", "triceps": "upper arms",
-                    "legs": "upper legs", "glutes": "upper legs",
-                    "abs": "waist", "cardio": "cardio"
-                }
-                mapped_muscle = muscle_map.get(muscle.lower(), muscle.lower())
-                response = await client.get(
-                    f"{EXERCISEDB_API_BASE}/exercises/bodyPart/{mapped_muscle}",
-                    headers=headers,
-                    params={"limit": 200}
-                )
-                if response.status_code == 200:
-                    exercises = response.json()
-            
-            elif search:
-                # Clean up search term - keep compound words intact
-                # Handle common variations: pull-up, pull up, pullup -> search for "pull"
-                clean_search = search.lower().strip()
-                
-                # SYNONYM MAPPING - map common terms to their ExerciseDB equivalents
-                synonyms = {
-                    "overhead press": ["military press", "overhead"],
-                    "ohp": ["military press"],
-                    "shoulder press": ["military press", "shoulder"],
-                    "pull-up": ["pull up", "pull"],
-                    "pull up": ["pull up", "pull"],
-                    "pullup": ["pull up", "pull"],
-                    "chin-up": ["chin up", "chin"],
-                    "bench": ["bench press"],
-                    "squat": ["squat"],
-                    "deadlift": ["deadlift"],
-                    "row": ["row"],
-                    "curl": ["curl"],
-                    "dip": ["dip"],
-                    "lunge": ["lunge"],
-                    "press": ["press"],
-                }
-                
-                # Handle hyphenated words - try both forms
-                search_terms = [clean_search]
-                if "-" in clean_search:
-                    search_terms.append(clean_search.replace("-", " "))
-                if " " in clean_search:
-                    # Also try first significant word
-                    words = clean_search.split()
-                    if len(words) >= 1 and len(words[0]) > 2:
-                        search_terms.append(words[0])
-                
-                # Add synonyms to search terms
-                for key, syn_list in synonyms.items():
-                    if key in clean_search or clean_search in key:
-                        search_terms.extend(syn_list)
-                
-                # Remove duplicates while preserving order
-                seen = set()
-                unique_terms = []
-                for term in search_terms:
-                    if term not in seen:
-                        seen.add(term)
-                        unique_terms.append(term)
-                search_terms = unique_terms
-                
-                # Try each search term
-                for term in search_terms:
-                    encoded = urllib.parse.quote(term)
-                    response = await client.get(
-                        f"{EXERCISEDB_API_BASE}/exercises/name/{encoded}",
-                        headers=headers,
-                        params={"limit": 100}
-                    )
-                    if response.status_code == 200:
-                        results = response.json()
-                        if results:
-                            # Merge unique results
-                            existing_ids = {ex.get("id") for ex in exercises}
-                            for ex in results:
-                                if ex.get("id") not in existing_ids:
-                                    exercises.append(ex)
-                                    existing_ids.add(ex.get("id"))
-                            
-                            # Don't break early - gather synonyms too
-                            if len(exercises) >= 50:
-                                break
-            
-            else:
-                # No filter - get popular exercises across all body parts
-                body_parts = ["chest", "back", "shoulders", "upper legs", "upper arms", "waist"]
-                for part in body_parts:
-                    response = await client.get(
-                        f"{EXERCISEDB_API_BASE}/exercises/bodyPart/{part}",
-                        headers=headers,
-                        params={"limit": 20}
-                    )
-                    if response.status_code == 200:
-                        exercises.extend(response.json())
-            
-            # Format response - construct gifUrl using our proxy endpoint
-            formatted = []
-            for ex in exercises[:min(limit, 200)]:  # Respect limit but cap at 200
-                exercise_id = ex.get("id", "")
-                # Use our proxy endpoint to serve GIFs with proper authentication
-                gif_url = f"/api/exercises/gif/{exercise_id}" if exercise_id else None
-                
-                formatted.append({
-                    "id": exercise_id,
-                    "name": ex.get("name", "").title(),
-                    "target": ex.get("target", ""),
-                    "equipment": ex.get("equipment", ""),
-                    "bodyPart": ex.get("bodyPart", ""),
-                    "gifUrl": gif_url,
-                    "secondaryMuscles": ex.get("secondaryMuscles", []),
-                    "instructions": ex.get("instructions", []),
-                })
-            
-            return {"exercises": formatted}
-    except Exception as e:
-        logger.error(f"Exercise search error: {e}")
-        return {"exercises": []}
+
+    all_exercises = []
+    batch_size = 100
+    offset = 0
+
+    async with _httpx.AsyncClient(timeout=30.0) as http:
+        while True:
+            resp = await http.get(
+                f"{EXERCISEDB_API_BASE}/exercises",
+                headers=headers,
+                params={"limit": batch_size, "offset": offset},
+            )
+            if resp.status_code != 200:
+                logger.error(f"ExerciseDB import error at offset {offset}: {resp.status_code}")
+                break
+            batch = resp.json()
+            if not batch:
+                break
+            all_exercises.extend(batch)
+            if len(batch) < batch_size:
+                break
+            offset += batch_size
+            import asyncio as _asyncio
+            await _asyncio.sleep(1.2)
+
+    upserted = 0
+    for ex in all_exercises:
+        eid = ex.get("id", "")
+        doc = {
+            "exercisedb_id":    eid,
+            "name":             ex.get("name", "").strip(),
+            "target":           ex.get("target", "").strip(),
+            "secondary_muscles": ex.get("secondaryMuscles", []),
+            "body_part":        ex.get("bodyPart", "").strip(),
+            "equipment":        ex.get("equipment", "").strip(),
+            "gif_id":           eid,
+            "instructions":     ex.get("instructions", []),
+        }
+        await db.exercise_library.update_one(
+            {"exercisedb_id": eid}, {"$set": doc}, upsert=True
+        )
+        upserted += 1
+
+    # Ensure indexes exist
+    await db.exercise_library.create_index("target")
+    await db.exercise_library.create_index("body_part")
+    await db.exercise_library.create_index("equipment")
+    await db.exercise_library.create_index([("name", 1)])
+
+    total = await db.exercise_library.count_documents({})
+    targets = sorted(await db.exercise_library.distinct("target"))
+    logger.info(f"exercise_library import done: {upserted} upserted, {total} total")
+
+    return {
+        "message":  "Import complete",
+        "upserted": upserted,
+        "total":    total,
+        "targets":  targets,
+    }
 
 @api_router.get("/exercises/gif/{exercise_id}")
 async def get_exercise_gif(exercise_id: str, resolution: str = "360"):

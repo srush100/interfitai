@@ -199,6 +199,10 @@ export default function WorkoutDetail() {
   const [searching, setSearching] = useState(false);
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Pagination state for exercise search
+  const [exerciseOffset, setExerciseOffset] = useState(0);
+  const [exerciseTotalCount, setExerciseTotalCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // ── Session history state ─────────────────────────────────────────────────
   const [lastSession, setLastSession] = useState<Record<number, any>>({});
@@ -634,35 +638,87 @@ export default function WorkoutDetail() {
     }
   };
 
-  // Search exercises from ExerciseDB
-  const searchExercises = async (query: string, muscle?: string) => {
-    setSearching(true);
+  // Maps ANY muscle name (ExerciseDB target OR backend label) to a chip ID
+  const getMuscleChipForTarget = (target: string): string | null => {
+    const t = target?.toLowerCase().trim() || '';
+    // ExerciseDB exact target values
+    const exactMap: Record<string, string> = {
+      pectorals: 'chest',
+      lats: 'back', 'upper back': 'back', 'lower back': 'back', traps: 'back', spine: 'back',
+      'serratus anterior': 'back', rhomboids: 'back', levator: 'back',
+      delts: 'shoulders', deltoids: 'shoulders',
+      biceps: 'biceps', brachialis: 'biceps', brachioradialis: 'biceps',
+      triceps: 'triceps',
+      quads: 'legs', hamstrings: 'legs', calves: 'legs', adductors: 'legs', abductors: 'legs',
+      glutes: 'glutes',
+      abs: 'abs', obliques: 'abs', core: 'abs',
+      'cardiovascular system': 'cardio', cardio: 'cardio',
+      // Backend-specific labels
+      chest: 'chest', 'upper chest': 'chest', 'lower chest': 'chest',
+      'inner chest': 'chest', 'outer chest': 'chest',
+      shoulders: 'shoulders', 'front delts': 'shoulders', 'side delts': 'shoulders',
+      'rear delts': 'back', 'rear deltoid': 'back',
+      'glute max': 'glutes', 'glute med': 'glutes',
+    };
+    if (exactMap[t]) return exactMap[t];
+    // Partial keyword matches for composite labels
+    if (t.includes('chest') || t.includes('pectoral')) return 'chest';
+    if (t.includes('lats') || t.includes('back') || t.includes('rhomboid') || t.includes('trap')) return 'back';
+    if (t.includes('delt') || t.includes('shoulder')) return 'shoulders';
+    if (t.includes('bicep') || t.includes('brachial')) return 'biceps';
+    if (t.includes('tricep')) return 'triceps';
+    if (t.includes('quad') || t.includes('hamstring') || t.includes('calf') || t.includes('calves') || t.includes('leg')) return 'legs';
+    if (t.includes('glute')) return 'glutes';
+    if (t.includes('abs') || t.includes('core') || t.includes('oblique') || t.includes('waist')) return 'abs';
+    if (t.includes('cardio') || t.includes('cardiovascular')) return 'cardio';
+    return null;
+  };
+
+  // Search exercises from local MongoDB (no rate limits)
+  const searchExercises = async (query: string, muscle?: string, appendResults = false, offset = 0) => {
+    if (!appendResults) {
+      setSearching(true);
+      setExerciseOffset(0);
+    } else {
+      setLoadingMore(true);
+    }
     try {
       const params = new URLSearchParams();
       if (query) params.append('search', query);
       if (muscle) params.append('muscle', muscle);
-      // Limit to 50 to avoid API rate limiting
       params.append('limit', '50');
-      
+      params.append('offset', offset.toString());
+
       const response = await api.get(`/exercises/search?${params.toString()}`);
-      setSearchResults(response.data.exercises || []);
+      const newResults: any[] = response.data.exercises || [];
+      const total: number = response.data.total_count || 0;
+
+      if (appendResults) {
+        setSearchResults(prev => [...prev, ...newResults]);
+        setExerciseOffset(offset + newResults.length);
+      } else {
+        setSearchResults(newResults);
+        setExerciseOffset(newResults.length);
+      }
+      setExerciseTotalCount(total);
     } catch (error) {
       console.log('Search error:', error);
-      setSearchResults([]);
+      if (!appendResults) setSearchResults([]);
     } finally {
-      setSearching(false);
+      if (!appendResults) setSearching(false);
+      else setLoadingMore(false);
     }
   };
 
-  // Debounced search function to reduce API calls
+  // Debounced search — always resets to page 1 (offset 0)
   const debouncedSearch = useCallback((query: string, muscle?: string) => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
     setSearching(true);
     searchTimeoutRef.current = setTimeout(() => {
-      searchExercises(query, muscle);
-    }, 400); // 400ms debounce
+      searchExercises(query, muscle, false, 0);
+    }, 400);
   }, []);
 
   // Replace an exercise with one from search results
@@ -843,8 +899,8 @@ export default function WorkoutDetail() {
     setSearchQuery('');
     setSearchResults([]);
     setSelectedMuscle(null);
-    // Load initial exercises
-    searchExercises('', undefined);
+    setExerciseOffset(0);
+    setExerciseTotalCount(0);
   };
 
   // Open modal in replace mode
@@ -855,9 +911,20 @@ export default function WorkoutDetail() {
     setShowReplaceModal(true);
     setSearchQuery('');
     setSearchResults([]);
-    setSelectedMuscle(null);
-    // Load initial exercises
-    searchExercises('', undefined);
+    setExerciseOffset(0);
+    setExerciseTotalCount(0);
+
+    // Map exercise's primary muscle to a chip ID and kick off the initial search
+    const currentEx = workout?.workout_days[dayIdx]?.exercises[exIdx];
+    const primaryTarget = (currentEx?.muscle_groups?.[0] || '').toLowerCase().trim();
+    // Use a static list to avoid any closure issues with muscleGroups
+    const CHIP_IDS = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'legs', 'glutes', 'abs', 'cardio'];
+    const chipId = CHIP_IDS.includes(primaryTarget) ? primaryTarget : getMuscleChipForTarget(primaryTarget);
+    setSelectedMuscle(chipId);
+    // setTimeout(0) ensures search runs after React commits the state batch
+    setTimeout(() => {
+      searchExercises('', chipId || undefined);
+    }, 0);
   };
 
   // Refresh GIF URLs for all exercises
@@ -1688,6 +1755,34 @@ export default function WorkoutDetail() {
               ))}
             </ScrollView>
 
+            {/* Recommended Swaps (from current exercise substitution_hint) */}
+            {!isAddMode && replaceTarget && (() => {
+              const curEx = workout?.workout_days[replaceTarget.dayIdx]?.exercises[replaceTarget.exIdx];
+              const hints = (curEx?.substitution_hint || '')
+                .split(',').map((s: string) => s.trim()).filter(Boolean);
+              if (!hints.length) return null;
+              return (
+                <View style={styles.recommendedSwaps}>
+                  <Text style={styles.recommendedSwapsTitle}>Recommended Swaps</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                    {hints.map((hint: string, i: number) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={styles.recommendedSwapChip}
+                        onPress={() => {
+                          setSearchQuery(hint);
+                          searchExercises(hint, selectedMuscle || undefined);
+                        }}
+                      >
+                        <Ionicons name="swap-horizontal" size={12} color={colors.primary} />
+                        <Text style={styles.recommendedSwapText}>{hint}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              );
+            })()}
+
             {/* Search Results */}
             <ScrollView style={styles.searchResults} showsVerticalScrollIndicator={false}>
               {searching ? (
@@ -1699,12 +1794,16 @@ export default function WorkoutDetail() {
                 <View style={styles.noResults}>
                   <Ionicons name="barbell-outline" size={48} color={colors.textMuted} />
                   <Text style={styles.noResultsText}>
-                    {selectedMuscle ? 'Tap a muscle group above to browse exercises' : 'Select a muscle group to get started'}
+                    {selectedMuscle
+                      ? `No exercises found for "${muscleGroups.find(m => m.id === selectedMuscle)?.label ?? selectedMuscle}"`
+                      : 'Select a muscle group to browse the library'}
                   </Text>
                 </View>
               ) : (
                 <>
-                  <Text style={styles.resultsCount}>{searchResults.length} exercises found</Text>
+                  <Text style={styles.resultsCount}>
+                    {searchResults.length} of {exerciseTotalCount} exercises
+                  </Text>
                   {searchResults.map((ex, idx) => (
                     <TouchableOpacity
                       key={idx}
@@ -1729,6 +1828,26 @@ export default function WorkoutDetail() {
                       </View>
                     </TouchableOpacity>
                   ))}
+
+                  {/* Load More button */}
+                  {searchResults.length < exerciseTotalCount && (
+                    <TouchableOpacity
+                      style={styles.loadMoreBtn}
+                      onPress={() => searchExercises(searchQuery, selectedMuscle || undefined, true, exerciseOffset)}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <>
+                          <Ionicons name="chevron-down" size={16} color={colors.primary} />
+                          <Text style={styles.loadMoreText}>
+                            Load more ({exerciseTotalCount - searchResults.length} remaining)
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
                 </>
               )}
             </ScrollView>
@@ -2694,6 +2813,55 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginBottom: 8,
+    fontWeight: '500',
+  },
+  // Recommended swaps section
+  recommendedSwaps: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
+  recommendedSwapsTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  recommendedSwapChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: colors.primary + '15',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+    marginRight: 6,
+  },
+  recommendedSwapText: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '500',
+  },
+  // Load more button
+  loadMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    marginTop: 6,
+    marginBottom: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  loadMoreText: {
+    fontSize: 13,
+    color: colors.primary,
     fontWeight: '500',
   },
   searchResults: {
