@@ -1,0 +1,55 @@
+{
+  "summary": "Tested exercise naming & categorization overrides (EXERCISE_NAME_OVERRIDES, EXERCISE_TARGET_OVERRIDES, reverse text search). 26/28 tests pass (92.9%). All critical cross-category features work — Barbell Back Squat under legs/glutes, Deadlift under back/glutes, Bench Press under triceps, reverse text search working. ONE BUG: 'Leg Press Machine' display name never appears because the EXERCISE_NAME_OVERRIDES key 'lever leg press' doesn't match any actual MongoDB document name — ExerciseDB stores the standard leg press as 'sled 45° leg press' not 'lever leg press'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/exercises/search?search=leg+press",
+        "issue": "EXERCISE_NAME_OVERRIDES key 'lever leg press' → 'Leg Press Machine' never fires because no exercise in MongoDB has name='lever leg press'. ExerciseDB actual raw name is 'sled 45° leg press' (target=glutes). Fix: add 'sled 45° leg press' → 'Leg Press Machine' (and sled variants) to both EXERCISE_NAME_OVERRIDES and EXERCISE_TARGET_OVERRIDES. EXERCISE_TARGET_OVERRIDES['lever leg press'] also needs the same key fix.",
+        "priority": "MEDIUM"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_exercise_name_target_overrides.py",
+    "/app/test_reports/pytest/exercise_name_target_overrides.xml"
+  ],
+  "action_items": [
+    "Fix EXERCISE_NAME_OVERRIDES: replace key 'lever leg press' with 'sled 45° leg press' → 'Leg Press Machine'. Also add 'lever seated leg press' if it exists in DB. Verify actual raw DB names before adding.",
+    "Fix EXERCISE_TARGET_OVERRIDES: replace key 'lever leg press' with 'sled 45° leg press' → ['legs', 'glutes']. Also update 'lever seated leg press' if needed.",
+    "Consider also adding 'sled 45° leg wide press', 'sled 45 degrees one leg press' to EXERCISE_NAME_OVERRIDES for consistent naming."
+  ],
+  "critical_code_review_comments": [
+    "EXERCISE_NAME_OVERRIDES and EXERCISE_TARGET_OVERRIDES use 'lever leg press' as a key, but ExerciseDB stores the standard leg press machine as 'sled 45° leg press'. This is a key-name mismatch — the override is defined but never triggers. The mapping in CACHED_EXERCISE_GIFS correctly uses 'sled leg press' → '0739' (the correct ExerciseDB ID) which further confirms the DB name is 'sled 45° leg press' not 'lever leg press'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_exercise_name_target_overrides.py"
+  ],
+  "success_rate": {
+    "backend": "92.9% (26/28 tests pass)",
+    "frontend": "N/A (backend-only test)"
+  },
+  "seed_data_creation": "None. Used existing exercise_library MongoDB collection.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All critical cross-category features working: muscle=legs→Barbell Back Squat(total_count=384), muscle=glutes→Barbell Back Squat(total_count=327), search=back+squat→Barbell Back Squat(reverse lookup), search=skull+crusher→Skull Crushers, muscle=triceps→Barbell Bench Press(total_count=418), muscle=back→Deadlift(total_count=377). ONE FAILING: search=leg+press does NOT return 'Leg Press Machine' (fix: see action_items). Rerun test_exercise_name_target_overrides.py after fix to confirm all 28 pass.",
+  "test_results": {
+    "TEST1_legs_barbell_back_squat": "PASS - Barbell Back Squat in legs chip (total_count=384 > 250)",
+    "TEST2_glutes_barbell_back_squat": "PASS - Barbell Back Squat in glutes chip (total_count=327 > 200)",
+    "TEST3_search_back_squat_reverse_lookup": "PASS - search='back squat' returns ['Barbell Back Squat', 'Low Bar Back Squat']",
+    "TEST4_search_skull_crusher": "PASS - search='skull crusher' returns ['Skull Crushers', 'Barbell Lying Triceps Extension Skull Crusher']",
+    "TEST5_triceps_bench_press": "PASS - Barbell Bench Press appears under triceps chip (compound cross-category)",
+    "TEST6_back_deadlift": "PASS - 'Deadlift' appears under back chip (deadlift override → back)",
+    "TEST7_search_leg_press_machine": "FAIL - 'Leg Press Machine' NOT in results; actual leg press exercises: ['Sled 45° Leg Press', 'Sled 45 Degrees One Leg Press', ...]. Root cause: EXERCISE_NAME_OVERRIDES key 'lever leg press' has no matching DB document",
+    "TEST8_legs_total_count_gt_250": "PASS - legs total_count=384",
+    "TEST9_glutes_total_count_gt_200": "PASS - glutes total_count=327",
+    "TEST10_no_regressions": "PASS - chest, shoulders, abs, back all return relevant exercises without regression"
+  },
+  "rca_of_issue": "Leg Press Machine missing RCA: EXERCISE_NAME_OVERRIDES uses 'lever leg press' as key (from ExerciseDB API taxonomy), but the actual exercise_library MongoDB collection stores it as 'sled 45° leg press'. The CACHED_EXERCISE_GIFS dict correctly maps 'sled leg press' to exercise ID '0739' which confirms the correct DB name. To reproduce: GET /api/exercises/search?search=lever+leg+press returns 0 results; GET /api/exercises/search?search=sled+45+leg+press returns 3 results with target=glutes. Mitigation: Update EXERCISE_NAME_OVERRIDES key from 'lever leg press' to 'sled 45° leg press' (and similar sled variants) and do the same in EXERCISE_TARGET_OVERRIDES."
+}

@@ -1297,7 +1297,34 @@ frontend:
         agent: "testing"
         comment: "✅ VERIFIED: 'RECOMMENDED SWAPS' section shows 'Machine Chest Press' and 'Cable Chest Fly' chips. 'Load more (108 remaining)' button visible. Clicking button loads 50→100 exercises. Muscle chip switching to 'Back' loads 210 back exercises."
 
-  - task: "GIF Proxy HTTPException Fix"
+  - task: "Exercise Name Overrides & Multi-Muscle Target Overrides"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added EXERCISE_NAME_OVERRIDES dict (90+ entries) mapping ExerciseDB raw names to
+          gym-standard display names (e.g. 'barbell full squat' → 'Barbell Back Squat',
+          'barbell lying triceps extension' → 'Skull Crushers').
+          Added EXERCISE_TARGET_OVERRIDES dict (60+ entries) mapping compound exercises to
+          all chip IDs they meaningfully train (back squat → [legs, glutes], deadlift →
+          [glutes, legs, back], bench press → [chest, triceps], rows → [back, biceps], etc.)
+          Added _display_name() helper applied at response time only (DB unchanged).
+          Updated search query to use $or with: (a) primary target, (b) secondary_muscles
+          array, (c) override exercise names. Added reverse text search lookup.
+          Added secondary_muscles index to import endpoint.
+          Manual tests confirm:
+          - muscle=legs: Back Squat appears (was missing before)
+          - muscle=glutes: Back Squat appears
+          - search=back squat: finds 'Barbell Back Squat' via reverse lookup
+          - Skull Crushers display name (not 'Barbell Lying Triceps Extension')
+          - Bench press appears under triceps chip
+          - Deadlifts appear under back and legs chips
     implemented: true
     working: true
     file: "backend/server.py"
@@ -1370,7 +1397,7 @@ test_plan:
 
 agent_communication:
   - agent: "main"
-    message: "NEW FORK (2026-06) - LOCAL DB EXERCISE SEARCH & REPLACE MODAL VERIFICATION: Backend running. Exercise library seeded with 1394 exercises (DB_NAME=test_database). Manual API tests confirm: chest=158 exercises, back=210 exercises, bench press text=32 exercises, pagination works with offset. The Replace Exercise modal useEffect fix (lines 919-943 in workout-detail.tsx) was applied in previous session but NEVER visually verified. TESTS TO RUN: (1) Backend: GET /api/exercises/search?muscle=chest - verify 100+ results, correct structure (id, name, target, gifUrl, etc.). (2) Backend: GET /api/exercises/search?search=deadlift - verify text search works. (3) Backend: GET /api/exercises/search?muscle=back&offset=50 - verify pagination. (4) Frontend: Navigate to an existing workout → open Replace Exercise modal for a Chest exercise → screenshot to verify 'Chest' chip is pre-selected and exercises load. (5) Frontend: Verify 'Recommended Swaps' hints show in modal. (6) Frontend: Verify 'Load More' button appears when total_count > limit. App URL: https://nutrition-debug-1.preview.emergentagent.com. Test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. NOTE: If DB is empty in this fork, run: POST /api/admin/import-exercises (needs EXERCISEDB_API_KEY). But DB should already be seeded from fork with 1394 exercises."
+    message: "NEW FORK (2026-06) - EXERCISE NAMING & MULTI-MUSCLE CATEGORIZATION FIX: Backend running (pid 517). Three changes made to GET /api/exercises/search in server.py: (1) EXERCISE_NAME_OVERRIDES dict (90+ entries): ExerciseDB raw names → gym-standard display names at response time. e.g. 'barbell full squat' → 'Barbell Back Squat', 'barbell lying triceps extension' → 'Skull Crushers', 'lever leg press' → 'Leg Press Machine'. (2) EXERCISE_TARGET_OVERRIDES dict (60+ entries): compound exercises → all chip IDs they train. Back squat → [legs, glutes], deadlift → [glutes, legs, back], bench press → [chest, triceps], rows → [back, biceps], OHP → [shoulders, triceps]. (3) Updated query logic: $or combines (a) primary target, (b) secondary_muscles array, (c) override exercise names. Added reverse text lookup so 'back squat' finds 'barbell full squat'. Added secondary_muscles index. ACCEPTANCE CRITERIA: (A) GET /api/exercises/search?muscle=legs — 'Barbell Back Squat' MUST appear in results. (B) GET /api/exercises/search?muscle=glutes — 'Barbell Back Squat' MUST appear. (C) GET /api/exercises/search?search=back+squat — at least 1 result, name='Barbell Back Squat'. (D) GET /api/exercises/search?search=skull+crusher — 'Skull Crushers' in results (not 'Barbell Lying Triceps Extension'). (E) GET /api/exercises/search?muscle=triceps — Barbell Bench Press in results. (F) GET /api/exercises/search?muscle=back — Deadlift in results. Use app URL: https://nutrition-debug-1.preview.emergentagent.com." Backend running. Exercise library seeded with 1394 exercises (DB_NAME=test_database). Manual API tests confirm: chest=158 exercises, back=210 exercises, bench press text=32 exercises, pagination works with offset. The Replace Exercise modal useEffect fix (lines 919-943 in workout-detail.tsx) was applied in previous session but NEVER visually verified. TESTS TO RUN: (1) Backend: GET /api/exercises/search?muscle=chest - verify 100+ results, correct structure (id, name, target, gifUrl, etc.). (2) Backend: GET /api/exercises/search?search=deadlift - verify text search works. (3) Backend: GET /api/exercises/search?muscle=back&offset=50 - verify pagination. (4) Frontend: Navigate to an existing workout → open Replace Exercise modal for a Chest exercise → screenshot to verify 'Chest' chip is pre-selected and exercises load. (5) Frontend: Verify 'Recommended Swaps' hints show in modal. (6) Frontend: Verify 'Load More' button appears when total_count > limit. App URL: https://nutrition-debug-1.preview.emergentagent.com. Test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. NOTE: If DB is empty in this fork, run: POST /api/admin/import-exercises (needs EXERCISEDB_API_KEY). But DB should already be seeded from fork with 1394 exercises."
   - agent: "main"
     message: "NEW FORK (2026-04) - WEIGHTED SPLIT SELECTION FORMAL TESTING: Backend is running (pid 1723, uptime healthy). The weighted scoring system in select_split() has been implemented and validated via bash script for 14 test cases. Now running formal testing agent. KEY TESTS TO RUN: (1) POST /api/workouts/generate with goal=build_muscle, focus_areas=['chest'], days=3, level=beginner → expect push_pull_legs split. (2) goal=build_muscle, focus_areas=['legs'], days=4, level=intermediate → expect upper_lower split. (3) goal=lose_fat, focus_areas=['core'], days=3, level=beginner → expect full_body split. (4) goal=build_muscle, focus_areas=['arms'], days=5, level=advanced → expect push_pull_legs or bro_split. (5) Smoke test: various combos return 200 OK with workout_days, sets >= 3 for primary compounds. ACCEPTANCE: All splits match weighted scoring logic. No 500 errors. Workout structure valid (sets, reps, rest_seconds, gif_url). Test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b"
   - agent: "main"

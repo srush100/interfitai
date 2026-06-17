@@ -4127,6 +4127,210 @@ async def refresh_workout_gifs(workout_id: str):
     
     return {"message": "GIF URLs refreshed successfully", "updated": updated}
 
+# ── Exercise Name Overrides ──────────────────────────────────────────────────
+# Maps ExerciseDB raw name (lowercase) → clean gym-standard display name.
+# Applied at response time only — DB records keep original names (GIF proxy keys off them).
+EXERCISE_NAME_OVERRIDES: dict = {
+    # Lower body / Squats
+    "barbell full squat":                       "Barbell Back Squat",
+    "barbell hack squat":                       "Barbell Hack Squat",
+    "barbell front squat":                      "Front Squat",
+    "barbell low bar squat":                    "Low Bar Back Squat",
+    "barbell box squat":                        "Box Squat",
+    "barbell pause squat":                      "Pause Squat",
+    "barbell split squat":                      "Split Squat",
+    "barbell bulgarian split squat":            "Bulgarian Split Squat",
+    "barbell sumo squat":                       "Sumo Squat",
+    "dumbbell goblet squat":                    "Goblet Squat",
+    "lever hack squat":                         "Machine Hack Squat",
+    "lever leg press":                          "Leg Press Machine",
+    "lever seated leg press":                   "Seated Leg Press",
+    "smith machine squat":                      "Smith Machine Squat",
+    # Hip hinges
+    "barbell romanian deadlift":                "Romanian Deadlift",
+    "barbell stiff-leg deadlift":               "Stiff-Leg Deadlift",
+    "barbell conventional deadlift":            "Conventional Deadlift",
+    "barbell sumo deadlift":                    "Sumo Deadlift",
+    "barbell deadlift":                         "Deadlift",
+    "barbell hex deadlift":                     "Hex Bar Deadlift",
+    "barbell rack pull":                        "Rack Pull",
+    "barbell good morning":                     "Good Morning",
+    "smith machine romanian deadlift":          "Smith Machine RDL",
+    # Hip thrusts
+    "barbell hip thrust":                       "Barbell Hip Thrust",
+    "lever hip thrust":                         "Hip Thrust Machine",
+    # Lunges
+    "dumbbell lunge":                           "Dumbbell Lunge",
+    "barbell lunge":                            "Barbell Lunge",
+    "barbell walking lunge":                    "Walking Lunge",
+    "dumbbell step-up":                         "Dumbbell Step-Up",
+    "barbell step-up":                          "Barbell Step-Up",
+    # Leg isolation machines
+    "lever leg extension":                      "Leg Extension Machine",
+    "lever seated leg curl":                    "Seated Leg Curl Machine",
+    "lever lying leg curl":                     "Lying Leg Curl Machine",
+    "lever standing leg curl":                  "Standing Leg Curl Machine",
+    "lever seated calf raise":                  "Seated Calf Raise Machine",
+    "lever standing calf raise":                "Standing Calf Raise Machine",
+    # Chest
+    "barbell incline bench press":              "Incline Barbell Bench Press",
+    "barbell decline bench press":              "Decline Barbell Bench Press",
+    "dumbbell incline bench press":             "Incline Dumbbell Bench Press",
+    "dumbbell fly":                             "Dumbbell Fly",
+    "dumbbell incline fly":                     "Incline Dumbbell Fly",
+    "lever (plate loaded) decline chest press": "Decline Chest Press Machine",
+    "lever chest press":                        "Chest Press Machine",
+    "lever incline chest press":                "Incline Chest Press Machine",
+    "smith machine bench press":                "Smith Machine Bench Press",
+    "smith machine incline bench press":        "Smith Machine Incline Bench Press",
+    # Back
+    "barbell bent over row":                    "Barbell Row",
+    "barbell bent over row, overhand":          "Overhand Barbell Row",
+    "barbell pendlay row":                      "Pendlay Row",
+    "dumbbell bent over row":                   "Dumbbell Row",
+    "cable seated row":                         "Seated Cable Row",
+    "lever seated row":                         "Seated Row Machine",
+    "lever t-bar row":                          "T-Bar Row Machine",
+    "barbell t-bar row":                        "T-Bar Row",
+    "lever lat pulldown":                       "Lat Pulldown Machine",
+    "cable lat pulldown":                       "Cable Lat Pulldown",
+    "lever reverse grip lat pulldown":          "Reverse Grip Lat Pulldown",
+    "lever one arm lat pulldown":               "Single-Arm Lat Pulldown",
+    "lever back extension":                     "Back Extension Machine",
+    "cable straight arm pulldown":              "Straight Arm Pulldown",
+    # Shoulders
+    "barbell overhead press":                   "Barbell Overhead Press",
+    "barbell seated overhead press":            "Seated Barbell Press",
+    "dumbbell overhead press":                  "Dumbbell Shoulder Press",
+    "dumbbell seated overhead press":           "Seated Dumbbell Press",
+    "lever seated military press":              "Machine Shoulder Press",
+    "cable lateral raise":                      "Cable Lateral Raise",
+    "dumbbell lateral raise":                   "Dumbbell Lateral Raise",
+    "dumbbell front raise":                     "Dumbbell Front Raise",
+    "cable front raise":                        "Cable Front Raise",
+    "dumbbell bent over rear delt row":         "Rear Delt Row",
+    "cable reverse fly":                        "Cable Rear Delt Fly",
+    "barbell upright row":                      "Barbell Upright Row",
+    "smith machine overhead press":             "Smith Machine Shoulder Press",
+    "cable face pull":                          "Cable Face Pull",
+    # Arms
+    "barbell preacher curl":                    "Preacher Curl",
+    "ez bar curl":                              "EZ Bar Curl",
+    "dumbbell alternate bicep curl":            "Alternating Dumbbell Curl",
+    "dumbbell hammer curl":                     "Hammer Curl",
+    "cable hammer curl (with rope)":            "Cable Hammer Curl",
+    "barbell lying triceps extension":          "Skull Crushers",
+    "barbell lying close grip triceps press":   "Close Grip Bench Press",
+    "ez bar lying triceps extension":           "EZ Bar Skull Crushers",
+    "dumbbell triceps extension":               "Dumbbell Triceps Extension",
+    "cable triceps pushdown (v-bar)":           "Triceps Pushdown",
+    "cable overhead triceps extension (rope)":  "Overhead Triceps Extension",
+    "lever triceps dip":                        "Tricep Dip Machine",
+    "lever preacher curl":                      "Preacher Curl Machine",
+    # Olympic / Power
+    "barbell power clean":                      "Power Clean",
+    "barbell power snatch":                     "Power Snatch",
+    "barbell clean and jerk":                   "Clean and Jerk",
+}
+
+# ── Exercise Target Overrides ────────────────────────────────────────────────
+# Maps raw exercise name (lowercase) → list of muscle chip IDs this exercise
+# meaningfully trains, beyond what ExerciseDB's single "target" field captures.
+# Values must be keys from MUSCLE_TARGET_MAP.
+EXERCISE_TARGET_OVERRIDES: dict = {
+    # Squats — ExerciseDB inconsistently tags "glutes" vs "quads"
+    "barbell full squat":               ["legs", "glutes"],
+    "barbell hack squat":               ["legs", "glutes"],
+    "barbell front squat":              ["legs", "glutes"],
+    "barbell low bar squat":            ["legs", "glutes"],
+    "barbell box squat":                ["legs", "glutes"],
+    "barbell pause squat":              ["legs", "glutes"],
+    "barbell split squat":              ["legs", "glutes"],
+    "barbell bulgarian split squat":    ["legs", "glutes"],
+    "barbell sumo squat":               ["legs", "glutes"],
+    "dumbbell goblet squat":            ["legs", "glutes"],
+    "lever hack squat":                 ["legs", "glutes"],
+    "smith machine squat":              ["legs", "glutes"],
+    # Hip hinges / Deadlifts
+    "barbell romanian deadlift":        ["glutes", "legs"],
+    "barbell stiff-leg deadlift":       ["glutes", "legs"],
+    "barbell conventional deadlift":    ["glutes", "legs", "back"],
+    "barbell sumo deadlift":            ["glutes", "legs"],
+    "barbell deadlift":                 ["glutes", "legs", "back"],
+    "barbell hex deadlift":             ["glutes", "legs", "back"],
+    "barbell rack pull":                ["back", "glutes"],
+    "barbell good morning":             ["glutes", "legs"],
+    "smith machine romanian deadlift":  ["glutes", "legs"],
+    "dumbbell romanian deadlift":       ["glutes", "legs"],
+    # Hip thrusts / glute bridges
+    "barbell hip thrust":               ["glutes", "legs"],
+    "lever hip thrust":                 ["glutes", "legs"],
+    "dumbbell hip thrust":              ["glutes", "legs"],
+    "barbell glute bridge":             ["glutes", "legs"],
+    # Leg press & lunges
+    "lever leg press":                  ["legs", "glutes"],
+    "lever seated leg press":           ["legs", "glutes"],
+    "dumbbell lunge":                   ["legs", "glutes"],
+    "barbell lunge":                    ["legs", "glutes"],
+    "barbell walking lunge":            ["legs", "glutes"],
+    "dumbbell step-up":                 ["legs", "glutes"],
+    "barbell step-up":                  ["legs", "glutes"],
+    # Bench press family — chest primary, triceps secondary
+    "barbell bench press":              ["chest", "triceps"],
+    "barbell incline bench press":      ["chest", "triceps", "shoulders"],
+    "barbell decline bench press":      ["chest", "triceps"],
+    "dumbbell bench press":             ["chest", "triceps"],
+    "dumbbell incline bench press":     ["chest", "triceps", "shoulders"],
+    "lever chest press":                ["chest", "triceps"],
+    "lever incline chest press":        ["chest", "triceps", "shoulders"],
+    "smith machine bench press":        ["chest", "triceps"],
+    "smith machine incline bench press": ["chest", "triceps", "shoulders"],
+    # Dips
+    "chest dip":                        ["chest", "triceps"],
+    "triceps dip":                      ["triceps", "chest"],
+    "parallel bar dip":                 ["triceps", "chest"],
+    # Rows — back primary, biceps secondary
+    "barbell bent over row":            ["back", "biceps"],
+    "barbell pendlay row":              ["back", "biceps"],
+    "dumbbell bent over row":           ["back", "biceps"],
+    "cable seated row":                 ["back", "biceps"],
+    "lever seated row":                 ["back", "biceps"],
+    "lever t-bar row":                  ["back", "biceps"],
+    "barbell t-bar row":                ["back", "biceps"],
+    # Pull-ups / pulldowns
+    "pull-up":                          ["back", "biceps"],
+    "chin-up":                          ["back", "biceps"],
+    "lever lat pulldown":               ["back", "biceps"],
+    "cable lat pulldown":               ["back", "biceps"],
+    # OHP — shoulders primary, triceps secondary
+    "barbell overhead press":           ["shoulders", "triceps"],
+    "barbell seated overhead press":    ["shoulders", "triceps"],
+    "dumbbell overhead press":          ["shoulders", "triceps"],
+    "dumbbell seated overhead press":   ["shoulders", "triceps"],
+    "lever seated military press":      ["shoulders", "triceps"],
+    "smith machine overhead press":     ["shoulders", "triceps"],
+    # Skull crushers / close grip
+    "barbell lying triceps extension":       ["triceps"],
+    "barbell lying close grip triceps press": ["triceps", "chest"],
+    "ez bar lying triceps extension":        ["triceps"],
+    # Upright row
+    "barbell upright row":              ["shoulders", "back"],
+    "dumbbell upright row":             ["shoulders", "back"],
+    # Olympic lifts
+    "barbell power clean":              ["legs", "back", "shoulders"],
+    "barbell power snatch":             ["legs", "back", "shoulders"],
+    "barbell clean and jerk":           ["legs", "back", "shoulders"],
+    # Deadlifts also useful in back context
+    "barbell conventional deadlift":    ["back", "glutes", "legs"],
+    "barbell deadlift":                 ["back", "glutes", "legs"],
+}
+
+
+def _display_name(raw_name: str) -> str:
+    """Return the user-facing display name for an exercise."""
+    return EXERCISE_NAME_OVERRIDES.get(raw_name.lower(), raw_name.title())
+
+
 @api_router.get("/exercises/search")
 async def search_exercises(
     search: str = None,
@@ -4151,31 +4355,60 @@ async def search_exercises(
         "cardio":    ["cardiovascular system"],
     }
 
-    query: dict = {}
+    query_parts: list = []
 
-    # Text search on name (case-insensitive substring)
+    # ── Text search ──────────────────────────────────────────────────────────
     if search and search.strip():
-        query["name"] = {"$regex": search.strip(), "$options": "i"}
+        s = search.strip()
+        text_conditions: list = [{"name": {"$regex": s, "$options": "i"}}]
+        # Reverse override lookup: searching "back squat" → also finds "barbell full squat"
+        rev_lookup = [
+            raw for raw, display in EXERCISE_NAME_OVERRIDES.items()
+            if s.lower() in display.lower() or s.lower() in raw.lower()
+        ]
+        if rev_lookup:
+            text_conditions.append({"name": {"$in": rev_lookup}})
+        query_parts.append({"$or": text_conditions} if len(text_conditions) > 1 else text_conditions[0])
 
-    # Muscle target filter
+    # ── Muscle chip filter ───────────────────────────────────────────────────
     if muscle:
-        targets = MUSCLE_TARGET_MAP.get(muscle.lower())
-        if targets:
-            query["target"] = {"$in": targets} if len(targets) > 1 else targets[0]
-        else:
-            # pass-through for direct target values
-            query["target"] = muscle.lower()
+        chip = muscle.lower()
+        targets = MUSCLE_TARGET_MAP.get(chip)
+        muscle_conditions: list = []
 
-    # Optional extra filters
+        if targets:
+            # (a) Primary target match
+            muscle_conditions.append(
+                {"target": {"$in": targets}} if len(targets) > 1 else {"target": targets[0]}
+            )
+            # (b) Secondary muscles array contains any of the targets
+            muscle_conditions.append({"secondary_muscles": {"$in": targets}})
+        else:
+            muscle_conditions.append({"target": chip})
+            muscle_conditions.append({"secondary_muscles": chip})
+
+        # (c) Compound exercises from EXERCISE_TARGET_OVERRIDES
+        override_names = [
+            raw for raw, chips in EXERCISE_TARGET_OVERRIDES.items()
+            if chip in chips
+        ]
+        if override_names:
+            muscle_conditions.append({"name": {"$in": override_names}})
+
+        query_parts.append({"$or": muscle_conditions})
+
+    # ── Optional extra filters ───────────────────────────────────────────────
     if equipment:
-        query["equipment"] = {"$regex": equipment.strip(), "$options": "i"}
+        query_parts.append({"equipment": {"$regex": equipment.strip(), "$options": "i"}})
     if body_part:
-        query["body_part"] = {"$regex": body_part.strip(), "$options": "i"}
+        query_parts.append({"body_part": {"$regex": body_part.strip(), "$options": "i"}})
+
+    # Combine all parts with $and
+    query: dict = {"$and": query_parts} if query_parts else {}
 
     # Check if library is populated
     total_count = await db.exercise_library.count_documents(query)
     if total_count == 0 and not search and not muscle:
-        # Library may not be seeded yet
         lib_total = await db.exercise_library.count_documents({})
         if lib_total == 0:
             logger.warning("exercise_library collection is empty — run import_exercises.py to seed it")
@@ -4188,12 +4421,12 @@ async def search_exercises(
         .skip(offset)
         .limit(limit)
     )
-    raw = await cursor.to_list(length=limit)
+    raw_docs = await cursor.to_list(length=limit)
 
     exercises = [
         {
             "id":               ex.get("exercisedb_id", ""),
-            "name":             ex.get("name", "").title(),
+            "name":             _display_name(ex.get("name", "")),
             "target":           ex.get("target", ""),
             "equipment":        ex.get("equipment", ""),
             "bodyPart":         ex.get("body_part", ""),
@@ -4201,7 +4434,7 @@ async def search_exercises(
             "secondaryMuscles": ex.get("secondary_muscles", []),
             "instructions":     ex.get("instructions", []),
         }
-        for ex in raw
+        for ex in raw_docs
     ]
 
     return {
@@ -4282,6 +4515,7 @@ async def admin_import_exercises(request: ImportExercisesRequest = ImportExercis
     await db.exercise_library.create_index("body_part")
     await db.exercise_library.create_index("equipment")
     await db.exercise_library.create_index([("name", 1)])
+    await db.exercise_library.create_index("secondary_muscles")
 
     total = await db.exercise_library.count_documents({})
     targets = sorted(await db.exercise_library.distinct("target"))
