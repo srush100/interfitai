@@ -75,6 +75,8 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 - **[Jun 2026] GIF Proxy Fix**: Fixed HTTPException swallowing bug in `/api/exercises/gif/{id}` — invalid IDs now return 404/400 instead of 500.
 - **[Jun 2026] Exercise Naming & Multi-Muscle Categorization**: Added EXERCISE_NAME_OVERRIDES (90+ entries) — ExerciseDB raw names → gym-standard display names at response time only (e.g. "Barbell Full Squat" → "Barbell Back Squat", "Barbell Lying Triceps Extension" → "Skull Crushers", "Sled 45° Leg Press" → "Leg Press"). Added EXERCISE_TARGET_OVERRIDES (60+ entries) — compound exercises now surface under all relevant muscle chips (back squat → legs + glutes, deadlift → glutes + legs + back, bench press → chest + triceps, rows → back + biceps, OHP → shoulders + triceps). Updated search query to use `$or` combining primary target, secondary_muscles array, and override names. Added reverse text lookup so "back squat" finds "Barbell Back Squat". Added `secondary_muscles` index.
 
+- **[Jun 2026] Exercise Preferences Wired into Generation**: `exercise_preferences` free-text field was dead code — now flows from `WorkoutGenerateRequest` → `build_blueprint()` return dict → Claude prompt as advisory guidance: "When an option matches a liked exercise, prefer it. When an option matches a disliked exercise, choose a different option from the list. Never pick an exercise outside the provided Options." Verified: "hate burpees" → zero burpees in 15-exercise 3-day plan; "love RDLs, hate burpees" → RDL appeared in hip_hinge slot, zero burpees across 21 exercises. (backend/server.py only)
+
 ## Backlog (Prioritized)
 ### P0 — Critical
 - (none)
