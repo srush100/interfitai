@@ -903,7 +903,7 @@ export default function WorkoutDetail() {
     setExerciseTotalCount(0);
   };
 
-  // Open modal in replace mode
+  // Open modal in replace mode — muscle pre-selection is handled by the effect below
   const openReplaceExerciseModal = (dayIdx: number, exIdx: number) => {
     setIsAddMode(false);
     setReplaceTarget({ dayIdx, exIdx });
@@ -911,21 +911,36 @@ export default function WorkoutDetail() {
     setShowReplaceModal(true);
     setSearchQuery('');
     setSearchResults([]);
+    setSelectedMuscle(null);
     setExerciseOffset(0);
     setExerciseTotalCount(0);
-
-    // Map exercise's primary muscle to a chip ID and kick off the initial search
-    const currentEx = workout?.workout_days[dayIdx]?.exercises[exIdx];
-    const primaryTarget = (currentEx?.muscle_groups?.[0] || '').toLowerCase().trim();
-    // Use a static list to avoid any closure issues with muscleGroups
-    const CHIP_IDS = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'legs', 'glutes', 'abs', 'cardio'];
-    const chipId = CHIP_IDS.includes(primaryTarget) ? primaryTarget : getMuscleChipForTarget(primaryTarget);
-    setSelectedMuscle(chipId);
-    // setTimeout(0) ensures search runs after React commits the state batch
-    setTimeout(() => {
-      searchExercises('', chipId || undefined);
-    }, 0);
   };
+
+  // Auto-load exercises and pre-select muscle chip when the modal opens in replace mode
+  // Using workout in deps ensures we have the latest exercise data available
+  useEffect(() => {
+    if (!showReplaceModal) return;
+    if (isAddMode) {
+      // Add mode: just load the full library
+      searchExercises('', undefined);
+      return;
+    }
+    if (!replaceTarget || !workout) return;
+    const { dayIdx, exIdx } = replaceTarget;
+    const currentEx = workout.workout_days[dayIdx]?.exercises[exIdx];
+    const primaryTarget = (currentEx?.muscle_groups?.[0] || '').toLowerCase().trim();
+    const CHIP_IDS = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'legs', 'glutes', 'abs', 'cardio'];
+    const chipId = CHIP_IDS.includes(primaryTarget)
+      ? primaryTarget
+      : getMuscleChipForTarget(primaryTarget);
+    if (chipId) {
+      setSelectedMuscle(chipId);
+      searchExercises('', chipId);
+    } else {
+      searchExercises('', undefined);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showReplaceModal, isAddMode, replaceTarget, workout]);
 
   // Refresh GIF URLs for all exercises
   const [refreshingGifs, setRefreshingGifs] = useState(false);

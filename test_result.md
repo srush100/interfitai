@@ -1232,10 +1232,69 @@ frontend:
           NOTE: Initial stale-bundle issue was fixed by restarting expo service.
           Test file created: /app/backend/tests/test_blank_slate_reset.py (13 tests)
 
+  - task: "Local MongoDB Exercise Library - Search & Pagination"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Exercise library seeded with 1394 exercises in MongoDB (DB_NAME=test_database).
+          GET /api/exercises/search endpoint rewritten to query local MongoDB.
+          Manual verification confirms:
+          - muscle=chest returns 158 exercises
+          - search=bench+press returns 32 exercises
+          - pagination offset works correctly
+          - no filters returns all 1394 exercises
+          Endpoint: GET /api/exercises/search?muscle=chest&limit=50&offset=0
+
+  - task: "Replace Exercise Modal - Muscle Chip Pre-selection"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/workout-detail.tsx"
+    stuck_count: 5
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          useEffect at lines 919-943 handles auto-selection.
+          When showReplaceModal becomes true in replace mode:
+          1. Reads workout.workout_days[dayIdx].exercises[exIdx].muscle_groups[0]
+          2. Maps it to chip ID via getMuscleChipForTarget()
+          3. Calls setSelectedMuscle(chipId) + searchExercises('', chipId)
+          Dependencies: [showReplaceModal, isAddMode, replaceTarget, workout]
+          Fix applied by previous agent per troubleshoot_agent recommendations.
+          NOT YET VERIFIED via screenshot or testing agent.
+
+  - task: "Replace Exercise Modal - Recommended Swaps + Load More"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/workout-detail.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added 'Recommended Swaps' section and 'Load More' pagination button to Replace Exercise modal.
+          Recommended swaps appear below muscle chips when in replace mode.
+          Load More triggers searchExercises with appendResults=true and incremented offset.
+          NOT YET VERIFIED.
+
 test_plan:
   current_focus:
-    - "Blank Slate Reset After Workout Completion"
-  stuck_tasks: []
+    - "Local MongoDB Exercise Library - Search & Pagination"
+    - "Replace Exercise Modal - Muscle Chip Pre-selection"
+    - "Replace Exercise Modal - Recommended Swaps + Load More"
+  stuck_tasks:
+    - "Replace Exercise Modal - Muscle Chip Pre-selection"
   test_all: false
   test_priority: "high_first"
 
@@ -1286,6 +1345,8 @@ test_plan:
 # Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b
 
 agent_communication:
+  - agent: "main"
+    message: "NEW FORK (2026-06) - LOCAL DB EXERCISE SEARCH & REPLACE MODAL VERIFICATION: Backend running. Exercise library seeded with 1394 exercises (DB_NAME=test_database). Manual API tests confirm: chest=158 exercises, back=210 exercises, bench press text=32 exercises, pagination works with offset. The Replace Exercise modal useEffect fix (lines 919-943 in workout-detail.tsx) was applied in previous session but NEVER visually verified. TESTS TO RUN: (1) Backend: GET /api/exercises/search?muscle=chest - verify 100+ results, correct structure (id, name, target, gifUrl, etc.). (2) Backend: GET /api/exercises/search?search=deadlift - verify text search works. (3) Backend: GET /api/exercises/search?muscle=back&offset=50 - verify pagination. (4) Frontend: Navigate to an existing workout → open Replace Exercise modal for a Chest exercise → screenshot to verify 'Chest' chip is pre-selected and exercises load. (5) Frontend: Verify 'Recommended Swaps' hints show in modal. (6) Frontend: Verify 'Load More' button appears when total_count > limit. App URL: https://nutrition-debug-1.preview.emergentagent.com. Test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. NOTE: If DB is empty in this fork, run: POST /api/admin/import-exercises (needs EXERCISEDB_API_KEY). But DB should already be seeded from fork with 1394 exercises."
   - agent: "main"
     message: "NEW FORK (2026-04) - WEIGHTED SPLIT SELECTION FORMAL TESTING: Backend is running (pid 1723, uptime healthy). The weighted scoring system in select_split() has been implemented and validated via bash script for 14 test cases. Now running formal testing agent. KEY TESTS TO RUN: (1) POST /api/workouts/generate with goal=build_muscle, focus_areas=['chest'], days=3, level=beginner → expect push_pull_legs split. (2) goal=build_muscle, focus_areas=['legs'], days=4, level=intermediate → expect upper_lower split. (3) goal=lose_fat, focus_areas=['core'], days=3, level=beginner → expect full_body split. (4) goal=build_muscle, focus_areas=['arms'], days=5, level=advanced → expect push_pull_legs or bro_split. (5) Smoke test: various combos return 200 OK with workout_days, sets >= 3 for primary compounds. ACCEPTANCE: All splits match weighted scoring logic. No 500 errors. Workout structure valid (sets, reps, rest_seconds, gif_url). Test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b"
   - agent: "main"
