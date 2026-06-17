@@ -2823,6 +2823,7 @@ class EliteCoachingEngine:
             "limitations":       limitations,
             "focus":             focus,
             "secondary":         secondary,
+            "exercise_preferences": getattr(req, 'exercise_preferences', None),
         }
 
 _coaching_engine = EliteCoachingEngine()
@@ -3282,6 +3283,13 @@ async def generate_workout(request: WorkoutGenerateRequest):
         f"Equipment: {', '.join(blueprint['equipment'])}",
         f"Limitations: {', '.join(blueprint['limitations']) if blueprint['limitations'] else 'None'}",
     ]
+    if blueprint.get('exercise_preferences'):
+        prompt_lines.append(
+            f"User exercise preferences: \"{blueprint['exercise_preferences']}\". "
+            "When an option matches a liked exercise, prefer it. "
+            "When an option matches a disliked exercise, choose a different option from the list. "
+            "Never pick an exercise outside the provided Options."
+        )
     if blueprint.get('secondary'):
         prompt_lines.append(
             f"Primary focus: {', '.join(blueprint['focus'])} | "
