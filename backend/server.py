@@ -1922,6 +1922,102 @@ class EliteCoachingEngine:
     }
 
     # Exercises that should be excluded for certain limitations
+    # ── Injury synonym map ──────────────────────────────────────────────────
+    # Maps free-text phrasings (lowercase substrings) → canonical key in
+    # LIMITATION_EXCLUSIONS. Ordered longest-first to prevent shorter phrases
+    # matching before more-specific ones.
+    LIMITATION_SYNONYMS: dict = {
+        # lower_back
+        "herniated disc":       "lower_back",
+        "herniated disk":       "lower_back",
+        "slipped disc":         "lower_back",
+        "disc herniation":      "lower_back",
+        "disk herniation":      "lower_back",
+        "sciatica":             "lower_back",
+        "sciatic":              "lower_back",
+        "lower back":           "lower_back",
+        "lumbar":               "lower_back",
+        "sacral":               "lower_back",
+        "herniated":            "lower_back",
+        "disc":                 "lower_back",
+        "disk":                 "lower_back",
+        "l4":                   "lower_back",
+        "l5":                   "lower_back",
+        "spondylosis":          "lower_back",
+        "spondylolisthesis":    "lower_back",
+        # knee
+        "runner's knee":        "knee",
+        "runners knee":         "knee",
+        "runner knee":          "knee",
+        "patellofemoral":       "knee",
+        "chondromalacia":       "knee",
+        "patellar":             "knee",
+        "patella":              "knee",
+        "meniscus":             "knee",
+        "acl":                  "knee",
+        "mcl":                  "knee",
+        "pcl":                  "knee",
+        "lcl":                  "knee",
+        "knee pain":            "knee",
+        "knee injury":          "knee",
+        "knee replacement":     "knee",
+        # shoulder
+        "rotator cuff":         "shoulder",
+        "frozen shoulder":      "shoulder",
+        "ac joint":             "shoulder",
+        "shoulder impingement": "shoulder",
+        "shoulder bursitis":    "shoulder",
+        "labral tear":          "shoulder",
+        "labrum":               "shoulder",
+        "labral":               "shoulder",
+        "impingement":          "shoulder",
+        "bursitis":             "shoulder",
+        "rotator":              "shoulder",
+        "shoulder pain":        "shoulder",
+        "shoulder injury":      "shoulder",
+        # elbow
+        "tennis elbow":         "elbow",
+        "golfer's elbow":       "elbow",
+        "golfers elbow":        "elbow",
+        "lateral epicondylitis":"elbow",
+        "medial epicondylitis": "elbow",
+        "epicondylitis":        "elbow",
+        "elbow tendonitis":     "elbow",
+        "elbow tendinitis":     "elbow",
+        "elbow pain":           "elbow",
+        "elbow injury":         "elbow",
+        # wrist
+        "carpal tunnel":        "wrist",
+        "tfcc":                 "wrist",
+        "wrist tendonitis":     "wrist",
+        "wrist pain":           "wrist",
+        "wrist injury":         "wrist",
+        # ankle
+        "plantar fasciitis":    "ankle",
+        "plantar fascitis":     "ankle",
+        "achilles tendon":      "ankle",
+        "achilles":             "ankle",
+        "plantar":              "ankle",
+        "ankle sprain":         "ankle",
+        "ankle pain":           "ankle",
+        "ankle injury":         "ankle",
+        # hip
+        "hip flexor":           "hip",
+        "femoroacetabular":     "hip",
+        "fai":                  "hip",
+        "hip impingement":      "hip",
+        "groin strain":         "hip",
+        "groin":                "hip",
+        "psoas":                "hip",
+        "hip pain":             "hip",
+        "hip injury":           "hip",
+        # neck
+        "cervical":             "neck",
+        "whiplash":             "neck",
+        "neck pain":            "neck",
+        "neck injury":          "neck",
+    }
+
     LIMITATION_EXCLUSIONS = {
         "lower_back":    ["Conventional Deadlift", "Sumo Deadlift", "Good Morning", "Back Squat", "T-Bar Row", "Barbell Row"],
         "knee":          ["Back Squat", "Leg Press", "Barbell Bulgarian Split Squat", "Jump Squat", "Running", "Lunge"],
@@ -1932,6 +2028,25 @@ class EliteCoachingEngine:
         "ankle":         ["Calf Raise", "Jump Squat", "Broad Jump"],
         "neck":          ["Barbell Back Squat", "Barbell Overhead Press"],
     }
+
+    @classmethod
+    def _normalize_limitations(cls, limitations: list) -> set:
+        """Expand free-text limitation strings to canonical LIMITATION_EXCLUSIONS keys.
+        Synonym map is checked first (handles 'sciatica', 'rotator cuff', etc.),
+        then falls back to direct substring match against the 8 canonical keys."""
+        canonical_keys: set = set()
+        for lim in (limitations or []):
+            lim_lower = lim.lower()
+            # 1. Synonym map (longest phrases first to avoid false substring matches)
+            for phrase, key in cls.LIMITATION_SYNONYMS.items():
+                if phrase in lim_lower:
+                    canonical_keys.add(key)
+            # 2. Direct substring match against the 8 canonical keys
+            normalised = lim_lower.replace(' ', '_').replace('-', '_')
+            for excl_key in cls.LIMITATION_EXCLUSIONS:
+                if excl_key in normalised:
+                    canonical_keys.add(excl_key)
+        return canonical_keys
 
     # Focus area → movement patterns that should receive volume priority
     FOCUS_AREA_PATTERNS: dict = {
@@ -2218,13 +2333,19 @@ class EliteCoachingEngine:
 
         # Filter out exercises contraindicated by limitations
         excluded = set()
-        for lim in (limitations or []):
-            key = lim.lower().replace(' ', '_').replace('-', '_')
-            for excl_key, excl_list in self.LIMITATION_EXCLUSIONS.items():
-                if excl_key in key:
-                    excluded.update(excl_list)
+        for key in self._normalize_limitations(limitations):
+            excluded.update(self.LIMITATION_EXCLUSIONS.get(key, []))
         filtered = [e for e in unique if e not in excluded]
-        result = filtered if filtered else unique
+        # Safe fallback: NEVER serve contraindicated exercises.
+        # If all candidates are excluded, use bodyweight or any options from the same pattern.
+        if filtered:
+            result = filtered
+        else:
+            safe_fallback = [
+                e for e in (opts.get('bodyweight', []) + opts.get('any', []))
+                if e not in excluded
+            ]
+            result = safe_fallback if safe_fallback else ["Bodyweight Exercise"]
 
         # ── Calisthenics difficulty ordering (Improvement #6) ─────────────────
         # Beginner: easiest first → coaches progressive skill building
@@ -2485,11 +2606,8 @@ class EliteCoachingEngine:
 
             # ── Build slot specs with budget-aware set allocation ────────────
             excluded_exercises = set()
-            for lim in limitations:
-                lim_key = lim.lower().replace(' ', '_').replace('-', '_')
-                for excl_key, excl_list in self.LIMITATION_EXCLUSIONS.items():
-                    if excl_key in lim_key:
-                        excluded_exercises.update(excl_list)
+            for key in self._normalize_limitations(limitations):
+                excluded_exercises.update(self.LIMITATION_EXCLUSIONS.get(key, []))
 
             slot_specs = []
             total_sets_allocated = 0
