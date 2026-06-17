@@ -1234,11 +1234,11 @@ frontend:
 
   - task: "Local MongoDB Exercise Library - Search & Pagination"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -1251,14 +1251,17 @@ frontend:
           - pagination offset works correctly
           - no filters returns all 1394 exercises
           Endpoint: GET /api/exercises/search?muscle=chest&limit=50&offset=0
+      - working: true
+        agent: "testing"
+        comment: "✅ 15/15 BACKEND TESTS PASS: GET /api/exercises/search returns correct structure (id, name, target, gifUrl, secondaryMuscles). muscle=chest=158 exercises (all target=pectorals), search=deadlift returns relevant results, pagination with offset=10 returns non-overlapping page, all muscle filters work (chest/back/shoulders/legs/biceps/abs). Total library=1394 confirmed."
 
   - task: "Replace Exercise Modal - Muscle Chip Pre-selection"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/app/workout-detail.tsx"
     stuck_count: 5
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -1271,14 +1274,17 @@ frontend:
           Dependencies: [showReplaceModal, isAddMode, replaceTarget, workout]
           Fix applied by previous agent per troubleshoot_agent recommendations.
           NOT YET VERIFIED via screenshot or testing agent.
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED: Open modal for Barbell Bench Press → 'Chest' chip auto-selected, '50 of 158 exercises' loaded immediately. Muscle chip pre-selection is working correctly."
 
   - task: "Replace Exercise Modal - Recommended Swaps + Load More"
     implemented: true
-    working: "NA"
+    working: true
     file: "frontend/app/workout-detail.tsx"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -1287,6 +1293,24 @@ frontend:
           Recommended swaps appear below muscle chips when in replace mode.
           Load More triggers searchExercises with appendResults=true and incremented offset.
           NOT YET VERIFIED.
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED: 'RECOMMENDED SWAPS' section shows 'Machine Chest Press' and 'Cable Chest Fly' chips. 'Load more (108 remaining)' button visible. Clicking button loads 50→100 exercises. Muscle chip switching to 'Back' loads 210 back exercises."
+
+  - task: "GIF Proxy HTTPException Fix"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "❌ HTTPException(404) inside try block was being caught by generic except Exception, re-raised as 500."
+      - working: true
+        agent: "main"
+        comment: "✅ FIXED: Added 'except HTTPException: raise' guard before the general except block so 404/400 responses from RapidAPI are passed through correctly instead of being swallowed as 500 errors."
 
 test_plan:
   current_focus:

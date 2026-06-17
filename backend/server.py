@@ -4317,7 +4317,9 @@ async def get_exercise_gif(exercise_id: str, resolution: str = "360"):
                         "Cache-Control": "public, max-age=43200",  # Cache for 12 hours (GIF URLs change every 12 hours per docs)
                     }
                 )
-            raise HTTPException(status_code=404, detail="GIF not found")
+            raise HTTPException(status_code=response.status_code, detail="GIF not found")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"GIF proxy error: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch GIF")

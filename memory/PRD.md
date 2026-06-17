@@ -47,8 +47,9 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 
 ## DB Schema Highlights
 - `profiles`: { id, email, name, weight_kg, height_cm, unit_preference, calculated_macros, ... }
-- `workouts`: { id, user_id, name, workout_days, performance: {day-ex-set: {weight, reps, completed}}, weekly_structure, weekly_progression, current_week_override }
+|- `workouts`: { id, user_id, name, workout_days, performance: {day-ex-set: {weight, reps, completed}}, weekly_structure, weekly_progression, current_week_override }
 - `workout_sessions`: { id, user_id, workout_id, completed_exercises, total_volume, photo_base64, date }
+- `exercise_library`: { exercisedb_id, name, target, secondary_muscles, body_part, equipment, gif_url, gif_id, instructions } — 1394 exercises
 
 ## Implemented Features (Changelog)
 - User auth (email + password, JWT)
@@ -70,13 +71,15 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 - **[Jun 2026] Preferred Start Day**: Questionnaire includes start day selector (default Monday)
 - **[Jun 2026] 7-Day Weekly Structure with Explicit Rest Days**: Backend distributes rest days optimally (no 3+ consecutive training days for beginners), displayed in Weekly Blueprint with `moon-outline` icon, muted styling, and coaching note
 - **[Jun 2026] 4-Week Progressive Progression Banner**: Auto-computed week (days 0-6=Wk1...capped at 4), tappable to manually override, shows coaching instruction per week, Week 4 shows completion prompt
+- **[Jun 2026] Local Exercise Library Migration**: Imported 1394 exercises from ExerciseDB into local MongoDB `exercise_library` collection. Rewrote `GET /api/exercises/search` to query local DB (no rate limits, proper muscle group filtering). Frontend Replace Modal auto-selects primary muscle chip on open, shows "Recommended Swaps" section, and "Load More" pagination button.
+- **[Jun 2026] GIF Proxy Fix**: Fixed HTTPException swallowing bug in `/api/exercises/gif/{id}` — invalid IDs now return 404/400 instead of 500.
 
 ## Backlog (Prioritized)
 ### P0 — Critical
-- Verify `foods_to_avoid` bug fix in meal replacement (still unverified)
+- (none)
 
 ### P1 — High
-- Test `generate_alternate_meal` endpoint with foods_to_avoid filtering
+- Test `generate_alternate_meal` endpoint with foods_to_avoid filtering (deferred by user)
 
 ### P2 — Medium
 - Enable Live In-App Purchases (RevenueCat — native build only, not testable in web preview)
