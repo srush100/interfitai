@@ -77,6 +77,8 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 
 - **[Jun 2026] Exercise Preferences Wired into Generation**: `exercise_preferences` free-text field was dead code — now flows from `WorkoutGenerateRequest` → `build_blueprint()` return dict → Claude prompt as advisory guidance: "When an option matches a liked exercise, prefer it. When an option matches a disliked exercise, choose a different option from the list. Never pick an exercise outside the provided Options." Verified: "hate burpees" → zero burpees in 15-exercise 3-day plan; "love RDLs, hate burpees" → RDL appeared in hip_hinge slot, zero burpees across 21 exercises. (backend/server.py only)
 
+- **[Jun 2026] Injury Safety Overhaul**: (1) Added LIMITATION_SYNONYMS (80+ entries) mapping free-text phrasings to 8 canonical keys — 'sciatica'→lower_back, 'rotator cuff'→shoulder, 'ACL/runner's knee'→knee, 'plantar fasciitis'→ankle, 'tennis elbow'→elbow, 'carpal tunnel'→wrist, etc. (2) Added _normalize_limitations() classmethod replacing raw substring matching in both get_exercise_options() and build_blueprint(). (3) Fixed UNSAFE fallback that was serving contraindicated exercises when pool was exhausted — now falls back to bodyweight/any options (also filtered), last resort 'Bodyweight Exercise'. (4) Expanded LIMITATION_EXCLUSIONS knee list with all actual lunge variants (Dumbbell Reverse Lunge, Walking Lunge, Bulgarian Split Squat variants, Step-Up variants) and ankle with all calf raise variants. Verified: 10/10 tests pass including sciatica, rotator cuff, ACL, tennis elbow, plantar fasciitis, herniated disc, all-8-limitations safety test.
+
 ## Backlog (Prioritized)
 ### P0 — Critical
 - (none)

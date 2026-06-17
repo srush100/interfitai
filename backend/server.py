@@ -2019,13 +2019,26 @@ class EliteCoachingEngine:
     }
 
     LIMITATION_EXCLUSIONS = {
-        "lower_back":    ["Conventional Deadlift", "Sumo Deadlift", "Good Morning", "Back Squat", "T-Bar Row", "Barbell Row"],
-        "knee":          ["Back Squat", "Leg Press", "Barbell Bulgarian Split Squat", "Jump Squat", "Running", "Lunge"],
-        "shoulder":      ["Barbell Overhead Press", "Push Press", "Upright Row", "Behind-the-Neck Press", "Barbell Bench Press"],
+        "lower_back":    ["Conventional Deadlift", "Sumo Deadlift", "Good Morning", "Back Squat",
+                          "T-Bar Row", "Barbell Row"],
+        "knee":          ["Back Squat", "Hack Squat", "Goblet Squat", "Smith Machine Squat",
+                          "Leg Press", "Leg Press (feet high)",
+                          "Barbell Bulgarian Split Squat", "Dumbbell Bulgarian Split Squat",
+                          "Bulgarian Split Squat", "Smith Machine Split Squat",
+                          "Dumbbell Reverse Lunge", "Walking Lunge", "Reverse Lunge",
+                          "Barbell Lunge", "Dumbbell Lunge", "Lateral Lunge",
+                          "Kettlebell Lunge", "Band Lunge",
+                          "Dumbbell Step-Up", "Step-Up",
+                          "Jump Squat", "Running"],
+        "shoulder":      ["Barbell Overhead Press", "Push Press", "Upright Row",
+                          "Behind-the-Neck Press", "Barbell Bench Press"],
         "wrist":         ["Barbell Curl", "Barbell Overhead Press", "Push-Up", "Barbell Bench Press"],
         "elbow":         ["Skull Crusher", "Dip", "Barbell Curl"],
-        "hip":           ["Barbell Hip Thrust", "Barbell Bulgarian Split Squat", "Leg Press"],
-        "ankle":         ["Calf Raise", "Jump Squat", "Broad Jump"],
+        "hip":           ["Barbell Hip Thrust", "Barbell Bulgarian Split Squat",
+                          "Leg Press", "Leg Press (feet high)"],
+        "ankle":         ["Calf Raise", "Calf Raise Machine", "Seated Calf Raise",
+                          "Leg Press Calf Raise", "Bodyweight Calf Raise", "Single-Leg Calf Raise",
+                          "Jump Squat", "Broad Jump"],
         "neck":          ["Barbell Back Squat", "Barbell Overhead Press"],
     }
 
