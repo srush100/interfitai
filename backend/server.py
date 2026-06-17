@@ -4145,6 +4145,9 @@ EXERCISE_NAME_OVERRIDES: dict = {
     "lever hack squat":                         "Machine Hack Squat",
     "lever leg press":                          "Leg Press Machine",
     "lever seated leg press":                   "Seated Leg Press",
+    "sled 45° leg press":                       "Leg Press",
+    "sled 45 degrees one leg press":            "Single Leg Press",
+    "smith leg press":                          "Smith Machine Leg Press",
     "smith machine squat":                      "Smith Machine Squat",
     # Hip hinges
     "barbell romanian deadlift":                "Romanian Deadlift",
@@ -4270,6 +4273,10 @@ EXERCISE_TARGET_OVERRIDES: dict = {
     # Leg press & lunges
     "lever leg press":                  ["legs", "glutes"],
     "lever seated leg press":           ["legs", "glutes"],
+    "sled 45° leg press":               ["legs", "glutes"],
+    "sled 45 degrees one leg press":    ["legs", "glutes"],
+    "sled 45° leg wide press":          ["legs", "glutes"],
+    "smith leg press":                  ["legs", "glutes"],
     "dumbbell lunge":                   ["legs", "glutes"],
     "barbell lunge":                    ["legs", "glutes"],
     "barbell walking lunge":            ["legs", "glutes"],
