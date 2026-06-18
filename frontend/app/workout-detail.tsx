@@ -953,7 +953,7 @@ export default function WorkoutDetail() {
     if (workout.current_week_override != null) return workout.current_week_override;
     const createdAt = new Date(workout.created_at);
     const daysDiff = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
-    return Math.min(4, Math.floor(daysDiff / 7) + 1);
+    return Math.min(12, Math.floor(daysDiff / 7) + 1);
   }, [workout]);
   
   const refreshGifs = async () => {
@@ -1243,7 +1243,7 @@ export default function WorkoutDetail() {
               <View style={styles.weekBannerTop}>
                 <View style={styles.weekBannerBadge}>
                   <Ionicons name="calendar-outline" size={13} color={colors.primary} />
-                  <Text style={styles.weekBannerBadgeText}>Week {currentWeek} of 4</Text>
+                  <Text style={styles.weekBannerBadgeText}>Week {currentWeek} of 12</Text>
                 </View>
                 <Text style={styles.weekBannerLabel}>{weekData?.label}</Text>
                 <Ionicons name="create-outline" size={15} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
@@ -1251,11 +1251,11 @@ export default function WorkoutDetail() {
               <Text style={styles.weekBannerInstruction}>
                 {weekData?.instruction}
               </Text>
-              {currentWeek === 4 && (
+              {currentWeek === 12 && (
                 <View style={styles.weekCompleteRow}>
                   <Ionicons name="trophy-outline" size={13} color={colors.warning} />
                   <Text style={styles.weekCompleteText}>
-                    {`You've completed your 4-week block — regenerate or repeat to keep progressing.`}
+                    {"You've completed your 12-week program — time for a fresh one to keep progressing!"}
                   </Text>
                 </View>
               )}

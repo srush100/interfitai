@@ -926,6 +926,7 @@ class UserProfile(BaseModel):
     profile_image: Optional[str] = None  # Base64 encoded profile picture
     has_password: bool = False
     unit_preference: Literal["kg", "lbs"] = "kg"
+    exercise_preferences: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -958,6 +959,7 @@ class UserProfileUpdate(BaseModel):
     motivation_enabled: Optional[bool] = None
     profile_image: Optional[str] = None  # Base64 encoded profile picture
     unit_preference: Optional[Literal["kg", "lbs"]] = None
+    exercise_preferences: Optional[str] = None
 
 # Workout Models
 class Exercise(BaseModel):
@@ -2077,10 +2079,33 @@ class EliteCoachingEngine:
         "core":         ["core_stability", "core_flexion", "carry"],
         "upper_body":   ["horizontal_push", "vertical_pull", "horizontal_pull", "vertical_push"],
         "lower_body":   ["squat", "hip_hinge", "glute", "lunge", "hamstring_curl"],
-        "full_body":    [],     # full_body emphasis expressed via split selection, not per-session injection
+        "full_body":    [],
         "conditioning": ["conditioning", "explosive"],
         "power":        ["explosive", "squat", "hip_hinge"],
         "endurance":    ["conditioning"],
+    }
+
+    # ── Secondary focus synergy map ──────────────────────────────────────────
+    # Per session type: which secondary focuses are synergistic (i.e. safe to
+    # add as a finisher without conflicting with the primary session goal).
+    # "any" means the session is generic enough to accept any secondary.
+    SECONDARY_SYNERGY: dict = {
+        "bro_chest":           ["core", "triceps"],
+        "bro_back":            ["core", "biceps"],
+        "bro_shoulders":       ["core", "chest", "triceps"],
+        "bro_arms":            ["core"],
+        "bro_legs":            ["core", "glutes", "calves", "hamstrings", "quads"],
+        "push_session":        ["core", "chest", "triceps"],
+        "pull_session":        ["core", "back", "biceps"],
+        "legs_session":        ["core", "glutes", "calves", "hamstrings", "quads"],
+        "upper_full":          ["core", "chest", "back", "shoulders", "arms", "biceps", "triceps"],
+        "lower_quad_focus":    ["core", "glutes", "calves", "hamstrings"],
+        "lower_hip_focus":     ["core", "quads", "calves"],
+        "full_body_heavy":     "any",
+        "full_body_moderate":  "any",
+        "full_body_light":     "any",
+        "full_body_heavy_b":   "any",
+        "full_body_moderate_b":"any",
     }
 
     # Primary focus → preferred split when AI is choosing (ai_choose mode only)
@@ -2448,46 +2473,97 @@ class EliteCoachingEngine:
 
     @staticmethod
     def generate_weekly_progression(goal: str) -> list:
-        """Returns a 4-week block progression plan tailored to the training goal."""
-        plans = {
+        """Returns a 12-week (3 × 4-week block) progression plan tailored to goal."""
+        blocks = {
             "strength": [
-                {"week": 1, "label": "Foundation", "instruction": "Follow the program as written. Focus on form and hitting prescribed rep ranges with 3-4 RIR."},
-                {"week": 2, "label": "Push", "instruction": "Add 1-2 reps per set, or increase compounds by 2.5 kg. Chase progressive overload."},
-                {"week": 3, "label": "Overreach", "instruction": "Increase load by 2.5-5 kg on compounds. Push to 1-2 RIR — this is the hardest week."},
-                {"week": 4, "label": "Deload", "instruction": "Cut working sets by 50%. Maintain the same weight. Focus on recovery and movement quality."},
+                # Block 1 — Foundation
+                {"week": 1,  "label": "Foundation",     "instruction": "Follow the program as written. Focus on form and hitting prescribed rep ranges with 3-4 RIR."},
+                {"week": 2,  "label": "Push",            "instruction": "Add 1-2 reps per set, or increase compounds by 2.5 kg. Chase progressive overload."},
+                {"week": 3,  "label": "Overreach",       "instruction": "Increase load by 2.5-5 kg on compounds. Push to 1-2 RIR — this is the hardest week."},
+                {"week": 4,  "label": "Deload",          "instruction": "Cut working sets by 50%. Maintain the same weight. Recover and consolidate."},
+                # Block 2 — Load
+                {"week": 5,  "label": "Block 2 — Start", "instruction": "Start 2.5 kg above your Block 1 working weights. Beat your Week 1-3 rep records."},
+                {"week": 6,  "label": "Push",            "instruction": "Add 2.5-5 kg on compounds. Your baseline is higher — keep chasing overload."},
+                {"week": 7,  "label": "Overreach",       "instruction": "Heaviest week of Block 2. Push all compounds to 1-2 RIR. New PRs are on the table."},
+                {"week": 8,  "label": "Deload",          "instruction": "Cut volume by 50%. Maintain load. You've earned this — recovery drives adaptation."},
+                # Block 3 — Peak
+                {"week": 9,  "label": "Block 3 — Start", "instruction": "Start 2.5 kg above Block 2 weights. Hardest block yet — this is the final push."},
+                {"week": 10, "label": "Push",            "instruction": "Relentless progression. Add load wherever possible. Every session should be a PR attempt."},
+                {"week": 11, "label": "Peak",            "instruction": "Max effort. Heaviest week of the entire 12-week program. Leave nothing in the tank."},
+                {"week": 12, "label": "Final Deload",    "instruction": "Cut volume by 50%. Reflect on your progress — you should be markedly stronger than Week 1."},
             ],
             "build_muscle": [
-                {"week": 1, "label": "Foundation", "instruction": "Learn the movements. Train at 3-4 RIR. Log all weights and reps precisely."},
-                {"week": 2, "label": "Build", "instruction": "Add 1-2 reps per set where possible, or slightly increase weight. Maintain strict form."},
-                {"week": 3, "label": "Overreach", "instruction": "Add 1 set to each compound exercise. Push to 1-2 RIR — highest volume week."},
-                {"week": 4, "label": "Deload", "instruction": "Cut working sets by 50%. Keep the same load. Let the body consolidate the adaptations."},
+                {"week": 1,  "label": "Foundation",     "instruction": "Learn the movements. Train at 3-4 RIR. Log all weights and reps precisely."},
+                {"week": 2,  "label": "Build",           "instruction": "Add 1-2 reps per set where possible, or slightly increase weight. Maintain strict form."},
+                {"week": 3,  "label": "Overreach",       "instruction": "Add 1 set to each compound exercise. Push to 1-2 RIR — highest volume of Block 1."},
+                {"week": 4,  "label": "Deload",          "instruction": "Cut working sets by 50%. Keep the same load. Let the body consolidate the adaptations."},
+                {"week": 5,  "label": "Block 2 — Start", "instruction": "Start 2.5 kg above Block 1 working weights. Reset rep targets — aim to beat Block 1 top sets."},
+                {"week": 6,  "label": "Build",           "instruction": "Add 1-2 reps or bump weight. Your muscle memory from Block 1 will accelerate progress."},
+                {"week": 7,  "label": "Overreach",       "instruction": "Highest volume week of Block 2. Add a set to every compound. Push to true 1-2 RIR."},
+                {"week": 8,  "label": "Deload",          "instruction": "50% volume reduction. This deload is critical — don't skip it before the final block."},
+                {"week": 9,  "label": "Block 3 — Start", "instruction": "Start 2.5 kg above Block 2. Final block — this is where maximum hypertrophy happens."},
+                {"week": 10, "label": "Build",           "instruction": "Continue progressive overload. Push rep ranges on every set. Volume is at its peak."},
+                {"week": 11, "label": "Overreach",       "instruction": "Highest volume of the entire program. Drop sets, rest-pause, or extra reps — go all in."},
+                {"week": 12, "label": "Final Deload",    "instruction": "Deload and reflect. You should look and feel noticeably different from Week 1. Time for a new program."},
             ],
             "lose_fat": [
-                {"week": 1, "label": "Foundation", "instruction": "Build the habit. Stay in your rep ranges. Focus on consistency over intensity."},
-                {"week": 2, "label": "Build", "instruction": "Maintain all weights. Reduce rest by 10 s on accessories to keep heart rate elevated."},
-                {"week": 3, "label": "Intensify", "instruction": "Reduce rest by another 10 s on accessories. Consider a 10-min post-session cardio finisher."},
-                {"week": 4, "label": "Active Recovery", "instruction": "Cut total volume by 40%. Light cardio on rest days. Let the body adapt to the deficit."},
+                {"week": 1,  "label": "Foundation",     "instruction": "Build the habit. Stay in your rep ranges. Focus on consistency over intensity."},
+                {"week": 2,  "label": "Build",           "instruction": "Maintain all weights. Reduce rest by 10 s on accessories to keep heart rate elevated."},
+                {"week": 3,  "label": "Intensify",       "instruction": "Reduce rest by another 10 s. Add a 10-min cardio finisher post-session if energy allows."},
+                {"week": 4,  "label": "Active Recovery", "instruction": "Cut total volume by 40%. Light cardio on rest days. Let the body adapt to the calorie deficit."},
+                {"week": 5,  "label": "Block 2 — Dial In", "instruction": "Nutrition should be dialled by now. Maintain or slightly increase weights — muscle preservation is priority."},
+                {"week": 6,  "label": "Push",            "instruction": "Add reps wherever possible. Intensity beats volume in a deficit — keep lifting heavy."},
+                {"week": 7,  "label": "High Intensity",  "instruction": "Shortest rest periods of the program. Keep weights up. Fat loss happens in recovery."},
+                {"week": 8,  "label": "Active Recovery", "instruction": "Reduce volume 40%. Keep protein intake high. Sleep and stress management matter as much as training."},
+                {"week": 9,  "label": "Block 3 — Final Phase", "instruction": "Final 4 weeks. Stay the course — body composition changes are compounding now."},
+                {"week": 10, "label": "Push",            "instruction": "Maintain all lifts from Blocks 1-2. Add cardio intensity if scale is stalled."},
+                {"week": 11, "label": "Peak Intensity",  "instruction": "Most demanding week. High training density, short rests, full sessions. Dig in."},
+                {"week": 12, "label": "Final Week",      "instruction": "You've completed 12 weeks. Review your before stats — the results should be clear."},
             ],
             "body_recomp": [
-                {"week": 1, "label": "Foundation", "instruction": "Set your baseline. Focus on compound lifts with controlled tempo. Log everything."},
-                {"week": 2, "label": "Build", "instruction": "Increase compounds by 2.5 kg where form allows. Maintain accessories volume."},
-                {"week": 3, "label": "Overreach", "instruction": "Max effort across the board. Push both intensity and volume — this drives body composition shifts."},
-                {"week": 4, "label": "Deload", "instruction": "Reduce volume by 40%. Maintain load. Allow muscle protein synthesis to peak during recovery."},
+                {"week": 1,  "label": "Foundation",     "instruction": "Set your baseline. Focus on compound lifts with controlled tempo. Log everything."},
+                {"week": 2,  "label": "Build",           "instruction": "Increase compounds by 2.5 kg where form allows. Maintain accessories volume."},
+                {"week": 3,  "label": "Overreach",       "instruction": "Max effort across the board. Push both intensity and volume — this drives body composition shifts."},
+                {"week": 4,  "label": "Deload",          "instruction": "Reduce volume by 40%. Maintain load. Allow muscle protein synthesis to peak during recovery."},
+                {"week": 5,  "label": "Block 2 — Recomp", "instruction": "Start 2.5 kg above Block 1 on compounds. Recomp accelerates as training age grows."},
+                {"week": 6,  "label": "Build",           "instruction": "Increase load or reps. Visual changes may be subtle — trust the process and stay consistent."},
+                {"week": 7,  "label": "Overreach",       "instruction": "Highest effort of Block 2. Push compounds hard. Recomp results are built in weeks like this."},
+                {"week": 8,  "label": "Deload",          "instruction": "Active rest. Light movement, high protein, great sleep. The work is done — recovery is the reward."},
+                {"week": 9,  "label": "Block 3 — Final", "instruction": "Final block. Strongest version of you yet. Aim to beat every Block 2 working weight."},
+                {"week": 10, "label": "Build",           "instruction": "Sustained intensity. You're past the initial adaptation — every rep now drives pure recomp."},
+                {"week": 11, "label": "Overreach",       "instruction": "Peak week. Maximum effort on all lifts. This is the week that defines the program."},
+                {"week": 12, "label": "Final Deload",    "instruction": "Program complete. Compare body composition to Week 1 — the compound effect of 12 weeks should be visible."},
             ],
             "athletic_performance": [
-                {"week": 1, "label": "Foundation", "instruction": "Focus on movement quality and bar speed. Build the base patterns with controlled effort."},
-                {"week": 2, "label": "Load", "instruction": "Increase intensity by 5-10%. Prioritise power output and explosiveness on all movements."},
-                {"week": 3, "label": "Peak", "instruction": "Maximum effort on key lifts. Chase speed, power, and top-end performance."},
-                {"week": 4, "label": "Taper", "instruction": "Cut volume by 50%. Maintain intensity. Prepare the body and nervous system for peak output."},
+                {"week": 1,  "label": "Foundation",     "instruction": "Focus on movement quality and bar speed. Build the base patterns with controlled effort."},
+                {"week": 2,  "label": "Load",            "instruction": "Increase intensity by 5-10%. Prioritise power output and explosiveness on all movements."},
+                {"week": 3,  "label": "Peak",            "instruction": "Maximum effort on key lifts. Chase speed, power, and top-end performance."},
+                {"week": 4,  "label": "Taper",           "instruction": "Cut volume by 50%. Maintain intensity. Nervous system reset before Block 2."},
+                {"week": 5,  "label": "Block 2 — Load",  "instruction": "Baseline all lifts 5% above Block 1. Power output is the metric — not just load."},
+                {"week": 6,  "label": "Accumulate",      "instruction": "Increase training density. Shorter rest, more explosive effort. Sport-specific conditioning."},
+                {"week": 7,  "label": "Peak",            "instruction": "Peak week of Block 2. Max effort, max speed. Test any lifts you're chasing new PRs on."},
+                {"week": 8,  "label": "Taper",           "instruction": "Full taper. 50% volume, maintain intensity. Physically and neurally prepared for Block 3."},
+                {"week": 9,  "label": "Block 3 — Peak",  "instruction": "Final block — hardest of the program. Fastest, strongest, most conditioned you'll be."},
+                {"week": 10, "label": "Accumulate",      "instruction": "Highest training density of the program. Every set should be executed with intent and speed."},
+                {"week": 11, "label": "Peak Performance","instruction": "Ultimate performance week. Test yourself on key lifts and drills. No excuses."},
+                {"week": 12, "label": "Final Taper",     "instruction": "Reduce volume 50%. Reflect on 12 weeks of athletic development — the gains are real."},
             ],
             "general_fitness": [
-                {"week": 1, "label": "Foundation", "instruction": "Get familiar with the movements. Prioritise full range of motion and consistent effort."},
-                {"week": 2, "label": "Progress", "instruction": "Add 1-2 reps per set or a small weight increase. Aim for noticeable improvement."},
-                {"week": 3, "label": "Challenge", "instruction": "Push slightly harder on at least 2 exercises per session. Embrace the discomfort."},
-                {"week": 4, "label": "Active Recovery", "instruction": "Reduce sets by 30%. Stay active. Prioritise sleep and recovery nutrition this week."},
+                {"week": 1,  "label": "Foundation",     "instruction": "Get familiar with the movements. Prioritise full range of motion and consistent effort."},
+                {"week": 2,  "label": "Progress",        "instruction": "Add 1-2 reps per set or a small weight increase. Aim for noticeable improvement."},
+                {"week": 3,  "label": "Challenge",       "instruction": "Push slightly harder on at least 2 exercises per session. Embrace the discomfort."},
+                {"week": 4,  "label": "Active Recovery", "instruction": "Reduce sets by 30%. Stay active. Prioritise sleep and recovery nutrition this week."},
+                {"week": 5,  "label": "Block 2 — Elevate","instruction": "Bring your Block 1 weights forward and add 2.5 kg. You know the movements — now load them."},
+                {"week": 6,  "label": "Build",           "instruction": "Consistent overload. Add reps or weight every session. Habits are now automatic — push harder."},
+                {"week": 7,  "label": "Push",            "instruction": "Highest effort of Block 2. Don't leave reps in the tank on the big lifts."},
+                {"week": 8,  "label": "Active Recovery", "instruction": "Easy week. You've earned it. 30-40% volume reduction, same movements, light effort."},
+                {"week": 9,  "label": "Block 3 — Final", "instruction": "Final 4 weeks. You're a different athlete than Week 1. Train like it."},
+                {"week": 10, "label": "Build",           "instruction": "Push all working weights above Block 2. You have 3 weeks to post your best performance."},
+                {"week": 11, "label": "Challenge",       "instruction": "Peak week. Hardest effort of the entire program. Every rep counts."},
+                {"week": 12, "label": "Final Week",      "instruction": "12 weeks complete — regenerate your program to keep progressing with fresh targets."},
             ],
         }
-        return plans.get(goal, plans["general_fitness"])
+        return blocks.get(goal, blocks["general_fitness"])
 
     def get_progression_model(self, goal: str, level: str) -> tuple:
         """Returns (method, description)"""
@@ -2542,6 +2618,8 @@ class EliteCoachingEngine:
             )
 
         used_primary_options = set()  # Track first-choice exercises to avoid cross-day repeats
+        secondary_injections_this_week = 0
+        MAX_SECONDARY_INJECTIONS = 2
 
         for i, session_type in enumerate(session_types):
             archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
@@ -2739,39 +2817,52 @@ class EliteCoachingEngine:
                         slot['sets'] = boosted
                         slot['coaching_note'] += ' [secondary emphasis]'
 
-            # ── Secondary focus: inject missing accessory slots ───────────────
-            # Only inject patterns that NATURALLY BELONG in this session.
-            # Arms secondary → tricep_push only on push/full sessions,
-            #                   bicep_curl only on pull/full sessions.
-            # Never inject secondary patterns that cross session boundaries.
-            if secondary_patterns and total_sets_allocated < max_sets + focus_boost_headroom - 1:
+            # ── Secondary focus: synergy-gated injection, max 2/week ────────────
+            # Replace the session_native gate with SECONDARY_SYNERGY: a secondary
+            # focus is only injected into a session where it makes coaching sense.
+            # e.g. core on chest day = synergistic finisher; chest on back day = not.
+            if (secondary and secondary_injections_this_week < MAX_SECONDARY_INJECTIONS
+                    and len(slot_specs) < max_ex):
+                synergy_list = self.SECONDARY_SYNERGY.get(session_type, [])
                 already_covered = {s['pattern'] for s in slot_specs}
-                for sf_pattern in secondary_patterns:
-                    if sf_pattern not in already_covered and sf_pattern in session_native:
-                        if total_sets_allocated >= max_sets + focus_boost_headroom - 1:
-                            break
-                        sec_base = goal_params.get('accessory', {})
-                        sec_opts = self.get_exercise_options(sf_pattern, equipment, style, limitations, level)
+                _pattern_to_sf: dict = {}
+                for sf in secondary:
+                    sf_key = sf.lower().replace(' ', '_')
+                    for p in self.FOCUS_AREA_PATTERNS.get(sf_key, []):
+                        _pattern_to_sf.setdefault(p, sf_key)
+
+                for sf in secondary:
+                    if secondary_injections_this_week >= MAX_SECONDARY_INJECTIONS:
+                        break
+                    sf_key = sf.lower().replace(' ', '_')
+                    compatible = (synergy_list == "any") or (sf_key in synergy_list)
+                    if not compatible:
+                        continue
+                    sf_patterns = self.FOCUS_AREA_PATTERNS.get(sf_key, [])
+                    for sp in sf_patterns:
+                        if sp in already_covered or len(slot_specs) >= max_ex:
+                            continue
                         extra_sets = min(3, max_sets + focus_boost_headroom - total_sets_allocated)
-                        if extra_sets >= 2 and sec_opts:
-                            _pattern_to_secondary = {}
-                            for sf in secondary:
-                                sf_key = sf.lower().replace(' ', '_')
-                                for p in self.FOCUS_AREA_PATTERNS.get(sf_key, []):
-                                    _pattern_to_secondary.setdefault(p, sf)
-                            sec_label = _pattern_to_secondary.get(sf_pattern, sf_pattern.replace('_', ' '))
-                            slot_specs.append({
-                                "pattern":       sf_pattern,
-                                "type":          "accessory",
-                                "coaching_note": f"secondary emphasis — direct {sf_pattern.replace('_', ' ')} volume [{sec_label} focus]",
-                                "sets":          extra_sets,
-                                "reps":          sec_base.get('reps', '10-15'),
-                                "rest_seconds":  60,
-                                "effort":        sec_base.get('effort', 'RPE 7'),
-                                "options":       sec_opts,
-                                "excluded":      list(excluded_exercises),
-                            })
-                            total_sets_allocated += extra_sets
+                        if extra_sets < 2:
+                            break
+                        sec_opts = self.get_exercise_options(sp, equipment, style, limitations, level)
+                        if not sec_opts:
+                            continue
+                        sec_base = goal_params.get('accessory', {})
+                        slot_specs.append({
+                            "pattern":       sp,
+                            "type":          "accessory",
+                            "coaching_note": f"secondary focus — {sp.replace('_', ' ')} [{sf_key.replace('_', ' ')} emphasis]",
+                            "sets":          extra_sets,
+                            "reps":          sec_base.get('reps', '10-15'),
+                            "rest_seconds":  60,
+                            "effort":        sec_base.get('effort', 'RPE 7'),
+                            "options":       sec_opts,
+                        })
+                        total_sets_allocated += extra_sets
+                        already_covered.add(sp)
+                        secondary_injections_this_week += 1
+                        break  # one pattern per secondary focus per session
 
             # ── Superset pairing for time-constrained sessions ───────────────
             # When session ≤ 45 min AND secondary focus is active, pair secondary

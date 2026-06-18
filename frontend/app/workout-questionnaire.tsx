@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  ActivityIndicator,
+  Modal,
+  Animated,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -117,7 +118,32 @@ export default function WorkoutQuestionnaire() {
     preferred_split: 'ai_choose',
     injuries: '',
     preferred_start_day: 'Monday',
+    exercise_preferences: '',
   });
+
+  // Pre-fill exercise_preferences from profile on mount
+  useEffect(() => {
+    if (profile?.exercise_preferences) {
+      setFormData(prev => ({ ...prev, exercise_preferences: profile.exercise_preferences! }));
+    }
+  }, [profile?.exercise_preferences]);
+
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
+  const glowAnim = useRef(new Animated.Value(0)).current;
+  const LOADING_MSGS = ['Building your program…', 'Selecting exercises…', 'Optimising your schedule…', 'Almost there…'];
+
+  useEffect(() => {
+    if (!loading) return;
+    setLoadingMsgIdx(0);
+    const msgTimer = setInterval(() => setLoadingMsgIdx(i => (i + 1) % LOADING_MSGS.length), 3000);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 0.3, duration: 1000, useNativeDriver: true }),
+      ])
+    ).start();
+    return () => { clearInterval(msgTimer); glowAnim.stopAnimation(); };
+  }, [loading]);
 
   const toggleSelection = (field: 'focus_areas' | 'equipment', value: string) => {
     const current = formData[field];
@@ -159,13 +185,19 @@ export default function WorkoutQuestionnaire() {
     }
 
     setLoading(true);
+    // Persist exercise_preferences to profile
+    if (formData.exercise_preferences.trim() && profile?.id) {
+      try {
+        await api.patch(`/profile/${profile.id}`, { exercise_preferences: formData.exercise_preferences.trim() });
+      } catch {}
+    }
     try {
       const response = await api.post('/workouts/generate', {
         user_id: profile.id,
         goal: formData.goal,
         training_style: formData.training_style,
-        focus_areas: formData.focus_areas.slice(0, 1),             // first = primary
-        secondary_focus_areas: formData.focus_areas.slice(1),      // rest = secondary
+        focus_areas: formData.focus_areas.slice(0, 1),
+        secondary_focus_areas: formData.focus_areas.slice(1),
         equipment: formData.equipment,
         injuries: formData.injuries
           ? formData.injuries.split(',').map((s) => s.trim()).filter(Boolean)
@@ -175,6 +207,7 @@ export default function WorkoutQuestionnaire() {
         fitness_level: formData.fitness_level,
         preferred_split: formData.preferred_split,
         preferred_start_day: formData.preferred_start_day,
+        exercise_preferences: formData.exercise_preferences.trim() || null,
       });
 
       router.replace(`/workout-detail?id=${response.data.id}`);
@@ -506,6 +539,23 @@ export default function WorkoutQuestionnaire() {
         multiline
       />
 
+      <Text style={[styles.stepTitle, { marginTop: 20, fontSize: 16 }]}>Exercise Preferences</Text>
+      <Text style={styles.stepSubtitle}>Exercises you love or want to avoid (optional)</Text>
+      {!!profile?.exercise_preferences && formData.exercise_preferences === profile.exercise_preferences && (
+        <View style={styles.prefSavedBadge}>
+          <Ionicons name="bookmark" size={12} color={colors.primary} />
+          <Text style={styles.prefSavedText}>Saved from profile — tap to edit</Text>
+        </View>
+      )}
+      <TextInput
+        style={styles.textInput}
+        placeholder="e.g., Love RDLs and Pull-ups. Hate Burpees."
+        placeholderTextColor={colors.textMuted}
+        value={formData.exercise_preferences}
+        onChangeText={(text) => setFormData({ ...formData, exercise_preferences: text })}
+        multiline
+      />
+
       {/* Enhanced Summary Card */}
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>Your Custom Program</Text>
@@ -605,6 +655,16 @@ export default function WorkoutQuestionnaire() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* ── Branded generation loading overlay ───────────────────── */}
+      <Modal visible={loading} transparent animationType="fade" statusBarTranslucent>
+        <View style={styles.loadingOverlay}>
+          <Animated.View style={[styles.loadingLogo, { opacity: glowAnim }]}>
+            <Ionicons name="flash" size={64} color="#FFD700" />
+          </Animated.View>
+          <Text style={styles.loadingAppName}>InterFitAI</Text>
+          <Text style={styles.loadingMsg}>{LOADING_MSGS[loadingMsgIdx]}</Text>
+        </View>
+      </Modal>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
@@ -639,20 +699,14 @@ export default function WorkoutQuestionnaire() {
           </TouchableOpacity>
         )}
         <TouchableOpacity
-          style={[styles.navNextBtn, loading && styles.btnDisabled]}
+          style={[styles.navNextBtn, (loading || checkingSubscription) && styles.btnDisabled]}
           onPress={step < totalSteps ? () => setStep(step + 1) : handleGenerate}
           disabled={loading || checkingSubscription}
         >
-          {loading || checkingSubscription ? (
-            <ActivityIndicator size="small" color={colors.textOnPrimary} />
-          ) : (
-            <>
-              <Text style={styles.navNextText}>
-                {step < totalSteps ? 'Continue' : 'Generate Program'}
-              </Text>
-              <Ionicons name={step < totalSteps ? "arrow-forward" : "sparkles"} size={20} color={colors.textOnPrimary} />
-            </>
-          )}
+          <Text style={styles.navNextText}>
+            {checkingSubscription ? 'Checking…' : step < totalSteps ? 'Continue' : 'Generate Program'}
+          </Text>
+          <Ionicons name={step < totalSteps ? "arrow-forward" : "sparkles"} size={20} color={colors.textOnPrimary} />
         </TouchableOpacity>
       </View>
       {/* Quota counter — only shown on the last step, hidden for admins */}
@@ -1096,5 +1150,83 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 4,
     paddingHorizontal: 24,
+  },
+  // ── Start day picker (Item 2 — were missing) ───────────────────────
+  startDayRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  startDayBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  startDayBtnActive: {
+    borderColor: '#FFD700',
+    backgroundColor: 'rgba(255,215,0,0.15)',
+  },
+  startDayText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  startDayTextActive: {
+    color: '#FFD700',
+  },
+  // ── Exercise preferences badge ─────────────────────────────────────
+  prefSavedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+  },
+  prefSavedText: {
+    color: '#FFD700',
+    fontSize: 12,
+  },
+  // ── Generation loading overlay (Item 4) ───────────────────────────
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.93)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  loadingLogo: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,215,0,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingAppName: {
+    color: '#FFD700',
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  loadingMsg: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  splitNoteCard: {
+    backgroundColor: 'rgba(255,215,0,0.08)',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.2)',
+  },
+  splitNoteText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

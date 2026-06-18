@@ -28,6 +28,7 @@ interface UserProfile {
   profile_image?: string;
   has_password?: boolean;
   unit_preference?: 'kg' | 'lbs';
+  exercise_preferences?: string;
 }
 
 interface UserState {
