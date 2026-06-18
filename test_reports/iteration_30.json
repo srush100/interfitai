@@ -1,0 +1,53 @@
+{
+  "summary": "Backend testing of Secondary Focus Injection Fix (Item 1 P0 Bug). All 16 tests passed 100%. SECONDARY_SYNERGY map expanded to cover all 30+ session types correctly allows/blocks injections per session type, fallback changed from [] to 'any', and max 2 injections per week enforced.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_secondary_focus_injection.py",
+    "/app/test_reports/pytest/secondary_focus_injection_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_secondary_focus_injection.py"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 tests passed)",
+    "frontend": "N/A - backend only testing requested"
+  },
+  "seed_data_creation": "None - used existing test user cbd82a69-3a37-48c2-88e8-0fe95081fa4b",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Secondary focus injection fix fully verified. SECONDARY_SYNERGY map covers all session types. Key test evidence: (1) upper_push_heavy synergy=['core','shoulders','triceps','chest','arms'] → injects rear_delt; (2) lower_quad_focus synergy=['core','glutes','calves','hamstrings','legs','quads'] → shoulder injection BLOCKED; (3) upper_pull_heavy synergy=['core','back','biceps','shoulders','arms'] → injects vertical_push; (4) MAX_SECONDARY_INJECTIONS=2 enforced across all test runs. Test file: /app/backend/tests/test_secondary_focus_injection.py (16 tests). Backend logs confirm via [secondary] debug lines.",
+  "test_results_detail": {
+    "TestCoreInjectionFullBodySplit": {
+      "passed": 5,
+      "failed": 0,
+      "details": "Full body 3-day split + core secondary: all 3 days are 'any' compatible but only 2 get injected (MAX limit). Core exercises confirmed in ≥1 day. Exercise count with secondary >= without."
+    },
+    "TestShoulderInjectionUpperLowerSplit": {
+      "passed": 7,
+      "failed": 0,
+      "details": "4-day upper_lower split + shoulders secondary: upper days (upper_push_heavy, upper_pull_heavy) received shoulder injection (rear_delt and vertical_push respectively). Lower days (lower_quad_focus, lower_hip_focus) had 0 injections. Max 2 injections per week confirmed. exercise_type='accessory' used for injection. Upper days gained +1 exercise vs baseline."
+    },
+    "TestInjectionCountIntegrity": {
+      "passed": 2,
+      "failed": 0,
+      "details": "Cross-check: total extra exercises ≤2 for both upper_lower+shoulders and full_body+core. 3rd full_body day correctly NOT injected (MAX=2 reached)."
+    },
+    "TestPreconditions": {
+      "passed": 2,
+      "failed": 0,
+      "details": "Health check OK, test user has_access=True (admin reason)"
+    }
+  },
+  "rca_of_issue": "ROOT CAUSE: SECONDARY_SYNERGY map was missing 20+ session types (upper_push_heavy, lower_full, all hybrid/functional/calisthenics). SECONDARY_SYNERGY.get(session_type, []) defaulted to [] for missing types → synergy_list=[] → compatible=False → all injections blocked. Also existing synergy lists were too narrow (e.g. push_session=['core','chest','triceps','shoulders','arms'] excluded 'shoulders'). FIXES: (1) Expanded SECONDARY_SYNERGY to cover all 30+ session types with correct synergy lists, (2) Changed fallback from [] to 'any' so unlisted session types allow all secondary focuses. VERIFIED: 16/16 automated tests pass, backend debug logs confirm correct injection/skip decisions per session type."
+}

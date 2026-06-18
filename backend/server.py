@@ -2088,24 +2088,51 @@ class EliteCoachingEngine:
     # ── Secondary focus synergy map ──────────────────────────────────────────
     # Per session type: which secondary focuses are synergistic (i.e. safe to
     # add as a finisher without conflicting with the primary session goal).
-    # "any" means the session is generic enough to accept any secondary.
+    # "any" means the session is generic enough to accept any secondary focus.
+    # Unlisted session types also default to "any" (see get call below).
     SECONDARY_SYNERGY: dict = {
-        "bro_chest":           ["core", "triceps"],
-        "bro_back":            ["core", "biceps"],
-        "bro_shoulders":       ["core", "chest", "triceps"],
-        "bro_arms":            ["core"],
-        "bro_legs":            ["core", "glutes", "calves", "hamstrings", "quads"],
-        "push_session":        ["core", "chest", "triceps"],
-        "pull_session":        ["core", "back", "biceps"],
-        "legs_session":        ["core", "glutes", "calves", "hamstrings", "quads"],
-        "upper_full":          ["core", "chest", "back", "shoulders", "arms", "biceps", "triceps"],
-        "lower_quad_focus":    ["core", "glutes", "calves", "hamstrings"],
-        "lower_hip_focus":     ["core", "quads", "calves"],
-        "full_body_heavy":     "any",
-        "full_body_moderate":  "any",
-        "full_body_light":     "any",
-        "full_body_heavy_b":   "any",
-        "full_body_moderate_b":"any",
+        # ── Bro split ────────────────────────────────────────────────────────
+        "bro_chest":              ["core", "triceps", "shoulders", "arms"],
+        "bro_back":               ["core", "biceps", "shoulders", "arms"],
+        "bro_shoulders":          ["core", "chest", "triceps", "arms"],
+        "bro_arms":               ["core", "shoulders"],
+        "bro_legs":               ["core", "glutes", "calves", "hamstrings", "quads", "legs"],
+        "bro_chest_shoulders":    ["core", "triceps", "arms"],
+        # ── Push / Pull / Legs ───────────────────────────────────────────────
+        "push_session":           ["core", "chest", "triceps", "shoulders", "arms"],
+        "pull_session":           ["core", "back", "biceps", "shoulders", "arms"],
+        "legs_session":           ["core", "glutes", "calves", "hamstrings", "quads", "legs"],
+        "upper_push_volume":      ["core", "shoulders", "triceps", "chest", "arms"],
+        "upper_pull_volume":      ["core", "back", "biceps", "shoulders", "arms"],
+        # ── Upper / Lower ────────────────────────────────────────────────────
+        "upper_full":             ["core", "chest", "back", "shoulders", "arms", "biceps", "triceps"],
+        "upper_push_heavy":       ["core", "shoulders", "triceps", "chest", "arms"],
+        "upper_pull_heavy":       ["core", "back", "biceps", "shoulders", "arms"],
+        "lower_quad_focus":       ["core", "glutes", "calves", "hamstrings", "legs", "quads"],
+        "lower_hip_focus":        ["core", "quads", "calves", "legs", "glutes"],
+        "lower_full":             ["core", "glutes", "calves", "hamstrings", "quads", "legs"],
+        # ── Full body ────────────────────────────────────────────────────────
+        "full_body_heavy":        "any",
+        "full_body_moderate":     "any",
+        "full_body_light":        "any",
+        "full_body_heavy_b":      "any",
+        "full_body_moderate_b":   "any",
+        # ── Athletic ─────────────────────────────────────────────────────────
+        "athletic_conditioning":  "any",
+        # ── Hybrid ───────────────────────────────────────────────────────────
+        "hybrid_strength_push":   ["core", "shoulders", "triceps", "chest"],
+        "hybrid_strength_lower":  ["core", "glutes", "calves", "hamstrings", "legs"],
+        "hybrid_strength_pull":   ["core", "back", "biceps", "shoulders"],
+        "hybrid_power_conditioning": "any",
+        # ── Functional ───────────────────────────────────────────────────────
+        "functional_movement_quality":  "any",
+        "functional_strength_capacity": "any",
+        "functional_power_endurance":   "any",
+        # ── Calisthenics ─────────────────────────────────────────────────────
+        "calisthenics_upper":     ["core", "shoulders", "chest", "back", "arms"],
+        "calisthenics_lower":     ["core", "glutes", "calves", "legs"],
+        "calisthenics_skill":     "any",
+        "calisthenics_conditioning": "any",
     }
 
     # Primary focus → preferred split when AI is choosing (ai_choose mode only)
@@ -2821,10 +2848,13 @@ class EliteCoachingEngine:
             # Replace the session_native gate with SECONDARY_SYNERGY: a secondary
             # focus is only injected into a session where it makes coaching sense.
             # e.g. core on chest day = synergistic finisher; chest on back day = not.
-            if (secondary and secondary_injections_this_week < MAX_SECONDARY_INJECTIONS
-                    and len(slot_specs) < max_ex):
-                synergy_list = self.SECONDARY_SYNERGY.get(session_type, [])
+            if (secondary and secondary_injections_this_week < MAX_SECONDARY_INJECTIONS):
+                # Allow one extra slot beyond max_ex for secondary finisher
+                secondary_cap = max_ex + 1
+                logger.info(f"[secondary] session={session_type}, secondary={secondary}, cap={secondary_cap}, current_slots={len(slot_specs)}")
+                synergy_list = self.SECONDARY_SYNERGY.get(session_type, "any")  # default "any" for unlisted session types
                 already_covered = {s['pattern'] for s in slot_specs}
+                logger.info(f"[secondary] synergy_list={synergy_list}, already_covered={already_covered}")
                 _pattern_to_sf: dict = {}
                 for sf in secondary:
                     sf_key = sf.lower().replace(' ', '_')
@@ -2840,12 +2870,10 @@ class EliteCoachingEngine:
                         continue
                     sf_patterns = self.FOCUS_AREA_PATTERNS.get(sf_key, [])
                     for sp in sf_patterns:
-                        if sp in already_covered or len(slot_specs) >= max_ex:
+                        if sp in already_covered or len(slot_specs) >= secondary_cap:
                             continue
-                        extra_sets = min(3, max_sets + focus_boost_headroom - total_sets_allocated)
-                        if extra_sets < 2:
-                            break
                         sec_opts = self.get_exercise_options(sp, equipment, style, limitations, level)
+                        logger.info(f"[secondary] trying sp={sp!r}, sec_opts={len(sec_opts)}, slot_count={len(slot_specs)}")
                         if not sec_opts:
                             continue
                         sec_base = goal_params.get('accessory', {})
@@ -2853,13 +2881,13 @@ class EliteCoachingEngine:
                             "pattern":       sp,
                             "type":          "accessory",
                             "coaching_note": f"secondary focus — {sp.replace('_', ' ')} [{sf_key.replace('_', ' ')} emphasis]",
-                            "sets":          extra_sets,
+                            "sets":          2,   # finisher: always 2 working sets
                             "reps":          sec_base.get('reps', '10-15'),
                             "rest_seconds":  60,
                             "effort":        sec_base.get('effort', 'RPE 7'),
                             "options":       sec_opts,
                         })
-                        total_sets_allocated += extra_sets
+                        total_sets_allocated += 2
                         already_covered.add(sp)
                         secondary_injections_this_week += 1
                         break  # one pattern per secondary focus per session

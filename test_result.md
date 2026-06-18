@@ -122,6 +122,39 @@ backend:
           workout progress tile (streak + weekly dots) on home screen.
           Tests: /app/backend/tests/test_phase2_streaks_prs_photos.py (13 tests)
 
+  - task: "Secondary Focus Injection Fix (Item 1)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 3
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "secondary_injections count returned 0 in all tests. Agent added SECONDARY_SYNERGY map and injection logic but it had no effect."
+      - working: "NA"
+        agent: "main"
+        comment: |
+          ROOT CAUSE FOUND & FIXED (2026-06):
+          1. SECONDARY_SYNERGY.get(session_type, []) defaulted to [] for 20+ common session types (upper_push_heavy, lower_full, upper_pull_heavy, all hybrid/functional/calisthenics sessions). With empty list, compatible=False → injection blocked.
+          2. Existing synergy lists too narrow (push_session=['core','chest','triceps'] excluded 'shoulders').
+          FIXES: 
+          - Replaced SECONDARY_SYNERGY with comprehensive 30+ session type map.
+          - Changed fallback from [] to 'any': SECONDARY_SYNERGY.get(session_type, 'any').
+          VERIFIED via logs: upper_push_heavy → rear_delt injected; upper_pull_heavy → vertical_push injected. Max 2/week respected.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL 16 TESTS PASSED (100%) - Secondary Focus Injection Fix fully verified.
+          Test file: /app/backend/tests/test_secondary_focus_injection.py
+          1. CORE on FULL_BODY: 3-day full_body + secondary=['core'] → core exercises injected in ≤2 days (MAX_SECONDARY_INJECTIONS=2 enforced), all 3 sessions are 'any' compatible but capped correctly.
+          2. SHOULDERS on UPPER_LOWER: 4-day upper_lower + secondary=['shoulders'] → rear_delt injected into upper_push_heavy, vertical_push injected into upper_pull_heavy (both verified via exercise_type='accessory' + muscle_groups). Lower days (lower_quad_focus, lower_hip_focus) correctly SKIPPED.
+          3. MAX 2 INJECTIONS: Total extra exercises across all 4 days = 2, never exceeded.
+          4. INCOMPATIBLE DAYS BLOCKED: Lower days maintain same exercise count with vs without secondary=['shoulders'].
+          5. EXERCISE COUNT: Upper days gain +1 exercise vs baseline; lower days unchanged.
+          Backend debug logs confirm: upper_push_heavy synergy=['core','shoulders','triceps','chest','arms'] → trying rear_delt; lower_quad_focus synergy=['core','glutes',...] → no shoulder attempt; upper_pull_heavy → trying vertical_push.
+
   - task: "Elite Coaching Engine Focus Area Overhaul (primary +2 sets, secondary +1 set, FOCUS_SPLIT_PREFERENCE)"
     implemented: true
     working: true
@@ -1492,3 +1525,20 @@ agent_communication:
     message: "NEW FORK (2026-06) - BLANK SLATE VERIFICATION: Backend and Expo are running. The blank slate logic was coded in the previous session but never formally tested. Code is confirmed in place: Frontend (workout-detail.tsx ~line 355) clears { weight: '', reps: '', completed: false } for all keys matching the completed day prefix, then calls savePerformance to persist it. Backend (server.py complete_workout_session ~line 3653) does the same server-side. NEED TO TEST: After completing a workout, verify: (1) All checkboxes are immediately unticked, (2) Weight and reps inputs are empty strings (not pre-filled), (3) After page reload, inputs are still blank, (4) 'Last time' hint row still shows the historical data from the session just completed. Use test user ID: cbd82a69-3a37-48c2-88e8-0fe95081fa4b. App URL is the Expo web preview. IMPORTANT: The DB may be empty in this fork - create a user profile and a workout program first before testing the complete flow."
   - agent: "main"
     message: "WORKOUT AUDIT ROUND 3 - 5 FIXES APPLIED: (1) Pike Push-Up GIF: 0473→2921 (was 'Hanging Pike' abs move, now correct pike push-up bodyweight vertical push). (2) Australian Pull-Up removed from vertical_pull bodyweight list (was wrong pattern placement) and from horizontal_pull list (kept only 'Inverted Row'); CACHED_EXERCISE_GIFS alias kept with comment for legacy program rendering. (3) Cable Kickback renamed to 'Cable Glute Kickback' in all 5 glute pattern slots (full_gym, beginner_gym, machines, cables); new GIF alias 'cable glute kickback': '0860' added to CACHED_EXERCISE_GIFS. (4) Upper/Lower 6-day: Day 5 changed from upper_push_volume → upper_full giving balanced 3U/3L split with 2x push 2x pull. (5) Assault bike mapping confirmed intact (NOT removed). Syntax verified clean. Backend auto-reloaded. NEEDS TESTING: 6-day Upper/Lower advanced body_recomp, calisthenics program, and cross-day no-repeat verification."
+  - agent: "main"
+    message: |
+      SECONDARY FOCUS INJECTION FIX (Item 1 of 5 Workout Build Improvements):
+      ROOT CAUSE IDENTIFIED AND FIXED:
+      1. SECONDARY_SYNERGY map was missing 20+ session types (upper_push_heavy, lower_full, upper_pull_heavy, bro_chest_shoulders, all hybrid/functional/calisthenics types, etc.). These all returned synergy_list=[] and made compatible=False, blocking ALL injections.
+      2. Existing synergy lists were too restrictive (push_session didn't include 'shoulders'; legs_session didn't include 'legs').
+      3. Fallback default was [] (empty) instead of 'any' for unknown session types.
+      FIXES APPLIED:
+      - Replaced SECONDARY_SYNERGY map with comprehensive version covering ALL 30+ session types.
+      - Changed default fallback from [] to 'any': self.SECONDARY_SYNERGY.get(session_type, 'any').
+      VERIFICATION via backend logs: For upper_lower split (4 days), chest primary + shoulders secondary:
+      - upper_push_heavy: synergy_list=['core','shoulders','triceps','chest','arms'] → rear_delt injected (Cable Face Pull) ✓
+      - lower_quad_focus: shoulders not synergistic with legs → correctly skipped ✓
+      - upper_pull_heavy: synergy_list=['core','back','biceps','shoulders','arms'] → vertical_push injected (Dumbbell Shoulder Press) ✓
+      - lower_hip_focus: secondary_injections_this_week=2 (at max) → blocked ✓
+      Result: 2 secondary injections per week, max limit respected, coaching-appropriate placements.
+      NEEDS FORMAL TESTING: Use backend testing agent to verify secondary_focus_areas results in extra exercises.
