@@ -79,6 +79,13 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 
 - **[Jun 2026] Injury Safety Overhaul**: (1) Added LIMITATION_SYNONYMS (80+ entries) mapping free-text phrasings to 8 canonical keys — 'sciatica'→lower_back, 'rotator cuff'→shoulder, 'ACL/runner's knee'→knee, 'plantar fasciitis'→ankle, 'tennis elbow'→elbow, 'carpal tunnel'→wrist, etc. (2) Added _normalize_limitations() classmethod replacing raw substring matching in both get_exercise_options() and build_blueprint(). (3) Fixed UNSAFE fallback that was serving contraindicated exercises when pool was exhausted — now falls back to bodyweight/any options (also filtered), last resort 'Bodyweight Exercise'. (4) Expanded LIMITATION_EXCLUSIONS knee list with all actual lunge variants (Dumbbell Reverse Lunge, Walking Lunge, Bulgarian Split Squat variants, Step-Up variants) and ankle with all calf raise variants. Verified: 10/10 tests pass including sciatica, rotator cuff, ACL, tennis elbow, plantar fasciitis, herniated disc, all-8-limitations safety test.
 
+- **[Jun 2026] Workout Build Improvements (Items 1-5)**:
+  - Item 1 (Bug P0 — FIXED): Secondary focus injection now works. Root cause: SECONDARY_SYNERGY map was missing 20+ session types (upper_push_heavy, lower_full, all hybrid/functional/calisthenics types) causing synergy_list=[] and compatible=False for most workouts. Fix: expanded map to all 30+ session types + changed fallback from [] to 'any'. Verified: upper_push_heavy injects rear_delt, upper_pull_heavy injects vertical_push, max 2/week enforced, lower days correctly skipped. 16/16 backend tests pass.
+  - Item 2 (Bug P0 — FIXED): Start-day picker buttons were invisible. Added missing styles in workout-questionnaire.tsx.
+  - Item 3 (Feature P1 — DONE): Extended workout program from 4 weeks to 12 weeks (3 blocks of 4 weeks) — backend generates 12-week progressive blueprints, frontend shows block labels.
+  - Item 4 (Polish P2 — DONE): Replaced simple ActivityIndicator with full-screen branded loading overlay (rotating text) in workout-questionnaire.tsx.
+  - Item 5 (Polish P2 — DONE): `exercise_preferences` persisted to UserProfile/userStore; questionnaire pre-fills from saved value.
+
 ## Backlog (Prioritized)
 ### P0 — Critical
 - (none)
