@@ -2851,10 +2851,8 @@ class EliteCoachingEngine:
             if (secondary and secondary_injections_this_week < MAX_SECONDARY_INJECTIONS):
                 # Allow one extra slot beyond max_ex for secondary finisher
                 secondary_cap = max_ex + 1
-                logger.info(f"[secondary] session={session_type}, secondary={secondary}, cap={secondary_cap}, current_slots={len(slot_specs)}")
                 synergy_list = self.SECONDARY_SYNERGY.get(session_type, "any")  # default "any" for unlisted session types
                 already_covered = {s['pattern'] for s in slot_specs}
-                logger.info(f"[secondary] synergy_list={synergy_list}, already_covered={already_covered}")
                 _pattern_to_sf: dict = {}
                 for sf in secondary:
                     sf_key = sf.lower().replace(' ', '_')
@@ -2873,7 +2871,6 @@ class EliteCoachingEngine:
                         if sp in already_covered or len(slot_specs) >= secondary_cap:
                             continue
                         sec_opts = self.get_exercise_options(sp, equipment, style, limitations, level)
-                        logger.info(f"[secondary] trying sp={sp!r}, sec_opts={len(sec_opts)}, slot_count={len(slot_specs)}")
                         if not sec_opts:
                             continue
                         sec_base = goal_params.get('accessory', {})
