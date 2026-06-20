@@ -11,6 +11,7 @@ import {
   Modal,
   Alert,
   ScrollView,
+  FlatList,
   Platform,
   Animated,
   ActionSheetIOS,
@@ -954,6 +955,17 @@ export default function WorkoutDetail() {
   const [completeWeekPhoto, setCompleteWeekPhoto] = useState<string | null>(null);
   const [completeWeekNotes, setCompleteWeekNotes] = useState('');
   const [completingWeek, setCompletingWeek] = useState(false);
+  // ── Week summary / progress modal state ──────────────────────────────────
+  type CompletionDetail = { week: number; completed_at: string; notes?: string; has_photo: boolean; photo_thumbnail?: string };
+  const [weekSummaryData, setWeekSummaryData] = useState<(CompletionDetail & { photo_full?: string }) | null>(null);
+  const [showWeekSummaryModal, setShowWeekSummaryModal] = useState(false);
+  const [loadingWeekSummary, setLoadingWeekSummary] = useState(false);
+  const [progressDetails, setProgressDetails] = useState<CompletionDetail[]>([]);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(false);
+  const [viewerPhoto, setViewerPhoto] = useState<{ uri: string; week: number } | null>(null);
+  // ── Celebration animation ─────────────────────────────────────────────────
+  const celebrateAnim = useRef(new Animated.Value(0)).current;
 
   // ── Compute current week (auto from created_at, or from manual override) ──
   const currentWeek = useMemo(() => {
@@ -1003,6 +1015,13 @@ export default function WorkoutDetail() {
       setCompleteWeekPhoto(null);
       setCompleteWeekNotes('');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Celebration bounce
+      celebrateAnim.setValue(0);
+      Animated.sequence([
+        Animated.spring(celebrateAnim, { toValue: 1, useNativeDriver: true, tension: 120, friction: 5 }),
+        Animated.delay(1200),
+        Animated.timing(celebrateAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
     } catch {
       Alert.alert('Error', 'Could not mark week as complete');
     } finally {
@@ -1012,11 +1031,54 @@ export default function WorkoutDetail() {
 
   const handleUndoWeekCompletion = async () => {
     if (!workout || !userId) return;
+    Alert.alert('Undo Completion', `Remove the completion record for Week ${currentWeek}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Undo', style: 'destructive', onPress: async () => {
+          try {
+            await api.delete(`/workout/${workout.id}/complete-week/${currentWeek}?user_id=${userId}`);
+            setWeekCompletions(prev => { const s = new Set(prev); s.delete(currentWeek); return s; });
+            setShowWeekSummaryModal(false);
+          } catch {
+            Alert.alert('Error', 'Could not undo completion');
+          }
+        }
+      },
+    ]);
+  };
+
+  const openWeekSummary = async (week: number) => {
+    if (!workout || !userId) return;
+    setLoadingWeekSummary(true);
+    setShowWeekModal(false);
     try {
-      await api.delete(`/workout/${workout.id}/complete-week/${currentWeek}?user_id=${userId}`);
-      setWeekCompletions(prev => { const s = new Set(prev); s.delete(currentWeek); return s; });
-    } catch {
-      Alert.alert('Error', 'Could not undo completion');
+      // Get full details including photo
+      const detailRes = await api.get(`/workout/${workout.id}/completion-details?user_id=${userId}`);
+      const entry = (detailRes.data.completions || []).find((c: any) => c.week === week);
+      if (!entry) { setLoadingWeekSummary(false); return; }
+
+      let photoFull: string | undefined;
+      if (entry.has_photo) {
+        try {
+          const photoRes = await api.get(`/workout/${workout.id}/week-photo/${week}?user_id=${userId}`);
+          photoFull = photoRes.data.photo_base64;
+        } catch { /* no photo */ }
+      }
+      setWeekSummaryData({ ...entry, photo_full: photoFull });
+      setShowWeekSummaryModal(true);
+    } catch { /* silent */ } finally {
+      setLoadingWeekSummary(false);
+    }
+  };
+
+  const loadProgressDetails = async () => {
+    if (!workout || !userId) return;
+    setLoadingProgress(true);
+    try {
+      const res = await api.get(`/workout/${workout.id}/completion-details?user_id=${userId}`);
+      setProgressDetails(res.data.completions || []);
+      setShowProgressModal(true);
+    } catch { /* silent */ } finally {
+      setLoadingProgress(false);
     }
   };
 
@@ -1326,27 +1388,54 @@ export default function WorkoutDetail() {
           );
         })()}
 
-        {/* ── Complete Week button ────────────────────────────────────────── */}
+        {/* ── Complete Week / Progress buttons ─────────────────────────── */}
         {workout.weekly_progression && workout.weekly_progression.length > 0 && (
-          weekCompletions.has(currentWeek) ? (
-            <TouchableOpacity
-              style={styles.weekCompletedBtn}
-              onPress={handleUndoWeekCompletion}
-              activeOpacity={0.7}
+          <View style={{ marginHorizontal: 16, marginBottom: 12, gap: 8 }}>
+            {/* Celebration overlay */}
+            <Animated.View
+              pointerEvents="none"
+              style={{
+                position: 'absolute', top: -20, left: 0, right: 0, alignItems: 'center', zIndex: 10,
+                opacity: celebrateAnim,
+                transform: [{ scale: celebrateAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.1] }) }],
+              }}
             >
-              <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
-              <Text style={styles.weekCompletedBtnText}>Week {currentWeek} Complete  ·  Undo</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.completeWeekBtn}
-              onPress={() => setShowCompleteWeekModal(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="checkmark-circle-outline" size={18} color={colors.background} />
-              <Text style={styles.completeWeekBtnText}>Complete Week {currentWeek}</Text>
-            </TouchableOpacity>
-          )
+              <Text style={{ fontSize: 32 }}>🎉</Text>
+            </Animated.View>
+
+            {weekCompletions.has(currentWeek) ? (
+              <TouchableOpacity
+                style={styles.weekCompletedBtn}
+                onPress={() => openWeekSummary(currentWeek)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
+                <Text style={styles.weekCompletedBtnText}>Week {currentWeek} Complete  ·  View Summary</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.completeWeekBtn}
+                onPress={() => setShowCompleteWeekModal(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="checkmark-circle-outline" size={18} color={colors.background} />
+                <Text style={styles.completeWeekBtnText}>Complete Week {currentWeek}</Text>
+              </TouchableOpacity>
+            )}
+
+            {weekCompletions.size > 0 && (
+              <TouchableOpacity
+                style={styles.myProgressBtn}
+                onPress={loadProgressDetails}
+                disabled={loadingProgress}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="camera-outline" size={16} color={colors.primary} />
+                <Text style={styles.myProgressBtnText}>My Progress  ({weekCompletions.size} week{weekCompletions.size > 1 ? 's' : ''})</Text>
+                {loadingProgress && <ActivityIndicator size="small" color={colors.primary} />}
+              </TouchableOpacity>
+            )}
+          </View>
         )}
 
         {/* Premium Coaching Panel */}        {(workout.split_rationale || workout.progression_method || workout.weekly_structure) && (
@@ -1750,7 +1839,7 @@ export default function WorkoutDetail() {
                     )}
                     <TouchableOpacity
                       style={[styles.weekPickerOption, currentWeek === w.week && styles.weekPickerOptionActive]}
-                      onPress={() => updateWeekOverride(w.week)}
+                      onPress={() => weekCompletions.has(w.week) ? openWeekSummary(w.week) : updateWeekOverride(w.week)}
                     >
                       <View style={{ flex: 1, marginRight: 8 }}>
                         <Text style={[styles.weekPickerOptionWeek, currentWeek === w.week && styles.weekPickerOptionWeekActive]}>
@@ -1758,12 +1847,14 @@ export default function WorkoutDetail() {
                         </Text>
                         <Text style={styles.weekPickerOptionLabel} numberOfLines={1}>{w.label}</Text>
                       </View>
-                      {weekCompletions.has(w.week) && (
-                        <Ionicons name="checkmark-circle" size={18} color="#22c55e" style={{ marginRight: 4 }} />
-                      )}
-                      {currentWeek === w.week && (
-                        <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-                      )}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        {weekCompletions.has(w.week) && (
+                          <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
+                        )}
+                        {currentWeek === w.week && (
+                          <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                        )}
+                      </View>
                     </TouchableOpacity>
                   </React.Fragment>
                 );
@@ -1831,8 +1922,160 @@ export default function WorkoutDetail() {
         </View>
       </Modal>
 
-      {/* Replace Exercise Modal */}
-      <Modal
+      {/* ── Week Summary Modal ─────────────────────────────────────────── */}
+      <Modal visible={showWeekSummaryModal} transparent animationType="slide" onRequestClose={() => setShowWeekSummaryModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 360, paddingBottom: 24 }]}>
+            {loadingWeekSummary ? (
+              <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: 40 }} />
+            ) : weekSummaryData ? (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
+                  <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Week {weekSummaryData.week}</Text>
+                </View>
+                {(() => {
+                  const wp = workout?.weekly_progression?.find(w => w.week === weekSummaryData.week);
+                  return wp ? (
+                    <Text style={[styles.coachingValue, { textAlign: 'center', marginBottom: 4, fontSize: 13 }]}>
+                      {wp.block}  ·  {wp.label}
+                    </Text>
+                  ) : null;
+                })()}
+                <Text style={[styles.coachingValue, { textAlign: 'center', color: '#22c55e', marginBottom: 14, fontSize: 12 }]}>
+                  Completed {new Date(weekSummaryData.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </Text>
+
+                {/* Photo */}
+                {weekSummaryData.photo_full ? (
+                  <TouchableOpacity onPress={() => setViewerPhoto({ uri: weekSummaryData.photo_full!, week: weekSummaryData.week })} style={{ marginBottom: 12 }}>
+                    <Image source={{ uri: weekSummaryData.photo_full }} style={{ width: '100%', height: 200, borderRadius: 12, resizeMode: 'cover' }} />
+                    <Text style={{ color: colors.textMuted, fontSize: 11, textAlign: 'center', marginTop: 4 }}>Tap to view full-screen</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.photoPickerBtn} onPress={async () => {
+                    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                    if (status !== 'granted') return;
+                    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6, base64: true });
+                    if (!result.canceled && result.assets[0] && result.assets[0].base64) {
+                      const b64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
+                      await api.post(`/workout/${workout?.id}/complete-week`, { user_id: userId, week: weekSummaryData.week, photo_base64: b64, notes: weekSummaryData.notes });
+                      setWeekSummaryData(prev => prev ? { ...prev, photo_full: b64 } : prev);
+                    }
+                  }}>
+                    <Ionicons name="camera-outline" size={20} color={colors.primary} />
+                    <Text style={styles.photoPickerBtnText}>Add Progress Photo</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Notes */}
+                {weekSummaryData.notes && (
+                  <View style={{ backgroundColor: colors.surface, borderRadius: 8, padding: 10, marginBottom: 14 }}>
+                    <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 2 }}>Notes</Text>
+                    <Text style={{ color: colors.text, fontSize: 13 }}>{weekSummaryData.notes}</Text>
+                  </View>
+                )}
+
+                <TouchableOpacity style={styles.completeWeekBtn} onPress={() => { setShowWeekSummaryModal(false); updateWeekOverride(weekSummaryData.week); }}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.background} />
+                  <Text style={styles.completeWeekBtnText}>{"View This Week's Program"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.cancelBtn, { marginTop: 8 }]} onPress={() => {
+                  setShowWeekSummaryModal(false);
+                  // undo using currentWeek-aware handler
+                  const wk = weekSummaryData.week;
+                  Alert.alert('Undo Completion', `Remove the completion record for Week ${wk}?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Undo', style: 'destructive', onPress: async () => {
+                        await api.delete(`/workout/${workout?.id}/complete-week/${wk}?user_id=${userId}`);
+                        setWeekCompletions(prev => { const s = new Set(prev); s.delete(wk); return s; });
+                      }
+                    },
+                  ]);
+                }}>
+                  <Text style={[styles.cancelBtnText, { color: colors.danger || '#ef4444' }]}>Undo Completion</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+            <TouchableOpacity style={[styles.cancelBtn, { marginTop: 4 }]} onPress={() => setShowWeekSummaryModal(false)}>
+              <Text style={styles.cancelBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── My Progress Timeline Modal ─────────────────────────────────── */}
+      <Modal visible={showProgressModal} transparent animationType="slide" onRequestClose={() => setShowProgressModal(false)}>
+        <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
+          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text style={[styles.modalTitle, { marginBottom: 0 }]}>My Progress</Text>
+              <TouchableOpacity onPress={() => setShowProgressModal(false)}>
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            {progressDetails.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <Ionicons name="camera-outline" size={40} color={colors.textMuted} />
+                <Text style={{ color: colors.textMuted, marginTop: 12, textAlign: 'center', fontSize: 14 }}>
+                  Complete your first week to start{'\n'}tracking your progress!
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={progressDetails}
+                keyExtractor={item => String(item.week)}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item }) => {
+                  const wp = workout?.weekly_progression?.find(w => w.week === item.week);
+                  return (
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                      onPress={() => { setShowProgressModal(false); openWeekSummary(item.week); }}
+                    >
+                      {item.photo_thumbnail ? (
+                        <Image source={{ uri: item.photo_thumbnail }} style={{ width: 56, height: 56, borderRadius: 8, resizeMode: 'cover' }} />
+                      ) : (
+                        <View style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                          <Ionicons name="camera-outline" size={22} color={colors.textMuted} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: colors.text, fontWeight: '700', fontSize: 15 }}>Week {item.week}</Text>
+                        {wp && <Text style={{ color: colors.textMuted, fontSize: 12 }}>{wp.block}  ·  {wp.label}</Text>}
+                        <Text style={{ color: '#22c55e', fontSize: 11, marginTop: 2 }}>
+                          {new Date(item.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </Text>
+                        {item.notes ? <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }} numberOfLines={1}>{item.notes}</Text> : null}
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Full-Screen Photo Viewer ────────────────────────────────────── */}
+      <Modal visible={!!viewerPhoto} transparent animationType="fade" onRequestClose={() => setViewerPhoto(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' }}>
+          <TouchableOpacity style={{ position: 'absolute', top: 50, right: 20, zIndex: 10 }} onPress={() => setViewerPhoto(null)}>
+            <Ionicons name="close-circle" size={32} color="white" />
+          </TouchableOpacity>
+          {viewerPhoto && (
+            <>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, position: 'absolute', top: 55, alignSelf: 'center' }}>
+                Week {viewerPhoto.week}
+              </Text>
+              <Image source={{ uri: viewerPhoto.uri }} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} />
+            </>
+          )}
+        </View>
+      </Modal>
+
+      {/* Replace Exercise Modal */}      <Modal
         visible={showReplaceModal}
         transparent
         animationType="slide"
@@ -2311,6 +2554,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingTop: 12,
     paddingBottom: 4,
+  },
+  myProgressBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 10,
+  },
+  myProgressBtnText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   // ── Complete Week button ────────────────────────────────────────────────────
   completeWeekBtn: {

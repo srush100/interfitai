@@ -128,15 +128,7 @@ export default function WorkoutQuestionnaire() {
     preferred_split: 'ai_choose',
     injuries: '',
     preferred_start_day: 'Monday',
-    exercise_preferences: '',
   });
-
-  // Pre-fill exercise_preferences from profile on mount
-  useEffect(() => {
-    if (profile?.exercise_preferences) {
-      setFormData(prev => ({ ...prev, exercise_preferences: profile.exercise_preferences! }));
-    }
-  }, [profile?.exercise_preferences]);
 
   const [loadingMessage, setLoadingMessage] = useState('');
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -198,12 +190,6 @@ export default function WorkoutQuestionnaire() {
     }
 
     setLoading(true);
-    // Persist exercise_preferences to profile
-    if (formData.exercise_preferences.trim() && profile?.id) {
-      try {
-        await api.patch(`/profile/${profile.id}`, { exercise_preferences: formData.exercise_preferences.trim() });
-      } catch {}
-    }
     try {
       const response = await api.post('/workouts/generate', {
         user_id: profile.id,
@@ -220,7 +206,6 @@ export default function WorkoutQuestionnaire() {
         fitness_level: formData.fitness_level,
         preferred_split: formData.preferred_split,
         preferred_start_day: formData.preferred_start_day,
-        exercise_preferences: formData.exercise_preferences.trim() || null,
       });
 
       router.replace(`/workout-detail?id=${response.data.id}`);
@@ -549,23 +534,6 @@ export default function WorkoutQuestionnaire() {
         placeholderTextColor={colors.textMuted}
         value={formData.injuries}
         onChangeText={(text) => setFormData({ ...formData, injuries: text })}
-        multiline
-      />
-
-      <Text style={[styles.stepTitle, { marginTop: 20, fontSize: 16 }]}>Exercise Preferences</Text>
-      <Text style={styles.stepSubtitle}>Exercises you love or want to avoid (optional)</Text>
-      {!!profile?.exercise_preferences && formData.exercise_preferences === profile.exercise_preferences && (
-        <View style={styles.prefSavedBadge}>
-          <Ionicons name="bookmark" size={12} color={colors.primary} />
-          <Text style={styles.prefSavedText}>Saved from profile — tap to edit</Text>
-        </View>
-      )}
-      <TextInput
-        style={styles.textInput}
-        placeholder="e.g., Love RDLs and Pull-ups. Hate Burpees."
-        placeholderTextColor={colors.textMuted}
-        value={formData.exercise_preferences}
-        onChangeText={(text) => setFormData({ ...formData, exercise_preferences: text })}
         multiline
       />
 
@@ -1193,17 +1161,6 @@ const styles = StyleSheet.create({
   },
   startDayTextActive: {
     color: '#FFD700',
-  },
-  // ── Exercise preferences badge ─────────────────────────────────────
-  prefSavedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 6,
-  },
-  prefSavedText: {
-    color: '#FFD700',
-    fontSize: 12,
   },
   // ── Generation loading overlay ───────────────────────────────────────
   loadingOverlay: {

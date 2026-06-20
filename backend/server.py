@@ -1031,7 +1031,6 @@ class WorkoutGenerateRequest(BaseModel):
     duration_minutes: int = 60
     fitness_level: str = "intermediate"
     preferred_split: str = "ai_choose"
-    exercise_preferences: Optional[str] = None  # free text: favourite/disliked exercises
     preferred_start_day: str = "Monday"          # Day of week to anchor the schedule
 
     # Accept legacy / alternate field names from frontend
@@ -3894,6 +3893,21 @@ async def update_workout_week_override(workout_id: str, request: WeekOverrideReq
 
 # ── Week Completion ───────────────────────────────────────────────────────────
 
+import base64 as _b64, io as _io
+from PIL import Image as _PILImage
+
+def _make_thumbnail(photo_b64: str, max_px: int = 300) -> Optional[str]:
+    """Return a compressed JPEG thumbnail (~50 KB) from a full-resolution base64 photo."""
+    try:
+        raw = photo_b64.split(",", 1)[-1]           # strip data-URL prefix if present
+        img = _PILImage.open(_io.BytesIO(_b64.b64decode(raw)))
+        img.thumbnail((max_px, max_px), _PILImage.LANCZOS)
+        buf = _io.BytesIO()
+        img.convert("RGB").save(buf, format="JPEG", quality=55, optimize=True)
+        return "data:image/jpeg;base64," + _b64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return None
+
 class CompleteWeekRequest(BaseModel):
     user_id: str
     week: int
@@ -3907,17 +3921,19 @@ class WeekCompletion(BaseModel):
     week: int
     completed_at: datetime = Field(default_factory=datetime.utcnow)
     photo_base64: Optional[str] = None
+    photo_thumbnail: Optional[str] = None   # ~50 KB compressed thumbnail
     notes: Optional[str] = None
 
 @api_router.post("/workout/{workout_id}/complete-week")
 async def complete_week(workout_id: str, request: CompleteWeekRequest):
     """Mark a specific week of a workout as completed."""
-    # Upsert — idempotent (re-completing updates timestamp/photo)
+    thumbnail = _make_thumbnail(request.photo_base64) if request.photo_base64 else None
     completion = WeekCompletion(
         workout_id=workout_id,
         user_id=request.user_id,
         week=request.week,
         photo_base64=request.photo_base64,
+        photo_thumbnail=thumbnail,
         notes=request.notes,
     )
     await db.week_completions.replace_one(
@@ -3925,7 +3941,7 @@ async def complete_week(workout_id: str, request: CompleteWeekRequest):
         completion.model_dump(),
         upsert=True,
     )
-    return {"success": True, "week": request.week}
+    return {"success": True, "week": request.week, "has_photo": bool(request.photo_base64)}
 
 @api_router.delete("/workout/{workout_id}/complete-week/{week}")
 async def undo_week_completion(workout_id: str, week: int, user_id: str):
@@ -3953,6 +3969,26 @@ async def get_week_photo(workout_id: str, week: int, user_id: str):
     if not doc or not doc.get("photo_base64"):
         raise HTTPException(status_code=404, detail="No photo for this week")
     return {"photo_base64": doc["photo_base64"]}
+
+@api_router.get("/workout/{workout_id}/completion-details")
+async def get_completion_details(workout_id: str, user_id: str):
+    """Return all completions with thumbnail photos for the progress timeline."""
+    docs = await db.week_completions.find(
+        {"workout_id": workout_id, "user_id": user_id},
+        {"_id": 0, "week": 1, "completed_at": 1, "notes": 1, "photo_thumbnail": 1, "photo_base64": 0}
+    ).sort("week", -1).to_list(20)
+    return {
+        "completions": [
+            {
+                "week":            d["week"],
+                "completed_at":    d.get("completed_at"),
+                "notes":           d.get("notes"),
+                "has_photo":       bool(d.get("photo_thumbnail")),
+                "photo_thumbnail": d.get("photo_thumbnail"),
+            }
+            for d in docs
+        ]
+    }
 
 class WorkoutPerformanceRequest(BaseModel):
     performance: dict  # { "dayIndex-exerciseIndex-setIndex": { "weight": "50", "reps": "10", "completed": true } }
