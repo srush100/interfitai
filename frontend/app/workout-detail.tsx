@@ -67,6 +67,7 @@ interface WorkoutDay {
 
 interface WeekProgression {
   week: number;
+  block?: string;
   label: string;
   instruction: string;
 }
@@ -953,7 +954,7 @@ export default function WorkoutDetail() {
     if (workout.current_week_override != null) return workout.current_week_override;
     const createdAt = new Date(workout.created_at);
     const daysDiff = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
-    return Math.min(12, Math.floor(daysDiff / 7) + 1);
+    return Math.min(workout.weekly_progression?.length || 4, Math.floor(daysDiff / 7) + 1);
   }, [workout]);
   
   const refreshGifs = async () => {
@@ -1243,7 +1244,7 @@ export default function WorkoutDetail() {
               <View style={styles.weekBannerTop}>
                 <View style={styles.weekBannerBadge}>
                   <Ionicons name="calendar-outline" size={13} color={colors.primary} />
-                  <Text style={styles.weekBannerBadgeText}>Week {currentWeek} of 12</Text>
+                  <Text style={styles.weekBannerBadgeText}>Week {currentWeek} of {workout.weekly_progression?.length || 4}</Text>
                 </View>
                 <Text style={styles.weekBannerLabel}>{weekData?.label}</Text>
                 <Ionicons name="create-outline" size={15} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
@@ -1251,11 +1252,11 @@ export default function WorkoutDetail() {
               <Text style={styles.weekBannerInstruction}>
                 {weekData?.instruction}
               </Text>
-              {currentWeek === 12 && (
+              {currentWeek === (workout.weekly_progression?.length || 12) && (
                 <View style={styles.weekCompleteRow}>
                   <Ionicons name="trophy-outline" size={13} color={colors.warning} />
                   <Text style={styles.weekCompleteText}>
-                    {"You've completed your 12-week program — time for a fresh one to keep progressing!"}
+                    {`You've completed your ${workout.weekly_progression?.length || 12}-week program — time for a fresh one to keep progressing!`}
                   </Text>
                 </View>
               )}
@@ -1649,28 +1650,38 @@ export default function WorkoutDetail() {
           activeOpacity={1}
           onPress={() => setShowWeekModal(false)}
         >
-          <View style={[styles.modalContent, { maxWidth: 320 }]}>
+          <View style={[styles.modalContent, { maxWidth: 340 }]}>
             <Text style={styles.modalTitle}>Adjust Current Week</Text>
             <Text style={[styles.coachingValue, { textAlign: 'center', marginBottom: 20, fontSize: 13 }]}>
               If you fell behind or took a rest week, set your actual week here.
             </Text>
-            {workout?.weekly_progression?.map((w) => (
-              <TouchableOpacity
-                key={w.week}
-                style={[styles.weekPickerOption, currentWeek === w.week && styles.weekPickerOptionActive]}
-                onPress={() => updateWeekOverride(w.week)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.weekPickerOptionWeek, currentWeek === w.week && styles.weekPickerOptionWeekActive]}>
-                    Week {w.week}
-                  </Text>
-                  <Text style={styles.weekPickerOptionLabel}>{w.label}</Text>
-                </View>
-                {currentWeek === w.week && (
-                  <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-                )}
-              </TouchableOpacity>
-            ))}
+            <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+              {workout?.weekly_progression?.map((w, idx) => {
+                const prevBlock = idx > 0 ? workout.weekly_progression![idx - 1].block : null;
+                const showBlockHeader = w.block && w.block !== prevBlock;
+                return (
+                  <React.Fragment key={w.week}>
+                    {showBlockHeader && (
+                      <Text style={styles.weekPickerBlockHeader}>{w.block}</Text>
+                    )}
+                    <TouchableOpacity
+                      style={[styles.weekPickerOption, currentWeek === w.week && styles.weekPickerOptionActive]}
+                      onPress={() => updateWeekOverride(w.week)}
+                    >
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={[styles.weekPickerOptionWeek, currentWeek === w.week && styles.weekPickerOptionWeekActive]}>
+                          Week {w.week}
+                        </Text>
+                        <Text style={styles.weekPickerOptionLabel} numberOfLines={1}>{w.label}</Text>
+                      </View>
+                      {currentWeek === w.week && (
+                        <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  </React.Fragment>
+                );
+              })}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -2145,6 +2156,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  weekPickerBlockHeader: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    paddingHorizontal: 4,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   // Substitution hint
   substitutionRow: {

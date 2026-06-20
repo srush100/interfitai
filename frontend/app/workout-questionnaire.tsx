@@ -8,6 +8,8 @@ import {
   TextInput,
   Modal,
   Animated,
+  Easing,
+  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -89,6 +91,14 @@ const WORKOUT_SPLITS = [
 
 const START_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+const LOADING_MESSAGES = [
+  'Designing your program...',
+  'Selecting optimal exercises...',
+  'Building your progression plan...',
+  'Calibrating sets & reps...',
+  'Finalizing your workout...',
+];
+
 export default function WorkoutQuestionnaire() {
   const router = useRouter();
   const { profile } = useUserStore();
@@ -128,21 +138,24 @@ export default function WorkoutQuestionnaire() {
     }
   }, [profile?.exercise_preferences]);
 
-  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
-  const glowAnim = useRef(new Animated.Value(0)).current;
-  const LOADING_MSGS = ['Building your program…', 'Selecting exercises…', 'Optimising your schedule…', 'Almost there…'];
+  const [loadingMessage, setLoadingMessage] = useState('');
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (!loading) return;
-    setLoadingMsgIdx(0);
-    const msgTimer = setInterval(() => setLoadingMsgIdx(i => (i + 1) % LOADING_MSGS.length), 3000);
+    if (!loading) { pulseAnim.stopAnimation(); return; }
+    setLoadingMessage(LOADING_MESSAGES[0]);
+    let idx = 0;
+    const msgTimer = setInterval(() => {
+      idx = (idx + 1) % LOADING_MESSAGES.length;
+      setLoadingMessage(LOADING_MESSAGES[idx]);
+    }, 3000);
     Animated.loop(
       Animated.sequence([
-        Animated.timing(glowAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-        Animated.timing(glowAnim, { toValue: 0.3, duration: 1000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.0,  duration: 800, easing: Easing.in(Easing.ease),  useNativeDriver: true }),
       ])
     ).start();
-    return () => { clearInterval(msgTimer); glowAnim.stopAnimation(); };
+    return () => { clearInterval(msgTimer); pulseAnim.stopAnimation(); };
   }, [loading]);
 
   const toggleSelection = (field: 'focus_areas' | 'equipment', value: string) => {
@@ -658,11 +671,14 @@ export default function WorkoutQuestionnaire() {
       {/* ── Branded generation loading overlay ───────────────────── */}
       <Modal visible={loading} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.loadingOverlay}>
-          <Animated.View style={[styles.loadingLogo, { opacity: glowAnim }]}>
-            <Ionicons name="flash" size={64} color="#FFD700" />
-          </Animated.View>
+          <Animated.Image
+            source={require('../assets/logo-icon-yellow.png')}
+            style={[styles.loadingLogo, { transform: [{ scale: pulseAnim }] }]}
+            resizeMode="contain"
+          />
           <Text style={styles.loadingAppName}>InterFitAI</Text>
-          <Text style={styles.loadingMsg}>{LOADING_MSGS[loadingMsgIdx]}</Text>
+          <Text style={styles.loadingMsg}>{loadingMessage}</Text>
+          <ActivityIndicator size="small" color="rgba(255,255,255,0.4)" style={{ marginTop: 8 }} />
         </View>
       </Modal>
       {/* Header */}
@@ -1189,10 +1205,10 @@ const styles = StyleSheet.create({
     color: '#FFD700',
     fontSize: 12,
   },
-  // ── Generation loading overlay (Item 4) ───────────────────────────
+  // ── Generation loading overlay ───────────────────────────────────────
   loadingOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.93)',
+    backgroundColor: 'rgba(0,0,0,0.85)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 16,
@@ -1200,15 +1216,11 @@ const styles = StyleSheet.create({
   loadingLogo: {
     width: 100,
     height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(255,215,0,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   loadingAppName: {
     color: '#FFD700',
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 1,
   },
   loadingMsg: {
