@@ -928,7 +928,6 @@ class UserProfile(BaseModel):
     profile_image: Optional[str] = None  # Base64 encoded profile picture
     has_password: bool = False
     unit_preference: Literal["kg", "lbs"] = "kg"
-    exercise_preferences: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -961,7 +960,6 @@ class UserProfileUpdate(BaseModel):
     motivation_enabled: Optional[bool] = None
     profile_image: Optional[str] = None  # Base64 encoded profile picture
     unit_preference: Optional[Literal["kg", "lbs"]] = None
-    exercise_preferences: Optional[str] = None
 
 # Workout Models
 class Exercise(BaseModel):
@@ -3085,7 +3083,6 @@ class EliteCoachingEngine:
             "limitations":       limitations,
             "focus":             focus,
             "secondary":         secondary,
-            "exercise_preferences": getattr(req, 'exercise_preferences', None),
         }
 
 _coaching_engine = EliteCoachingEngine()
@@ -3545,13 +3542,6 @@ async def generate_workout(request: WorkoutGenerateRequest):
         f"Equipment: {', '.join(blueprint['equipment'])}",
         f"Limitations: {', '.join(blueprint['limitations']) if blueprint['limitations'] else 'None'}",
     ]
-    if blueprint.get('exercise_preferences'):
-        prompt_lines.append(
-            f"User exercise preferences: \"{blueprint['exercise_preferences']}\". "
-            "When an option matches a liked exercise, prefer it. "
-            "When an option matches a disliked exercise, choose a different option from the list. "
-            "Never pick an exercise outside the provided Options."
-        )
     if blueprint.get('secondary'):
         prompt_lines.append(
             f"Primary focus: {', '.join(blueprint['focus'])} | "
@@ -3975,7 +3965,7 @@ async def get_completion_details(workout_id: str, user_id: str):
     """Return all completions with thumbnail photos for the progress timeline."""
     docs = await db.week_completions.find(
         {"workout_id": workout_id, "user_id": user_id},
-        {"_id": 0, "week": 1, "completed_at": 1, "notes": 1, "photo_thumbnail": 1, "photo_base64": 0}
+        {"_id": 0, "week": 1, "completed_at": 1, "notes": 1, "photo_thumbnail": 1}
     ).sort("week", -1).to_list(20)
     return {
         "completions": [

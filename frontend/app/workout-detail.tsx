@@ -978,13 +978,13 @@ export default function WorkoutDetail() {
   
   // ── Week completion helpers ───────────────────────────────────────────────
   const loadWeekCompletions = useCallback(async (workoutId: string) => {
-    if (!userId) return;
+    if (!profile?.id) return;
     try {
-      const res = await api.get(`/workout/${workoutId}/completions?user_id=${userId}`);
+      const res = await api.get(`/workout/${workoutId}/completions?user_id=${profile.id}`);
       const weeks = new Set<number>((res.data.completions || []).map((c: any) => c.week as number));
       setWeekCompletions(weeks);
     } catch { /* silent */ }
-  }, [userId]);
+  }, [profile?.id]);
 
   const pickCompleteWeekPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1000,12 +1000,12 @@ export default function WorkoutDetail() {
   };
 
   const handleCompleteWeek = async () => {
-    if (!workout || !userId) return;
+    if (!workout || !profile?.id) return;
     setCompletingWeek(true);
     try {
       const base64 = completeWeekPhoto?.startsWith('data:') ? completeWeekPhoto : undefined;
       await api.post(`/workout/${workout.id}/complete-week`, {
-        user_id: userId,
+        user_id: profile?.id,
         week: currentWeek,
         photo_base64: base64 || null,
         notes: completeWeekNotes || null,
@@ -1030,12 +1030,12 @@ export default function WorkoutDetail() {
   };
 
   const handleUndoWeekCompletion = async () => {
-    if (!workout || !userId) return;
+    if (!workout || !profile?.id) return;
     Alert.alert('Undo Completion', `Remove the completion record for Week ${currentWeek}?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Undo', style: 'destructive', onPress: async () => {
           try {
-            await api.delete(`/workout/${workout.id}/complete-week/${currentWeek}?user_id=${userId}`);
+            await api.delete(`/workout/${workout.id}/complete-week/${currentWeek}?user_id=${profile?.id}`);
             setWeekCompletions(prev => { const s = new Set(prev); s.delete(currentWeek); return s; });
             setShowWeekSummaryModal(false);
           } catch {
@@ -1047,19 +1047,19 @@ export default function WorkoutDetail() {
   };
 
   const openWeekSummary = async (week: number) => {
-    if (!workout || !userId) return;
+    if (!workout || !profile?.id) return;
     setLoadingWeekSummary(true);
     setShowWeekModal(false);
     try {
       // Get full details including photo
-      const detailRes = await api.get(`/workout/${workout.id}/completion-details?user_id=${userId}`);
+      const detailRes = await api.get(`/workout/${workout.id}/completion-details?user_id=${profile?.id}`);
       const entry = (detailRes.data.completions || []).find((c: any) => c.week === week);
       if (!entry) { setLoadingWeekSummary(false); return; }
 
       let photoFull: string | undefined;
       if (entry.has_photo) {
         try {
-          const photoRes = await api.get(`/workout/${workout.id}/week-photo/${week}?user_id=${userId}`);
+          const photoRes = await api.get(`/workout/${workout.id}/week-photo/${week}?user_id=${profile?.id}`);
           photoFull = photoRes.data.photo_base64;
         } catch { /* no photo */ }
       }
@@ -1071,10 +1071,10 @@ export default function WorkoutDetail() {
   };
 
   const loadProgressDetails = async () => {
-    if (!workout || !userId) return;
+    if (!workout || !profile?.id) return;
     setLoadingProgress(true);
     try {
-      const res = await api.get(`/workout/${workout.id}/completion-details?user_id=${userId}`);
+      const res = await api.get(`/workout/${workout.id}/completion-details?user_id=${profile?.id}`);
       setProgressDetails(res.data.completions || []);
       setShowProgressModal(true);
     } catch { /* silent */ } finally {
@@ -1959,7 +1959,7 @@ export default function WorkoutDetail() {
                     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6, base64: true });
                     if (!result.canceled && result.assets[0] && result.assets[0].base64) {
                       const b64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
-                      await api.post(`/workout/${workout?.id}/complete-week`, { user_id: userId, week: weekSummaryData.week, photo_base64: b64, notes: weekSummaryData.notes });
+                      await api.post(`/workout/${workout?.id}/complete-week`, { user_id: profile?.id, week: weekSummaryData.week, photo_base64: b64, notes: weekSummaryData.notes });
                       setWeekSummaryData(prev => prev ? { ...prev, photo_full: b64 } : prev);
                     }
                   }}>
@@ -1987,7 +1987,7 @@ export default function WorkoutDetail() {
                   Alert.alert('Undo Completion', `Remove the completion record for Week ${wk}?`, [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Undo', style: 'destructive', onPress: async () => {
-                        await api.delete(`/workout/${workout?.id}/complete-week/${wk}?user_id=${userId}`);
+                        await api.delete(`/workout/${workout?.id}/complete-week/${wk}?user_id=${profile?.id}`);
                         setWeekCompletions(prev => { const s = new Set(prev); s.delete(wk); return s; });
                       }
                     },
