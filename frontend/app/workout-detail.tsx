@@ -244,6 +244,7 @@ export default function WorkoutDetail() {
       const response = await api.get(`/workout/${id}`);
       setWorkout(response.data);
       setNewName(response.data.name);
+      loadWeekCompletions(id as string);
       
       // Load saved performance data
       try {
@@ -947,6 +948,12 @@ export default function WorkoutDetail() {
   const [refreshingGifs, setRefreshingGifs] = useState(false);
   // Week progression modal
   const [showWeekModal, setShowWeekModal] = useState(false);
+  // ── Week completion state ─────────────────────────────────────────────────
+  const [weekCompletions, setWeekCompletions] = useState<Set<number>>(new Set());
+  const [showCompleteWeekModal, setShowCompleteWeekModal] = useState(false);
+  const [completeWeekPhoto, setCompleteWeekPhoto] = useState<string | null>(null);
+  const [completeWeekNotes, setCompleteWeekNotes] = useState('');
+  const [completingWeek, setCompletingWeek] = useState(false);
 
   // ── Compute current week (auto from created_at, or from manual override) ──
   const currentWeek = useMemo(() => {
@@ -957,8 +964,63 @@ export default function WorkoutDetail() {
     return Math.min(workout.weekly_progression?.length || 4, Math.floor(daysDiff / 7) + 1);
   }, [workout]);
   
-  const refreshGifs = async () => {
-    if (!workout) return;
+  // ── Week completion helpers ───────────────────────────────────────────────
+  const loadWeekCompletions = useCallback(async (workoutId: string) => {
+    if (!userId) return;
+    try {
+      const res = await api.get(`/workout/${workoutId}/completions?user_id=${userId}`);
+      const weeks = new Set<number>((res.data.completions || []).map((c: any) => c.week as number));
+      setWeekCompletions(weeks);
+    } catch { /* silent */ }
+  }, [userId]);
+
+  const pickCompleteWeekPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.6,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setCompleteWeekPhoto(result.assets[0].base64 ? `data:image/jpeg;base64,${result.assets[0].base64}` : result.assets[0].uri);
+    }
+  };
+
+  const handleCompleteWeek = async () => {
+    if (!workout || !userId) return;
+    setCompletingWeek(true);
+    try {
+      const base64 = completeWeekPhoto?.startsWith('data:') ? completeWeekPhoto : undefined;
+      await api.post(`/workout/${workout.id}/complete-week`, {
+        user_id: userId,
+        week: currentWeek,
+        photo_base64: base64 || null,
+        notes: completeWeekNotes || null,
+      });
+      setWeekCompletions(prev => new Set(prev).add(currentWeek));
+      setShowCompleteWeekModal(false);
+      setCompleteWeekPhoto(null);
+      setCompleteWeekNotes('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert('Error', 'Could not mark week as complete');
+    } finally {
+      setCompletingWeek(false);
+    }
+  };
+
+  const handleUndoWeekCompletion = async () => {
+    if (!workout || !userId) return;
+    try {
+      await api.delete(`/workout/${workout.id}/complete-week/${currentWeek}?user_id=${userId}`);
+      setWeekCompletions(prev => { const s = new Set(prev); s.delete(currentWeek); return s; });
+    } catch {
+      Alert.alert('Error', 'Could not undo completion');
+    }
+  };
+
+  const refreshGifs = async () => {    if (!workout) return;
     setRefreshingGifs(true);
     try {
       await api.post(`/workout/${workout.id}/refresh-gifs`);
@@ -1264,8 +1326,30 @@ export default function WorkoutDetail() {
           );
         })()}
 
-        {/* Premium Coaching Panel */}
-        {(workout.split_rationale || workout.progression_method || workout.weekly_structure) && (
+        {/* ── Complete Week button ────────────────────────────────────────── */}
+        {workout.weekly_progression && workout.weekly_progression.length > 0 && (
+          weekCompletions.has(currentWeek) ? (
+            <TouchableOpacity
+              style={styles.weekCompletedBtn}
+              onPress={handleUndoWeekCompletion}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
+              <Text style={styles.weekCompletedBtnText}>Week {currentWeek} Complete  ·  Undo</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.completeWeekBtn}
+              onPress={() => setShowCompleteWeekModal(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-circle-outline" size={18} color={colors.background} />
+              <Text style={styles.completeWeekBtnText}>Complete Week {currentWeek}</Text>
+            </TouchableOpacity>
+          )
+        )}
+
+        {/* Premium Coaching Panel */}        {(workout.split_rationale || workout.progression_method || workout.weekly_structure) && (
           <View style={styles.coachingPanel}>
             <View style={styles.coachingPanelHeader}>
               <Ionicons name="sparkles" size={18} color={colors.primary} />
@@ -1674,6 +1758,9 @@ export default function WorkoutDetail() {
                         </Text>
                         <Text style={styles.weekPickerOptionLabel} numberOfLines={1}>{w.label}</Text>
                       </View>
+                      {weekCompletions.has(w.week) && (
+                        <Ionicons name="checkmark-circle" size={18} color="#22c55e" style={{ marginRight: 4 }} />
+                      )}
                       {currentWeek === w.week && (
                         <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
                       )}
@@ -1684,6 +1771,64 @@ export default function WorkoutDetail() {
             </ScrollView>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ── Complete Week Modal ────────────────────────────────────────── */}
+      <Modal
+        visible={showCompleteWeekModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCompleteWeekModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 340, paddingBottom: 28 }]}>
+            <Text style={styles.modalTitle}>Complete Week {currentWeek}?</Text>
+            <Text style={[styles.coachingValue, { textAlign: 'center', marginBottom: 16, fontSize: 13 }]}>
+              {workout?.weekly_progression?.[currentWeek - 1]?.label || ''}  ·  Optionally add a progress photo.
+            </Text>
+
+            {/* Progress photo */}
+            {completeWeekPhoto ? (
+              <TouchableOpacity onPress={pickCompleteWeekPhoto} style={{ alignSelf: 'center', marginBottom: 12 }}>
+                <Image source={{ uri: completeWeekPhoto }} style={{ width: 180, height: 120, borderRadius: 10, resizeMode: 'cover' }} />
+                <Text style={{ color: colors.primary, textAlign: 'center', fontSize: 12, marginTop: 4 }}>Tap to change</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.photoPickerBtn} onPress={pickCompleteWeekPhoto}>
+                <Ionicons name="camera-outline" size={22} color={colors.primary} />
+                <Text style={styles.photoPickerBtnText}>Add Progress Photo</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Notes */}
+            <TextInput
+              style={[styles.coachingNotesInput, { marginBottom: 16 }]}
+              placeholder="Optional note (e.g. new PR on squat…)"
+              placeholderTextColor={colors.textMuted}
+              value={completeWeekNotes}
+              onChangeText={setCompleteWeekNotes}
+              multiline
+              numberOfLines={2}
+            />
+
+            <TouchableOpacity
+              style={[styles.completeWeekBtn, { marginBottom: 10 }]}
+              onPress={handleCompleteWeek}
+              disabled={completingWeek}
+            >
+              {completingWeek
+                ? <ActivityIndicator size="small" color={colors.background} />
+                : <>
+                    <Ionicons name="checkmark-circle-outline" size={18} color={colors.background} />
+                    <Text style={styles.completeWeekBtnText}>Mark as Complete</Text>
+                  </>}
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => { setShowCompleteWeekModal(false); setCompleteWeekPhoto(null); setCompleteWeekNotes(''); }} style={styles.cancelBtn}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {/* Replace Exercise Modal */}
@@ -2166,6 +2311,77 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingTop: 12,
     paddingBottom: 4,
+  },
+  // ── Complete Week button ────────────────────────────────────────────────────
+  completeWeekBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  completeWeekBtnText: {
+    color: colors.background,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  weekCompletedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(34,197,94,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.3)',
+    borderRadius: 12,
+    paddingVertical: 11,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  weekCompletedBtnText: {
+    color: '#22c55e',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // ── Complete Week modal helpers ─────────────────────────────────────────────
+  photoPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  photoPickerBtnText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  coachingNotesInput: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    textAlignVertical: 'top',
+  },
+  cancelBtn: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  cancelBtnText: {
+    color: colors.textMuted,
+    fontSize: 14,
   },
   // Substitution hint
   substitutionRow: {

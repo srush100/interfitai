@@ -428,16 +428,16 @@ CACHED_EXERCISE_GIFS = {
     "sumo deadlift": "0117",
     
     # Shoulder exercises - OVERHEAD PRESS is standing barbell military press
-    "overhead press": "1456",  # barbell standing close grip military press (the true standing barbell OHP)
-    "standing overhead press": "1456",
-    "barbell overhead press": "1456",
-    "barbell shoulder press": "1456",
-    "military press": "1456",
-    "standing military press": "1456",
-    "shoulder press": "1456",
-    "ohp": "1456",  # common abbreviation
-    "barbell military press": "1456",
-    "wide grip overhead press": "1457",  # barbell standing wide military press
+    "overhead press": "1457",              # barbell standing wide military press (standard grip)
+    "standing overhead press": "1457",
+    "barbell overhead press": "1457",
+    "barbell shoulder press": "1457",
+    "military press": "1457",
+    "standing military press": "1457",
+    "shoulder press": "1457",
+    "ohp": "1457",                         # common abbreviation
+    "barbell military press": "1457",
+    "wide grip overhead press": "1457",    # barbell standing wide military press
     "wide grip military press": "1457",
     "seated overhead press": "0091",  # barbell seated overhead press
     "seated barbell press": "0091",
@@ -456,10 +456,10 @@ CACHED_EXERCISE_GIFS = {
     "side raise": "0334",
     "front raise": "0310",
     "dumbbell front raise": "0310",
-    "rear delt fly": "0203",          # FIXED: was 0578 (lever deadlift). 0203 = cable rear delt row (rope)
-    "rear delt machine fly": "0203",  # FIXED: correct ID
-    "reverse fly": "0203",            # FIXED
-    "rear delt": "0203",              # FIXED
+    "rear delt fly": "0620",          # reverse pec deck (machine rear delt fly)
+    "rear delt machine fly": "0620",  # reverse pec deck (the actual machine rear delt fly)
+    "reverse fly": "0620",            # machine version as default
+    "rear delt": "0620",              # machine version as default
     "face pull": "0233",  # cable standing rear delt row (with rope) - the face pull movement
     "cable face pull": "0233",
     "cable face pulls": "0233",
@@ -644,6 +644,7 @@ CACHED_EXERCISE_GIFS = {
     "running": "3666",
     "assault bike": "2331",            # cycle cross trainer
     "assault bike intervals": "2331",  # cycle cross trainer
+    "cycle cross trainer": "2331",     # ExerciseDB API name for assault bike
     # rowing machine — no match in ExerciseDB; intentionally unmapped so UI shows exercise without GIF
     
     # Machine exercises
@@ -738,6 +739,7 @@ CACHED_EXERCISE_GIFS = {
     "burpee intervals": "1160",
     "rowing machine intervals": "1161",
     "kettlebell swing intervals": "0549",
+    "incline walking intervals": "3666",  # treadmill incline walk
 }
 
 # Cache for exercise GIFs to avoid repeated API calls
@@ -1240,7 +1242,7 @@ class EliteCoachingEngine:
             "any":       ["Box Jump", "Jump Squat"],
         },
         "conditioning": {
-            "full_gym":  ["Rowing Machine Intervals", "Assault Bike Intervals", "Battle Ropes"],
+            "full_gym":  ["Rowing Machine Intervals", "Assault Bike Intervals", "Incline Walking Intervals"],
             "bodyweight":["Burpee Intervals", "Jump Rope", "Mountain Climbers EMOM"],
             "kettlebells":["Kettlebell Swing Intervals"],
             "any":       ["Burpee Intervals", "Jump Rope"],
@@ -2882,6 +2884,8 @@ class EliteCoachingEngine:
                     for sp in sf_patterns:
                         if sp in already_covered or len(slot_specs) >= secondary_cap:
                             continue
+                        if sp not in session_native:   # don't inject push patterns into pull sessions, etc.
+                            continue
                         sec_opts = self.get_exercise_options(sp, equipment, style, limitations, level)
                         if not sec_opts:
                             continue
@@ -3887,6 +3891,69 @@ async def update_workout_week_override(workout_id: str, request: WeekOverrideReq
     )
     return {"success": True, "current_week_override": request.current_week_override}
 
+
+# ── Week Completion ───────────────────────────────────────────────────────────
+
+class CompleteWeekRequest(BaseModel):
+    user_id: str
+    week: int
+    photo_base64: Optional[str] = None
+    notes: Optional[str] = None
+
+class WeekCompletion(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    workout_id: str
+    user_id: str
+    week: int
+    completed_at: datetime = Field(default_factory=datetime.utcnow)
+    photo_base64: Optional[str] = None
+    notes: Optional[str] = None
+
+@api_router.post("/workout/{workout_id}/complete-week")
+async def complete_week(workout_id: str, request: CompleteWeekRequest):
+    """Mark a specific week of a workout as completed."""
+    # Upsert — idempotent (re-completing updates timestamp/photo)
+    completion = WeekCompletion(
+        workout_id=workout_id,
+        user_id=request.user_id,
+        week=request.week,
+        photo_base64=request.photo_base64,
+        notes=request.notes,
+    )
+    await db.week_completions.replace_one(
+        {"workout_id": workout_id, "user_id": request.user_id, "week": request.week},
+        completion.model_dump(),
+        upsert=True,
+    )
+    return {"success": True, "week": request.week}
+
+@api_router.delete("/workout/{workout_id}/complete-week/{week}")
+async def undo_week_completion(workout_id: str, week: int, user_id: str):
+    """Remove a week completion (undo)."""
+    await db.week_completions.delete_one(
+        {"workout_id": workout_id, "user_id": user_id, "week": week}
+    )
+    return {"success": True}
+
+@api_router.get("/workout/{workout_id}/completions")
+async def get_week_completions(workout_id: str, user_id: str):
+    """Return all completed week numbers for a workout."""
+    docs = await db.week_completions.find(
+        {"workout_id": workout_id, "user_id": user_id},
+        {"_id": 0, "week": 1, "completed_at": 1, "notes": 1}
+    ).to_list(20)
+    return {"completions": docs}
+
+@api_router.get("/workout/{workout_id}/week-photo/{week}")
+async def get_week_photo(workout_id: str, week: int, user_id: str):
+    """Return the progress photo for a specific completed week."""
+    doc = await db.week_completions.find_one(
+        {"workout_id": workout_id, "user_id": user_id, "week": week}
+    )
+    if not doc or not doc.get("photo_base64"):
+        raise HTTPException(status_code=404, detail="No photo for this week")
+    return {"photo_base64": doc["photo_base64"]}
+
 class WorkoutPerformanceRequest(BaseModel):
     performance: dict  # { "dayIndex-exerciseIndex-setIndex": { "weight": "50", "reps": "10", "completed": true } }
 
@@ -4501,6 +4568,9 @@ EXERCISE_NAME_OVERRIDES: dict = {
     "barbell power clean":                      "Power Clean",
     "barbell power snatch":                     "Power Snatch",
     "barbell clean and jerk":                   "Clean and Jerk",
+    # Cardio / Conditioning
+    "cycle cross trainer":                      "Assault Bike",
+    "walking on incline treadmill":             "Incline Treadmill Walk",
 }
 
 # ── Exercise Target Overrides ────────────────────────────────────────────────
