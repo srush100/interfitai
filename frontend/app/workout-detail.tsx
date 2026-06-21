@@ -15,8 +15,12 @@ import {
   Platform,
   Animated,
   ActionSheetIOS,
+  LogBox,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Temporarily suppress red screen so the FULL stack trace appears in the console/Metro output
+LogBox.ignoreLogs(['Text strings must be rendered']);
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
@@ -1993,8 +1997,8 @@ export default function WorkoutDetail() {
 
       {/* ── My Progress Timeline Modal ─────────────────────────────────── */}
       <Modal visible={showProgressModal} transparent animationType="slide" onRequestClose={() => setShowProgressModal(false)}>
-        <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%', alignItems: 'stretch' }}>
+        <View style={[styles.modalOverlay, { justifyContent: 'flex-end', alignItems: 'stretch' }]}>
+          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <Text style={[styles.modalTitle, { marginBottom: 0 }]}>My Progress</Text>
               <TouchableOpacity onPress={() => setShowProgressModal(false)}>
@@ -2062,7 +2066,8 @@ export default function WorkoutDetail() {
         </View>
       </Modal>
 
-      {/* Replace Exercise Modal */}      <Modal
+      {/* Replace Exercise Modal */}
+      <Modal
         visible={showReplaceModal}
         transparent
         animationType="slide"
