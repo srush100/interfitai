@@ -86,6 +86,13 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
   - Item 4 (Polish P2 — DONE): Replaced simple ActivityIndicator with full-screen branded loading overlay (rotating text) in workout-questionnaire.tsx.
   - Item 5 (Polish P2 — DONE): `exercise_preferences` persisted to UserProfile/userStore; questionnaire pre-fills from saved value.
 
+- **[Jun 2026] 5 UI/API Fixes**:
+  - Fix 1: Removed "Add photo (optional)" section from Workout Complete modal (workout-detail.tsx).
+  - Fix 2: Added `alignItems: 'stretch'` to My Progress Timeline modal inner container (workout-detail.tsx) — fixes squished layout.
+  - Fix 3: Verified no stray text rendering issue around Premium Coaching Panel comment (line ~1441).
+  - Fix 4: Body Analyzer history cards now clickable — wrapped in `TouchableOpacity`, shows full detail view (score, overall_assessment, visible_changes, areas_improved, recommendations, motivation_message) inline with back navigation (body-analyzer.tsx).
+  - Fix 5: `unsaveMessage()` now calls `POST /api/chat/unsave/{messageId}` backend API and filters `savedNotes` state, preventing unsaved notes from reappearing on refresh. Empty state shown automatically when all notes removed (ask-ai.tsx).
+
 ## Backlog (Prioritized)
 ### P0 — Critical
 - (none)

@@ -198,13 +198,14 @@ export default function AskAIScreen() {
   };
 
   const unsaveMessage = async (messageId: string) => {
-    // Only update the visual state in chat, don't delete from saved notes
     try {
+      await api.post(`/chat/unsave/${messageId}`);
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, saved: false, title: undefined } : m))
       );
+      setSavedNotes((prev) => prev.filter((n) => n.id !== messageId));
     } catch (error) {
-      Alert.alert('Error', 'Failed to update message');
+      Alert.alert('Error', 'Failed to unsave message');
     }
   };
 

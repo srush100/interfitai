@@ -1527,6 +1527,16 @@ agent_communication:
     message: "WORKOUT AUDIT ROUND 3 - 5 FIXES APPLIED: (1) Pike Push-Up GIF: 0473→2921 (was 'Hanging Pike' abs move, now correct pike push-up bodyweight vertical push). (2) Australian Pull-Up removed from vertical_pull bodyweight list (was wrong pattern placement) and from horizontal_pull list (kept only 'Inverted Row'); CACHED_EXERCISE_GIFS alias kept with comment for legacy program rendering. (3) Cable Kickback renamed to 'Cable Glute Kickback' in all 5 glute pattern slots (full_gym, beginner_gym, machines, cables); new GIF alias 'cable glute kickback': '0860' added to CACHED_EXERCISE_GIFS. (4) Upper/Lower 6-day: Day 5 changed from upper_push_volume → upper_full giving balanced 3U/3L split with 2x push 2x pull. (5) Assault bike mapping confirmed intact (NOT removed). Syntax verified clean. Backend auto-reloaded. NEEDS TESTING: 6-day Upper/Lower advanced body_recomp, calisthenics program, and cross-day no-repeat verification."
   - agent: "main"
     message: |
+      5 UI/API FIXES APPLIED (2026-06):
+      FIX 1 - Workout Complete Modal (workout-detail.tsx): Removed 'Add photo (optional)' section and its conditional Image/TouchableOpacity block from the modal. State vars sessionPhotoUri, photoUploading are now unused (not removed to preserve picker modal functionality).
+      FIX 2 - My Progress Modal Layout (workout-detail.tsx): Added alignItems: 'stretch' to the inner container View of the My Progress Timeline Modal. This fixes squished layout.
+      FIX 3 - Text string rendering (workout-detail.tsx): Verified line ~1441 comment {/* Premium Coaching Panel */} is correctly placed outside JSX text node - no issue found.
+      FIX 4 - Body Analyzer History Cards (body-analyzer.tsx): Converted history cards from plain <View> to <TouchableOpacity onPress={() => setSelectedHistoryItem(item)}>, added chevron arrow. Added selectedHistoryItem state and a full inline detail view showing: score, date, overall_assessment, visible_changes (with checkmarks), areas_improved (tag chips), recommendations (numbered), and motivation_message. Back button returns to history list.
+      FIX 5 - Ask AI unsaveMessage backend sync (ask-ai.tsx): Updated unsaveMessage() to call await api.post('/chat/unsave/${messageId}'), then filter both messages and savedNotes state. Empty state view appears automatically when savedNotes becomes empty (existing conditional already handles this).
+      All changes made, frontend restarted. User will test manually.
+
+  - agent: "main"
+    message: |
       SECONDARY FOCUS INJECTION FIX (Item 1 of 5 Workout Build Improvements):
       ROOT CAUSE IDENTIFIED AND FIXED:
       1. SECONDARY_SYNERGY map was missing 20+ session types (upper_push_heavy, lower_full, upper_pull_heavy, bro_chest_shoulders, all hybrid/functional/calisthenics types, etc.). These all returned synergy_list=[] and made compatible=False, blocking ALL injections.

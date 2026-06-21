@@ -56,6 +56,7 @@ export default function BodyAnalyzer() {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState<any>(null);
   // Feature 2 — share ref
   const shareRef = useRef<View>(null);
 
@@ -299,38 +300,154 @@ export default function BodyAnalyzer() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {showHistory ? (
           <>
-            <View style={styles.historyHeader}>
-              <Text style={styles.historyTitle}>Analysis History</Text>
-              <TouchableOpacity onPress={() => setShowHistory(false)}>
-                <Text style={styles.historyBackText}>Back</Text>
-              </TouchableOpacity>
-            </View>
-            {history.length === 0 ? (
-              <View style={styles.emptyHistory}>
-                <Ionicons name="analytics-outline" size={48} color={colors.textMuted} />
-                <Text style={styles.emptyHistoryText}>No past analyses yet</Text>
-              </View>
-            ) : (
-              history.map((item: any, idx: number) => (
-                <View key={item.id || idx} style={styles.historyCard}>
-                  <View style={styles.historyScoreCircle}>
-                    <Text style={styles.historyScoreValue}>
-                      {item.analysis?.estimated_progress_score || '—'}
-                    </Text>
+            {selectedHistoryItem ? (
+              // ── Detail view for a single analysis ──────────────────
+              <>
+                <TouchableOpacity
+                  style={styles.historyHeader}
+                  onPress={() => setSelectedHistoryItem(null)}
+                >
+                  <Ionicons name="arrow-back" size={20} color={colors.primary} />
+                  <Text style={styles.historyBackText}>Back to History</Text>
+                  <View style={{ width: 20 }} />
+                </TouchableOpacity>
+
+                <View style={styles.historyDetailCard}>
+                  {/* Score */}
+                  <View style={styles.historyDetailScoreRow}>
+                    <View style={styles.scoreCircle}>
+                      <Text style={styles.scoreValue}>
+                        {selectedHistoryItem.analysis?.estimated_progress_score ?? '—'}
+                      </Text>
+                      <Text style={styles.scoreMax}>/10</Text>
+                    </View>
+                    <View style={styles.historyDetailMeta}>
+                      <Text style={styles.historyDetailDate}>
+                        {new Date(selectedHistoryItem.created_at).toLocaleDateString('en-GB', {
+                          day: 'numeric', month: 'long', year: 'numeric',
+                        })}
+                      </Text>
+                      <Text style={styles.historyPeriod}>
+                        Period: {selectedHistoryItem.time_period}
+                      </Text>
+                      {selectedHistoryItem.analysis?.analysis_confidence && (
+                        <Text style={styles.historyPeriod}>
+                          Confidence: {selectedHistoryItem.analysis.analysis_confidence}
+                        </Text>
+                      )}
+                    </View>
                   </View>
-                  <View style={styles.historyInfo}>
-                    <Text style={styles.historyDate}>
-                      {new Date(item.created_at).toLocaleDateString('en-GB', {
-                        day: 'numeric', month: 'short', year: 'numeric',
-                      })}
-                    </Text>
-                    <Text style={styles.historyPeriod}>{item.time_period}</Text>
-                    <Text style={styles.historySummary} numberOfLines={2}>
-                      {item.analysis?.overall_assessment || 'Analysis completed'}
-                    </Text>
-                  </View>
+
+                  <View style={styles.divider} />
+
+                  {/* Overall Assessment */}
+                  {selectedHistoryItem.analysis?.overall_assessment && (
+                    <>
+                      <Text style={styles.assessmentTitle}>Overall Assessment</Text>
+                      <Text style={styles.assessmentText}>
+                        {selectedHistoryItem.analysis.overall_assessment}
+                      </Text>
+                      <View style={styles.divider} />
+                    </>
+                  )}
+
+                  {/* Visible Changes */}
+                  {selectedHistoryItem.analysis?.visible_changes?.length > 0 && (
+                    <>
+                      <Text style={styles.sectionTitle}>Visible Changes</Text>
+                      {selectedHistoryItem.analysis.visible_changes.map((c: string, i: number) => (
+                        <View key={i} style={styles.listItem}>
+                          <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                          <Text style={styles.listText}>{c}</Text>
+                        </View>
+                      ))}
+                      <View style={styles.divider} />
+                    </>
+                  )}
+
+                  {/* Areas Improved */}
+                  {selectedHistoryItem.analysis?.areas_improved?.length > 0 && (
+                    <>
+                      <Text style={styles.sectionTitle}>Areas Improved</Text>
+                      <View style={styles.tagsContainer}>
+                        {selectedHistoryItem.analysis.areas_improved.map((a: string, i: number) => (
+                          <View key={i} style={styles.tag}>
+                            <Text style={styles.tagText}>{a}</Text>
+                          </View>
+                        ))}
+                      </View>
+                      <View style={styles.divider} />
+                    </>
+                  )}
+
+                  {/* Recommendations */}
+                  {selectedHistoryItem.analysis?.recommendations?.length > 0 && (
+                    <>
+                      <Text style={styles.sectionTitle}>Recommendations</Text>
+                      {selectedHistoryItem.analysis.recommendations.map((r: string, i: number) => (
+                        <View key={i} style={styles.listItem}>
+                          <Text style={styles.recNumber}>{i + 1}</Text>
+                          <Text style={styles.listText}>{r}</Text>
+                        </View>
+                      ))}
+                      <View style={styles.divider} />
+                    </>
+                  )}
+
+                  {/* Motivation */}
+                  {selectedHistoryItem.analysis?.motivation_message && (
+                    <View style={styles.motivationCard}>
+                      <Ionicons name="heart" size={24} color={colors.primary} />
+                      <Text style={styles.motivationText}>
+                        {selectedHistoryItem.analysis.motivation_message}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-              ))
+              </>
+            ) : (
+              // ── History list ───────────────────────────────────────
+              <>
+                <View style={styles.historyHeader}>
+                  <Text style={styles.historyTitle}>Analysis History</Text>
+                  <TouchableOpacity onPress={() => setShowHistory(false)}>
+                    <Text style={styles.historyBackText}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+                {history.length === 0 ? (
+                  <View style={styles.emptyHistory}>
+                    <Ionicons name="analytics-outline" size={48} color={colors.textMuted} />
+                    <Text style={styles.emptyHistoryText}>No past analyses yet</Text>
+                  </View>
+                ) : (
+                  history.map((item: any, idx: number) => (
+                    <TouchableOpacity
+                      key={item.id || idx}
+                      style={styles.historyCard}
+                      onPress={() => setSelectedHistoryItem(item)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={styles.historyScoreCircle}>
+                        <Text style={styles.historyScoreValue}>
+                          {item.analysis?.estimated_progress_score || '—'}
+                        </Text>
+                      </View>
+                      <View style={styles.historyInfo}>
+                        <Text style={styles.historyDate}>
+                          {new Date(item.created_at).toLocaleDateString('en-GB', {
+                            day: 'numeric', month: 'short', year: 'numeric',
+                          })}
+                        </Text>
+                        <Text style={styles.historyPeriod}>{item.time_period}</Text>
+                        <Text style={styles.historySummary} numberOfLines={2}>
+                          {item.analysis?.overall_assessment || 'Analysis completed'}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  ))
+                )}
+              </>
             )}
           </>
         ) : !analysis ? (
@@ -1009,6 +1126,27 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   // Feature 3 — history styles
+  historyDetailCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+  },
+  historyDetailScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 8,
+  },
+  historyDetailMeta: {
+    flex: 1,
+  },
+  historyDetailDate: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
   historyBtn: {
     flexDirection: 'row',
     alignItems: 'center',

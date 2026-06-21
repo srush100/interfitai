@@ -1438,7 +1438,8 @@ export default function WorkoutDetail() {
           </View>
         )}
 
-        {/* Premium Coaching Panel */}        {(workout.split_rationale || workout.progression_method || workout.weekly_structure) && (
+        {/* Premium Coaching Panel */}
+        {(workout.split_rationale || workout.progression_method || workout.weekly_structure) && (
           <View style={styles.coachingPanel}>
             <View style={styles.coachingPanelHeader}>
               <Ionicons name="sparkles" size={18} color={colors.primary} />
@@ -1740,20 +1741,6 @@ export default function WorkoutDetail() {
                   </View>
                 )}
 
-                {/* Optional workout photo */}
-                {sessionPhotoUri ? (
-                  <Image source={{ uri: sessionPhotoUri }} style={styles.sessionPhotoThumb} />
-                ) : (
-                  <TouchableOpacity style={styles.addPhotoBtn} onPress={handleAddPhoto} disabled={photoUploading}>
-                    {photoUploading
-                      ? <ActivityIndicator size="small" color={colors.textSecondary} />
-                      : <>
-                          <Ionicons name="camera-outline" size={18} color={colors.textSecondary} />
-                          <Text style={styles.addPhotoBtnText}>Add photo (optional)</Text>
-                        </>
-                    }
-                  </TouchableOpacity>
-                )}
               </>
             )}
 
@@ -2007,7 +1994,7 @@ export default function WorkoutDetail() {
       {/* ── My Progress Timeline Modal ─────────────────────────────────── */}
       <Modal visible={showProgressModal} transparent animationType="slide" onRequestClose={() => setShowProgressModal(false)}>
         <View style={[styles.modalOverlay, { justifyContent: 'flex-end' }]}>
-          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' }}>
+          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%', alignItems: 'stretch' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <Text style={[styles.modalTitle, { marginBottom: 0 }]}>My Progress</Text>
               <TouchableOpacity onPress={() => setShowProgressModal(false)}>
