@@ -15,12 +15,8 @@ import {
   Platform,
   Animated,
   ActionSheetIOS,
-  LogBox,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-// Temporarily suppress red screen so the FULL stack trace appears in the console/Metro output
-LogBox.ignoreLogs(['Text strings must be rendered']);
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
