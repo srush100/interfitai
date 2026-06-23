@@ -190,6 +190,30 @@ export default function BodyAnalyzer() {
     }
   };
 
+  // Feature 3 — delete a past analysis
+  const deleteAnalysis = (analysisId: string) => {
+    Alert.alert(
+      'Delete Analysis',
+      "Delete this analysis? This can't be undone.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.delete(`/body/analysis/${analysisId}`);
+              setHistory((prev: any[]) => prev.filter((h: any) => h.id !== analysisId));
+              setSelectedHistoryItem((cur: any) => (cur?.id === analysisId ? null : cur));
+            } catch (error) {
+              Alert.alert('Error', 'Could not delete analysis.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const analyzeProgress = async () => {
     if (!beforeImage || !afterImage || !profile?.id) {
       Alert.alert('Missing Photos', 'Please upload both before and after photos');
@@ -309,7 +333,12 @@ export default function BodyAnalyzer() {
                 >
                   <Ionicons name="arrow-back" size={20} color={colors.primary} />
                   <Text style={styles.historyBackText}>Back to History</Text>
-                  <View style={{ width: 20 }} />
+                  <TouchableOpacity
+                    onPress={() => deleteAnalysis(selectedHistoryItem.id)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="trash-outline" size={20} color={colors.error} />
+                  </TouchableOpacity>
                 </TouchableOpacity>
 
                 <View style={styles.historyDetailCard}>
@@ -443,7 +472,13 @@ export default function BodyAnalyzer() {
                           {item.analysis?.overall_assessment || 'Analysis completed'}
                         </Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                      <TouchableOpacity
+                        onPress={() => deleteAnalysis(item.id)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        style={styles.historyDeleteBtn}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={colors.error} />
+                      </TouchableOpacity>
                     </TouchableOpacity>
                   ))
                 )}
@@ -1124,6 +1159,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.primary,
+  },
+  historyDeleteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.error + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   // Feature 3 — history styles
   historyDetailCard: {

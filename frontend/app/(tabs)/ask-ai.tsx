@@ -197,15 +197,13 @@ export default function AskAIScreen() {
     }
   };
 
-  const unsaveMessage = async (messageId: string) => {
+  const dismissFromChat = async (messageId: string) => {
     try {
-      await api.post(`/chat/unsave/${messageId}`);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, saved: false, title: undefined } : m))
-      );
-      setSavedNotes((prev) => prev.filter((n) => n.id !== messageId));
+      await api.post(`/chat/dismiss/${messageId}`);
+      // Remove from the chat view only — the saved copy stays in the Saved tab
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
     } catch (error) {
-      Alert.alert('Error', 'Failed to unsave message');
+      Alert.alert('Error', 'Failed to remove message');
     }
   };
 
@@ -220,12 +218,10 @@ export default function AskAIScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.post(`/chat/unsave/${noteId}`);
+              await api.delete(`/chat/message/${noteId}`);
               setSavedNotes((prev) => prev.filter((n) => n.id !== noteId));
-              // Also update the message state if it exists
-              setMessages((prev) =>
-                prev.map((m) => (m.id === noteId ? { ...m, saved: false, title: undefined } : m))
-              );
+              // Also remove from the chat view if it's still there
+              setMessages((prev) => prev.filter((m) => m.id !== noteId));
               if (selectedNote?.id === noteId) {
                 setSelectedNote(null);
               }
@@ -267,7 +263,7 @@ export default function AskAIScreen() {
 
   const toggleSave = (message: Message) => {
     if (message.saved) {
-      unsaveMessage(message.id);
+      dismissFromChat(message.id);
     } else {
       // Show title input modal
       setPendingSaveMessage(message);

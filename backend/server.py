@@ -3203,6 +3203,7 @@ class ChatMessage(BaseModel):
     content: str
     saved: bool = False
     title: Optional[str] = None
+    chat_visible: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class ChatRequest(BaseModel):
@@ -8505,7 +8506,7 @@ Be helpful, encouraging, and provide evidence-based advice. Keep responses conci
 @api_router.get("/chat/history/{user_id}")
 async def get_chat_history(user_id: str, limit: int = 50):
     """Get chat history for a user"""
-    history = await db.chat_history.find({"user_id": user_id}).sort("created_at", -1).limit(limit).to_list(limit)
+    history = await db.chat_history.find({"user_id": user_id, "chat_visible": {"$ne": False}}).sort("created_at", -1).limit(limit).to_list(limit)
     history.reverse()
     return [ChatMessage(**msg) for msg in history]
 
@@ -8538,6 +8539,20 @@ async def unsave_chat_message(message_id: str):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Message not found")
     return {"message": "Message unsaved successfully"}
+
+@api_router.post("/chat/dismiss/{message_id}")
+async def dismiss_chat_message(message_id: str):
+    """Remove a message from the chat view only. Does NOT affect its saved status."""
+    result = await db.chat_history.update_one({"id": message_id}, {"$set": {"chat_visible": False}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return {"message": "Message dismissed from chat"}
+
+@api_router.delete("/chat/message/{message_id}")
+async def delete_chat_message(message_id: str):
+    """Permanently delete a chat message (used by the Saved tab delete)."""
+    await db.chat_history.delete_one({"id": message_id})
+    return {"message": "Message deleted"}
 
 @api_router.get("/chat/saved/{user_id}")
 async def get_saved_messages(user_id: str):
@@ -9230,6 +9245,12 @@ async def get_analysis_history(user_id: str):
         if '_id' in item:
             item['_id'] = str(item['_id'])
     return analyses
+
+@api_router.delete("/body/analysis/{analysis_id}")
+async def delete_body_analysis(analysis_id: str):
+    """Permanently delete a single body analysis record."""
+    await db.body_analyses.delete_one({"id": analysis_id})
+    return {"success": True}
 
 # ==================== REVENUECAT WEBHOOKS ====================
 
