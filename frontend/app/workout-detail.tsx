@@ -1713,7 +1713,7 @@ export default function WorkoutDetail() {
                     </Text>
                   </View>
                 )}
-                {completedSessionData.duration && (
+                {completedSessionData.duration > 0 && (
                   <View style={styles.completeStatRow}>
                     <Ionicons name="time" size={18} color={colors.primary} />
                     <Text style={styles.completeStat}>
