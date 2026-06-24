@@ -1955,7 +1955,17 @@ export default function WorkoutDetail() {
 
                 {/* Photo */}
                 {weekSummaryData.photo_full ? (
-                  <TouchableOpacity onPress={() => setViewerPhoto({ uri: weekSummaryData.photo_full!, week: weekSummaryData.week })} style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const photoUri = weekSummaryData.photo_full!;
+                      const week = weekSummaryData.week;
+                      setShowWeekSummaryModal(false);
+                      // Wait for the slide-down animation to finish before opening the viewer
+                      // — stacking two sibling Modals simultaneously freezes touch on iOS
+                      setTimeout(() => setViewerPhoto({ uri: photoUri, week }), 350);
+                    }}
+                    style={{ marginBottom: 12 }}
+                  >
                     <Image source={{ uri: weekSummaryData.photo_full }} style={{ width: '100%', height: 280, borderRadius: 12, resizeMode: 'contain', backgroundColor: '#000' }} />
                     <Text style={{ color: colors.textMuted, fontSize: 11, textAlign: 'center', marginTop: 4 }}>Tap to view full-screen</Text>
                   </TouchableOpacity>
