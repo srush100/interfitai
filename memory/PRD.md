@@ -20,7 +20,7 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 
 ## Architecture
 - **Frontend**: Expo / React Native (file-based routing via expo-router)
-- **Backend**: FastAPI (Python) — monolithic server.py (~9200 lines)
+- **Backend**: FastAPI (Python) — monolithic server.py (~9820 lines)
 - **Database**: MongoDB (Motor async driver)
 - **AI**: Claude Sonnet 4.5 (complex) + Claude Haiku 4.5 (fast/food) via Emergent LLM Key
 - **Payments**: Stripe (web), RevenueCat (mobile — P2)
@@ -47,7 +47,7 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 
 ## DB Schema Highlights
 - `profiles`: { id, email, name, weight_kg, height_cm, unit_preference, calculated_macros, ... }
-|- `workouts`: { id, user_id, name, workout_days, performance: {day-ex-set: {weight, reps, completed}}, weekly_structure, weekly_progression, current_week_override }
+- `workouts`: { id, user_id, name, workout_days, performance: {day-ex-set: {weight, reps, completed}}, weekly_structure, weekly_progression, current_week_override }
 - `workout_sessions`: { id, user_id, workout_id, completed_exercises, total_volume, photo_base64, date }
 - `exercise_library`: { exercisedb_id, name, target, secondary_muscles, body_part, equipment, gif_url, gif_id, instructions } — 1394 exercises
 

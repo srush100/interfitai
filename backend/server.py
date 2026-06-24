@@ -630,10 +630,10 @@ CACHED_EXERCISE_GIFS = {
     "wall balls": "2399",
     
     # Cardio/HIIT exercises
-    "jump rope": "2612",
-    "jumping rope": "2612",
-    "skipping rope": "2612",
-    "double unders": "2612",  # jump rope (closest equivalent)
+    "jump rope": "1160",              # jump rope / skipping (updated)
+    "jumping rope": "1160",
+    "skipping rope": "1160",
+    "double unders": "1160",          # jump rope (closest equivalent)
     "battle ropes": "0128",  # battling ropes
     "battle rope": "0128",
     "battling ropes": "0128",
