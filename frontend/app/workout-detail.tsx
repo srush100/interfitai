@@ -7,6 +7,7 @@ import {
   Pressable,
   ActivityIndicator,
   Keyboard,
+  KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Image,
   TextInput,
@@ -1870,6 +1871,7 @@ export default function WorkoutDetail() {
         animationType="fade"
         onRequestClose={() => setShowCompleteWeekModal(false)}
       >
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 340, paddingBottom: 28 }]}>
