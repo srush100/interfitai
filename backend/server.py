@@ -1136,7 +1136,7 @@ class EliteCoachingEngine:
             "dumbbells": ["Dumbbell Row", "Chest-Supported Row"],
             "machines":  ["Machine Row", "Cable Row"],
             "cables":    ["Cable Row", "Single-Arm Cable Row"],
-            "bodyweight":["Inverted Row"],
+            "bodyweight":["Bodyweight Row (doorframe or table)"],
             "kettlebells":["Kettlebell Row"],
             "resistance_bands":["Band Row", "Band Pull-Apart"],
         },
@@ -1239,9 +1239,11 @@ class EliteCoachingEngine:
             "any":       ["Box Jump", "Jump Squat"],
         },
         "conditioning": {
-            "full_gym":  ["Rowing Machine Intervals", "Assault Bike Intervals", "Incline Walking Intervals"],
+            "full_gym":  ["Rowing Machine Intervals", "Assault Bike Intervals", "Ski Erg Intervals", "Incline Walking Intervals"],
+            "barbells":  ["Barbell Complex Intervals", "Burpee Intervals", "Jump Rope"],
+            "dumbbells": ["Dumbbell Complex Intervals", "Burpee Intervals", "Jump Rope"],
             "bodyweight":["Burpee Intervals", "Jump Rope", "Mountain Climbers EMOM"],
-            "kettlebells":["Kettlebell Swing Intervals"],
+            "kettlebells":["Kettlebell Swing Intervals", "Kettlebell Complex Intervals"],
             "any":       ["Burpee Intervals", "Jump Rope"],
         },
     }
@@ -2708,9 +2710,11 @@ class EliteCoachingEngine:
             def _slot_importance(s_tuple):
                 pattern, ex_type, _ = s_tuple
                 if ex_type == 'primary_compound':       return 0
-                if pattern in primary_patterns:         return 1   # primary focus survives trim
+                if pattern in primary_patterns:         return 1
                 if ex_type == 'secondary_compound':     return 2
                 if pattern in secondary_patterns:       return 3
+                if ex_type == 'conditioning' and style in ('hybrid', 'functional'):
+                    return 1  # conditioning is core to hybrid — protect it from trim
                 return 4
             slots.sort(key=_slot_importance)
             slots = slots[:max_ex]
