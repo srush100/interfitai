@@ -1552,6 +1552,18 @@ agent_communication:
 
   - agent: "main"
     message: |
+      7 CHANGES APPLIED (2026-06) - backend/server.py + frontend/app/workout-detail.tsx:
+      1. _slot_importance: conditioning gets priority 2 for hybrid/functional styles (protects from trim).
+      2. PATTERNS["conditioning"]: added barbells (Barbell Complex, Thrusters), dumbbells (Dumbbell Thruster, Devil Press), Ski Erg Intervals for full_gym.
+      3. horizontal_pull.bodyweight: Inverted Row → Prone Y Raise + Superman Row. BODYWEIGHT_DIFFICULTY: added Prone Y Raise:1, Superman Row:1.
+      4. Skull crusher GIF: 0055 → 0060 (was showing close-grip bench press).
+      5. Side plank GIF: 1775 → 3544 (was showing hip adduction variant).
+      6. GIF cache: ski erg → 2142, jump rope → 1160. Removed duplicate assault_bike entry (2138) — existing correct mapping 2331 (cycle cross trainer) at line 645 preserved.
+      7. workout-detail.tsx styles: programName flex:1, infoRow flexWrap+rowGap:8, infoText flexShrink:1 (fixes "Hybrid Strength + Conditioning" header overflow).
+      Backend auto-reloaded. NEEDS TESTING: generate hybrid + functional workouts to verify conditioning slots survive trim.
+
+  - agent: "main"
+    message: |
       SECONDARY FOCUS INJECTION FIX (Item 1 of 5 Workout Build Improvements):
       ROOT CAUSE IDENTIFIED AND FIXED:
       1. SECONDARY_SYNERGY map was missing 20+ session types (upper_push_heavy, lower_full, upper_pull_heavy, bro_chest_shoulders, all hybrid/functional/calisthenics types, etc.). These all returned synergy_list=[] and made compatible=False, blocking ALL injections.

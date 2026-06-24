@@ -740,7 +740,6 @@ CACHED_EXERCISE_GIFS = {
     "rowing machine intervals": "1161",
     "kettlebell swing intervals": "0549",
     "incline walking intervals": "3666",  # treadmill incline walk
-    "assault bike intervals": "2138",     # stationary bike HIIT
     "ski erg intervals": "2142",          # ski ergometer
     "jump rope": "1160",                  # jump rope / skipping
 }
