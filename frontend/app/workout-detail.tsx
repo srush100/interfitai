@@ -38,6 +38,30 @@ const getFullGifUrl = (gifUrl: string | undefined) => {
   return `${BACKEND_URL}${gifUrl}`;
 };
 
+// Local fallback shown when an exercise has no GIF or the GIF fails to load
+const FALLBACK_LOGO = require('../assets/logo-icon-yellow.png');
+
+function ExerciseGif({
+  gifUrl,
+  style,
+  resizeMode = 'contain',
+}: {
+  gifUrl?: string;
+  style: any;
+  resizeMode?: 'cover' | 'contain';
+}) {
+  const [failed, setFailed] = React.useState(false);
+  const uri = getFullGifUrl(gifUrl);
+  if (!uri || failed) {
+    return (
+      <View style={[style, { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceLight }]}>
+        <Image source={FALLBACK_LOGO} style={{ width: '45%', height: '45%' }} resizeMode="contain" />
+      </View>
+    );
+  }
+  return <Image source={{ uri }} style={style} resizeMode={resizeMode} onError={() => setFailed(true)} />;
+}
+
 interface Exercise {
   name: string;
   sets: number;
@@ -1185,15 +1209,9 @@ export default function WorkoutDetail() {
   // touches never bubble up to the exercise card's tap/long-press handler.
   const renderExerciseDetailPanel = (exercise: Exercise, exIdx: number) => (
     <View style={styles.exerciseDetails}>
-      {exercise.gif_url && (
-        <View style={styles.gifContainer}>
-          <Image
-            source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
-            style={styles.exerciseGif}
-            resizeMode="contain"
-          />
-        </View>
-      )}
+      <View style={styles.gifContainer}>
+        <ExerciseGif gifUrl={exercise.gif_url} style={styles.exerciseGif} resizeMode="contain" />
+      </View>
       <View style={styles.detailSection}>
         <Text style={styles.detailLabel}>Instructions</Text>
         <Text style={styles.detailText}>{exercise.instructions}</Text>
@@ -1868,7 +1886,7 @@ export default function WorkoutDetail() {
             {/* Progress photo */}
             {completeWeekPhoto ? (
               <TouchableOpacity onPress={pickCompleteWeekPhoto} style={{ alignSelf: 'center', marginBottom: 12 }}>
-                <Image source={{ uri: completeWeekPhoto }} style={{ width: 180, height: 120, borderRadius: 10, resizeMode: 'cover' }} />
+                <Image source={{ uri: completeWeekPhoto }} style={{ width: 150, height: 200, borderRadius: 10, resizeMode: 'contain', backgroundColor: '#000', alignSelf: 'center' }} />
                 <Text style={{ color: colors.primary, textAlign: 'center', fontSize: 12, marginTop: 4 }}>Tap to change</Text>
               </TouchableOpacity>
             ) : (
@@ -1936,7 +1954,7 @@ export default function WorkoutDetail() {
                 {/* Photo */}
                 {weekSummaryData.photo_full ? (
                   <TouchableOpacity onPress={() => setViewerPhoto({ uri: weekSummaryData.photo_full!, week: weekSummaryData.week })} style={{ marginBottom: 12 }}>
-                    <Image source={{ uri: weekSummaryData.photo_full }} style={{ width: '100%', height: 200, borderRadius: 12, resizeMode: 'cover' }} />
+                    <Image source={{ uri: weekSummaryData.photo_full }} style={{ width: '100%', height: 280, borderRadius: 12, resizeMode: 'contain', backgroundColor: '#000' }} />
                     <Text style={{ color: colors.textMuted, fontSize: 11, textAlign: 'center', marginTop: 4 }}>Tap to view full-screen</Text>
                   </TouchableOpacity>
                 ) : (
