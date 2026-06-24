@@ -503,9 +503,9 @@ CACHED_EXERCISE_GIFS = {
     "dumbbell tricep extension": "0352",
     "overhead cable extension": "0194",          # ADDED: cable overhead triceps extension (rope)
     "overhead cable tricep extension": "0194",   # ADDED
-    "skull crusher": "0055",
-    "lying tricep extension": "0055",
-    "barbell skull crusher": "0055",
+    "skull crusher": "0060",              # barbell lying triceps extension skull crusher (not 0055 which is close-grip bench)
+    "lying tricep extension": "0060",
+    "barbell skull crusher": "0060",
     "tricep dip": "0814",
     "triceps dip": "0814",
     "dips": "0814",
@@ -585,7 +585,7 @@ CACHED_EXERCISE_GIFS = {
     "forearm plank": "2135",
     "standard plank": "2135",
     "plank hold": "2135",
-    "side plank": "1775",  # side plank hip adduction
+    "side plank": "3544",                 # bodyweight incline side plank (not 1775 which is side plank hip adduction)
     "side plank hip": "1775",
     "crunch": "0274",
     "ab crunch": "0274",
@@ -740,6 +740,9 @@ CACHED_EXERCISE_GIFS = {
     "rowing machine intervals": "1161",
     "kettlebell swing intervals": "0549",
     "incline walking intervals": "3666",  # treadmill incline walk
+    "assault bike intervals": "2138",     # stationary bike HIIT
+    "ski erg intervals": "2142",          # ski ergometer
+    "jump rope": "1160",                  # jump rope / skipping
 }
 
 # Cache for exercise GIFs to avoid repeated API calls
@@ -1136,7 +1139,7 @@ class EliteCoachingEngine:
             "dumbbells": ["Dumbbell Row", "Chest-Supported Row"],
             "machines":  ["Machine Row", "Cable Row"],
             "cables":    ["Cable Row", "Single-Arm Cable Row"],
-            "bodyweight":["Inverted Row"],
+            "bodyweight":["Prone Y Raise", "Superman Row"],
             "kettlebells":["Kettlebell Row"],
             "resistance_bands":["Band Row", "Band Pull-Apart"],
         },
@@ -1239,7 +1242,9 @@ class EliteCoachingEngine:
             "any":       ["Box Jump", "Jump Squat"],
         },
         "conditioning": {
-            "full_gym":  ["Rowing Machine Intervals", "Assault Bike Intervals", "Incline Walking Intervals"],
+            "full_gym":  ["Rowing Machine Intervals", "Assault Bike Intervals", "Ski Erg Intervals"],
+            "barbells":  ["Barbell Complex Intervals", "Thruster Intervals"],
+            "dumbbells": ["Dumbbell Thruster Intervals", "Devil Press Intervals"],
             "bodyweight":["Burpee Intervals", "Jump Rope", "Mountain Climbers EMOM"],
             "kettlebells":["Kettlebell Swing Intervals"],
             "any":       ["Burpee Intervals", "Jump Rope"],
@@ -2162,7 +2167,7 @@ class EliteCoachingEngine:
         # Tier 2 — Intermediate
         "Diamond Push-Up": 2, "Pike Push-Up": 2, "Decline Push-Up": 2,
         "Jump Squat": 2, "Bulgarian Split Squat": 2, "Lateral Lunge": 2,
-        "Australian Pull-Up": 2, "Inverted Row": 2, "Nordic Hamstring Curl": 2,
+        "Australian Pull-Up": 2, "Inverted Row": 2, "Prone Y Raise": 1, "Superman Row": 1, "Nordic Hamstring Curl": 2,
         "Hanging Leg Raise": 2, "V-Up": 2, "Single-Leg Calf Raise": 2,
         "Single-Leg Romanian Deadlift": 2, "Plank Walk": 2, "Supinated Row": 2,
         "Bench Dip": 2, "Swiss Ball Leg Curl": 2,
@@ -2710,6 +2715,8 @@ class EliteCoachingEngine:
                 if ex_type == 'primary_compound':       return 0
                 if pattern in primary_patterns:         return 1   # primary focus survives trim
                 if ex_type == 'secondary_compound':     return 2
+                if ex_type == 'conditioning' and style in ('hybrid', 'functional'):
+                    return 2   # conditioning is core to hybrid/functional — protect from trim
                 if pattern in secondary_patterns:       return 3
                 return 4
             slots.sort(key=_slot_importance)

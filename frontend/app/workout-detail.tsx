@@ -2348,7 +2348,9 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     flexDirection: 'row',
-    gap: 24,
+    flexWrap: 'wrap',
+    gap: 16,
+    rowGap: 8,
     marginTop: 16,
   },
   infoItem: {
@@ -2359,6 +2361,7 @@ const styles = StyleSheet.create({
   infoText: {
     fontSize: 14,
     color: colors.text,
+    flexShrink: 1,
   },
   tagContainer: {
     flexDirection: 'row',
