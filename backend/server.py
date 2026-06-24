@@ -3885,13 +3885,14 @@ async def update_workout_week_override(workout_id: str, request: WeekOverrideReq
 # ── Week Completion ───────────────────────────────────────────────────────────
 
 import base64 as _b64, io as _io
-from PIL import Image as _PILImage
+from PIL import Image as _PILImage, ImageOps as _ImageOps
 
 def _make_thumbnail(photo_b64: str, max_px: int = 300) -> Optional[str]:
     """Return a compressed JPEG thumbnail (~50 KB) from a full-resolution base64 photo."""
     try:
         raw = photo_b64.split(",", 1)[-1]           # strip data-URL prefix if present
         img = _PILImage.open(_io.BytesIO(_b64.b64decode(raw)))
+        img = _ImageOps.exif_transpose(img)          # honour EXIF orientation before thumbnailing
         img.thumbnail((max_px, max_px), _PILImage.LANCZOS)
         buf = _io.BytesIO()
         img.convert("RGB").save(buf, format="JPEG", quality=55, optimize=True)

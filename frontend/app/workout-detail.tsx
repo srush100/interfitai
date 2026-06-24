@@ -1978,19 +1978,24 @@ export default function WorkoutDetail() {
                   <Text style={styles.completeWeekBtnText}>{"View This Week's Program"}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.cancelBtn, { marginTop: 8 }]} onPress={() => {
-                  setShowWeekSummaryModal(false);
-                  // undo using currentWeek-aware handler
                   const wk = weekSummaryData.week;
                   Alert.alert('Undo Completion', `Remove the completion record for Week ${wk}?`, [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Undo', style: 'destructive', onPress: async () => {
-                        await api.delete(`/workout/${workout?.id}/complete-week/${wk}?user_id=${profile?.id}`);
-                        setWeekCompletions(prev => { const s = new Set(prev); s.delete(wk); return s; });
+                        try {
+                          await api.delete(`/workout/${workout?.id}/complete-week/${wk}?user_id=${profile?.id}`);
+                          setWeekCompletions(prev => { const s = new Set(prev); s.delete(wk); return s; });
+                          setProgressDetails(prev => prev.filter((p: any) => p.week !== wk));
+                        } catch {
+                          Alert.alert('Error', 'Could not undo completion');
+                        } finally {
+                          setShowWeekSummaryModal(false);
+                        }
                       }
                     },
                   ]);
                 }}>
-                  <Text style={[styles.cancelBtnText, { color: colors.danger || '#ef4444' }]}>Undo Completion</Text>
+                  <Text style={[styles.cancelBtnText, { color: colors.error }]}>Undo Completion</Text>
                 </TouchableOpacity>
               </>
             ) : null}
