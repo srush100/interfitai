@@ -1164,16 +1164,8 @@ export default function WorkoutDetail() {
         <View style={[styles.exerciseNumber, styles.exerciseNumberSwapTarget]}>
           <Text style={[styles.exerciseNumberText, { color: colors.primary }]}>{exIdx + 1}</Text>
         </View>
-      ) : exercise.gif_url ? (
-        <Image
-          source={{ uri: getFullGifUrl(exercise.gif_url) || '' }}
-          style={styles.exerciseThumbnail}
-          resizeMode="cover"
-        />
       ) : (
-        <View style={styles.exerciseNumber}>
-          <Text style={styles.exerciseNumberText}>{exIdx + 1}</Text>
-        </View>
+        <ExerciseGif gifUrl={exercise.gif_url} style={styles.exerciseThumbnail} resizeMode="cover" />
       )}
 
       <View style={styles.exerciseInfo}>
@@ -2039,9 +2031,9 @@ export default function WorkoutDetail() {
                       onPress={() => { setShowProgressModal(false); openWeekSummary(item.week); }}
                     >
                       {item.photo_thumbnail ? (
-                        <Image source={{ uri: item.photo_thumbnail }} style={{ width: 56, height: 56, borderRadius: 8, resizeMode: 'cover' }} />
+                        <Image source={{ uri: item.photo_thumbnail }} style={{ width: 56, height: 75, borderRadius: 8, resizeMode: 'cover' }} />
                       ) : (
-                        <View style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                        <View style={{ width: 56, height: 75, borderRadius: 8, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
                           <Ionicons name="camera-outline" size={22} color={colors.textMuted} />
                         </View>
                       )}
