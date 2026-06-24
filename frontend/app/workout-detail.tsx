@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   Pressable,
   ActivityIndicator,
+  Keyboard,
+  TouchableWithoutFeedback,
   Image,
   TextInput,
   Modal,
@@ -1868,6 +1870,7 @@ export default function WorkoutDetail() {
         animationType="fade"
         onRequestClose={() => setShowCompleteWeekModal(false)}
       >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxWidth: 340, paddingBottom: 28 }]}>
             <Text style={styles.modalTitle}>Complete Week {currentWeek}?</Text>
@@ -1897,6 +1900,9 @@ export default function WorkoutDetail() {
               onChangeText={setCompleteWeekNotes}
               multiline
               numberOfLines={2}
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={Keyboard.dismiss}
             />
 
             <TouchableOpacity
@@ -1917,6 +1923,7 @@ export default function WorkoutDetail() {
             </TouchableOpacity>
           </View>
         </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* ── Week Summary Modal ─────────────────────────────────────────── */}
