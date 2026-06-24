@@ -1926,6 +1926,7 @@ export default function WorkoutDetail() {
           </View>
         </View>
         </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Week Summary Modal ─────────────────────────────────────────── */}
