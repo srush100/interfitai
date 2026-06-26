@@ -364,7 +364,7 @@ CACHED_EXERCISE_GIFS = {
     "pushup": "0662",
     "pushups": "0662",
     "wide push up": "1311",
-    "diamond push up": "0279",
+    "diamond push up": "0283",
     "decline push up": "0279",       # FIXED: 0279 = decline push-up
     "decline push-up": "0279",
     "incline push up": "0493",
@@ -630,10 +630,10 @@ CACHED_EXERCISE_GIFS = {
     "wall balls": "2399",
     
     # Cardio/HIIT exercises
-    "jump rope": "1160",              # jump rope / skipping (updated)
-    "jumping rope": "1160",
-    "skipping rope": "1160",
-    "double unders": "1160",          # jump rope (closest equivalent)
+    "jump rope": "2612",
+    "jumping rope": "2612",
+    "skipping rope": "2612",
+    "double unders": "2612",          # jump rope (closest equivalent)
     "battle ropes": "0128",  # battling ropes
     "battle rope": "0128",
     "battling ropes": "0128",
@@ -741,7 +741,6 @@ CACHED_EXERCISE_GIFS = {
     "kettlebell swing intervals": "0549",
     "incline walking intervals": "3666",  # treadmill incline walk
     "ski erg intervals": "2142",          # ski ergometer
-    "jump rope": "1160",                  # jump rope / skipping
 }
 
 # Cache for exercise GIFs to avoid repeated API calls
@@ -1792,7 +1791,7 @@ class EliteCoachingEngine:
             "isolation":          {"sets": 3, "reps": "8-15",       "rest": 75,  "effort": "RIR 2-3"},
             "unilateral":         {"sets": 3, "reps": "4-8 each",   "rest": 120, "effort": "RIR 2-3"},
             "core":               {"sets": 3, "reps": "6-10",       "rest": 75,  "effort": "Max tension — controlled tempo"},
-            "conditioning":       {"sets": 1, "reps": "10-15 min",  "rest": 0,   "effort": "Zone 2 — low intensity only"},
+            "conditioning":       {"sets": 1, "reps": "10-15 min — steady pace",  "rest": 0,   "effort": "Zone 2 — low intensity only"},
             "explosive":          {"sets": 3, "reps": "3-5",        "rest": 150, "effort": "Max intent — bar speed matters"},
         },
         "build_muscle": {
@@ -1803,7 +1802,7 @@ class EliteCoachingEngine:
             "isolation":          {"sets": 3, "reps": "12-15",      "rest": 60,  "effort": "RIR 1-2 — full contraction"},
             "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 90,  "effort": "RIR 2-3"},
             "core":               {"sets": 3, "reps": "10-15",      "rest": 45,  "effort": "Controlled — anti-gravity tension"},
-            "conditioning":       {"sets": 1, "reps": "10-15 min",  "rest": 0,   "effort": "Zone 2-3 — light cardio only"},
+            "conditioning":       {"sets": 1, "reps": "10-15 min — steady pace",  "rest": 0,   "effort": "Zone 2-3 — light cardio only"},
             "explosive":          {"sets": 3, "reps": "4-6",        "rest": 90,  "effort": "Controlled power — moderate intent"},
         },
         "lose_fat": {
@@ -1814,7 +1813,7 @@ class EliteCoachingEngine:
             "isolation":          {"sets": 2, "reps": "15-20",      "rest": 45,  "effort": "RIR 1-2 — pump-focused"},
             "unilateral":         {"sets": 3, "reps": "12-15 each", "rest": 60,  "effort": "RIR 2-3"},
             "core":               {"sets": 3, "reps": "12-20",      "rest": 30,  "effort": "Controlled — efficient"},
-            "conditioning":       {"sets": 1, "reps": "10-20 min",  "rest": 0,   "effort": "High intensity — intervals or HIIT"},
+            "conditioning":       {"sets": 1, "reps": "10-20 min — 30s hard / 30s easy, repeat",  "rest": 0,   "effort": "High intensity — intervals or HIIT"},
             "explosive":          {"sets": 3, "reps": "5-8",        "rest": 60,  "effort": "Moderate intensity"},
         },
         "body_recomp": {
@@ -1825,7 +1824,7 @@ class EliteCoachingEngine:
             "isolation":          {"sets": 3, "reps": "12-15",      "rest": 60,  "effort": "RIR 1-2"},
             "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 75,  "effort": "RIR 2-3"},
             "core":               {"sets": 3, "reps": "10-15",      "rest": 45,  "effort": "Controlled"},
-            "conditioning":       {"sets": 1, "reps": "10-15 min",  "rest": 0,   "effort": "Moderate-high — efficient cardio"},
+            "conditioning":       {"sets": 1, "reps": "10-15 min — 40s work / 40s easy, repeat",  "rest": 0,   "effort": "Moderate-high — efficient cardio"},
             "explosive":          {"sets": 3, "reps": "4-6",        "rest": 90,  "effort": "Moderate power output"},
         },
         "general_fitness": {
@@ -1836,7 +1835,7 @@ class EliteCoachingEngine:
             "isolation":          {"sets": 2, "reps": "12-15",      "rest": 60,  "effort": "RPE 6-7"},
             "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 60,  "effort": "RPE 7"},
             "core":               {"sets": 2, "reps": "10-15",      "rest": 45,  "effort": "Controlled"},
-            "conditioning":       {"sets": 1, "reps": "10-20 min",  "rest": 0,   "effort": "Moderate — enjoyable pace"},
+            "conditioning":       {"sets": 1, "reps": "10-20 min — steady enjoyable pace",  "rest": 0,   "effort": "Moderate — enjoyable pace"},
             "explosive":          {"sets": 2, "reps": "5-8",        "rest": 75,  "effort": "Moderate — movement quality focus"},
         },
         "athletic_performance": {
@@ -1847,7 +1846,7 @@ class EliteCoachingEngine:
             "isolation":          {"sets": 2, "reps": "10-15",      "rest": 60,  "effort": "RIR 2-3"},
             "unilateral":         {"sets": 3, "reps": "6-10 each",  "rest": 90,  "effort": "RPE 7-8 — balance and control"},
             "core":               {"sets": 3, "reps": "8-12",       "rest": 60,  "effort": "Max tension — anti-rotation emphasis"},
-            "conditioning":       {"sets": 1, "reps": "15-20 min",  "rest": 0,   "effort": "High intensity — sport-specific intervals"},
+            "conditioning":       {"sets": 1, "reps": "15-20 min — 30s sprint / 30s recovery, repeat",  "rest": 0,   "effort": "High intensity — sport-specific intervals"},
             "explosive":          {"sets": 4, "reps": "3-5",        "rest": 150, "effort": "Max intent — plyometric power output"},
         },
     }

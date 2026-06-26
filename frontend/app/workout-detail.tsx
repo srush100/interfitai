@@ -2340,6 +2340,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: colors.text,
+    flex: 1,
   },
   programGoal: {
     fontSize: 16,
