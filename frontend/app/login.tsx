@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -121,7 +122,11 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
             <View style={styles.logoGlow}>
               <Image
@@ -225,7 +230,7 @@ export default function LoginScreen() {
           <Text style={styles.infoText}>
             Sign in with the email and password you used when you created your account.
           </Text>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -234,7 +239,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   keyboardView: { flex: 1 },
-  content: { flex: 1, padding: 24, justifyContent: 'center' },
+  content: { flexGrow: 1, padding: 24, justifyContent: 'center' },
   header: { alignItems: 'center', marginBottom: 32 },
   logoGlow: { width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(255, 204, 0, 0.15)', borderWidth: 2, borderColor: 'rgba(255, 204, 0, 0.3)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   welcomeLogo: { width: 60, height: 60 },

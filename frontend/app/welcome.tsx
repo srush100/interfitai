@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 42, fontWeight: '800', color: colors.text, letterSpacing: 2 },
   titleAI: { fontSize: 42, fontWeight: '800', color: colors.primary, letterSpacing: 2 },
   tagline: { fontSize: 16, color: colors.textSecondary, marginTop: 12, letterSpacing: 1, textAlign: 'center' },
-  actions: { marginBottom: 40 },
+  actions: { marginBottom: 40, paddingTop: 40 },
   primaryBtn: {
     backgroundColor: colors.primary,
     paddingVertical: 16,
