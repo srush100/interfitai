@@ -1153,7 +1153,7 @@ class EliteCoachingEngine:
         "squat": {
             "full_gym":  ["Back Squat", "Leg Press", "Hack Squat"],
             "beginner_gym": ["Leg Press", "Goblet Squat", "Hack Squat", "Smith Machine Squat"],
-            "barbells":  ["Back Squat", "Front Squat", "Pause Squat"],
+            "barbells":  ["Back Squat", "Front Squat", "Pause Squat", "Hack Squat"],
             "dumbbells": ["Goblet Squat", "Dumbbell Front Squat"],
             "machines":  ["Leg Press", "Hack Squat", "Smith Machine Squat"],
             "bodyweight":["Bodyweight Squat", "Jump Squat", "Pistol Squat (assisted)"],
@@ -2429,6 +2429,16 @@ class EliteCoachingEngine:
                 tier3   = [x for x in result if diff.get(x, 2) > 2]
                 result  = tier1_2 + tier3
 
+        # Beginner conditioning: Incline Walking instead of Assault Bike
+        # Lower impact, easier to pace, gentler entry to conditioning.
+        if pattern == 'conditioning' and level == 'beginner':
+            swapped = []
+            for e in result:
+                e = 'Incline Walking Intervals' if e == 'Assault Bike Intervals' else e
+                if e not in swapped:
+                    swapped.append(e)
+            result = swapped
+
         return result[:4] if result else ["Bodyweight Exercise"]
 
     def get_session_count_for_split(self, split_id: str, days: int) -> list:
@@ -2795,6 +2805,12 @@ class EliteCoachingEngine:
                     rest = _round_rest(base_rest)
 
                 options = self.get_exercise_options(pattern, equipment, style, limitations, level)
+                # If every option for this pattern is contraindicated by the user's
+                # limitations (e.g. all lunge variants excluded by a knee injury),
+                # skip the slot entirely rather than show a "Bodyweight Exercise"
+                # placeholder. Remaining slots still cover the session.
+                if options == ["Bodyweight Exercise"]:
+                    continue
                 # Rotate options to avoid cross-day exercise duplication
                 if len(options) > 1:
                     # Move any already-used exercise to the back of the list
