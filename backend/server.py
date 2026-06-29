@@ -4431,6 +4431,40 @@ async def reorder_exercises(workout_id: str, request: ReorderExercisesRequest):
 
 
 
+def _params_for_added_exercise(name: str, goal: str) -> dict:
+    """Goal-appropriate sets/reps/rest for a manually-added exercise.
+    Classifies the exercise (conditioning / core / compound / isolation) from its
+    name, then pulls the matching scheme from the program goal's GOAL_PARAMS so an
+    added exercise always matches the program it's added to (e.g. a compound in a
+    strength program -> low reps, long rest - not a generic 10-12)."""
+    goal_params = EliteCoachingEngine.GOAL_PARAMS.get(
+        goal, EliteCoachingEngine.GOAL_PARAMS.get('general_fitness', {})
+    )
+    n = (name or "").lower()
+    if any(k in n for k in ['interval', 'sprint', 'jump rope', 'skipping', 'burpee',
+                            'mountain climber', 'rowing machine', 'assault bike',
+                            'ski erg', 'incline walk', 'cardio', 'emom', 'jog', 'run']):
+        ex_type = 'conditioning'
+    elif any(k in n for k in ['plank', 'crunch', 'sit-up', 'sit up', 'dead bug',
+                              'bird dog', 'leg raise', 'russian twist', 'pallof',
+                              'hollow', 'wood chop', 'woodchop', 'ab wheel', 'ab rollout']):
+        ex_type = 'core'
+    elif any(k in n for k in ['squat', 'deadlift', 'bench', 'press', 'row',
+                              'pull-up', 'pull up', 'chin-up', 'chin up', 'pulldown',
+                              'pull-down', 'lunge', 'thrust', 'clean', 'snatch',
+                              'dip', 'romanian', 'rdl', 'hip hinge', 'step-up', 'step up']):
+        ex_type = 'secondary_compound'
+    else:
+        ex_type = 'isolation'
+    p = goal_params.get(ex_type) or goal_params.get('accessory') or {}
+    return {
+        'sets':         p.get('sets', 3),
+        'reps':         p.get('reps', '10-12'),
+        'rest_seconds': p.get('rest', 90),
+        'effort':       p.get('effort', ''),
+    }
+
+
 @api_router.post("/workout/{workout_id}/exercise")
 async def add_exercise(workout_id: str, request: AddExerciseRequest):
     """Add a new exercise to a workout day"""
@@ -4450,13 +4484,19 @@ async def add_exercise(workout_id: str, request: AddExerciseRequest):
         gif_url = await get_exercise_gif_from_api(exercise_data.get("name", ""))
         exercise_data["gif_url"] = gif_url
     
-    # Add default values if missing
-    if "sets" not in exercise_data:
-        exercise_data["sets"] = 3
-    if "reps" not in exercise_data:
-        exercise_data["reps"] = "10-12"
-    if "rest_seconds" not in exercise_data:
-        exercise_data["rest_seconds"] = 90
+    # Goal-appropriate sets/reps/rest
+    # Match the added exercise to THIS program's goal and movement type, overriding
+    # any generic client-supplied defaults (the client always sends 3x10-12). This
+    # ensures e.g. a compound added to a strength program gets low reps / long rest.
+    _added = _params_for_added_exercise(
+        exercise_data.get("name", ""),
+        workout.get("goal", "general_fitness"),
+    )
+    exercise_data["sets"]         = _added["sets"]
+    exercise_data["reps"]         = _added["reps"]
+    exercise_data["rest_seconds"] = _added["rest_seconds"]
+    if _added.get("effort") and not exercise_data.get("effort"):
+        exercise_data["effort"] = _added["effort"]
     if "instructions" not in exercise_data:
         exercise_data["instructions"] = "Perform with proper form and controlled movements."
     if "muscle_groups" not in exercise_data:
