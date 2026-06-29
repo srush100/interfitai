@@ -37,7 +37,7 @@ export default function SplashScreen() {
           router.replace('/login');
         }
       } else {
-        router.replace('/onboarding');
+        router.replace('/welcome');
       }
     }, 1500);
 

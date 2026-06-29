@@ -431,12 +431,36 @@ export default function Onboarding() {
             <Ionicons name="arrow-forward" size={20} color={colors.textOnPrimary} />
           </TouchableOpacity>
         </View>
+
+        {step === 1 && (
+          <TouchableOpacity
+            style={styles.signInLink}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.signInLinkText}>
+              Already have an account? <Text style={styles.signInLinkBold}>Sign In</Text>
+            </Text>
+          </TouchableOpacity>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  signInLink: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+  },
+  signInLinkText: {
+    fontSize: 15,
+    color: colors.textSecondary,
+  },
+  signInLinkBold: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,
