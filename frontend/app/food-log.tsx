@@ -11,6 +11,7 @@ import {
   Alert,
   Platform,
   Animated,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -38,7 +39,9 @@ interface SearchResult {
   carbs: number;
   fats: number;
   is_ai_estimate?: boolean;
+  verified?: boolean;
   source?: string;
+  source_url?: string;
   confidence?: 'high' | 'medium' | 'low';
 }
 
@@ -312,6 +315,27 @@ export default function FoodLog() {
       Alert.alert('AI search failed', 'Try adding the food manually.');
     } finally {
       setAiSearching(false);
+    }
+  };
+
+  const [webSearching, setWebSearching] = useState(false);
+
+  const searchWithWeb = async () => {
+    const q = (aiResult?.name || searchQuery).trim();
+    if (!q) return;
+    setWebSearching(true);
+    try {
+      const response = await api.get(`/food/web-search?query=${encodeURIComponent(q)}`);
+      if (response.data && response.data.calories > 0 && response.data.verified) {
+        setAiResult(response.data);
+        setAiResultExpanded(false);
+      } else {
+        Alert.alert('No verified data found', "Couldn't find a reliable web source. Use the AI estimate or add manually.");
+      }
+    } catch (error) {
+      Alert.alert('Web search failed', 'Try the AI estimate or add manually.');
+    } finally {
+      setWebSearching(false);
     }
   };
 
@@ -1086,25 +1110,29 @@ export default function FoodLog() {
                         <Text style={styles.resultName}>{aiResult.name}</Text>
                         <View style={[
                           styles.aiEstimateBadge,
-                          aiResult.confidence === 'high'   && styles.aiEstimateBadgeHigh,
-                          aiResult.confidence === 'medium' && styles.aiEstimateBadgeMedium,
-                          aiResult.confidence === 'low'    && styles.aiEstimateBadgeLow,
+                          aiResult.verified ? styles.aiEstimateBadgeHigh : styles.aiEstimateBadgeMedium,
                         ]}>
                           <Text style={[
                             styles.aiEstimateBadgeText,
-                            aiResult.confidence === 'high'   && styles.aiEstimateBadgeTextHigh,
-                            aiResult.confidence === 'medium' && styles.aiEstimateBadgeTextMedium,
-                            aiResult.confidence === 'low'    && styles.aiEstimateBadgeTextLow,
+                            aiResult.verified ? styles.aiEstimateBadgeTextHigh : styles.aiEstimateBadgeTextMedium,
                           ]}>
-                            AI {aiResult.confidence === 'high' ? '✓ Verified' : aiResult.confidence === 'medium' ? '~ Estimate' : '⚠ Low confidence'}
+                            {aiResult.verified ? '✓ Verified · web' : 'AI Estimate'}
                           </Text>
                         </View>
                       </View>
-                      {/* Source line */}
+                      {/* Source line — tappable when web-verified */}
                       {aiResult.source && (
-                        <Text style={styles.aiSourceText} numberOfLines={1}>
-                          Source: {aiResult.source}
-                        </Text>
+                        aiResult.source_url ? (
+                          <TouchableOpacity onPress={() => Linking.openURL(aiResult.source_url!)}>
+                            <Text style={styles.aiSourceLink} numberOfLines={1}>
+                              Source: {aiResult.source} ↗
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <Text style={styles.aiSourceText} numberOfLines={1}>
+                            Source: {aiResult.source}
+                          </Text>
+                        )
                       )}
                       <Text style={styles.resultMacros}>
                         {aiResultExpanded
@@ -1124,6 +1152,23 @@ export default function FoodLog() {
                       color={colors.primary}
                     />
                   </TouchableOpacity>
+
+                  {!aiResult.verified && (
+                    <TouchableOpacity
+                      style={styles.verifyWebBtn}
+                      onPress={searchWithWeb}
+                      disabled={webSearching}
+                    >
+                      {webSearching ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <>
+                          <Ionicons name="globe-outline" size={15} color={colors.primary} />
+                          <Text style={styles.verifyWebBtnText}>Verify on the web</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
 
                   {aiResultExpanded && (
                     <>
@@ -2269,6 +2314,29 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginBottom: 2,
     fontStyle: 'italic',
+  },
+  aiSourceLink: {
+    fontSize: 11,
+    color: colors.primary,
+    marginBottom: 2,
+    textDecorationLine: 'underline',
+  },
+  verifyWebBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginHorizontal: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.primary + '50',
+    borderRadius: 10,
+  },
+  verifyWebBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
   },
   aiLowConfidenceWarning: {
     fontSize: 11,

@@ -127,6 +127,7 @@ FREE_ACCESS_EMAILS = []
 
 # Exercise demonstration - using ExerciseDB RapidAPI for computer-generated animated GIFs
 EXERCISEDB_API_KEY = os.getenv("EXERCISEDB_API_KEY")
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 EXERCISEDB_API_HOST = "exercisedb.p.rapidapi.com"
 EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 
@@ -8381,8 +8382,105 @@ async def ai_food_search(query: str):
         "carbs":          round(float(data.get("carbs_g", 0)), 1),
         "fats":           round(float(data.get("fat_g", 0)), 1),
         "is_ai_estimate": True,
+        "verified":       False,
         "source":         data.get("source", "AI estimate"),
+        "source_url":     "",
         "confidence":     data.get("confidence", "low"),
+    }
+
+
+@api_router.get("/food/web-search")
+async def web_food_search(query: str):
+    """Live, web-grounded nutrition lookup: Tavily search -> Haiku extraction.
+    Returns real, sourced macros for branded/regional items. Opt-in (costs a
+    Tavily search), so only called when the user taps 'Verify on the web'."""
+    import re as _re
+    from urllib.parse import urlparse
+
+    if not TAVILY_API_KEY:
+        return {
+            "name": query.title(), "calories": 0, "protein": 0, "carbs": 0, "fats": 0,
+            "is_ai_estimate": True, "verified": False,
+            "source": "Web search not configured", "source_url": "", "confidence": "low",
+        }
+
+    # 1. Tavily web search
+    search_content, source_url = "", ""
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": TAVILY_API_KEY,
+                    "query": f"{query} nutrition facts calories protein carbs fat per serving",
+                    "search_depth": "basic",
+                    "max_results": 5,
+                    "include_answer": True,
+                },
+            )
+        resp.raise_for_status()
+        tav = resp.json()
+        parts = []
+        if tav.get("answer"):
+            parts.append(f"Summary: {tav['answer']}")
+        for r in tav.get("results", [])[:5]:
+            parts.append(f"[{r.get('url', '')}] {r.get('content', '')}")
+            if not source_url:
+                source_url = r.get("url", "")
+        search_content = "\n\n".join(parts)
+    except Exception as e:
+        logger.warning(f"Tavily search failed for '{query}': {e}")
+
+    # 2. Haiku extraction (cheap, runs on existing Emergent key)
+    data = None
+    if search_content:
+        system_prompt = (
+            "You are a nutrition data extractor. Using ONLY the web search results "
+            "provided, extract nutrition for ONE standard serving of the requested food. "
+            "Prefer official brand/restaurant figures. If results give a specific size/serving "
+            "(e.g. 'large'), use that. Convert kilojoules to calories if needed (1 kcal = 4.184 kJ). "
+            "Respond with ONLY this JSON:\n"
+            '{"food_name":"<name>","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,'
+            '"serving_size":"<e.g. 1 large / 100g>","found":true}\n'
+            "Set found=false if the results do not contain real nutrition data for this food."
+        )
+        try:
+            raw = await call_claude_haiku(
+                system_message=system_prompt,
+                user_message=f"Food: {query}\n\nWeb search results:\n{search_content}",
+                temperature=0.0,
+                max_tokens=400,
+            )
+            content = (raw or "").strip()
+            if content.startswith("```"):
+                content = _re.sub(r"```(?:json)?\n?", "", content).strip("`").strip()
+            if content and not content.startswith("{"):
+                m = _re.search(r"\{[\s\S]+\}", content)
+                if m:
+                    content = m.group(0)
+            data = json.loads(content)
+        except Exception as e:
+            logger.warning(f"Haiku extraction failed for '{query}': {e}")
+
+    # 3. Build response
+    if data and data.get("found", True) and float(data.get("calories", 0)) > 0:
+        domain = urlparse(source_url).netloc.replace("www.", "") if source_url else "web"
+        return {
+            "name":           data.get("food_name", query.title()),
+            "calories":       round(float(data.get("calories", 0))),
+            "protein":        round(float(data.get("protein_g", 0)), 1),
+            "carbs":          round(float(data.get("carbs_g", 0)), 1),
+            "fats":           round(float(data.get("fat_g", 0)), 1),
+            "is_ai_estimate": True,
+            "verified":       True,
+            "source":         domain,
+            "source_url":     source_url,
+            "confidence":     "high",
+        }
+    return {
+        "name": query.title(), "calories": 0, "protein": 0, "carbs": 0, "fats": 0,
+        "is_ai_estimate": True, "verified": False,
+        "source": "No reliable web source found", "source_url": "", "confidence": "low",
     }
 
 # ==================== GROCERY LIST ENDPOINTS ====================
