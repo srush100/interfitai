@@ -1021,6 +1021,24 @@ export default function FoodLog() {
               </View>
             )}
 
+            {/* Offer AI search alongside database results */}
+            {!searching && searchResults.length > 0 && !aiResult && (
+              <TouchableOpacity
+                style={styles.aiSearchInlineBtn}
+                onPress={searchWithAI}
+                disabled={aiSearching}
+              >
+                {aiSearching ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="sparkles" size={16} color={colors.primary} />
+                    <Text style={styles.aiSearchInlineBtnText}>Not quite right? Search with AI</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
             {/* Empty state + AI fallback */}
             {!searching && searchQuery.trim() !== '' && searchResults.length === 0 && !aiResult && (
               <View style={styles.emptySearchState}>
@@ -2166,6 +2184,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  aiSearchInlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 4,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.primary + '50',
+    borderRadius: 10,
+  },
+  aiSearchInlineBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
   },
   aiSearchBtn: {
     flexDirection: 'row',

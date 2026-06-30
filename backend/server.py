@@ -8310,111 +8310,79 @@ async def search_foods(query: str):
 
 @api_router.get("/food/ai-search")
 async def ai_food_search(query: str):
-    """Use Claude Sonnet 4 with web search to find accurate nutrition for any food"""
-    system_prompt = """You are a precise nutrition database. When given a food name, you MUST:
-1. First use web search to find the exact nutrition information for this specific food item, especially for restaurant/chain items
-2. Search for the official nutrition page of the restaurant or brand if applicable
-3. For Australian chains (Red Rooster, Hungry Jack's, Oporto, Grill'd, Nando's etc.) search their Australian nutrition menus specifically
-4. For US chains (McDonald's, In-N-Out, Chipotle etc.) search their official nutrition calculators
-5. For secret menu items (like In-N-Out Dutchman, Flying Dutchman, Animal Style etc.) search explicitly for "[item name] nutrition calories protein"
-6. Return ONLY this exact JSON, no other text:
-{"food_name": "[exact full name]", "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "fat_saturated_g": 0, "fiber_g": 0, "sodium_mg": 0, "serving_size": "[e.g. 1 burger / 100g / 1 piece]", "source": "[where you got this data e.g. In-N-Out official website]", "confidence": "high/medium/low"}
-7. confidence should be "high" only if you found official nutrition data, "medium" if from a reliable third party, "low" if estimated"""
+    """Return accurate nutrition for any food (generic, branded, or restaurant)
+    via Claude Sonnet — the same reliable path the rest of the app uses."""
+    import re as _re
 
-    async def _call_ai(user_text: str, simple: bool = False) -> dict:
-        """Make the httpx call. simple=True uses a plain no-tools fallback."""
-        import re as _re
-        payload = {
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 600,
-            "temperature": 0.2,
-            "system": system_prompt if not simple else (
-                "You are a nutrition expert. Respond ONLY with valid JSON: "
-                "{\"food_name\":\"\",\"calories\":0,\"protein_g\":0,\"carbs_g\":0,"
-                "\"fat_g\":0,\"fat_saturated_g\":0,\"fiber_g\":0,\"sodium_mg\":0,"
-                "\"serving_size\":\"100g\",\"source\":\"AI estimate\",\"confidence\":\"low\"}"
-            ),
-            "messages": [{"role": "user", "content": user_text}],
-        }
-        if not simple:
-            payload["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
+    system_prompt = (
+        "You are a precise nutrition database with deep knowledge of generic foods, "
+        "packaged/branded products, and restaurant/chain menu items worldwide (US, UK, "
+        "Australia, etc.). Given a food name, return your most accurate nutrition figures "
+        "for ONE standard serving of that SPECIFIC item.\n"
+        "- For a named brand or chain item, use that brand's known values "
+        "(e.g. a McDonald's Big Mac, an In-N-Out Double-Double, a Red Rooster Quarter Pack).\n"
+        "- For a generic food with no amount given, use a sensible standard serving and state it.\n"
+        "- NEVER return all zeros for a real food. If unsure, give your best evidence-based "
+        "estimate and set confidence to 'low'.\n"
+        "Respond with ONLY this JSON, nothing else:\n"
+        '{"food_name":"<exact full name>","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,'
+        '"fat_saturated_g":0,"fiber_g":0,"sodium_mg":0,"serving_size":"<e.g. 1 burger / 100g / 1 cup>",'
+        '"source":"<brand / USDA / estimate>","confidence":"high|medium|low"}\n'
+        "confidence: 'high' if confident of official/standard values, 'medium' if a close "
+        "estimate, 'low' if a rough estimate."
+    )
 
-        async with httpx.AsyncClient() as _http:
-            resp = await _http.post(
-                "https://integrations.emergentagent.com/llm/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {EMERGENT_LLM_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=45,
-            )
-        resp.raise_for_status()
-
-        msg = resp.json()["choices"][0]["message"]
-        content = msg.get("content") or ""
-
-        # Normalise list content blocks (tool_use responses may send a list)
-        if isinstance(content, list):
-            content = " ".join(
-                b.get("text", "") for b in content
-                if isinstance(b, dict) and b.get("type") == "text"
-            )
-
-        content = str(content).strip()
-
-        # If content is empty, check tool_calls for any embedded text
-        if not content and msg.get("tool_calls"):
-            for tc in msg["tool_calls"]:
-                args = tc.get("function", {}).get("arguments", "")
-                if args and "{" in args:
-                    content = args
-                    break
-
-        # Strip markdown fences
+    def _parse(raw: str) -> dict:
+        content = (raw or "").strip()
         if content.startswith("```"):
             content = _re.sub(r"```(?:json)?\n?", "", content).strip("`").strip()
-
-        # Extract first JSON object from any surrounding text
         if content and not content.startswith("{"):
             m = _re.search(r"\{[\s\S]+\}", content)
             if m:
                 content = m.group(0)
-
-        if not content:
-            raise ValueError("Empty response from AI")
-
         return json.loads(content)
 
-    # ── attempt 1: web-search enabled ──────────────────────────────────────
-    try:
-        data = await _call_ai(query)
-    except Exception as first_err:
-        logger.warning(f"AI food search (web) failed for '{query}': {first_err}")
-        # ── attempt 2: simple prompt, no tools ───────────────────────────
+    def _all_zero(d: dict) -> bool:
+        return (float(d.get("calories", 0)) == 0
+                and float(d.get("protein_g", 0)) == 0
+                and float(d.get("carbs_g", 0)) == 0
+                and float(d.get("fat_g", 0)) == 0)
+
+    data = None
+    for attempt in range(2):
         try:
-            data = await _call_ai(query, simple=True)
-        except Exception as second_err:
-            logger.error(f"AI food search (simple) also failed: {second_err}")
-            # ── final fallback: return a low-confidence stub so UI never errors ──
-            data = {
-                "food_name": query.title(),
-                "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0,
-                "fat_saturated_g": 0, "fiber_g": 0, "sodium_mg": 0,
-                "serving_size": "unknown",
-                "source": "Could not retrieve data — please add manually",
-                "confidence": "low",
-            }
+            raw = await call_claude_sonnet(
+                system_message=system_prompt,
+                user_message=f"Nutrition for: {query}",
+                temperature=0.2 if attempt == 0 else 0.0,
+                max_tokens=500,
+            )
+            parsed = _parse(raw)
+            data = parsed
+            # An all-zero result for a real food means a bad parse/answer — retry once.
+            if not _all_zero(parsed):
+                break
+        except Exception as e:
+            logger.warning(f"AI food search attempt {attempt + 1} failed for '{query}': {e}")
+
+    if not data:
+        data = {
+            "food_name": query.title(),
+            "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0,
+            "serving_size": "unknown",
+            "source": "Could not retrieve data — please add manually",
+            "confidence": "low",
+        }
 
     return {
-        "name":          data.get("food_name", query.title()),
-        "calories":      round(float(data.get("calories", 0))),
-        "protein":       round(float(data.get("protein_g", 0)), 1),
-        "carbs":         round(float(data.get("carbs_g", 0)), 1),
-        "fats":          round(float(data.get("fat_g", 0)), 1),
+        "name":           data.get("food_name", query.title()),
+        "calories":       round(float(data.get("calories", 0))),
+        "protein":        round(float(data.get("protein_g", 0)), 1),
+        "carbs":          round(float(data.get("carbs_g", 0)), 1),
+        "fats":           round(float(data.get("fat_g", 0)), 1),
         "is_ai_estimate": True,
-        "source":        data.get("source", "AI estimate"),
-        "confidence":    data.get("confidence", "low"),
+        "source":         data.get("source", "AI estimate"),
+        "confidence":     data.get("confidence", "low"),
     }
 
 # ==================== GROCERY LIST ENDPOINTS ====================
