@@ -7670,12 +7670,18 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
             user_prompt += f"\n\nAdditional context from user: {request.additional_context}"
         
         content = await call_claude_sonnet(
-            system_message="""You are a nutrition expert. Analyze the food image and provide accurate nutritional information.
-Consider any additional context provided by the user (e.g., portion size, specific ingredients).
+            system_message="""You are an expert nutritionist analyzing a food photo. Maximise accuracy:
+1. Identify EVERY food item visible — mains, sides, sauces, dressings, drinks.
+2. Estimate portion sizes from visual cues: plate/bowl diameter (~27cm standard dinner plate), cutlery, hands, glass/cup size, packaging dimensions.
+3. If branding or packaging is visible (restaurant wrapper, chain cup, product box), use that brand's known nutrition values for that item and size.
+4. Sum ALL identified items into ONE total covering the entire pictured serving.
+5. The user's additional context is the highest-priority correction — obey it exactly (e.g. '2 eggs', 'half portion', 'large size', 'no dressing').
+6. food_name should briefly list what you identified (e.g. "Grilled chicken, rice & side salad").
+7. Be realistic, not conservative — restaurant portions are usually larger than home portions.
 Respond with ONLY valid JSON, no other text. Use this exact format:
 {"food_name": "Name", "serving_size": "1 serving", "calories": 300, "protein": 25.0, "carbs": 30.0, "fats": 10.0, "fiber": 5.0, "sugar": 8.0, "sodium": 400.0}""",
             user_message=user_prompt,
-            temperature=0.3,
+            temperature=0.2,
             max_tokens=500,
             image_base64=request.image_base64
         )
@@ -7735,9 +7741,10 @@ Respond with ONLY valid JSON, no other text. Use this exact format:
             image_base64=request.image_base64[:100] + "..."  # Store truncated for reference
         )
         
-        await db.food_logs.insert_one(food_entry.model_dump())
+        if not request.preview:
+            await db.food_logs.insert_one(food_entry.model_dump())
         return food_entry
-        
+
     except HTTPException:
         raise
     except Exception as e:

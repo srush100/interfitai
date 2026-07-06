@@ -465,9 +465,9 @@ export default function FoodLog() {
     }
   };
 
+  const [photoResult, setPhotoResult] = useState<any>(null);
   const analyzeFood = async () => {
     if (!capturedImage || !profile?.id) return;
-    
     setAnalyzing(true);
     try {
       const response = await api.post('/food/analyze', {
@@ -476,18 +476,39 @@ export default function FoodLog() {
         meal_type: selectedMealType,
         additional_context: additionalContext || undefined,
         quantity: quantity,
+        preview: true,
       });
-      
-      Alert.alert('Food Logged!', `${quantity}x ${response.data.food_name} - ${response.data.calories * quantity} cal`);
-      setCapturedImage(null);
-      setAdditionalContext('');
-      setQuantity(1);
-      loadTodayLogs();
-      setActiveTab('log');
+      setPhotoResult(response.data);
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.detail || 'Failed to analyze food');
     } finally {
       setAnalyzing(false);
+    }
+  };
+  const logPhotoResult = async () => {
+    if (!photoResult || !profile?.id) return;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await api.post('/food/log', {
+        user_id: profile.id,
+        food_name: photoResult.food_name,
+        serving_size: photoResult.serving_size,
+        calories: photoResult.calories,
+        protein: photoResult.protein,
+        carbs: photoResult.carbs,
+        fats: photoResult.fats,
+        meal_type: selectedMealType,
+        logged_date: today,
+      });
+      Alert.alert('Logged!', `${photoResult.food_name} — ${photoResult.calories} cal`);
+      setCapturedImage(null);
+      setPhotoResult(null);
+      setAdditionalContext('');
+      setQuantity(1);
+      loadTodayLogs();
+      setActiveTab('log');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to log food');
     }
   };
 
@@ -1243,46 +1264,108 @@ export default function FoodLog() {
                   style={styles.previewImage}
                 />
                 
-                {/* Additional Context Input */}
-                <TextInput
-                  style={styles.contextInput}
-                  placeholder="Add context (e.g., '2 eggs, half portion')"
-                  placeholderTextColor={colors.textMuted}
-                  value={additionalContext}
-                  onChangeText={setAdditionalContext}
-                  multiline
-                />
-                
-                {/* Quantity Selector */}
-                {renderQuantitySelector()}
-                
-                <View style={styles.previewActions}>
-                  <TouchableOpacity
-                    style={styles.retakeBtn}
-                    onPress={() => {
-                      setCapturedImage(null);
-                      setAdditionalContext('');
-                      setQuantity(1);
-                    }}
-                  >
-                    <Ionicons name="refresh" size={20} color={colors.text} />
-                    <Text style={styles.retakeBtnText}>Retake</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.analyzeBtn}
-                    onPress={analyzeFood}
-                    disabled={analyzing}
-                  >
-                    {analyzing ? (
-                      <ActivityIndicator size="small" color={colors.background} />
-                    ) : (
-                      <>
-                        <Ionicons name="sparkles" size={20} color={colors.background} />
-                        <Text style={styles.analyzeBtnText}>Analyze & Log</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                {photoResult ? (
+                  <>
+                    {/* AI result — review before logging */}
+                    <View style={styles.photoResultCard}>
+                      <Text style={styles.photoResultName}>{photoResult.food_name}</Text>
+                      <Text style={styles.photoResultServing}>{photoResult.serving_size}</Text>
+                      <Text style={styles.photoResultMacros}>
+                        {photoResult.calories} cal • {photoResult.protein}g P • {photoResult.carbs}g C • {photoResult.fats}g F
+                      </Text>
+                      <Text style={styles.photoResultHint}>
+                        Not right? Add a correction below and re-analyze — e.g. "half portion", "large size", "2 pieces", "no sauce".
+                      </Text>
+                    </View>
+                    <TextInput
+                      style={styles.contextInput}
+                      placeholder="Add a correction (e.g., 'half portion, no dressing')"
+                      placeholderTextColor={colors.textMuted}
+                      value={additionalContext}
+                      onChangeText={setAdditionalContext}
+                      multiline
+                    />
+                    <View style={styles.previewActions}>
+                      <TouchableOpacity
+                        style={styles.retakeBtn}
+                        onPress={analyzeFood}
+                        disabled={analyzing}
+                      >
+                        {analyzing ? (
+                          <ActivityIndicator size="small" color={colors.text} />
+                        ) : (
+                          <>
+                            <Ionicons name="refresh" size={20} color={colors.text} />
+                            <Text style={styles.retakeBtnText}>Re-analyze</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.analyzeBtn}
+                        onPress={logPhotoResult}
+                        disabled={analyzing}
+                      >
+                        <Ionicons name="checkmark-circle" size={20} color={colors.background} />
+                        <Text style={styles.analyzeBtnText}>Log It</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.photoStartOverBtn}
+                      onPress={() => {
+                        setCapturedImage(null);
+                        setPhotoResult(null);
+                        setAdditionalContext('');
+                        setQuantity(1);
+                      }}
+                    >
+                      <Text style={styles.photoStartOverText}>Start over with a new photo</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    {/* Additional Context Input */}
+                    <TextInput
+                      style={styles.contextInput}
+                      placeholder="Add context (e.g., '2 eggs, half portion')"
+                      placeholderTextColor={colors.textMuted}
+                      value={additionalContext}
+                      onChangeText={setAdditionalContext}
+                      multiline
+                    />
+                    
+                    {/* Quantity Selector */}
+                    {renderQuantitySelector()}
+                    
+                    <View style={styles.previewActions}>
+                      <TouchableOpacity
+                        style={styles.retakeBtn}
+                        onPress={() => {
+                          setCapturedImage(null);
+                          setPhotoResult(null);
+                          setAdditionalContext('');
+                          setQuantity(1);
+                        }}
+                      >
+                        <Ionicons name="refresh" size={20} color={colors.text} />
+                        <Text style={styles.retakeBtnText}>Retake</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.analyzeBtn}
+                        onPress={analyzeFood}
+                        disabled={analyzing}
+                      >
+                        {analyzing ? (
+                          <ActivityIndicator size="small" color={colors.background} />
+                        ) : (
+                          <>
+                            <Ionicons name="sparkles" size={20} color={colors.background} />
+                            <Text style={styles.analyzeBtnText}>Analyze</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
               </View>
             ) : (
               <View style={styles.captureContainer}>
@@ -2337,6 +2420,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: colors.primary,
+  },
+  photoResultCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+    padding: 16,
+    marginBottom: 12,
+  },
+  photoResultName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  photoResultServing: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  photoResultMacros: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primary,
+    marginTop: 8,
+  },
+  photoResultHint: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 8,
+    lineHeight: 17,
+  },
+  photoStartOverBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  photoStartOverText: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textDecorationLine: 'underline',
   },
   aiLowConfidenceWarning: {
     fontSize: 11,
