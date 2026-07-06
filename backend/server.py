@@ -7670,17 +7670,20 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         if request.additional_context:
             user_prompt += f"\n\nAdditional context from user: {request.additional_context}"
         
-        content = await call_claude_sonnet(
-            system_message="""You are an expert nutritionist analyzing a food photo. Maximise accuracy:
-1. Identify EVERY food item visible — mains, sides, sauces, dressings, drinks.
+        vision_prompt = """You are an expert nutritionist analyzing a food photo. Maximise accuracy:
+0. IF A NUTRITION LABEL / INFORMATION PANEL IS VISIBLE (packaged food): TRANSCRIBE the printed values EXACTLY for EVERY field — calories, protein, carbs, fat, fibre, sugar, sodium. NEVER estimate any value that is printed on the label. Use the "per serving" / "per package" column, NOT the "per 100g" column, unless the user says otherwise. If energy is only in kJ, convert to calories (kJ / 4.184). Cross-check front-of-pack claims (e.g. "65g PROTEIN") against the panel — they should agree.
+1. Otherwise, identify EVERY food item visible — mains, sides, sauces, dressings, drinks.
 2. Estimate portion sizes from visual cues: plate/bowl diameter (~27cm standard dinner plate), cutlery, hands, glass/cup size, packaging dimensions.
 3. If branding or packaging is visible (restaurant wrapper, chain cup, product box), use that brand's known nutrition values for that item and size.
 4. Sum ALL identified items into ONE total covering the entire pictured serving.
 5. The user's additional context is the highest-priority correction — obey it exactly (e.g. '2 eggs', 'half portion', 'large size', 'no dressing').
 6. food_name should briefly list what you identified (e.g. "Grilled chicken, rice & side salad").
 7. Be realistic, not conservative — restaurant portions are usually larger than home portions.
+8. SANITY CHECK before answering: calories should roughly equal protein*4 + carbs*4 + fat*9. If your numbers don't reconcile, re-read the image — especially any label — and correct them.
 Respond with ONLY valid JSON, no other text. Use this exact format:
-{"food_name": "Name", "serving_size": "1 serving", "calories": 300, "protein": 25.0, "carbs": 30.0, "fats": 10.0, "fiber": 5.0, "sugar": 8.0, "sodium": 400.0}""",
+{"food_name": "Name", "serving_size": "1 serving", "calories": 300, "protein": 25.0, "carbs": 30.0, "fats": 10.0, "fiber": 5.0, "sugar": 8.0, "sodium": 400.0}"""
+        content = await call_claude_sonnet(
+            system_message=vision_prompt,
             user_message=user_prompt,
             temperature=0.2,
             max_tokens=500,
@@ -7723,6 +7726,41 @@ Respond with ONLY valid JSON, no other text. Use this exact format:
             else:
                 raise HTTPException(status_code=500, detail="Failed to parse food analysis. Please try with a clearer image.")
         
+        # Macro-consistency guard
+        # Calories should approx equal protein*4 + carbs*4 + fat*9. A large gap means a
+        # misread (worst case: a nutrition label read wrongly) — retry once,
+        # telling the model exactly what disagreed. Keep whichever answer reconciles better.
+        def _derived_cal(fd: dict) -> float:
+            return (float(fd.get("protein", 0)) * 4
+                    + float(fd.get("carbs", 0)) * 4
+                    + float(fd.get("fats", 0)) * 9)
+        try:
+            stated = float(food_data.get("calories", 0))
+            derived = _derived_cal(food_data)
+            if stated > 0 and derived > 0 and abs(stated - derived) / stated > 0.25:
+                import re as _re2
+                retry_raw = await call_claude_sonnet(
+                    system_message=vision_prompt,
+                    user_message=(
+                        f"{user_prompt}\n\nIMPORTANT: your previous reading was internally inconsistent "
+                        f"(stated {stated:.0f} calories, but protein/carbs/fat imply {derived:.0f}). "
+                        "Re-read the image carefully — if a nutrition label is visible, transcribe its "
+                        "printed per-serving values exactly for every field."
+                    ),
+                    temperature=0.0,
+                    max_tokens=500,
+                    image_base64=request.image_base64
+                )
+                rc = (retry_raw or "").strip()
+                rc = _re2.sub(r"```(?:json)?\n?", "", rc).strip("`").strip()
+                m = _re2.search(r"\{[\s\S]+\}", rc)
+                if m:
+                    retry_data = json.loads(m.group(0))
+                    rs, rd = float(retry_data.get("calories", 0)), _derived_cal(retry_data)
+                    if rs > 0 and rd > 0 and abs(rs - rd) / rs < abs(stated - derived) / stated:
+                        food_data = retry_data
+        except Exception as _ve:
+            logger.warning(f"Food analysis consistency check skipped: {_ve}")
         # Apply quantity multiplier
         qty = request.quantity if request.quantity > 0 else 1
         
