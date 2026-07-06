@@ -1,0 +1,37 @@
+{
+  "summary": "Per-serving nutrition label fix verified end-to-end. All 16 tests passed (100%). Synthetic nutrition panel PNG (600×500, PIL-rendered table) with clearly different per-serving (65.4g protein, 400 cal) vs per-100g (14.5g protein, 89 cal) values was sent to POST /api/food/analyze with preview=true. Response returned protein=65.4g and calories=400 — exactly matching the PER SERVING column, NOT per-100g. All prompt text checks and process/quality checks also passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_per_serving_nutrition_label.py",
+    "/app/test_reports/pytest/per_serving_nutrition_label.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "user_prompt reinforcement at line 7671-7672: 'transcribe its printed AVG PER SERVING values exactly (NOT the per-100g column)' — CONFIRMED present",
+    "vision_prompt rule 0 at line 7678: 'TRANSCRIBE the printed values EXACTLY ... per serving / per package column, NOT the per 100g column' — CONFIRMED present",
+    "Backend PID 2070 RUNNING — latest code is live",
+    "food-log.tsx quality: 0.8 at lines 440 (pickImage) and 459 (takePhoto) — CONFIRMED",
+    "AI returned protein=65.4g exactly (per-serving value), calories=400, carbs=10.0, fats=8.0 — all match per-serving column precisely"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_per_serving_nutrition_label.py"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 tests passed)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "TEST_per_serving_check and TEST_per_serving_noinsert_* user IDs used; no persistent data created (preview=true throughout)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Per-serving nutrition label fix is working correctly. The vision model (Claude Sonnet) correctly reads the PER SERVING column and returns protein=65.4g, calories=400 — NOT the per-100g values (14.5g / 89 cal). The synthetic test image is a proper PIL-rendered 600×500 nutrition table. Test file: /app/backend/tests/test_per_serving_nutrition_label.py.",
+  "rca_of_issue": "Root Cause: The original vision prompt did not specify which column to read from a dual-column nutrition panel (per-serving vs per-100g). The model defaulted to per-100g or computed per-100g × serving_weight, returning 14.5g protein instead of 65.4g. Fix: (1) user_prompt now explicitly says 'transcribe its printed AVG PER SERVING values exactly (NOT the per-100g column)' (lines 7671-7672). (2) vision_prompt rule 0 at line 7678 says 'TRANSCRIBE the printed values EXACTLY … Use the per serving / per package column, NOT the per 100g column'. Verification: synthetic PIL-rendered nutrition panel with clearly different values confirmed model returns per-serving values (protein=65.4g ✓, calories=400 ✓) not per-100g (14.5g ✗, 89 ✗)."
+}

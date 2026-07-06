@@ -7666,7 +7666,11 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
             raise HTTPException(status_code=400, detail="Invalid image data")
         
         # Build the user prompt with optional context
-        user_prompt = "Analyze this food image and provide nutritional information in JSON format only."
+        user_prompt = (
+            "Analyze this food image and provide nutritional information in JSON format only. "
+            "If a nutrition information panel/label is visible, transcribe its printed AVG PER SERVING "
+            "values exactly (NOT the per-100g column) — do not estimate or compute anything that is printed."
+        )
         if request.additional_context:
             user_prompt += f"\n\nAdditional context from user: {request.additional_context}"
         
