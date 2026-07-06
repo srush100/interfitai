@@ -3216,6 +3216,7 @@ class FoodImageAnalyzeRequest(BaseModel):
     meal_type: str = "snack"
     additional_context: Optional[str] = None  # e.g., "2 eggs, half portion"
     quantity: int = 1
+    preview: bool = False  # True = analyze only, don't log — user reviews first
 
 # Chat Models
 class ChatMessage(BaseModel):
