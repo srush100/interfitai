@@ -437,7 +437,7 @@ export default function FoodLog() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.5,
+      quality: 0.8,
       base64: true,
     });
 
@@ -456,7 +456,7 @@ export default function FoodLog() {
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.5,
+      quality: 0.8,
       base64: true,
     });
 
