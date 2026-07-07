@@ -1610,3 +1610,9 @@ agent_communication:
       2) Prompt macro table: added Regular/fatty beef mince (cooked): 250cal 26P 0C 17F.
       3) INGREDIENT_MACROS: added fatty/regular beef mince + ground beef keys (250,26,0,17).
       Backend restarted, health 200. Verified via live generation with "fatty beef mince, eggs, rice": regular mince used with correct regular macros (NOT swapped to lean), day totals equal meal sums exactly. Note: sample Day 3 had no mince meal (LLM once-per-day adherence variance) - reported to user, no fix requested yet.
+
+  - agent: "main"
+    message: |
+      ONCE-PER-DAY RULE PROMOTION (2026-06, commit 6859917, backend only):
+      Added dynamic ELITE STANDARDS rule 7 (injected only when preferred_foods provided): "EVERY preferred food (<list>) MUST appear in at least one meal on EVERY day - no day may skip any of them". Sits directly above the JSON template where compliance is strongest. NO post-generation day-regeneration added (per user decision - avoids extra AI call/latency). Backend restarted, health 200.
+      Also delivered code-review description of the deferred foods_to_avoid swap bug to user for P0 assessment (see finish summary): swap endpoint has 5-layer defense (plan-persisted bans, PROTEIN_GROUPS expansion, prompt+system bans, substring post-validation with 3 retries, final-attempt ingredient strip). Residual gaps: plural/singular substring mismatch, non-protein allergens (gluten/nuts/soy/lactose) only prompt-protected, composite/hidden ingredients (e.g. mayo contains egg), final strip doesn't recompute macros.
