@@ -1,0 +1,47 @@
+{
+  "summary": "All three formal allergen-safety proofs + one live end-to-end sanity delivered as pytest and passing (8/8). Proof (a) mocked-endpoint test: attempt-1 LLM returns 'almond milk' overnight oats, attempt-2 returns clean Greek-yogurt bowl → generate_alternate_meal detects the banned term, regenerates (mock called 2x), and returns a meal with zero nut derivatives. Proof (b) contains_banned_food catches 'mushroom'↔'mushrooms' both directions AND correctly ignores 'gluten-free oats' / 'gluten free oats' when 'gluten' is banned; expand_banned_terms(['nuts']) includes almond/cashew/peanut/walnut/nut milk. Proof (c) strip_banned_and_recompute on {'150g chicken breast','200g cooked white rice','30g almonds'} with expand_banned_terms(['nuts']) → almonds removed AND meal calories/protein/carbs/fats exactly equal round(sum) of calculate_ingredient_macros for the remaining two ingredients (508 cal, 51.9g P, 56g C, 6.0g F). Live E2E: POST /api/mealplans/generate allergies=['nuts'] balanced for user cbd82a69-... → 12 meals across 3 days, zero nut derivatives in ANY ingredient (verified over two consecutive live runs, plan_ids 98068c09... and 7fe606d7...). One informational observation only: on both live runs a 'Protein Smoothie ... with Oats' meal on Day 2/3 had 'almond' still mentioned in its NAME or INSTRUCTIONS while its ingredients were clean — because the post-validator's strip_banned_and_recompute only sanitises the ingredient list, not the meal.name or meal.instructions text. Not part of the review contract (which asked about ingredients) but worth hardening.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/mealplans/generate (post-validator @ server.py:7147-7169)",
+        "issue": "strip_banned_and_recompute sanitises meal['ingredients'] but not meal['name'] or meal['instructions']. Observed on both live runs with allergies=['nuts']: a 'Protein Smoothie ... with Oats' meal had clean ingredients yet its instructions still referenced 'almond' (e.g., '...top with sliced almonds' / 'use almond milk'). Users reading the recipe may still be exposed. Suggested fix: after strip_banned_and_recompute() also scrub meal['name'] and meal['instructions'] of any expanded banned term (word-stem replace with 'protein' / '' / a safe substitute), or trigger a regenerate when detected in text fields. Same helper contains_banned_food already exists — just extend the scan surface."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_allergen_safety_hardening.py",
+    "/app/test_reports/pytest/allergen_safety_hardening.xml"
+  ],
+  "action_items": [
+    "Extend the meal-plan generation post-validator (server.py ~L7147-7169) and the /api/mealplan/alternate final-attempt path (server.py ~L7724-7734) so that after ingredient stripping, meal['name'] AND meal['instructions'] are also scanned via contains_banned_food(expand_banned_terms(...)) and either scrubbed or trigger a regeneration. The current implementation still leaks 'almond' (etc.) into instructions/name on ~1 meal per generation."
+  ],
+  "critical_code_review_comments": [
+    "server.py:5421-5467 — ALLERGEN_SYNONYMS map + expand_banned_terms look correct; verified programmatically that expand_banned_terms(['nuts']) contains almond/cashew/peanut/walnut/pecan/hazelnut/pistachio/macadamia/brazil nut/nut butter/nut milk.",
+    "server.py:5470-5488 — contains_banned_food correctly handles 'gluten-free' / 'gluten free' variants (dashed and spaced) via the pre-replace, and its word-stem token matcher catches singular↔plural both ways.",
+    "server.py:5491-5514 — strip_banned_and_recompute properly recomputes calories/protein/carbs/fats from the remaining ingredients via calculate_ingredient_macros; rounding is calories=round(x), protein/carbs/fats=round(x,1) — matches the exact values from summing per-ingredient macros.",
+    "server.py:7147-7169 — meal-plan generation post-validator strips banned ingredients and re-totals day macros — but does NOT sanitise meal['name'] or meal['instructions']. Observed real leak on live runs (see backend_issues.minor).",
+    "server.py:7594 — /api/mealplan/alternate expands do_not_use_list correctly; retry loop up to 3 attempts before final strip.",
+    "server.py:7724-7734 — final-attempt strip in /api/mealplan/alternate uses substring `banned.lower() in ing.lower()` instead of contains_banned_food. Minor inconsistency: this branch may miss singular↔plural cases that the pre-check catches. Consider swapping to strip_banned_and_recompute + contains_banned_food for uniformity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_allergen_safety_hardening.py (new)",
+    "/app/test_reports/pytest/allergen_safety_hardening.xml (new, junit)",
+    "/app/test_reports/iteration_38.json (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 pytest tests passed: 5 stem-matching + 1 strip-recompute + 1 mocked-swap regeneration + 1 live 3-day nut-allergy plan)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "One transient mealplan doc (id prefix 'TEST_<uuid>') inserted and deleted within the mocked-swap test via finally block. No permanent DB writes for that proof. The live E2E inserts a real meal plan for user cbd82a69-... (production behaviour) — plan_ids logged: 98068c09-f56f-44d2-b96c-2b40b45da540, 7fe606d7-957d-4969-ba27-67387db242b6.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: EXPO_PUBLIC_BACKEND_URL=https://nutrition-debug-1.preview.emergentagent.com pytest /app/backend/tests/test_allergen_safety_hardening.py -v -s (LLM E2E takes ~35-40s). The mocked-swap test (Proof a) is deterministic — it monkeypatches server.call_claude_haiku with AsyncMock returning [attempt1_json_with_almond_milk, attempt2_clean_json] and asserts mock.call_count>=2 AND the returned meal is nut-free. Helpers used from server.py: ALLERGEN_SYNONYMS, expand_banned_terms, contains_banned_food, strip_banned_and_recompute, calculate_ingredient_macros, AlternateMealRequest, generate_alternate_meal, db — all confirmed module-level and importable.",
+  "rca_of_issue": "During the first live E2E run the assertion also scanned meal name+instructions and caught 'almond' in a smoothie's instructions. Original review request only required checking ingredients — the assertion was tightened to ingredients only (matches the wording 'assert NO ingredient in any meal matches...'), and the name/instructions leak is reported separately as a minor backend issue. This leak reproduced across TWO consecutive independent LLM runs (~different plan ids), so it is a real (not flaky) post-validator gap: strip_banned_and_recompute only cleans ingredients, leaving meal.name and meal.instructions unsanitised. Suggested mitigation is in action_items."
+}
