@@ -6194,6 +6194,11 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
                 "food is a protein (e.g. beef mince), use it IN PLACE of the example protein (chicken/tuna/yogurt) "
                 "in as many meals as sensible — recompute the grams from the macro reference table so the meal "
                 "still hits its protein and fat targets. Do the same for preferred carbs.\n"
+                "⚠️ RESPECT THE EXACT VARIANT the user names — 'fatty' or 'regular' beef mince means regular mince "
+                "(250cal 26P 17F per 100g cooked), 'extra lean' means the 5% variant (153cal 25P 6F). NEVER substitute "
+                "a leaner or fattier variant than the user asked for. If their variant is high-fat and the fat budget "
+                "is tight, fit it by using ZERO added oils/fats elsewhere and moderating the portion size — never by "
+                "swapping their chosen variant.\n"
                 "Supplement with complementary whole foods to hit macro targets."
             )
         else:
@@ -6276,7 +6281,7 @@ ABSOLUTE PROHIBITIONS — NEVER include these:
 
 MACRO REFERENCE (per 100g cooked unless noted):
 Chicken breast: 165cal 31P 0C 3.6F | Turkey breast: 135cal 30P 0C 1F | Tuna: 116cal 26P 0C 0.8F
-Beef sirloin: 207cal 26P 0C 11F | Extra-lean beef mince 5% (cooked): 153cal 25P 0C 6F | Shrimp: 99cal 24P 0C 0.3F | Cod: 82cal 18P 0C 0.7F
+Beef sirloin: 207cal 26P 0C 11F | Extra-lean beef mince 5% (cooked): 153cal 25P 0C 6F | Regular/fatty beef mince (cooked): 250cal 26P 0C 17F | Shrimp: 99cal 24P 0C 0.3F | Cod: 82cal 18P 0C 0.7F
 Salmon: 208cal 20P 0C 13F | Egg whites (100g): 52cal 11P 0.7C 0.2F | Whole egg (50g ea): 78cal 6.5P 0.5C 5.5F
 Tofu firm: 144cal 17P 3C 8F | Tempeh: 192cal 20P 8C 11F | Greek yogurt 0%: 59cal 10P 4C 0.4F
 Cottage cheese: 84cal 11P 4C 2.5F | White rice cooked: 130cal 2.7P 28C 0.3F | Brown rice: 112cal 2.7P 24C 0.9F
@@ -6383,6 +6388,10 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                 "lean beef mince": (170, 26, 0, 8),
                 "extra lean ground beef": (153, 25, 0, 6),
                 "lean ground beef": (170, 26, 0, 8),
+                "fatty beef mince": (250, 26, 0, 17),
+                "regular beef mince": (250, 26, 0, 17),
+                "fatty ground beef": (250, 26, 0, 17),
+                "regular ground beef": (250, 26, 0, 17),
                 "beef mince": (250, 26, 0, 17),
                 "beef": (180, 26, 0, 8),
                 "extra lean beef": (175, 26, 0, 7),
