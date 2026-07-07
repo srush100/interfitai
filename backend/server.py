@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -4995,6 +4996,525 @@ async def get_exercise_gif(exercise_id: str, resolution: str = "360"):
 
 # ==================== MEAL PLAN ENDPOINTS ====================
 
+# Ingredient database for accurate macro calculation (per 100g)
+# Format: (calories, protein, carbs, fat)
+INGREDIENT_MACROS = {
+    # Proteins - Poultry
+    "chicken breast": (165, 31, 0, 3.6),
+    "chicken": (165, 31, 0, 3.6),  # default to breast
+    "chicken thigh": (209, 26, 0, 11),
+    "chicken thighs": (209, 26, 0, 11),
+    "turkey breast": (135, 30, 0, 1),
+    "turkey": (170, 21, 0, 9),
+    "ground turkey": (170, 21, 0, 9),
+    # Proteins - Beef
+    "sirloin steak": (180, 26, 0, 8),
+    "sirloin": (180, 26, 0, 8),
+    "ribeye steak": (250, 25, 0, 17),
+    "ribeye": (250, 25, 0, 17),
+    "rump steak": (175, 27, 0, 7),
+    "rump": (175, 27, 0, 7),
+    "steak": (180, 26, 0, 8),  # default to sirloin
+    "ground beef": (250, 26, 0, 17),
+    "extra lean beef mince": (153, 25, 0, 6),
+    "premium beef mince": (153, 25, 0, 6),
+    "premium ground beef": (153, 25, 0, 6),
+    "5 star beef mince": (153, 25, 0, 6),
+    "five star beef mince": (153, 25, 0, 6),
+    "lean beef mince": (170, 26, 0, 8),
+    "extra lean ground beef": (153, 25, 0, 6),
+    "lean ground beef": (170, 26, 0, 8),
+    "fatty beef mince": (250, 26, 0, 17),
+    "regular beef mince": (250, 26, 0, 17),
+    "fatty ground beef": (250, 26, 0, 17),
+    "regular ground beef": (250, 26, 0, 17),
+    "beef mince": (250, 26, 0, 17),
+    "beef": (180, 26, 0, 8),
+    "extra lean beef": (175, 26, 0, 7),
+    "lean beef": (175, 26, 0, 7),
+    # Proteins - Fish/Seafood
+    "salmon": (208, 20, 0, 13),
+    "tilapia": (128, 26, 0, 2.7),
+    "tuna": (116, 26, 0, 0.8),
+    "shrimp": (99, 24, 0, 0.3),
+    "cod": (82, 18, 0, 0.7),
+    "fish": (100, 20, 0, 2),  # generic fish
+    # Proteins - Eggs/Dairy
+    "egg": (155, 13, 1.1, 11),  # per 100g (about 2 eggs)
+    "eggs": (155, 13, 1.1, 11),
+    "whole eggs": (155, 13, 1.1, 11),
+    "large eggs": (155, 13, 1.1, 11),
+    "egg white": (52, 11, 0.7, 0.2),
+    "egg whites": (52, 11, 0.7, 0.2),
+    "greek yogurt": (59, 10, 4, 0.4),
+    "yogurt": (59, 10, 4, 0.4),
+    "cottage cheese": (84, 11, 4, 2.5),
+    # Proteins - Other
+    "tofu": (144, 17, 3, 8),
+    "tofu firm": (144, 17, 3, 8),
+    "firm tofu": (144, 17, 3, 8),
+    "tempeh": (192, 20, 8, 11),
+    "seitan": (166, 25, 14, 2),          # wheat gluten — 25g P per 100g
+    "edamame": (121, 11, 8, 5),           # shelled edamame — 11g P per 100g
+    "shelled edamame": (121, 11, 8, 5),
+    "nutritional yeast": (355, 50, 35, 7), # 50g P per 100g!
+    "hemp seeds": (553, 31, 8.7, 49),      # 31g P per 100g
+    "hemp seed": (553, 31, 8.7, 49),
+    "tahini": (595, 17, 23, 54),           # sesame paste
+    "pork": (242, 27, 0, 14),
+    "pork chop": (231, 27, 0, 13),
+    "bacon": (417, 13, 1.4, 40),
+    "ham": (145, 21, 1, 6),
+    # Carbs - Grains
+    "rice": (130, 2.7, 28, 0.3),
+    "white rice": (130, 2.7, 28, 0.3),
+    "brown rice": (112, 2.6, 24, 0.9),
+    "oats": (389, 17, 66, 7),
+    "oatmeal": (68, 2.4, 12, 1.4),
+    "quinoa": (120, 4.4, 21, 1.9),
+    "pasta": (131, 5, 25, 1.1),
+    "whole wheat pasta": (131, 5, 25, 1.1),
+    "bread": (265, 9, 49, 3.2),
+    "whole wheat bread": (247, 10, 41, 3.4),
+    "wrap": (310, 8, 52, 8),
+    "whole wheat wrap": (310, 8, 52, 8),
+    "tortilla": (312, 8, 52, 8),
+    "couscous": (176, 6, 36, 0.3),
+    "cooked couscous": (112, 3.8, 23, 0.2),
+    "bulgur": (83, 3, 19, 0.2),
+    "farro": (170, 7, 34, 1.5),
+    "barley": (123, 2.3, 28, 0.4),
+    "noodles": (138, 5, 25, 2),
+    "ramen": (138, 5, 25, 2),
+    "rice noodles": (109, 0.9, 25, 0.2),
+    "soba noodles": (99, 5, 21, 0.1),
+    "udon noodles": (118, 3, 24, 0.3),
+    # Carbs - Starchy Vegetables
+    "sweet potato": (86, 1.6, 20, 0.1),
+    "potato": (77, 2, 17, 0.1),
+    "potatoes": (77, 2, 17, 0.1),
+    "corn": (86, 3.2, 19, 1.2),
+    # Carbs - Fruits
+    "banana": (89, 1.1, 23, 0.3),
+    "bananas": (89, 1.1, 23, 0.3),
+    "apple": (52, 0.3, 14, 0.2),
+    "apples": (52, 0.3, 14, 0.2),
+    "berries": (43, 1, 10, 0.3),
+    "mixed berries": (43, 1, 10, 0.3),
+    "orange": (47, 0.9, 12, 0.1),
+    "oranges": (47, 0.9, 12, 0.1),
+    "grapes": (67, 0.6, 17, 0.4),
+    "mango": (60, 0.8, 15, 0.4),
+    "pineapple": (50, 0.5, 13, 0.1),
+    # Vegetables - Leafy Greens
+    "spinach": (23, 2.9, 3.6, 0.4),
+    "kale": (49, 4.3, 9, 0.9),
+    "lettuce": (15, 1.4, 2.9, 0.2),
+    "greens": (20, 2, 3.5, 0.3),  # generic greens
+    "mixed greens": (20, 2, 3.5, 0.3),
+    "salad greens": (20, 2, 3.5, 0.3),
+    "romaine": (17, 1.2, 3.3, 0.3),
+    "arugula": (25, 2.6, 3.7, 0.7),
+    # Vegetables - Cruciferous
+    "broccoli": (34, 2.8, 7, 0.4),
+    "cauliflower": (25, 1.9, 5, 0.3),
+    "cabbage": (25, 1.3, 6, 0.1),
+    "brussels sprouts": (43, 3.4, 9, 0.3),
+    # Vegetables - Other
+    "asparagus": (20, 2.2, 4, 0.1),
+    "zucchini": (17, 1.2, 3.1, 0.3),
+    "bell pepper": (31, 1, 6, 0.3),
+    "pepper": (31, 1, 6, 0.3),
+    "peppers": (31, 1, 6, 0.3),
+    "tomato": (18, 0.9, 3.9, 0.2),
+    "tomatoes": (18, 0.9, 3.9, 0.2),
+    "cherry tomatoes": (18, 0.9, 3.9, 0.2),
+    "cucumber": (15, 0.7, 3.6, 0.1),
+    "carrots": (41, 0.9, 10, 0.2),
+    "carrot": (41, 0.9, 10, 0.2),
+    "onion": (40, 1.1, 9, 0.1),
+    "onions": (40, 1.1, 9, 0.1),
+    "mushroom": (22, 3.1, 3.3, 0.3),
+    "mushrooms": (22, 3.1, 3.3, 0.3),
+    "avocado": (160, 2, 9, 15),
+    "celery": (16, 0.7, 3, 0.2),
+    "green beans": (31, 1.8, 7, 0.1),
+    "peas": (81, 5.4, 14, 0.4),
+    "mixed vegetables": (50, 2.5, 10, 0.3),
+    "vegetables": (50, 2.5, 10, 0.3),
+    "sweet peppers": (31, 1, 6, 0.3),
+    "eggplant": (25, 1, 6, 0.2),
+    "squash": (16, 0.6, 3.4, 0.2),
+    "beets": (43, 1.6, 10, 0.2),
+    "radish": (16, 0.7, 3.4, 0.1),
+    "leek": (61, 1.5, 14, 0.3),
+    "bok choy": (13, 1.5, 2, 0.2),
+    # Fats/Oils
+    "olive oil": (884, 0, 0, 100),
+    "coconut oil": (862, 0, 0, 100),
+    "vegetable oil": (884, 0, 0, 100),
+    "butter": (717, 0.9, 0.1, 81),
+    "ghee": (876, 0, 0, 97),
+    "avocado oil": (884, 0, 0, 100),
+    # Nuts and Seeds
+    "almond": (579, 21, 22, 50),
+    "almonds": (579, 21, 22, 50),
+    "peanut butter": (588, 25, 20, 50),
+    "almond butter": (614, 21, 19, 56),
+    "walnut": (654, 15, 14, 65),
+    "walnuts": (654, 15, 14, 65),
+    "cashews": (553, 18, 30, 44),
+    "peanuts": (567, 26, 16, 49),
+    "seeds": (534, 18, 23, 45),  # average seeds
+    "chia seeds": (486, 17, 42, 31),
+    "flax seeds": (534, 18, 29, 42),
+    "sunflower seeds": (584, 21, 20, 51),
+    "pumpkin seeds": (559, 30, 11, 49),
+    "hemp seeds": (553, 32, 9, 49),
+    "macadamia": (718, 8, 14, 76),
+    "pecans": (691, 9, 14, 72),
+    "pistachios": (560, 20, 28, 45),
+    "hazelnuts": (628, 15, 17, 61),
+    # Dairy
+    "milk": (42, 3.4, 5, 1),
+    "whole milk": (61, 3.2, 4.8, 3.3),
+    "almond milk": (17, 0.6, 1.4, 1.1),
+    "cheese": (403, 25, 1.3, 33),
+    "cheddar": (403, 25, 1.3, 33),
+    "mozzarella": (280, 28, 3, 17),
+    "parmesan": (431, 38, 4, 29),
+    "feta": (264, 14, 4, 21),
+    "cream cheese": (342, 6, 4, 34),
+    # Protein Supplements
+    "whey protein": (400, 80, 10, 3.3),
+    "protein powder": (400, 80, 10, 3.3),
+    "protein": (400, 80, 10, 3.3),
+    # Condiments/Spreads
+    "hummus": (166, 8, 14, 10),
+    "salsa": (36, 2, 8, 0.2),
+    "mayo": (680, 1, 0, 75),
+    "mayonnaise": (680, 1, 0, 75),
+    "mustard": (66, 4, 5, 4),
+    "honey": (304, 0.3, 82, 0),
+    "maple syrup": (260, 0, 67, 0),
+    # Legumes
+    "black beans": (132, 9, 24, 0.5),
+    "chickpeas": (164, 9, 27, 2.6),
+    "lentils": (116, 9, 20, 0.4),
+    "kidney beans": (127, 9, 23, 0.5),
+    # Lamb
+    "lamb": (258, 25, 0, 17),
+    "lamb chop": (258, 25, 0, 17),
+    "lamb chops": (258, 25, 0, 17),
+    "lamb loin": (258, 25, 0, 17),
+    "lamb leg": (225, 28, 0, 12),
+    "ground lamb": (283, 23, 0, 21),
+    "minced lamb": (283, 23, 0, 21),
+    # More seafood
+    "prawn": (99, 24, 0, 0.3),
+    "prawns": (99, 24, 0, 0.3),
+    "scallops": (111, 21, 5, 1),
+    "crab": (97, 19, 0.5, 1.5),
+    # Breakfast / snack staples
+    "granola": (471, 10, 64, 20),
+    "rice cake": (387, 8, 82, 3),
+    "rice cakes": (387, 8, 82, 3),
+    "blueberry": (57, 0.7, 14, 0.3),
+    "blueberries": (57, 0.7, 14, 0.3),
+    "strawberry": (32, 0.7, 8, 0.3),
+    "strawberries": (32, 0.7, 8, 0.3),
+    "raspberries": (52, 1.2, 12, 0.7),
+    # Condiments
+    "soy sauce": (53, 8, 5, 0),
+    "tamari": (53, 8, 5, 0),
+    "teriyaki sauce": (89, 3.5, 17, 0),
+    "tomato sauce": (29, 1.5, 6, 0.3),
+    "garlic": (149, 6, 33, 0.5),
+    "ginger": (80, 1.8, 18, 0.8),
+    # Vegan / specialty ingredients (frequently missing)
+    "chickpea flour": (387, 22, 58, 6),
+    "besan": (387, 22, 58, 6),         # Indian name for chickpea flour
+    "dark chocolate": (598, 7.8, 43, 42),
+    "dark chocolate chips": (598, 7.8, 43, 42),
+    "cacao": (228, 20, 28, 14),
+    "cocoa powder": (228, 20, 28, 14),
+    "agave nectar": (310, 0.1, 76, 0),
+    "agave syrup": (310, 0.1, 76, 0),
+    "balsamic vinegar": (88, 0.5, 17, 0),
+    "apple cider vinegar": (22, 0, 0.9, 0),
+    "lemon juice": (22, 0.4, 7, 0.2),
+    "lime juice": (25, 0.4, 8, 0.1),
+    "nutritional yeast": (355, 50, 35, 7),
+    "yeast flakes": (355, 50, 35, 7),
+    "miso paste": (199, 12, 26, 6),
+    "miso": (199, 12, 26, 6),
+    "coconut aminos": (74, 2, 18, 0),
+    "plant milk": (35, 1.5, 4, 1.8),   # generic plant milk
+    "soy milk": (54, 3.3, 4.5, 2.2),
+    "oat milk": (47, 1.5, 8, 0.9),
+    "coconut yogurt": (100, 0.7, 6, 9),
+    "soy yogurt": (67, 3.9, 6.6, 2.4),
+    "vegan protein": (380, 72, 8, 5),  # generic vegan protein powder
+    "pea protein": (380, 72, 8, 5),
+    "brown sugar": (380, 0, 98, 0),
+    "maple syrup": (260, 0.1, 67, 0.1),
+    "tahini": (595, 17, 23, 54),        # sesame paste — high fat
+    "almond flour": (571, 21, 20, 50),
+    "flaxseed meal": (534, 18, 29, 42),
+    "chia seeds": (486, 17, 42, 31),
+    "spirulina": (290, 57, 24, 8),
+    "maca powder": (325, 11, 66, 4),
+    "matcha powder": (306, 26, 52, 5),
+}
+
+def calculate_ingredient_macros(ingredient_str):
+    """Calculate macros from ingredient string like '250g sweet potato' or '3 large eggs'"""
+    import re
+    ingredient_str = ingredient_str.lower().strip()
+    
+    # Standard unit conversions to grams
+    UNIT_TO_GRAMS = {
+        # Weight units
+        'g': 1, 'gram': 1, 'grams': 1,
+        'kg': 1000, 'oz': 28.35, 'lb': 453.6,
+        # Volume units (approximate)
+        'ml': 1, 'cup': 240, 'cups': 240,
+        'tbsp': 14, 'tablespoon': 14, 'tablespoons': 14,
+        'tsp': 5, 'teaspoon': 5, 'teaspoons': 5,
+        # Count units for common items
+        'large': 1, 'medium': 1, 'small': 1,
+        'whole': 1, 'slice': 1, 'slices': 1,
+        'piece': 1, 'pieces': 1, 'serving': 1, 'scoop': 1,
+    }
+    
+    # Weight per item for count-based ingredients (in grams)
+    ITEM_WEIGHTS = {
+        'egg': 50, 'eggs': 50, 'large egg': 50, 'whole egg': 50,
+        'banana': 120, 'bananas': 120,
+        'apple': 180, 'apples': 180,
+        'orange': 130, 'oranges': 130,
+        'slice bread': 30, 'slice of bread': 30,
+        'chicken breast': 175, 'breast': 175,
+        'steak': 225,
+        # Small aromatics — 1 clove/piece ≈ 3-5g, NOT 100g
+        'garlic': 4, 'garlic clove': 4, 'garlic cloves': 4,
+        'ginger': 5, 'ginger piece': 5,
+        'shallot': 20,
+        # Fruits (medium size)
+        'lime': 67, 'limes': 67, 'lemon': 58, 'lemons': 58,
+        'tomato': 120, 'tomatoes': 120, 'cherry tomato': 17, 'cherry tomatoes': 17,
+        'avocado': 200,
+        'peach': 150, 'nectarine': 140, 'plum': 85,
+        'kiwi': 70, 'fig': 50, 'date': 24,
+        # Vegetables (medium size)
+        'onion': 110, 'large onion': 150, 'medium onion': 110, 'small onion': 75,
+        'bell pepper': 120, 'pepper': 120, 'jalapeno': 14, 'chili': 15,
+        'mushroom': 90, 'large mushroom': 120,
+        'carrot': 80, 'medium carrot': 80, 'large carrot': 120,
+        'zucchini': 196,  # one medium zucchini
+        'potato': 180, 'sweet potato': 130, 'medium potato': 180,
+    }
+    
+    # Try pattern: "food (Xg)" like "chicken breast (200g)"
+    pattern_parens = re.match(r'(.+?)\s*\((\d+(?:\.\d+)?)\s*(g|gram|grams|ml)?\)', ingredient_str)
+    # Try pattern: "Xg food" or "X g food" - REQUIRES a unit
+    pattern_with_unit = re.match(r'(\d+(?:\.\d+)?)\s*(g|gram|grams|kg|oz|lb|ml|cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons)\s+(.+)', ingredient_str)
+    # Try pattern: "X modifier food" (count-based like "3 large eggs", "3 whole eggs")
+    pattern_count_modifier = re.match(r'(\d+(?:\.\d+)?)\s+(large|medium|small|whole|slice|slices|piece|pieces|serving|scoop)\s+(.+)', ingredient_str)
+    # Try pattern: "X food" (count-based like "3 eggs", "2 bananas")
+    pattern_count_simple = re.match(r'(\d+(?:\.\d+)?)\s+([a-z]+.*)', ingredient_str)
+    
+    amount = 0
+    food_name = ""
+    is_count_based = False
+    
+    if pattern_parens:  # "chicken breast (200g)"
+        food_name = pattern_parens.group(1).strip()
+        amount = float(pattern_parens.group(2))
+        unit = pattern_parens.group(3) or 'g'
+        if unit in UNIT_TO_GRAMS:
+            amount *= UNIT_TO_GRAMS[unit]
+    elif pattern_with_unit:  # "200g chicken breast"
+        amount = float(pattern_with_unit.group(1))
+        unit = pattern_with_unit.group(2)
+        food_name = pattern_with_unit.group(3).strip()
+        if unit in UNIT_TO_GRAMS:
+            amount *= UNIT_TO_GRAMS[unit]
+    elif pattern_count_modifier:  # "3 large eggs" or "3 whole eggs"
+        amount = float(pattern_count_modifier.group(1))
+        modifier = pattern_count_modifier.group(2)
+        food_name = pattern_count_modifier.group(3).strip()
+        is_count_based = True
+        # Combine modifier with food name for lookup
+        food_name = f"{modifier} {food_name}"
+    elif pattern_count_simple:  # "3 eggs"
+        amount = float(pattern_count_simple.group(1))
+        food_name = pattern_count_simple.group(2).strip()
+        is_count_based = True
+    else:
+        return None
+    
+    # Clean food name
+    food_name = re.sub(r'\s+', ' ', food_name).strip()
+    # Remove common descriptors
+    for desc in ['grilled', 'baked', 'fried', 'steamed', 'roasted', 'boiled', 'cooked', 'raw', 'fresh', 'dried', 'mixed']:
+        food_name = food_name.replace(desc, '').strip()
+    
+    # Find matching ingredient in database
+    best_match = None
+    best_score = 0
+    
+    for key in INGREDIENT_MACROS.keys():
+        score = 0
+        # Exact match
+        if key == food_name or food_name == key:
+            score = 100
+        # Key is in food name (e.g., "egg" in "eggs")
+        elif key in food_name:
+            score = 80 - len(food_name) + len(key)
+        # Food name is in key
+        elif food_name in key:
+            score = 70 - len(key) + len(food_name)
+        else:
+            # Word-level matching
+            food_words = set(food_name.split())
+            key_words = set(key.split())
+            common = food_words & key_words
+            if common:
+                score = len(common) * 30
+        
+        if score > best_score:
+            best_score = score
+            best_match = key
+    
+    if best_match and best_score >= 20:
+        cal, pro, carb, fat = INGREDIENT_MACROS[best_match]
+        
+        # For count-based ingredients, convert to grams
+        if is_count_based:
+            # Check if we have a weight for this item
+            item_weight = None
+            for item_key, weight in ITEM_WEIGHTS.items():
+                if item_key in food_name or food_name in item_key or best_match in item_key or item_key in best_match:
+                    item_weight = weight
+                    break
+            
+            if item_weight:
+                amount = amount * item_weight  # Convert count to grams
+            else:
+                # Default assumption for unknown count items
+                amount = amount * 100  # Assume 100g per item
+        
+        multiplier = amount / 100  # database is per 100g
+        return {
+            "calories": round(cal * multiplier),
+            "protein": round(pro * multiplier, 1),
+            "carbs": round(carb * multiplier, 1),
+            "fats": round(fat * multiplier, 1)
+        }
+    
+    # If no match found, log it for debugging
+    logger.warning(f"Could not find ingredient match for: '{ingredient_str}' (parsed as: '{food_name}')")
+    return None
+
+# ==================== ALLERGEN SYNONYM EXPANSION & BANNED-FOOD MATCHING ====================
+ALLERGEN_SYNONYMS = {
+    "gluten": ["wheat", "flour", "bread", "pasta", "barley", "rye", "couscous", "semolina", "cracker"],
+    "nuts": ["almond", "cashew", "peanut", "walnut", "pecan", "hazelnut", "pistachio", "macadamia", "brazil nut", "nut butter", "nut milk"],
+    "soy": ["tofu", "tempeh", "edamame", "soy sauce", "miso"],
+    "lactose": ["milk", "cheese", "yogurt", "cream", "butter", "whey", "casein"],
+    "dairy": ["milk", "cheese", "yogurt", "cream", "butter", "whey", "casein"],
+    "eggs": ["egg", "mayonnaise", "mayo", "aioli"],
+    "shellfish": ["prawn", "shrimp", "crab", "lobster", "oyster", "mussel", "scallop"],
+}
+
+
+def _stem_word(w: str) -> str:
+    """Very light stemmer: singular/plural match both ways (mushrooms <-> mushroom)."""
+    w = w.lower()
+    if len(w) > 3 and w.endswith("s"):
+        return w[:-1]
+    return w
+
+
+def _words_match(a: str, b: str) -> bool:
+    sa, sb = _stem_word(a), _stem_word(b)
+    if sa == sb:
+        return True
+    # prefix match for stem variants like tomato/tomatoes -> tomato/tomatoe
+    if len(sa) >= 4 and len(sb) >= 4 and (sa.startswith(sb) or sb.startswith(sa)):
+        return True
+    return False
+
+
+def expand_banned_terms(banned_list):
+    """Expand banned terms with allergen synonyms/derivatives (nuts -> almond, cashew...)."""
+    expanded = []
+    for term in banned_list or []:
+        t = str(term).lower().strip()
+        if not t:
+            continue
+        if t not in expanded:
+            expanded.append(t)
+        syns = ALLERGEN_SYNONYMS.get(t)
+        if syns is None:
+            # try stem/plural variants of the key ("nut" -> "nuts", "egg" -> "eggs")
+            syns = ALLERGEN_SYNONYMS.get(t + "s") or ALLERGEN_SYNONYMS.get(_stem_word(t)) or ALLERGEN_SYNONYMS.get(_stem_word(t) + "s")
+        if syns:
+            for s in syns:
+                if s not in expanded:
+                    expanded.append(s)
+    return expanded
+
+
+def contains_banned_food(text: str, banned_term: str) -> bool:
+    """Word-stem matching of a banned term (single word or phrase) inside text.
+    'mushrooms' catches 'mushroom' and vice versa. Ignores 'gluten-free' style mentions."""
+    t = (text or "").lower()
+    bt = (banned_term or "").lower().strip()
+    if not t or not bt:
+        return False
+    # Avoid false positives: "gluten-free" should not match banned "gluten"
+    for variant in (bt, _stem_word(bt), bt + "s"):
+        t = t.replace(f"{variant}-free", "").replace(f"{variant} free", "")
+    tokens = re.findall(r"[a-z]+", t)
+    phrase = re.findall(r"[a-z]+", bt)
+    if not phrase:
+        return False
+    n = len(phrase)
+    for i in range(len(tokens) - n + 1):
+        if all(_words_match(tokens[i + j], phrase[j]) for j in range(n)):
+            return True
+    return False
+
+
+def strip_banned_and_recompute(meal: dict, banned_terms) -> list:
+    """Remove ingredients containing banned terms, then recompute the meal's macros
+    from the remaining ingredients via the ingredient database. Returns removed ingredients."""
+    ingredients = meal.get("ingredients", [])
+    removed = [ing for ing in ingredients if any(contains_banned_food(str(ing), b) for b in banned_terms)]
+    if not removed:
+        return []
+    meal["ingredients"] = [ing for ing in ingredients if ing not in removed]
+    total_cal = total_pro = total_carb = total_fat = 0.0
+    matched_any = False
+    for ing in meal["ingredients"]:
+        m = calculate_ingredient_macros(str(ing))
+        if m:
+            matched_any = True
+            total_cal += m["calories"]
+            total_pro += m["protein"]
+            total_carb += m["carbs"]
+            total_fat += m["fats"]
+    if matched_any:
+        meal["calories"] = round(total_cal)
+        meal["protein"] = round(total_pro, 1)
+        meal["carbs"] = round(total_carb, 1)
+        meal["fats"] = round(total_fat, 1)
+    return removed
+
+
+
 @api_router.post("/mealplans/generate", response_model=MealPlan)
 async def generate_meal_plan(request: MealPlanGenerateRequest):
     """Generate meal plan using DIET-SPECIFIC templates scaled to user's targets"""
@@ -6189,7 +6709,7 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
         preferred_daily_rule = ""
         if request.preferred_foods and request.preferred_foods.strip():
             preferred_daily_rule = (
-                f"\n7. EVERY preferred food ({request.preferred_foods}) MUST appear in at least one meal "
+                f"\n8. EVERY preferred food ({request.preferred_foods}) MUST appear in at least one meal "
                 "on EVERY day — no day may skip any of them"
             )
             foods_section = (
@@ -6200,7 +6720,7 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
                 "in as many meals as sensible — recompute the grams from the macro reference table so the meal "
                 "still hits its protein and fat targets. Do the same for preferred carbs.\n"
                 "⚠️ RESPECT THE EXACT VARIANT the user names — 'fatty' or 'regular' beef mince means regular mince "
-                "(250cal 26P 17F per 100g cooked), 'extra lean' means the 5% variant (153cal 25P 6F). NEVER substitute "
+                "(250cal 26P 17F per 100g cooked); 'extra lean', 'premium' or '5 star' means the 5% variant (153cal 25P 6F). NEVER substitute "
                 "a leaner or fattier variant than the user asked for. If their variant is high-fat and the fat budget "
                 "is tight, fit it by using ZERO added oils/fats elsewhere and moderating the portion size — never by "
                 "swapping their chosen variant.\n"
@@ -6322,7 +6842,8 @@ ELITE STANDARDS:
 3. Give each meal an appealing, descriptive name (e.g. "Herb-Marinated Chicken with Jasmine Rice & Broccolini")
 4. Instructions: concise 2-3 step cooking method. NEVER mention specific gram or ml amounts in instructions — all quantities are already listed in the ingredients field. Write "add olive oil" NOT "add 15g olive oil".
 5. Calculate ACCURATE macros from the actual ingredient weights you use
-6. All meat, fish and grain quantities are COOKED weights — never raw{preferred_daily_rule}
+6. All meat, fish and grain quantities are COOKED weights — never raw
+7. Whenever beef mince / ground beef is an ingredient, append its lean-to-fat ratio in parentheses after the name: extra lean, premium or 5-star → "(95/5)", lean → "(90/10)", regular or fatty → "(80/20)" — e.g. "200g extra lean beef mince (95/5)"{preferred_daily_rule}
 
 Return ONLY this JSON (no markdown):
 {{"name": "{plan_name} Elite Meal Plan", "meal_days": [
@@ -6369,422 +6890,6 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
             
             meal_data = json.loads(content)
             
-            # Ingredient database for accurate macro calculation (per 100g)
-            # Format: (calories, protein, carbs, fat)
-            INGREDIENT_MACROS = {
-                # Proteins - Poultry
-                "chicken breast": (165, 31, 0, 3.6),
-                "chicken": (165, 31, 0, 3.6),  # default to breast
-                "chicken thigh": (209, 26, 0, 11),
-                "chicken thighs": (209, 26, 0, 11),
-                "turkey breast": (135, 30, 0, 1),
-                "turkey": (170, 21, 0, 9),
-                "ground turkey": (170, 21, 0, 9),
-                # Proteins - Beef
-                "sirloin steak": (180, 26, 0, 8),
-                "sirloin": (180, 26, 0, 8),
-                "ribeye steak": (250, 25, 0, 17),
-                "ribeye": (250, 25, 0, 17),
-                "rump steak": (175, 27, 0, 7),
-                "rump": (175, 27, 0, 7),
-                "steak": (180, 26, 0, 8),  # default to sirloin
-                "ground beef": (250, 26, 0, 17),
-                "extra lean beef mince": (153, 25, 0, 6),
-                "lean beef mince": (170, 26, 0, 8),
-                "extra lean ground beef": (153, 25, 0, 6),
-                "lean ground beef": (170, 26, 0, 8),
-                "fatty beef mince": (250, 26, 0, 17),
-                "regular beef mince": (250, 26, 0, 17),
-                "fatty ground beef": (250, 26, 0, 17),
-                "regular ground beef": (250, 26, 0, 17),
-                "beef mince": (250, 26, 0, 17),
-                "beef": (180, 26, 0, 8),
-                "extra lean beef": (175, 26, 0, 7),
-                "lean beef": (175, 26, 0, 7),
-                # Proteins - Fish/Seafood
-                "salmon": (208, 20, 0, 13),
-                "tilapia": (128, 26, 0, 2.7),
-                "tuna": (116, 26, 0, 0.8),
-                "shrimp": (99, 24, 0, 0.3),
-                "cod": (82, 18, 0, 0.7),
-                "fish": (100, 20, 0, 2),  # generic fish
-                # Proteins - Eggs/Dairy
-                "egg": (155, 13, 1.1, 11),  # per 100g (about 2 eggs)
-                "eggs": (155, 13, 1.1, 11),
-                "whole eggs": (155, 13, 1.1, 11),
-                "large eggs": (155, 13, 1.1, 11),
-                "egg white": (52, 11, 0.7, 0.2),
-                "egg whites": (52, 11, 0.7, 0.2),
-                "greek yogurt": (59, 10, 4, 0.4),
-                "yogurt": (59, 10, 4, 0.4),
-                "cottage cheese": (84, 11, 4, 2.5),
-                # Proteins - Other
-                "tofu": (144, 17, 3, 8),
-                "tofu firm": (144, 17, 3, 8),
-                "firm tofu": (144, 17, 3, 8),
-                "tempeh": (192, 20, 8, 11),
-                "seitan": (166, 25, 14, 2),          # wheat gluten — 25g P per 100g
-                "edamame": (121, 11, 8, 5),           # shelled edamame — 11g P per 100g
-                "shelled edamame": (121, 11, 8, 5),
-                "nutritional yeast": (355, 50, 35, 7), # 50g P per 100g!
-                "hemp seeds": (553, 31, 8.7, 49),      # 31g P per 100g
-                "hemp seed": (553, 31, 8.7, 49),
-                "tahini": (595, 17, 23, 54),           # sesame paste
-                "pork": (242, 27, 0, 14),
-                "pork chop": (231, 27, 0, 13),
-                "bacon": (417, 13, 1.4, 40),
-                "ham": (145, 21, 1, 6),
-                # Carbs - Grains
-                "rice": (130, 2.7, 28, 0.3),
-                "white rice": (130, 2.7, 28, 0.3),
-                "brown rice": (112, 2.6, 24, 0.9),
-                "oats": (389, 17, 66, 7),
-                "oatmeal": (68, 2.4, 12, 1.4),
-                "quinoa": (120, 4.4, 21, 1.9),
-                "pasta": (131, 5, 25, 1.1),
-                "whole wheat pasta": (131, 5, 25, 1.1),
-                "bread": (265, 9, 49, 3.2),
-                "whole wheat bread": (247, 10, 41, 3.4),
-                "wrap": (310, 8, 52, 8),
-                "whole wheat wrap": (310, 8, 52, 8),
-                "tortilla": (312, 8, 52, 8),
-                "couscous": (176, 6, 36, 0.3),
-                "cooked couscous": (112, 3.8, 23, 0.2),
-                "bulgur": (83, 3, 19, 0.2),
-                "farro": (170, 7, 34, 1.5),
-                "barley": (123, 2.3, 28, 0.4),
-                "noodles": (138, 5, 25, 2),
-                "ramen": (138, 5, 25, 2),
-                "rice noodles": (109, 0.9, 25, 0.2),
-                "soba noodles": (99, 5, 21, 0.1),
-                "udon noodles": (118, 3, 24, 0.3),
-                # Carbs - Starchy Vegetables
-                "sweet potato": (86, 1.6, 20, 0.1),
-                "potato": (77, 2, 17, 0.1),
-                "potatoes": (77, 2, 17, 0.1),
-                "corn": (86, 3.2, 19, 1.2),
-                # Carbs - Fruits
-                "banana": (89, 1.1, 23, 0.3),
-                "bananas": (89, 1.1, 23, 0.3),
-                "apple": (52, 0.3, 14, 0.2),
-                "apples": (52, 0.3, 14, 0.2),
-                "berries": (43, 1, 10, 0.3),
-                "mixed berries": (43, 1, 10, 0.3),
-                "orange": (47, 0.9, 12, 0.1),
-                "oranges": (47, 0.9, 12, 0.1),
-                "grapes": (67, 0.6, 17, 0.4),
-                "mango": (60, 0.8, 15, 0.4),
-                "pineapple": (50, 0.5, 13, 0.1),
-                # Vegetables - Leafy Greens
-                "spinach": (23, 2.9, 3.6, 0.4),
-                "kale": (49, 4.3, 9, 0.9),
-                "lettuce": (15, 1.4, 2.9, 0.2),
-                "greens": (20, 2, 3.5, 0.3),  # generic greens
-                "mixed greens": (20, 2, 3.5, 0.3),
-                "salad greens": (20, 2, 3.5, 0.3),
-                "romaine": (17, 1.2, 3.3, 0.3),
-                "arugula": (25, 2.6, 3.7, 0.7),
-                # Vegetables - Cruciferous
-                "broccoli": (34, 2.8, 7, 0.4),
-                "cauliflower": (25, 1.9, 5, 0.3),
-                "cabbage": (25, 1.3, 6, 0.1),
-                "brussels sprouts": (43, 3.4, 9, 0.3),
-                # Vegetables - Other
-                "asparagus": (20, 2.2, 4, 0.1),
-                "zucchini": (17, 1.2, 3.1, 0.3),
-                "bell pepper": (31, 1, 6, 0.3),
-                "pepper": (31, 1, 6, 0.3),
-                "peppers": (31, 1, 6, 0.3),
-                "tomato": (18, 0.9, 3.9, 0.2),
-                "tomatoes": (18, 0.9, 3.9, 0.2),
-                "cherry tomatoes": (18, 0.9, 3.9, 0.2),
-                "cucumber": (15, 0.7, 3.6, 0.1),
-                "carrots": (41, 0.9, 10, 0.2),
-                "carrot": (41, 0.9, 10, 0.2),
-                "onion": (40, 1.1, 9, 0.1),
-                "onions": (40, 1.1, 9, 0.1),
-                "mushroom": (22, 3.1, 3.3, 0.3),
-                "mushrooms": (22, 3.1, 3.3, 0.3),
-                "avocado": (160, 2, 9, 15),
-                "celery": (16, 0.7, 3, 0.2),
-                "green beans": (31, 1.8, 7, 0.1),
-                "peas": (81, 5.4, 14, 0.4),
-                "mixed vegetables": (50, 2.5, 10, 0.3),
-                "vegetables": (50, 2.5, 10, 0.3),
-                "sweet peppers": (31, 1, 6, 0.3),
-                "eggplant": (25, 1, 6, 0.2),
-                "squash": (16, 0.6, 3.4, 0.2),
-                "beets": (43, 1.6, 10, 0.2),
-                "radish": (16, 0.7, 3.4, 0.1),
-                "leek": (61, 1.5, 14, 0.3),
-                "bok choy": (13, 1.5, 2, 0.2),
-                # Fats/Oils
-                "olive oil": (884, 0, 0, 100),
-                "coconut oil": (862, 0, 0, 100),
-                "vegetable oil": (884, 0, 0, 100),
-                "butter": (717, 0.9, 0.1, 81),
-                "ghee": (876, 0, 0, 97),
-                "avocado oil": (884, 0, 0, 100),
-                # Nuts and Seeds
-                "almond": (579, 21, 22, 50),
-                "almonds": (579, 21, 22, 50),
-                "peanut butter": (588, 25, 20, 50),
-                "almond butter": (614, 21, 19, 56),
-                "walnut": (654, 15, 14, 65),
-                "walnuts": (654, 15, 14, 65),
-                "cashews": (553, 18, 30, 44),
-                "peanuts": (567, 26, 16, 49),
-                "seeds": (534, 18, 23, 45),  # average seeds
-                "chia seeds": (486, 17, 42, 31),
-                "flax seeds": (534, 18, 29, 42),
-                "sunflower seeds": (584, 21, 20, 51),
-                "pumpkin seeds": (559, 30, 11, 49),
-                "hemp seeds": (553, 32, 9, 49),
-                "macadamia": (718, 8, 14, 76),
-                "pecans": (691, 9, 14, 72),
-                "pistachios": (560, 20, 28, 45),
-                "hazelnuts": (628, 15, 17, 61),
-                # Dairy
-                "milk": (42, 3.4, 5, 1),
-                "whole milk": (61, 3.2, 4.8, 3.3),
-                "almond milk": (17, 0.6, 1.4, 1.1),
-                "cheese": (403, 25, 1.3, 33),
-                "cheddar": (403, 25, 1.3, 33),
-                "mozzarella": (280, 28, 3, 17),
-                "parmesan": (431, 38, 4, 29),
-                "feta": (264, 14, 4, 21),
-                "cream cheese": (342, 6, 4, 34),
-                # Protein Supplements
-                "whey protein": (400, 80, 10, 3.3),
-                "protein powder": (400, 80, 10, 3.3),
-                "protein": (400, 80, 10, 3.3),
-                # Condiments/Spreads
-                "hummus": (166, 8, 14, 10),
-                "salsa": (36, 2, 8, 0.2),
-                "mayo": (680, 1, 0, 75),
-                "mayonnaise": (680, 1, 0, 75),
-                "mustard": (66, 4, 5, 4),
-                "honey": (304, 0.3, 82, 0),
-                "maple syrup": (260, 0, 67, 0),
-                # Legumes
-                "black beans": (132, 9, 24, 0.5),
-                "chickpeas": (164, 9, 27, 2.6),
-                "lentils": (116, 9, 20, 0.4),
-                "kidney beans": (127, 9, 23, 0.5),
-                # Lamb
-                "lamb": (258, 25, 0, 17),
-                "lamb chop": (258, 25, 0, 17),
-                "lamb chops": (258, 25, 0, 17),
-                "lamb loin": (258, 25, 0, 17),
-                "lamb leg": (225, 28, 0, 12),
-                "ground lamb": (283, 23, 0, 21),
-                "minced lamb": (283, 23, 0, 21),
-                # More seafood
-                "prawn": (99, 24, 0, 0.3),
-                "prawns": (99, 24, 0, 0.3),
-                "scallops": (111, 21, 5, 1),
-                "crab": (97, 19, 0.5, 1.5),
-                # Breakfast / snack staples
-                "granola": (471, 10, 64, 20),
-                "rice cake": (387, 8, 82, 3),
-                "rice cakes": (387, 8, 82, 3),
-                "blueberry": (57, 0.7, 14, 0.3),
-                "blueberries": (57, 0.7, 14, 0.3),
-                "strawberry": (32, 0.7, 8, 0.3),
-                "strawberries": (32, 0.7, 8, 0.3),
-                "raspberries": (52, 1.2, 12, 0.7),
-                # Condiments
-                "soy sauce": (53, 8, 5, 0),
-                "tamari": (53, 8, 5, 0),
-                "teriyaki sauce": (89, 3.5, 17, 0),
-                "tomato sauce": (29, 1.5, 6, 0.3),
-                "garlic": (149, 6, 33, 0.5),
-                "ginger": (80, 1.8, 18, 0.8),
-                # Vegan / specialty ingredients (frequently missing)
-                "chickpea flour": (387, 22, 58, 6),
-                "besan": (387, 22, 58, 6),         # Indian name for chickpea flour
-                "dark chocolate": (598, 7.8, 43, 42),
-                "dark chocolate chips": (598, 7.8, 43, 42),
-                "cacao": (228, 20, 28, 14),
-                "cocoa powder": (228, 20, 28, 14),
-                "agave nectar": (310, 0.1, 76, 0),
-                "agave syrup": (310, 0.1, 76, 0),
-                "balsamic vinegar": (88, 0.5, 17, 0),
-                "apple cider vinegar": (22, 0, 0.9, 0),
-                "lemon juice": (22, 0.4, 7, 0.2),
-                "lime juice": (25, 0.4, 8, 0.1),
-                "nutritional yeast": (355, 50, 35, 7),
-                "yeast flakes": (355, 50, 35, 7),
-                "miso paste": (199, 12, 26, 6),
-                "miso": (199, 12, 26, 6),
-                "coconut aminos": (74, 2, 18, 0),
-                "plant milk": (35, 1.5, 4, 1.8),   # generic plant milk
-                "soy milk": (54, 3.3, 4.5, 2.2),
-                "oat milk": (47, 1.5, 8, 0.9),
-                "coconut yogurt": (100, 0.7, 6, 9),
-                "soy yogurt": (67, 3.9, 6.6, 2.4),
-                "vegan protein": (380, 72, 8, 5),  # generic vegan protein powder
-                "pea protein": (380, 72, 8, 5),
-                "brown sugar": (380, 0, 98, 0),
-                "maple syrup": (260, 0.1, 67, 0.1),
-                "tahini": (595, 17, 23, 54),        # sesame paste — high fat
-                "almond flour": (571, 21, 20, 50),
-                "flaxseed meal": (534, 18, 29, 42),
-                "chia seeds": (486, 17, 42, 31),
-                "spirulina": (290, 57, 24, 8),
-                "maca powder": (325, 11, 66, 4),
-                "matcha powder": (306, 26, 52, 5),
-            }
-            
-            def calculate_ingredient_macros(ingredient_str):
-                """Calculate macros from ingredient string like '250g sweet potato' or '3 large eggs'"""
-                import re
-                ingredient_str = ingredient_str.lower().strip()
-                
-                # Standard unit conversions to grams
-                UNIT_TO_GRAMS = {
-                    # Weight units
-                    'g': 1, 'gram': 1, 'grams': 1,
-                    'kg': 1000, 'oz': 28.35, 'lb': 453.6,
-                    # Volume units (approximate)
-                    'ml': 1, 'cup': 240, 'cups': 240,
-                    'tbsp': 14, 'tablespoon': 14, 'tablespoons': 14,
-                    'tsp': 5, 'teaspoon': 5, 'teaspoons': 5,
-                    # Count units for common items
-                    'large': 1, 'medium': 1, 'small': 1,
-                    'whole': 1, 'slice': 1, 'slices': 1,
-                    'piece': 1, 'pieces': 1, 'serving': 1, 'scoop': 1,
-                }
-                
-                # Weight per item for count-based ingredients (in grams)
-                ITEM_WEIGHTS = {
-                    'egg': 50, 'eggs': 50, 'large egg': 50, 'whole egg': 50,
-                    'banana': 120, 'bananas': 120,
-                    'apple': 180, 'apples': 180,
-                    'orange': 130, 'oranges': 130,
-                    'slice bread': 30, 'slice of bread': 30,
-                    'chicken breast': 175, 'breast': 175,
-                    'steak': 225,
-                    # Small aromatics — 1 clove/piece ≈ 3-5g, NOT 100g
-                    'garlic': 4, 'garlic clove': 4, 'garlic cloves': 4,
-                    'ginger': 5, 'ginger piece': 5,
-                    'shallot': 20,
-                    # Fruits (medium size)
-                    'lime': 67, 'limes': 67, 'lemon': 58, 'lemons': 58,
-                    'tomato': 120, 'tomatoes': 120, 'cherry tomato': 17, 'cherry tomatoes': 17,
-                    'avocado': 200,
-                    'peach': 150, 'nectarine': 140, 'plum': 85,
-                    'kiwi': 70, 'fig': 50, 'date': 24,
-                    # Vegetables (medium size)
-                    'onion': 110, 'large onion': 150, 'medium onion': 110, 'small onion': 75,
-                    'bell pepper': 120, 'pepper': 120, 'jalapeno': 14, 'chili': 15,
-                    'mushroom': 90, 'large mushroom': 120,
-                    'carrot': 80, 'medium carrot': 80, 'large carrot': 120,
-                    'zucchini': 196,  # one medium zucchini
-                    'potato': 180, 'sweet potato': 130, 'medium potato': 180,
-                }
-                
-                # Try pattern: "food (Xg)" like "chicken breast (200g)"
-                pattern_parens = re.match(r'(.+?)\s*\((\d+(?:\.\d+)?)\s*(g|gram|grams|ml)?\)', ingredient_str)
-                # Try pattern: "Xg food" or "X g food" - REQUIRES a unit
-                pattern_with_unit = re.match(r'(\d+(?:\.\d+)?)\s*(g|gram|grams|kg|oz|lb|ml|cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons)\s+(.+)', ingredient_str)
-                # Try pattern: "X modifier food" (count-based like "3 large eggs", "3 whole eggs")
-                pattern_count_modifier = re.match(r'(\d+(?:\.\d+)?)\s+(large|medium|small|whole|slice|slices|piece|pieces|serving|scoop)\s+(.+)', ingredient_str)
-                # Try pattern: "X food" (count-based like "3 eggs", "2 bananas")
-                pattern_count_simple = re.match(r'(\d+(?:\.\d+)?)\s+([a-z]+.*)', ingredient_str)
-                
-                amount = 0
-                food_name = ""
-                is_count_based = False
-                
-                if pattern_parens:  # "chicken breast (200g)"
-                    food_name = pattern_parens.group(1).strip()
-                    amount = float(pattern_parens.group(2))
-                    unit = pattern_parens.group(3) or 'g'
-                    if unit in UNIT_TO_GRAMS:
-                        amount *= UNIT_TO_GRAMS[unit]
-                elif pattern_with_unit:  # "200g chicken breast"
-                    amount = float(pattern_with_unit.group(1))
-                    unit = pattern_with_unit.group(2)
-                    food_name = pattern_with_unit.group(3).strip()
-                    if unit in UNIT_TO_GRAMS:
-                        amount *= UNIT_TO_GRAMS[unit]
-                elif pattern_count_modifier:  # "3 large eggs" or "3 whole eggs"
-                    amount = float(pattern_count_modifier.group(1))
-                    modifier = pattern_count_modifier.group(2)
-                    food_name = pattern_count_modifier.group(3).strip()
-                    is_count_based = True
-                    # Combine modifier with food name for lookup
-                    food_name = f"{modifier} {food_name}"
-                elif pattern_count_simple:  # "3 eggs"
-                    amount = float(pattern_count_simple.group(1))
-                    food_name = pattern_count_simple.group(2).strip()
-                    is_count_based = True
-                else:
-                    return None
-                
-                # Clean food name
-                food_name = re.sub(r'\s+', ' ', food_name).strip()
-                # Remove common descriptors
-                for desc in ['grilled', 'baked', 'fried', 'steamed', 'roasted', 'boiled', 'cooked', 'raw', 'fresh', 'dried', 'mixed']:
-                    food_name = food_name.replace(desc, '').strip()
-                
-                # Find matching ingredient in database
-                best_match = None
-                best_score = 0
-                
-                for key in INGREDIENT_MACROS.keys():
-                    score = 0
-                    # Exact match
-                    if key == food_name or food_name == key:
-                        score = 100
-                    # Key is in food name (e.g., "egg" in "eggs")
-                    elif key in food_name:
-                        score = 80 - len(food_name) + len(key)
-                    # Food name is in key
-                    elif food_name in key:
-                        score = 70 - len(key) + len(food_name)
-                    else:
-                        # Word-level matching
-                        food_words = set(food_name.split())
-                        key_words = set(key.split())
-                        common = food_words & key_words
-                        if common:
-                            score = len(common) * 30
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_match = key
-                
-                if best_match and best_score >= 20:
-                    cal, pro, carb, fat = INGREDIENT_MACROS[best_match]
-                    
-                    # For count-based ingredients, convert to grams
-                    if is_count_based:
-                        # Check if we have a weight for this item
-                        item_weight = None
-                        for item_key, weight in ITEM_WEIGHTS.items():
-                            if item_key in food_name or food_name in item_key or best_match in item_key or item_key in best_match:
-                                item_weight = weight
-                                break
-                        
-                        if item_weight:
-                            amount = amount * item_weight  # Convert count to grams
-                        else:
-                            # Default assumption for unknown count items
-                            amount = amount * 100  # Assume 100g per item
-                    
-                    multiplier = amount / 100  # database is per 100g
-                    return {
-                        "calories": round(cal * multiplier),
-                        "protein": round(pro * multiplier, 1),
-                        "carbs": round(carb * multiplier, 1),
-                        "fats": round(fat * multiplier, 1)
-                    }
-                
-                # If no match found, log it for debugging
-                logger.warning(f"Could not find ingredient match for: '{ingredient_str}' (parsed as: '{food_name}')")
-                return None
             
             # POST-PROCESSING: Iteratively adjust ingredient quantities to get close to targets
             # Since ingredients have fixed macro ratios, we can only get approximate matches
@@ -7040,23 +7145,28 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                         )
             
             # POST-VALIDATION: Check if any banned foods appear in the meal plan
-            # If found, log a warning (in production, could regenerate the meal)
+            # Expanded matching: allergen synonyms + word-stem (singular/plural both ways)
             if banned_foods_list:
+                expanded_banned = expand_banned_terms(banned_foods_list)
                 for day in meal_data.get("meal_days", []):
+                    day_stripped = False
                     for meal in day.get("meals", []):
                         meal_name_lower = meal.get("name", "").lower()
                         ingredients_str = " ".join(meal.get("ingredients", [])).lower()
-                        for banned in banned_foods_list:
-                            # Avoid false positives: "gluten-free" should not match "gluten"
-                            def _contains_banned(text, banned_word):
-                                cleaned = text.replace(f'{banned_word}-free', '').replace(f'{banned_word} free', '')
-                                return banned_word in cleaned
-                            if _contains_banned(meal_name_lower, banned) or _contains_banned(ingredients_str, banned):
-                                logger.warning(f"BANNED FOOD DETECTED: '{banned}' found in meal '{meal.get('name')}' - This should not happen!")
-                                meal["ingredients"] = [
-                                    ing for ing in meal.get("ingredients", [])
-                                    if not _contains_banned(ing.lower().replace(f'{banned}-free', '').replace(f'{banned} free', ''), banned)
-                                ]
+                        hits = [b for b in expanded_banned
+                                if contains_banned_food(meal_name_lower, b) or contains_banned_food(ingredients_str, b)]
+                        if hits:
+                            logger.warning(f"BANNED FOOD DETECTED: {hits} found in meal '{meal.get('name')}' - stripping and recomputing macros")
+                            removed = strip_banned_and_recompute(meal, hits)
+                            if removed:
+                                day_stripped = True
+                                logger.warning(f"Stripped ingredients: {removed}")
+                    if day_stripped:
+                        # Keep day totals honest after stripping
+                        day["total_calories"] = round(sum(m.get("calories", 0) or 0 for m in day.get("meals", [])))
+                        day["total_protein"] = round(sum(m.get("protein", 0) or 0 for m in day.get("meals", [])), 1)
+                        day["total_carbs"] = round(sum(m.get("carbs", 0) or 0 for m in day.get("meals", [])), 1)
+                        day["total_fats"] = round(sum(m.get("fats", 0) or 0 for m in day.get("meals", [])), 1)
             
             meal_plan = MealPlan(
                 user_id=request.user_id,
@@ -7480,6 +7590,8 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     for group in excluded_groups:
         do_not_use_list.extend(PROTEIN_GROUPS.get(group, []))
     do_not_use_list = list(set(do_not_use_list))  # Remove duplicates
+    # Expand with allergen synonyms/derivatives (nuts -> almond..., gluten -> wheat...)
+    do_not_use_list = expand_banned_terms(do_not_use_list)
     
     # Build allowed protein sources (for positive guidance)
     protein_alternatives = []
@@ -7535,9 +7647,10 @@ SWAP REQUIREMENT: {swap_instruction}
 
 IMPORTANT RULES:
 1. Use SPECIFIC ingredients with gram amounts (e.g., "180g sirloin steak", not just "steak")
-2. Create a DIFFERENT meal from "{current_meal.get('name')}"
-3. DOUBLE-CHECK every ingredient is NOT on the banned list
-4. If you cannot think of a meal without banned foods, use ONLY plant proteins/eggs/dairy
+2. Beef mince / ground beef must include its lean-to-fat ratio in parentheses: extra lean/premium/5-star "(95/5)", lean "(90/10)", regular/fatty "(80/20)"
+3. Create a DIFFERENT meal from "{current_meal.get('name')}"
+4. DOUBLE-CHECK every ingredient is NOT on the banned list
+5. If you cannot think of a meal without banned foods, use ONLY plant proteins/eggs/dairy
 
 Respond with valid JSON only:
 {{"id": "unique_id", "name": "Meal Name", "meal_type": "{meal_type}", "ingredients": ["180g sirloin steak", "200g brown rice", "100g broccoli"], "instructions": "How to prepare", "calories": {current_cal}, "protein": {current_pro}, "carbs": {current_carb}, "fats": {current_fat}, "prep_time_minutes": number}}"""
@@ -7598,8 +7711,7 @@ Use ONLY these allowed proteins: {', '.join(protein_alternatives) if protein_alt
                 all_text = f"{meal_name_lower} {ingredients_str} {instructions_lower}"
                 
                 for banned in do_not_use_list:
-                    banned_lower = banned.lower()
-                    if banned_lower in all_text:
+                    if contains_banned_food(all_text, banned):
                         found_banned = True
                         banned_found_list.append(banned)
                         logger.warning(f"ATTEMPT {attempt+1}: BANNED FOOD DETECTED: '{banned}' found in generated meal '{new_meal.get('name')}'")
@@ -10065,6 +10177,19 @@ async def health_check():
 
 # Include the router in the main app
 app.include_router(api_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()
+
 
 app.add_middleware(
     CORSMiddleware,
