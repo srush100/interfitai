@@ -5488,6 +5488,22 @@ def contains_banned_food(text: str, banned_term: str) -> bool:
     return False
 
 
+def scrub_banned_mentions(text: str, banned_terms) -> str:
+    """Remove mentions of banned terms (with stem/plural variants) from prose text
+    like meal names and instructions. Multi-word phrases are removed as a whole."""
+    if not text:
+        return text
+    for b in banned_terms:
+        words = re.findall(r"[a-z]+", str(b).lower())
+        if not words:
+            continue
+        pattern = r"\b" + r"[\s-]+".join(rf"{re.escape(_stem_word(w))}[a-z]*" for w in words) + r"\b"
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r"\s+([,.;])", r"\1", text)
+    return text.strip(" ,-–&")
+
+
 def strip_banned_and_recompute(meal: dict, banned_terms) -> list:
     """Remove ingredients containing banned terms, then recompute the meal's macros
     from the remaining ingredients via the ingredient database. Returns removed ingredients."""
@@ -7161,6 +7177,10 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                             if removed:
                                 day_stripped = True
                                 logger.warning(f"Stripped ingredients: {removed}")
+                            # Scrub banned mentions from the meal name and instructions
+                            scrubbed_name = scrub_banned_mentions(meal.get("name", ""), hits)
+                            meal["name"] = scrubbed_name if scrubbed_name else "Custom Protein Meal"
+                            meal["instructions"] = scrub_banned_mentions(meal.get("instructions", ""), hits)
                     if day_stripped:
                         # Keep day totals honest after stripping
                         day["total_calories"] = round(sum(m.get("calories", 0) or 0 for m in day.get("meals", [])))
@@ -7721,16 +7741,16 @@ Use ONLY these allowed proteins: {', '.join(protein_alternatives) if protein_alt
                     logger.warning(f"ATTEMPT {attempt+1}: Regenerating meal due to banned foods: {banned_found_list}")
                     continue  # Try again
                 else:
-                    # Final attempt failed - strip the banned ingredients
+                    # Final attempt failed - strip the banned ingredients and recompute
+                    # the meal's macros from the remaining ingredients
                     logger.error(f"FINAL ATTEMPT: Still found banned foods: {banned_found_list}. Stripping ingredients.")
-                    new_meal["ingredients"] = [
-                        ing for ing in new_meal.get("ingredients", [])
-                        if not any(banned.lower() in ing.lower() for banned in do_not_use_list)
-                    ]
-                    # Update meal name if it contains banned food
-                    for banned in banned_found_list:
-                        if banned.lower() in new_meal.get("name", "").lower():
-                            new_meal["name"] = new_meal.get("name", "").replace(banned, "Protein").replace(banned.capitalize(), "Protein")
+                    removed = strip_banned_and_recompute(new_meal, do_not_use_list)
+                    if removed:
+                        logger.warning(f"Stripped ingredients: {removed}; macros recomputed from remaining ingredients")
+                    # Scrub banned mentions from the meal name and instructions
+                    scrubbed_name = scrub_banned_mentions(new_meal.get("name", ""), banned_found_list)
+                    new_meal["name"] = scrubbed_name if scrubbed_name else "Custom Protein Meal"
+                    new_meal["instructions"] = scrub_banned_mentions(new_meal.get("instructions", ""), banned_found_list)
             
             # ── Macro validation: enforce the tolerances the prompt promises ──
             def _f(v):
