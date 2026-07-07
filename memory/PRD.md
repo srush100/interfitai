@@ -93,6 +93,14 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
   - Fix 4: Body Analyzer history cards now clickable — wrapped in `TouchableOpacity`, shows full detail view (score, overall_assessment, visible_changes, areas_improved, recommendations, motivation_message) inline with back navigation (body-analyzer.tsx).
   - Fix 5: `unsaveMessage()` now calls `POST /api/chat/unsave/{messageId}` backend API and filters `savedNotes` state, preventing unsaved notes from reappearing on refresh. Empty state shown automatically when all notes removed (ask-ai.tsx).
 
+- **[Jul 2026] Meal Plan Accuracy Pass (6 changes)**:
+  - Change 1 (backend): Meal plan generation now honours `calorie_adjustment` from user profile. `target_cal = base_cal + adjustment`; extra calories absorbed into carbs. Verified: adj=+300 → `target_calories = base + 300` (exact match).
+  - Change 2 (backend): Day totals are now honest sums of calibrated meals — no longer force-set to raw targets. The displayed numbers always match what the user actually eats.
+  - Change 3 (backend): `/mealplan/alternate` endpoint now enforces macro tolerances (±10% cal, ±15% P/C/F). Regenerates on tolerance failure; proportionally scales on final attempt. Response now includes `day_totals` object with recomputed day sums after swap.
+  - Change 4 (frontend): `meal-detail.tsx` swap handler merges `response.data.day_totals` into local plan state, so Day Summary updates instantly without reload.
+  - Change 5 (frontend): Day Summary shows rotation hint + `dayVsTarget` comparison line (e.g. "+45 cal vs your 2288 target" or "✓ On target").
+  - Change 6 (frontend): `dayVsTarget` and `rotationHint` styles added to StyleSheet.
+
 ## Backlog (Prioritized)
 ### P0 — Critical
 - (none)
