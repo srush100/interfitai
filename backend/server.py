@@ -6186,7 +6186,12 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
         allergy_block = '\n'.join(allergy_lines) if allergy_lines else '  - None'
 
         # Foods section — personalised whether or not user typed preferred foods
+        preferred_daily_rule = ""
         if request.preferred_foods and request.preferred_foods.strip():
+            preferred_daily_rule = (
+                f"\n7. EVERY preferred food ({request.preferred_foods}) MUST appear in at least one meal "
+                "on EVERY day — no day may skip any of them"
+            )
             foods_section = (
                 f"INCORPORATE THESE PREFERRED FOODS: {request.preferred_foods}\n"
                 "Every preferred food MUST appear in the plan at least once per day where it fits the diet style.\n"
@@ -6317,7 +6322,7 @@ ELITE STANDARDS:
 3. Give each meal an appealing, descriptive name (e.g. "Herb-Marinated Chicken with Jasmine Rice & Broccolini")
 4. Instructions: concise 2-3 step cooking method. NEVER mention specific gram or ml amounts in instructions — all quantities are already listed in the ingredients field. Write "add olive oil" NOT "add 15g olive oil".
 5. Calculate ACCURATE macros from the actual ingredient weights you use
-6. All meat, fish and grain quantities are COOKED weights — never raw
+6. All meat, fish and grain quantities are COOKED weights — never raw{preferred_daily_rule}
 
 Return ONLY this JSON (no markdown):
 {{"name": "{plan_name} Elite Meal Plan", "meal_days": [
