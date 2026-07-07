@@ -222,13 +222,18 @@ export default function MealDetail() {
       });
       
       const newMeal = response.data.alternate_meal;
-      
-      // Update the meal plan with the new meal
+      // Update the meal plan with the new meal AND the recomputed day totals
       const updatedPlan = { ...mealPlan };
       updatedPlan.meal_days[dayIndex].meals[mealIndex] = {
         ...newMeal,
         meal_type: mealPlan.meal_days[dayIndex].meals[mealIndex].meal_type,
       };
+      if (response.data.day_totals) {
+        updatedPlan.meal_days[dayIndex] = {
+          ...updatedPlan.meal_days[dayIndex],
+          ...response.data.day_totals,
+        };
+      }
       setMealPlan(updatedPlan);
       
       Alert.alert('Success', `Replaced with ${newMeal.name}`);
@@ -418,6 +423,10 @@ export default function MealDetail() {
           ))}
         </ScrollView>
 
+        {/* Rotation hint */}
+        <Text style={styles.rotationHint}>
+          Rotate these {mealPlan.meal_days.length} days throughout your week
+        </Text>
         {/* Day Summary */}
         {currentDay && (
           <View style={styles.daySummary}>
@@ -426,6 +435,13 @@ export default function MealDetail() {
               {currentDay.total_calories} cal • {currentDay.total_protein}g P •{' '}
               {currentDay.total_carbs}g C • {currentDay.total_fats}g F
             </Text>
+            {!!mealPlan.target_calories && (
+              <Text style={styles.dayVsTarget}>
+                {Math.abs(currentDay.total_calories - mealPlan.target_calories) <= mealPlan.target_calories * 0.05
+                  ? `✓ On target (${mealPlan.target_calories} cal)`
+                  : `${currentDay.total_calories > mealPlan.target_calories ? '+' : ''}${currentDay.total_calories - mealPlan.target_calories} cal vs your ${mealPlan.target_calories} target`}
+              </Text>
+            )}
           </View>
         )}
 
@@ -947,6 +963,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  dayVsTarget: {
+    fontSize: 12,
+    color: colors.primary,
+    marginTop: 4,
+    fontWeight: '600',
+  },
+  rotationHint: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 2,
+    fontStyle: 'italic',
   },
   mealCard: {
     backgroundColor: colors.surface,

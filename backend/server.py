@@ -5003,9 +5003,13 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         raise HTTPException(status_code=404, detail="User profile with macros not found. Please set up your profile first.")
     
     macros = profile["calculated_macros"]
-    target_cal = macros['calories']
+    # Honour the user's manual calorie adjustment (Macro Targets screen) so the
+    # plan is built for the same daily target the food log displays.
+    # Carbs absorb the adjustment (cal/4), matching the food log's display logic.
+    manual_cal_adj = int(profile.get("calorie_adjustment", 0) or 0)
+    target_cal = macros['calories'] + manual_cal_adj
     target_pro = macros['protein']
-    target_carb = macros['carbs']
+    target_carb = max(0, macros['carbs'] + round(manual_cal_adj / 4))
     target_fat = macros['fats']
     
     eating_style = request.food_preferences.lower()
@@ -6993,11 +6997,13 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                             meal["carbs"]    = round(float(meal.get("carbs",   0))  * carb_adj, 1)
                             meal["fats"]     = round(float(meal.get("fats",    0))  * fat_adj,  1)
 
-                        # Force EXACT day totals — this is the guarantee the user needs
-                        day["total_calories"] = target_cal
-                        day["total_protein"]  = round(float(target_pro),  1)
-                        day["total_carbs"]    = round(float(target_carb), 1)
-                        day["total_fats"]     = round(float(target_fat),  1)
+                        # Honest day totals — the true sum of the calibrated meals.
+                        # After per-meal calibration these land close to target; the
+                        # user must always see numbers that match the meals they eat.
+                        day["total_calories"] = round(sum(float(m.get("calories", 0)) for m in s5_meals))
+                        day["total_protein"]  = round(sum(float(m.get("protein", 0)) for m in s5_meals), 1)
+                        day["total_carbs"]    = round(sum(float(m.get("carbs", 0)) for m in s5_meals), 1)
+                        day["total_fats"]     = round(sum(float(m.get("fats", 0)) for m in s5_meals), 1)
                         logger.info(
                             f"Stage 5 calibration: "
                             f"{round(actual_cal)}→{target_cal} cal, "
@@ -7587,17 +7593,69 @@ Use ONLY these allowed proteins: {', '.join(protein_alternatives) if protein_alt
                         if banned.lower() in new_meal.get("name", "").lower():
                             new_meal["name"] = new_meal.get("name", "").replace(banned, "Protein").replace(banned.capitalize(), "Protein")
             
+            # ── Macro validation: enforce the tolerances the prompt promises ──
+            def _f(v):
+                try:
+                    return float(v or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+            n_cal, n_pro = _f(new_meal.get("calories")), _f(new_meal.get("protein"))
+            n_carb, n_fat = _f(new_meal.get("carbs")), _f(new_meal.get("fats"))
+            def _off(actual, target, pct, floor_g=0.0):
+                if target <= 0:
+                    return False
+                return abs(actual - target) > max(target * pct, floor_g)
+            macros_off = (
+                _off(n_cal, current_cal, 0.10)
+                or _off(n_pro, current_pro, 0.15, 5)
+                or _off(n_carb, current_carb, 0.15, 8)
+                or _off(n_fat, current_fat, 0.15, 4)
+            )
+            if macros_off and attempt < max_attempts - 1:
+                logger.warning(
+                    f"ATTEMPT {attempt+1}: macros out of tolerance "
+                    f"({n_cal}/{current_cal} cal, {n_pro}/{current_pro}g P) — regenerating"
+                )
+                continue
+            if macros_off:
+                # Final attempt: pull calories in line proportionally so the meal
+                # stays internally consistent (grams and macros scale together).
+                import re as _re_sw
+                scale = max(0.6, min(1.5, current_cal / n_cal)) if n_cal > 0 else 1.0
+                def _scale_ing(s, f):
+                    return _re_sw.sub(
+                        r"(\d+(?:\.\d+)?)\s*g\b",
+                        lambda m: f"{max(1, round(float(m.group(1)) * f))}g",
+                        s,
+                    )
+                new_meal["ingredients"] = [_scale_ing(i, scale) for i in new_meal.get("ingredients", [])]
+                new_meal["calories"] = round(n_cal * scale)
+                new_meal["protein"] = round(n_pro * scale, 1)
+                new_meal["carbs"]   = round(n_carb * scale, 1)
+                new_meal["fats"]    = round(n_fat * scale, 1)
             # Log success
             logger.info(f"✅ Alternate meal generated (attempt {attempt+1}): {new_meal.get('name')} - {new_meal.get('calories')} cal, {new_meal.get('protein')}g P (target: {current_cal}/{current_pro})")
-            
-            # Save the updated meal plan to the database
-            plan["meal_days"][request.day_index]["meals"][request.meal_index] = new_meal
+            # Save the swapped meal AND recompute the day's totals so the stored
+            # plan and the app's day summary stay consistent after a swap.
+            day = plan["meal_days"][request.day_index]
+            day["meals"][request.meal_index] = new_meal
+            day["total_calories"] = round(sum(_f(m.get("calories")) for m in day["meals"]))
+            day["total_protein"]  = round(sum(_f(m.get("protein")) for m in day["meals"]), 1)
+            day["total_carbs"]    = round(sum(_f(m.get("carbs")) for m in day["meals"]), 1)
+            day["total_fats"]     = round(sum(_f(m.get("fats")) for m in day["meals"]), 1)
             await db.mealplans.update_one(
                 {"id": request.meal_plan_id},
                 {"$set": {"meal_days": plan["meal_days"]}}
             )
-            
-            return {"alternate_meal": new_meal}
+            return {
+                "alternate_meal": new_meal,
+                "day_totals": {
+                    "total_calories": day["total_calories"],
+                    "total_protein":  day["total_protein"],
+                    "total_carbs":    day["total_carbs"],
+                    "total_fats":     day["total_fats"],
+                },
+            }
             
         except json.JSONDecodeError as e:
             logger.error(f"JSON parse error on attempt {attempt+1}: {e}")
