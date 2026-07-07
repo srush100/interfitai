@@ -6187,7 +6187,15 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
 
         # Foods section — personalised whether or not user typed preferred foods
         if request.preferred_foods and request.preferred_foods.strip():
-            foods_section = f"INCORPORATE THESE PREFERRED FOODS: {request.preferred_foods}\nBuild all meals around these. Supplement with complementary whole foods to hit macro targets."
+            foods_section = (
+                f"INCORPORATE THESE PREFERRED FOODS: {request.preferred_foods}\n"
+                "Every preferred food MUST appear in the plan at least once per day where it fits the diet style.\n"
+                "⚠️ PREFERRED FOODS OVERRIDE THE EXAMPLE FOODS in the quantities guide below: when a preferred "
+                "food is a protein (e.g. beef mince), use it IN PLACE of the example protein (chicken/tuna/yogurt) "
+                "in as many meals as sensible — recompute the grams from the macro reference table so the meal "
+                "still hits its protein and fat targets. Do the same for preferred carbs.\n"
+                "Supplement with complementary whole foods to hit macro targets."
+            )
         else:
             style_food_ideas = {
                 'keto': 'Use: ribeye, salmon, eggs, bacon, avocado, butter, cream, brie, macadamia nuts, leafy greens, broccoli, cauliflower.',
@@ -6268,7 +6276,7 @@ ABSOLUTE PROHIBITIONS — NEVER include these:
 
 MACRO REFERENCE (per 100g cooked unless noted):
 Chicken breast: 165cal 31P 0C 3.6F | Turkey breast: 135cal 30P 0C 1F | Tuna: 116cal 26P 0C 0.8F
-Beef sirloin: 207cal 26P 0C 11F | Shrimp: 99cal 24P 0C 0.3F | Cod: 82cal 18P 0C 0.7F
+Beef sirloin: 207cal 26P 0C 11F | Extra-lean beef mince 5% (cooked): 153cal 25P 0C 6F | Shrimp: 99cal 24P 0C 0.3F | Cod: 82cal 18P 0C 0.7F
 Salmon: 208cal 20P 0C 13F | Egg whites (100g): 52cal 11P 0.7C 0.2F | Whole egg (50g ea): 78cal 6.5P 0.5C 5.5F
 Tofu firm: 144cal 17P 3C 8F | Tempeh: 192cal 20P 8C 11F | Greek yogurt 0%: 59cal 10P 4C 0.4F
 Cottage cheese: 84cal 11P 4C 2.5F | White rice cooked: 130cal 2.7P 28C 0.3F | Brown rice: 112cal 2.7P 24C 0.9F
@@ -6304,6 +6312,7 @@ ELITE STANDARDS:
 3. Give each meal an appealing, descriptive name (e.g. "Herb-Marinated Chicken with Jasmine Rice & Broccolini")
 4. Instructions: concise 2-3 step cooking method. NEVER mention specific gram or ml amounts in instructions — all quantities are already listed in the ingredients field. Write "add olive oil" NOT "add 15g olive oil".
 5. Calculate ACCURATE macros from the actual ingredient weights you use
+6. All meat, fish and grain quantities are COOKED weights — never raw
 
 Return ONLY this JSON (no markdown):
 {{"name": "{plan_name} Elite Meal Plan", "meal_days": [
@@ -6370,6 +6379,10 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
                 "rump": (175, 27, 0, 7),
                 "steak": (180, 26, 0, 8),  # default to sirloin
                 "ground beef": (250, 26, 0, 17),
+                "extra lean beef mince": (153, 25, 0, 6),
+                "lean beef mince": (170, 26, 0, 8),
+                "extra lean ground beef": (153, 25, 0, 6),
+                "lean ground beef": (170, 26, 0, 8),
                 "beef mince": (250, 26, 0, 17),
                 "beef": (180, 26, 0, 8),
                 "extra lean beef": (175, 26, 0, 7),

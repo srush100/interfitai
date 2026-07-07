@@ -425,7 +425,7 @@ export default function MealDetail() {
 
         {/* Rotation hint */}
         <Text style={styles.rotationHint}>
-          Rotate these {mealPlan.meal_days.length} days throughout your week
+          Rotate these {mealPlan.meal_days.length} days throughout your week · All quantities are cooked weights
         </Text>
         {/* Day Summary */}
         {currentDay && (

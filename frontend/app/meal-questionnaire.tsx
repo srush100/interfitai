@@ -11,6 +11,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  Modal,
+  Animated,
+  Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -42,6 +45,14 @@ const ALLERGIES = [
   { id: 'none', label: 'No Allergies' },
 ];
 
+const LOADING_MESSAGES = [
+  'Analysing your macro targets...',
+  'Selecting foods you\'ll enjoy...',
+  'Building your 3-day rotation...',
+  'Balancing every meal\'s macros...',
+  'Finalizing your plan...',
+];
+
 export default function MealQuestionnaire() {
   const router = useRouter();
   const { profile } = useUserStore();
@@ -51,6 +62,25 @@ export default function MealQuestionnaire() {
   const [checkingSubscription, setCheckingSubscription] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+  const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0]);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!loading) { pulseAnim.stopAnimation(); return; }
+    setLoadingMessage(LOADING_MESSAGES[0]);
+    let idx = 0;
+    const msgTimer = setInterval(() => {
+      idx = (idx + 1) % LOADING_MESSAGES.length;
+      setLoadingMessage(LOADING_MESSAGES[idx]);
+    }, 3000);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.0,  duration: 800, easing: Easing.in(Easing.ease),  useNativeDriver: true }),
+      ])
+    ).start();
+    return () => { clearInterval(msgTimer); pulseAnim.stopAnimation(); };
+  }, [loading]);
   const [formData, setFormData] = useState({
     eating_style: 'none',
     preferred_foods: '',
@@ -314,6 +344,19 @@ export default function MealQuestionnaire() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* ── Branded generation loading overlay ───────────────────── */}
+      <Modal visible={loading} transparent animationType="fade" statusBarTranslucent>
+        <View style={styles.loadingOverlay}>
+          <Animated.Image
+            source={require('../assets/logo-icon-yellow.png')}
+            style={[styles.loadingLogo, { transform: [{ scale: pulseAnim }] }]}
+            resizeMode="contain"
+          />
+          <Text style={styles.loadingAppName}>InterFitAI</Text>
+          <Text style={styles.loadingMsg}>{loadingMessage}</Text>
+          <ActivityIndicator size="small" color="rgba(255,255,255,0.4)" style={{ marginTop: 8 }} />
+        </View>
+      </Modal>
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -386,6 +429,28 @@ export default function MealQuestionnaire() {
 }
 
 const styles = StyleSheet.create({
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  loadingLogo: {
+    width: 100,
+    height: 100,
+  },
+  loadingAppName: {
+    color: '#FFD700',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  loadingMsg: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 15,
+    textAlign: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,
