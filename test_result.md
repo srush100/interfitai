@@ -1602,3 +1602,11 @@ agent_communication:
       TESTED via testing agent (iteration_37.json): 4/4 backend pytest passed (beef mince on all 3 days, extra-lean fat/protein ratios 0.46-0.56, day totals = meal sums +/-5, eggs+rice honored) + 2/2 frontend flows verified with screenshots.
       Committed to local main (2282c6e). No git remote configured - push skipped.
       Pre-existing console noise "Unexpected text node: ." on web across multiple screens - non-blocking, not introduced here.
+
+  - agent: "main"
+    message: |
+      VARIANT FIDELITY FIX (2026-06, backend/server.py only, commit 9d8ce73):
+      1) preferred_foods prompt: added RESPECT THE EXACT VARIANT rule (fatty/regular mince = 250cal 26P 17F; extra lean = 153cal 25P 6F; never substitute variant; fit fat budget via zero added oils + portion size).
+      2) Prompt macro table: added Regular/fatty beef mince (cooked): 250cal 26P 0C 17F.
+      3) INGREDIENT_MACROS: added fatty/regular beef mince + ground beef keys (250,26,0,17).
+      Backend restarted, health 200. Verified via live generation with "fatty beef mince, eggs, rice": regular mince used with correct regular macros (NOT swapped to lean), day totals equal meal sums exactly. Note: sample Day 3 had no mince meal (LLM once-per-day adherence variance) - reported to user, no fix requested yet.

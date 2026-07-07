@@ -110,6 +110,11 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
   - Change 6 (frontend meal-questionnaire.tsx): Branded loading overlay during generation — pulsing yellow InterFitAI logo (Animated scale 1↔1.15), cycling messages every 3s, dark 85% modal — identical to workout generation overlay.
   - Tested: 4/4 backend pytest + 2/2 frontend flows (iteration_37.json). Beef mince anchored a meal on all 3 days with extra-lean macros; eggs & rice honored.
   - Known console noise (pre-existing, multiple screens): "Unexpected text node: ." warning on web — non-blocking, not introduced by this change.
+- **[Jun 2026] Variant Fidelity Fix (3 changes, backend/server.py)**:
+  - Prompt now instructs to RESPECT THE EXACT VARIANT named (fatty/regular = 250cal 26P 17F, extra lean = 153cal 25P 6F per 100g cooked); never swap to leaner/fattier variant — fit high-fat variants via zero added oils + portion moderation.
+  - Macro reference table: added "Regular/fatty beef mince (cooked): 250cal 26P 0C 17F".
+  - INGREDIENT_MACROS: added fatty/regular beef mince + fatty/regular ground beef keys (250,26,0,17).
+  - Verified via live generation ("fatty beef mince, eggs, rice"): plan used "cooked regular beef mince" with regular macros (not swapped to lean); day totals = meal sums exactly. Observation: in that sample Day 3 had no mince meal (LLM adherence variance on the once-per-day rule; Days 1–2 anchored 1–2 mince meals each).
 
 ## Backlog (Prioritized)
 ### P0 — Critical
