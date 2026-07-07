@@ -101,6 +101,16 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
   - Change 5 (frontend): Day Summary shows rotation hint + `dayVsTarget` comparison line (e.g. "+45 cal vs your 2288 target" or "✓ On target").
   - Change 6 (frontend): `dayVsTarget` and `rotationHint` styles added to StyleSheet.
 
+- **[Jun 2026] Beef Mince / Preferred Foods Fix + Cooked Weights + Meal Gen Loading Overlay (6 changes)**:
+  - Change 1 (backend): Preferred foods prompt section now forces every preferred food to appear ≥1×/day and explicitly OVERRIDE the example proteins/carbs in the quantities guide (root cause: hardcoded chicken/tuna example quantities overrode preferred foods like beef mince).
+  - Change 2 (backend): Added "Extra-lean beef mince 5% (cooked): 153cal 25P 0C 6F" to the macro reference table in the meal plan prompt.
+  - Change 3 (backend): Added INGREDIENT_MACROS entries: extra lean beef mince (153,25,0,6), lean beef mince (170,26,0,8), extra lean ground beef, lean ground beef — longer key matches beat generic "beef mince" (250,26,0,17).
+  - Change 4 (backend): Prompt rule 6 added — "All meat, fish and grain quantities are COOKED weights — never raw".
+  - Change 5 (frontend meal-detail.tsx): Rotation hint now reads "...throughout your week · All quantities are cooked weights".
+  - Change 6 (frontend meal-questionnaire.tsx): Branded loading overlay during generation — pulsing yellow InterFitAI logo (Animated scale 1↔1.15), cycling messages every 3s, dark 85% modal — identical to workout generation overlay.
+  - Tested: 4/4 backend pytest + 2/2 frontend flows (iteration_37.json). Beef mince anchored a meal on all 3 days with extra-lean macros; eggs & rice honored.
+  - Known console noise (pre-existing, multiple screens): "Unexpected text node: ." warning on web — non-blocking, not introduced by this change.
+
 ## Backlog (Prioritized)
 ### P0 — Critical
 - (none)

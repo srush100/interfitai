@@ -1594,3 +1594,11 @@ agent_communication:
       - lower_hip_focus: secondary_injections_this_week=2 (at max) → blocked ✓
       Result: 2 secondary injections per week, max limit respected, coaching-appropriate placements.
       NEEDS FORMAL TESTING: Use backend testing agent to verify secondary_focus_areas results in extra exercises.
+  - agent: "main"
+    message: |
+      BEEF MINCE / PREFERRED FOODS FIX + COOKED WEIGHTS + MEAL GEN LOADING OVERLAY (2026-06):
+      Backend (server.py): 1) preferred_foods prompt section now forces preferred foods to appear >=1x/day and OVERRIDE example proteins in quantities guide; 2) added extra-lean beef mince 5% (153cal 25P 0C 6F) to prompt macro table; 3) added INGREDIENT_MACROS: extra lean beef mince (153,25,0,6), lean beef mince (170,26,0,8), + ground beef variants; 4) prompt rule 6: all meat/fish/grain quantities are COOKED weights.
+      Frontend: 5) meal-detail.tsx rotation hint appends "· All quantities are cooked weights"; 6) meal-questionnaire.tsx branded loading overlay (pulsing yellow logo, cycling messages 3s, dark modal) matching workout generation.
+      TESTED via testing agent (iteration_37.json): 4/4 backend pytest passed (beef mince on all 3 days, extra-lean fat/protein ratios 0.46-0.56, day totals = meal sums +/-5, eggs+rice honored) + 2/2 frontend flows verified with screenshots.
+      Committed to local main (2282c6e). No git remote configured - push skipped.
+      Pre-existing console noise "Unexpected text node: ." on web across multiple screens - non-blocking, not introduced here.
