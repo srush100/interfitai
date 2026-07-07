@@ -1564,6 +1564,21 @@ agent_communication:
 
   - agent: "main"
     message: |
+      MEAL PLAN ACCURACY PASS - Changes 3 & 4 applied (2026-07):
+      Change 3 (server.py /mealplan/alternate endpoint):
+        - Added _f() helper and macro tolerance validation (_off()) after AI generates new meal.
+        - If macros exceed ±10% cal / ±15% protein,carb,fat AND it's not the last attempt → continue loop to regenerate.
+        - On final attempt with macros still off → proportionally scale ingredients/macros to bring calories in line.
+        - After saving swap, recompute day totals from all meals and return them in response as day_totals field.
+      Change 4 (meal-detail.tsx swap handler):
+        - After receiving alternate_meal response, if response.data.day_totals exists, merge it into updatedPlan.meal_days[dayIndex].
+        - This ensures the Day Summary UI updates immediately without requiring a page reload.
+      Changes 1, 2, 5, 6 were already present (verified before applying).
+      Backend auto-reloaded. Frontend Expo cache cleared and restarted.
+      NEEDS TESTING: POST /api/mealplan/alternate → verify day_totals in response + macros within ±10%. Generate plan with calorie_adjustment → verify targets reflect adjusted value.
+
+  - agent: "main"
+    message: |
       SECONDARY FOCUS INJECTION FIX (Item 1 of 5 Workout Build Improvements):
       ROOT CAUSE IDENTIFIED AND FIXED:
       1. SECONDARY_SYNERGY map was missing 20+ session types (upper_push_heavy, lower_full, upper_pull_heavy, bro_chest_shoulders, all hybrid/functional/calisthenics types, etc.). These all returned synergy_list=[] and made compatible=False, blocking ALL injections.
