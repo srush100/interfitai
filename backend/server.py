@@ -110,17 +110,11 @@ async def call_claude_haiku(
 # Stripe configuration
 stripe.api_key = os.environ.get('STRIPE_API_KEY', '')
 
-# Admin emails - these users get free full access
-ADMIN_EMAILS = [
-    "sebastianrush5@gmail.com",
-    "srush@interfitai.com"
-]
-
+# Admin emails - these users get free full access (comma-separated, from environment)
 def is_admin(email: str) -> bool:
-    """Check if an email is in the admin allowlist (env var takes precedence)."""
+    """Check if an email is in the admin allowlist (ADMIN_EMAILS env var)."""
     env_admins = os.getenv("ADMIN_EMAILS", "")
     all_admins = {e.strip().lower() for e in env_admins.split(",") if e.strip()}
-    all_admins.update(e.lower() for e in ADMIN_EMAILS)
     return bool(email) and email.strip().lower() in all_admins
 
 # Free access emails - can be granted by admin
@@ -881,7 +875,7 @@ async def check_subscription_access(user_id: str) -> dict:
     email = profile.get("email", "").lower()
     
     # Admin always has access
-    if email in [e.lower() for e in ADMIN_EMAILS]:
+    if is_admin(email):
         return {"has_access": True, "reason": "admin"}
     
     # Check free access list
