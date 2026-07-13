@@ -1640,3 +1640,11 @@ agent_communication:
       Final deployment_agent verdict: READY TO DEPLOY (pass, no blockers).
       IMPORTANT USER ACTION: Stripe live key (rk_live_...) in backend/.env is EXPIRED per Stripe API - user must rotate it for Stripe payments to work in production.
       INCIDENT LOG: server.py was truncated at line 6235 (4000+ lines lost) by parallel search_replace writes to the same file - recovered via git checkout HEAD~1. NEVER batch multiple edits to server.py in one parallel call; use single scripted writes or sequential edits.
+
+  - agent: "main"
+    message: |
+      GIF CACHE AUDIT FIX (2026-07, commit 5ce7ff7, backend only):
+      Fixed 15 wrong CACHED_EXERCISE_GIFS mappings per user's full 366-mapping audit: rear delt family (0620->0602), pec deck/machine fly (0613->0596), machine incline press (0583->1299), machine preacher curl (0579->0592), handstand push up (0473->0471), knee push up (0670->3211), leg raise/lying leg raise (1472->0620), broadjump (0514->1472), tricep extension x2 (0352->0430), thruster(s) (2143->3305), wall ball(s) (2399->1353), wide grip pull up x2 (0655->1429), bent over rear delt raise (0329->0380), cable hip extension (0196->0228), hanging knee raise/knee raise (0485 broken ->0011).
+      Deleted 3 dead entries: kettlebell romanian deadlift (1455), rowing machine intervals (1161), swiss ball leg curl (2403) - API search/fallback handles them now.
+      Applied via single atomic scripted write with count assertions (per corruption incident lesson). Backend restarted (in-memory GIF cache cleared).
+      VERIFIED: all 15 changed IDs return HTTP 200 with real GIF data (GIF89a magic bytes, 165-405KB) via /api/exercises/gif/{id}.
