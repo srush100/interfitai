@@ -1626,3 +1626,17 @@ agent_communication:
       TESTING: 8/8 pytest passed (tests/test_allergen_safety_hardening.py, iteration_38.json) - proofs: (a) nuts allergy + almond milk swap -> caught & regenerated (mocked LLM, call_count>=2); (b) mushrooms<->mushroom stem matching both ways, gluten-free not false-positive; (c) stripped meal macros == sum of remaining ingredients (508/51.9/56.0/6.0 exact). Live E2E: 2 consecutive nut-allergy generations with zero nut derivatives in ingredients. Live 5-star mince plan: mince all 3 days as "extra lean beef mince (95/5)" with extra-lean macros.
       POST-TEST FIXES (tester findings): swap final-strip edit had been LOST in an earlier parallel write race (tool reported success but hunk absent) - reapplied sequentially and verified in-file. Added scrub_banned_mentions() to remove banned words/phrases from meal name + instructions in BOTH validators (tester found "almond" surviving in name/instructions). Re-ran suite: 8/8 pass.
       LESSON FOR NEXT AGENT: do NOT batch search_replace edits targeting nearby regions of the same file in one parallel call - verify hunks landed with grep after batch edits.
+
+  - agent: "main"
+    message: |
+      DEPLOYMENT READINESS PASS (2026-07): Fixed all deployment_agent findings across 4 health-check iterations:
+      1. Removed hardcoded fallback URL from frontend/src/services/api.ts (env-only now).
+      2. Moved ALL admin emails to ADMIN_EMAILS env var in backend/.env; removed BOTH hardcoded ADMIN_EMAILS lists from server.py; all admin checks now via is_admin().
+      3. Added --tunnel to supervisor expo command (NOTE: /etc/supervisor/conf.d/supervisord.conf is platform-regenerated on pod restart - the flag was wiped once by a pod restart and re-applied; if preview breaks after future pod restarts, re-check this file).
+      4. Cleaned corrupted .gitignore (removed ~80 lines of duplicated *.env blocking entries + stray '-e' lines).
+      5. Bounded 3 unbounded workout_sessions queries: PR detection (limit 100), personal-records endpoint (limit 200), stats endpoint (limit 500) - all with sort date desc + projections.
+      6. Defined STRIPE_SECRET_KEY (was referenced but never defined -> NameError on stripe endpoints).
+      7. Moved RevenueCat keys from source to frontend/.env (EXPO_PUBLIC_REVENUECAT_APPLE_KEY/GOOGLE_KEY).
+      Final deployment_agent verdict: READY TO DEPLOY (pass, no blockers).
+      IMPORTANT USER ACTION: Stripe live key (rk_live_...) in backend/.env is EXPIRED per Stripe API - user must rotate it for Stripe payments to work in production.
+      INCIDENT LOG: server.py was truncated at line 6235 (4000+ lines lost) by parallel search_replace writes to the same file - recovered via git checkout HEAD~1. NEVER batch multiple edits to server.py in one parallel call; use single scripted writes or sequential edits.
