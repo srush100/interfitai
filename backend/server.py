@@ -4198,8 +4198,8 @@ class UpdateExerciseRequest(BaseModel):
 @api_router.get("/workout/stats/{user_id}")
 async def get_workout_stats(user_id: str):
     """Streak, weekly adherence, and total session counts for a user"""
-    cursor = db.workout_sessions.find({"user_id": user_id}).sort("date", -1)
-    sessions = await cursor.to_list(None)
+    cursor = db.workout_sessions.find({"user_id": user_id}, {"date": 1, "duration_minutes": 1, "total_volume": 1, "completed_exercises": 1}).sort("date", -1).limit(500)
+    sessions = await cursor.to_list(500)
     total_sessions = len(sessions)
 
     # Weekly target from the user's most recent workout program
