@@ -423,10 +423,6 @@ export default function MealDetail() {
           ))}
         </ScrollView>
 
-        {/* Rotation hint */}
-        <Text style={styles.rotationHint}>
-          Rotate these {mealPlan.meal_days.length} days throughout your week · All quantities are cooked weights
-        </Text>
         {/* Day Summary */}
         {currentDay && (
           <View style={styles.daySummary}>
@@ -969,14 +965,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     marginTop: 4,
     fontWeight: '600',
-  },
-  rotationHint: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 2,
-    fontStyle: 'italic',
   },
   mealCard: {
     backgroundColor: colors.surface,
