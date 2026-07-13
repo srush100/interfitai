@@ -4,7 +4,7 @@
     "slug": "interfitai",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo-icon-yellow.png",
+    "icon": "./assets/icon-1024.png",
     "scheme": "interfitai",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,

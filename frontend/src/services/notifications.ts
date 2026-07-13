@@ -81,10 +81,19 @@ export async function scheduleWorkoutReminder(reminder: WorkoutReminder): Promis
       minute: reminder.minute,
     };
 
+    const REMINDER_BODIES = [
+      "Your workout is waiting. Let's crush it today!",
+      "Show up for yourself — your future self will thank you.",
+      "Consistency beats intensity. Time to put in the work.",
+      "One session closer to your goal. Let's go.",
+      "The hardest part is starting. Open the app and begin.",
+      "Strong isn't given — it's earned. Today's your day.",
+      "Momentum is built one workout at a time. Keep yours going.",
+    ];
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
         title: "Time to Train! 💪",
-        body: "Your workout is waiting. Let's crush it today!",
+        body: REMINDER_BODIES[reminder.dayOfWeek % REMINDER_BODIES.length],
         data: { type: 'workout_reminder' },
         sound: 'default',
       },

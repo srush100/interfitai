@@ -9413,27 +9413,43 @@ async def check_admin_status(email: str):
 
 DAILY_MOTIVATIONS = [
     "The only bad workout is the one that didn't happen. Get moving! 💪",
-    "Your body can stand almost anything. It's your mind that you have to convince.",
+    "Your body can stand almost anything. It's your mind you have to convince.",
     "Success is the sum of small efforts repeated day in and day out.",
     "The pain you feel today will be the strength you feel tomorrow.",
-    "Don't wish for it, work for it!",
+    "Don't wish for it, work for it.",
     "Your health is an investment, not an expense.",
-    "Every rep counts. Every meal matters. Stay consistent!",
-    "The difference between try and triumph is just a little umph!",
+    "Every rep counts. Every meal matters. Stay consistent.",
     "Wake up with determination. Go to bed with satisfaction.",
-    "Fitness is not about being better than someone else. It's about being better than you used to be.",
-    "Push yourself because no one else is going to do it for you.",
+    "Fitness isn't about being better than someone else — it's about being better than you used to be.",
+    "Push yourself, because no one else is going to do it for you.",
     "The hard days are what make you stronger.",
-    "Your only limit is you.",
     "Believe in yourself and all that you are.",
-    "Today's actions are tomorrow's results."
+    "Today's actions are tomorrow's results.",
+    "Discipline is choosing what you want most over what you want now.",
+    "You don't have to be extreme — just consistent.",
+    "Small progress is still progress.",
+    "Motivation gets you started. Habit keeps you going.",
+    "A year from now, you'll wish you had started today.",
+    "The body achieves what the mind believes.",
+    "Strive for progress, not perfection.",
+    "Sweat is just your effort made visible.",
+    "You are one workout away from a better mood.",
+    "Strong people are harder to break — in every way.",
+    "Results happen over time, not overnight. Trust the process.",
+    "Take care of your body. It's the only place you have to live.",
+    "The best project you'll ever work on is you.",
+    "Show up, even when you don't feel like it — especially then.",
+    "Champions train. Everyone else complains.",
+    "Energy flows where attention goes. Focus on your goals.",
+    "Nothing truly worth having comes without the work.",
 ]
 
 @api_router.get("/motivation")
 async def get_daily_motivation():
-    """Get a random daily motivation quote"""
-    import random
-    return {"motivation": random.choice(DAILY_MOTIVATIONS)}
+    """Get the daily motivation quote — deterministic per calendar day,
+    so every open of the app shows the same quote until midnight."""
+    day_seed = int(datetime.utcnow().strftime("%Y%j"))
+    return {"motivation": DAILY_MOTIVATIONS[day_seed % len(DAILY_MOTIVATIONS)]}
 
 @api_router.get("/reminders/{user_id}")
 async def get_reminder_settings(user_id: str):
