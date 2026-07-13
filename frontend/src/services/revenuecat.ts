@@ -7,9 +7,9 @@ import Purchases, {
   PURCHASES_ERROR_CODE,
 } from 'react-native-purchases';
 
-// RevenueCat API Keys
-const REVENUECAT_APPLE_KEY = 'appl_ncuQwkBBIyQCXaXaPDOXvNUtwCe';
-const REVENUECAT_GOOGLE_KEY = 'goog_JeyjcBbgdxcRRybZEMfFrIPXGRo';
+// RevenueCat API Keys (from environment)
+const REVENUECAT_APPLE_KEY = process.env.EXPO_PUBLIC_REVENUECAT_APPLE_KEY || '';
+const REVENUECAT_GOOGLE_KEY = process.env.EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY || '';
 
 // Entitlement ID - this should match what's configured in RevenueCat dashboard
 export const ENTITLEMENT_ID = 'premium';

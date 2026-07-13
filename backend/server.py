@@ -109,6 +109,7 @@ async def call_claude_haiku(
 
 # Stripe configuration
 stripe.api_key = os.environ.get('STRIPE_API_KEY', '')
+STRIPE_SECRET_KEY = os.environ.get('STRIPE_API_KEY', '')
 
 # Admin emails - these users get free full access (comma-separated, from environment)
 def is_admin(email: str) -> bool:
@@ -9355,7 +9356,7 @@ class GrantAccessRequest(BaseModel):
 async def grant_free_access(request: GrantAccessRequest):
     """Admin grants free access to a user"""
     # Verify admin
-    if request.admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+    if not is_admin(request.admin_email):
         raise HTTPException(status_code=403, detail="Not authorized as admin")
     
     # Grant access
@@ -9381,7 +9382,7 @@ async def grant_free_access(request: GrantAccessRequest):
 @api_router.delete("/admin/revoke-access")
 async def revoke_free_access(admin_email: str, user_email: str):
     """Admin revokes free access from a user"""
-    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+    if not is_admin(admin_email):
         raise HTTPException(status_code=403, detail="Not authorized as admin")
     
     await db.free_access.delete_one({"email": user_email.lower()})
@@ -9396,7 +9397,7 @@ async def revoke_free_access(admin_email: str, user_email: str):
 @api_router.get("/admin/free-access-list")
 async def get_free_access_list(admin_email: str):
     """Get list of all users with free access"""
-    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+    if not is_admin(admin_email):
         raise HTTPException(status_code=403, detail="Not authorized as admin")
     
     users = await db.free_access.find({}).to_list(100)
@@ -9409,8 +9410,7 @@ async def get_free_access_list(admin_email: str):
 @api_router.get("/admin/is-admin/{email}")
 async def check_admin_status(email: str):
     """Check if an email is an admin"""
-    is_admin = email.lower() in [e.lower() for e in ADMIN_EMAILS]
-    return {"is_admin": is_admin, "email": email}
+    return {"is_admin": is_admin(email), "email": email}
 
 # ==================== MOTIVATION & REMINDERS ====================
 
@@ -9745,10 +9745,6 @@ async def handle_revenuecat_webhook(request: Request):
         # Still return 200 to prevent retries for parsing errors
         return {"success": False, "error": str(e)}
 
-# ==================== ADMIN EMAILS WITH COMPLIMENTARY ACCESS ====================
-ADMIN_EMAILS = [
-    "sebastianrush5@gmail.com",  # Admin with full complimentary access
-]
 
 @api_router.get("/subscription/status/{user_id}")
 async def get_subscription_status(user_id: str):
@@ -9765,7 +9761,7 @@ async def get_subscription_status(user_id: str):
     email = profile.get("email", "").lower()
     
     # Check if admin email - automatic premium access
-    if email in [e.lower() for e in ADMIN_EMAILS]:
+    if is_admin(email):
         return {
             "is_premium": True,
             "status": "admin",
@@ -9817,7 +9813,7 @@ async def admin_grant_access(admin_email: str, target_email: str, duration_days:
     Only admins can call this endpoint.
     """
     # Verify admin
-    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+    if not is_admin(admin_email):
         raise HTTPException(status_code=403, detail="Unauthorized. Admin access required.")
     
     # Find target user by email
@@ -9852,7 +9848,7 @@ async def admin_grant_access(admin_email: str, target_email: str, duration_days:
 async def admin_revoke_access(admin_email: str, target_email: str):
     """Admin endpoint to revoke complimentary premium access."""
     # Verify admin
-    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+    if not is_admin(admin_email):
         raise HTTPException(status_code=403, detail="Unauthorized. Admin access required.")
     
     # Find target user by email
@@ -9883,7 +9879,7 @@ async def admin_revoke_access(admin_email: str, target_email: str):
 async def admin_list_complimentary(admin_email: str):
     """Admin endpoint to list all users with complimentary access."""
     # Verify admin
-    if admin_email.lower() not in [e.lower() for e in ADMIN_EMAILS]:
+    if not is_admin(admin_email):
         raise HTTPException(status_code=403, detail="Unauthorized. Admin access required.")
     
     users = await db.profiles.find({"complimentary_access": True}).to_list(100)
