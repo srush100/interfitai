@@ -191,7 +191,12 @@ export default function MealQuestionnaire() {
       router.replace(`/meal-detail?id=${response.data.id}`);
     } catch (error: any) {
       console.error('Generation error:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to generate meal plan. Please try again.');
+      const detail = error.response?.data?.detail;
+      if (detail && typeof detail === 'object' && detail.error === 'generation_limit') {
+        Alert.alert('Monthly Limit Reached', detail.message);
+      } else {
+        Alert.alert('Error', (typeof detail === 'string' && detail) || 'Failed to generate meal plan. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

@@ -5541,6 +5541,36 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     if not profile or not profile.get("calculated_macros"):
         raise HTTPException(status_code=404, detail="User profile with macros not found. Please set up your profile first.")
     
+    # ── Monthly generation limit (mirrors workout programs: cost + adherence) ──
+    MEAL_PLAN_MONTHLY_LIMIT = 4
+    if not is_admin(profile.get("email", "")):
+        now = datetime.utcnow()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        used = await db.meal_generation_events.count_documents({
+            "user_id": request.user_id,
+            "created_at": {"$gte": month_start},
+        })
+        if used >= MEAL_PLAN_MONTHLY_LIMIT:
+            if now.month == 12:
+                reset_dt = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            else:
+                reset_dt = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            reset_date = reset_dt.date().isoformat()
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "generation_limit",
+                    "message": (
+                        f"You've used your {MEAL_PLAN_MONTHLY_LIMIT} meal plan generations this month. "
+                        f"They reset on {reset_date}. "
+                        "You can still swap individual meals anytime — consistency with your plan beats a new plan."
+                    ),
+                    "reset_date": reset_date,
+                    "used": used,
+                    "limit": MEAL_PLAN_MONTHLY_LIMIT,
+                },
+            )
+    
     macros = profile["calculated_macros"]
     # Honour the user's manual calorie adjustment (Macro Targets screen) so the
     # plan is built for the same daily target the food log displays.
@@ -7208,6 +7238,10 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
             )
             
             await db.mealplans.insert_one(meal_plan.model_dump())
+            await db.meal_generation_events.insert_one({
+                "user_id": request.user_id,
+                "created_at": datetime.utcnow(),
+            })
             return meal_plan
             
         except Exception as e:
@@ -7460,6 +7494,10 @@ You MUST use these exact numbers in each meal's calorie/protein/carbs/fats field
         )
         
         await db.mealplans.insert_one(meal_plan.model_dump())
+        await db.meal_generation_events.insert_one({
+            "user_id": request.user_id,
+            "created_at": datetime.utcnow(),
+        })
         return meal_plan
         
     except Exception as e:
