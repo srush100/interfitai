@@ -33,6 +33,76 @@ db = client[os.environ.get('DB_NAME', 'interfitai')]
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# ==================== TRANSACTIONAL EMAIL (Resend) ====================
+async def send_email(to: str, subject: str, html: str) -> bool:
+    """Send one transactional email via Resend. Never raises — returns False on
+    failure so callers (e.g. signup) are never blocked by email problems."""
+    if not RESEND_API_KEY:
+        logger.warning(f"Email skipped (no RESEND_API_KEY): '{subject}' -> {to}")
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={"from": MAIL_FROM, "to": [to], "subject": subject, "html": html},
+            )
+        if resp.status_code >= 400:
+            logger.error(f"Resend error {resp.status_code} for '{subject}': {resp.text[:300]}")
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"Email send failed for '{subject}' -> {to}: {e}")
+        return False
+
+def _email_shell(inner: str) -> str:
+    """Branded black/gold InterFitAI wrapper. Inline styles only (email-safe)."""
+    return f"""<!doctype html><html><body style="margin:0;padding:0;background:#000000;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#000000;padding:32px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#111111;border-radius:16px;border:1px solid #262626;overflow:hidden;">
+      <tr><td align="center" style="padding:32px 32px 8px;">
+        <div style="font-size:26px;font-weight:800;letter-spacing:1px;color:#ffffff;font-family:Arial,Helvetica,sans-serif;">
+          INTERFIT<span style="color:#FFD700;">AI</span>
+        </div>
+      </td></tr>
+      <tr><td style="padding:8px 32px 32px;font-family:Arial,Helvetica,sans-serif;color:#d4d4d4;font-size:15px;line-height:1.6;">
+        {inner}
+      </td></tr>
+      <tr><td style="padding:20px 32px;border-top:1px solid #262626;font-family:Arial,Helvetica,sans-serif;color:#737373;font-size:12px;line-height:1.5;">
+        You're receiving this because you have an InterFitAI account.<br>
+        Need help? Contact {APP_SUPPORT_EMAIL}.
+      </td></tr>
+    </table>
+  </td></tr>
+</table></body></html>"""
+
+def welcome_email_html(name: str) -> str:
+    greeting = f"Welcome, {name}!" if name and name.strip() else "Welcome!"
+    return _email_shell(f"""
+        <h1 style="color:#ffffff;font-size:22px;margin:0 0 16px;">{greeting}</h1>
+        <p style="margin:0 0 16px;">Your account is ready. InterFitAI builds elite, fully personalised training programs and meal plans around your goals, equipment and preferences — and adapts as you progress.</p>
+        <p style="margin:0 0 8px;color:#ffffff;font-weight:700;">To get started:</p>
+        <ul style="margin:0 0 16px;padding-left:20px;">
+          <li style="margin-bottom:6px;">Generate your first workout program</li>
+          <li style="margin-bottom:6px;">Create a meal plan matched to your macros</li>
+          <li style="margin-bottom:6px;">Log food by search, photo, or barcode</li>
+        </ul>
+        <p style="margin:0;">Let's get to work. 💪</p>
+    """)
+
+def reset_code_email_html(code: str) -> str:
+    return _email_shell(f"""
+        <h1 style="color:#ffffff;font-size:22px;margin:0 0 16px;">Reset your password</h1>
+        <p style="margin:0 0 20px;">Enter this code in the app to set a new password. It expires in 15 minutes.</p>
+        <div style="text-align:center;margin:0 0 20px;">
+          <span style="display:inline-block;font-size:34px;font-weight:800;letter-spacing:10px;color:#FFD700;background:#000000;border:1px solid #333;border-radius:12px;padding:16px 28px;font-family:'Courier New',monospace;">{code}</span>
+        </div>
+        <p style="margin:0;color:#a3a3a3;font-size:13px;">If you didn't request this, you can safely ignore this email — your password won't change.</p>
+    """)
+
+
 # OpenAI configuration (kept for fallback/vision)
 openai.api_key = os.environ.get('OPENAI_API_KEY', '')
 
@@ -124,6 +194,9 @@ FREE_ACCESS_EMAILS = []
 # Exercise demonstration - using ExerciseDB RapidAPI for computer-generated animated GIFs
 EXERCISEDB_API_KEY = os.getenv("EXERCISEDB_API_KEY")
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+MAIL_FROM = os.environ.get("MAIL_FROM", "InterFitAI <onboarding@resend.dev>")
+APP_SUPPORT_EMAIL = "srush@interfitai.com"
 EXERCISEDB_API_HOST = "exercisedb.p.rapidapi.com"
 EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 
@@ -3401,6 +3474,16 @@ async def create_profile(profile_data: UserProfileCreate):
         profile_dict["subscription_status"] = "free_access"
 
     await db.profiles.insert_one(profile_dict)
+    # Welcome email — fire-and-forget; never block or fail signup on email issues.
+    if profile_dict.get("email"):
+        try:
+            await send_email(
+                to=profile_dict["email"],
+                subject="Welcome to InterFitAI 💪",
+                html=welcome_email_html(profile_dict.get("name", "")),
+            )
+        except Exception as _we:
+            logger.error(f"Welcome email failed for {profile_dict.get('email')}: {_we}")
     profile_dict["has_password"] = bool(profile_dict.get("password_hash", ""))
     return UserProfile(**profile_dict)
 
@@ -3501,6 +3584,70 @@ async def change_password(user_id: str, current_password: str, new_password: str
         }}
     )
     return {"message": "Password updated successfully"}
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    code: str
+    new_password: str
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest):
+    """Email a 6-digit reset code. Always returns 200 — never reveals whether an
+    account exists (prevents email enumeration)."""
+    import random as _random
+    email = (req.email or "").strip().lower()
+    generic = {"message": "If an account exists for that email, a reset code has been sent."}
+    if not email:
+        return generic
+    profile = await db.profiles.find_one({"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}})
+    if not profile:
+        return generic
+    # Rate limit: max 3 codes per email per 15 minutes
+    window_start = datetime.utcnow() - timedelta(minutes=15)
+    recent = await db.password_resets.count_documents({"email": email, "created_at": {"$gte": window_start}})
+    if recent >= 3:
+        return generic
+    code = f"{_random.randint(0, 999999):06d}"
+    await db.password_resets.insert_one({
+        "email": email,
+        "code_hash": pwd_context.hash(code),
+        "expires_at": datetime.utcnow() + timedelta(minutes=15),
+        "attempts": 0,
+        "used": False,
+        "created_at": datetime.utcnow(),
+    })
+    await send_email(to=profile["email"], subject="Your InterFitAI reset code",
+                     html=reset_code_email_html(code))
+    return generic
+
+@api_router.post("/auth/reset-password")
+async def reset_password(req: ResetPasswordRequest):
+    """Verify the 6-digit code and set a new password."""
+    email = (req.email or "").strip().lower()
+    code = (req.code or "").strip()
+    if len(req.new_password or "") < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+    rec = await db.password_resets.find_one(
+        {"email": email, "used": False}, sort=[("created_at", -1)]
+    )
+    if not rec:
+        raise HTTPException(status_code=400, detail="No active reset request. Please request a new code.")
+    if rec.get("attempts", 0) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please request a new code.")
+    if rec["expires_at"] < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="This code has expired. Please request a new one.")
+    if not pwd_context.verify(code, rec["code_hash"]):
+        await db.password_resets.update_one({"_id": rec["_id"]}, {"$inc": {"attempts": 1}})
+        raise HTTPException(status_code=400, detail="Incorrect code. Please try again.")
+    await db.profiles.update_one(
+        {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}},
+        {"$set": {"password_hash": pwd_context.hash(req.new_password), "updated_at": datetime.utcnow()}},
+    )
+    await db.password_resets.update_one({"_id": rec["_id"]}, {"$set": {"used": True}})
+    return {"message": "Password reset successfully. You can now sign in."}
 
 # ==================== WORKOUT ENDPOINTS ====================
 
