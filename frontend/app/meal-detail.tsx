@@ -380,7 +380,7 @@ export default function MealDetail() {
         <View style={styles.aiExplanationCard}>
           <View style={styles.aiExplanationHeader}>
             <Ionicons name="bulb" size={18} color={colors.primary} />
-            <Text style={styles.aiExplanationTitle}>Why This Plan Works</Text>
+            <Text style={styles.aiExplanationTitle}>Plan Principles</Text>
           </View>
           <Text style={styles.aiExplanationText}>
             {profile?.goal === 'build_muscle' || profile?.goal === 'muscle_building' ? (

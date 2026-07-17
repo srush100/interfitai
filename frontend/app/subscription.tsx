@@ -9,6 +9,7 @@ import {
   Platform,
   Dimensions,
   Image,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -63,14 +64,6 @@ const PLANS = [
     price: 9.99,
     priceDisplay: '$9.99',
     period: '/month',
-    popular: false,
-  },
-  {
-    id: 'quarterly',
-    name: 'Quarterly',
-    price: 29.99,
-    priceDisplay: '$29.99',
-    period: '/3 months',
     popular: false,
   },
   {
@@ -138,6 +131,43 @@ export default function Subscription() {
     );
   }
 
+  // Human-readable plan label from stored subscription_status.
+  const planLabel = (() => {
+    switch (profile?.subscription_status) {
+      case 'monthly': return 'Monthly plan';
+      case 'quarterly': return 'Quarterly plan';
+      case 'yearly': return 'Annual plan';
+      case 'trial': return 'Free trial';
+      case 'free_access':
+      case 'complimentary': return 'Complimentary access';
+      case 'active': return 'Active plan';
+      default: return null;
+    }
+  })();
+
+  const renewsLabel = (() => {
+    const end = profile?.subscription_end_date;
+    if (!end) return null;
+    try {
+      const d = new Date(end);
+      if (isNaN(d.getTime())) return null;
+      // "15 Jan 2027"
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch {
+      return null;
+    }
+  })();
+
+  const isComplimentary = profile?.subscription_status === 'free_access'
+    || profile?.subscription_status === 'complimentary';
+
+  const openManageSubscription = () => {
+    const url = Platform.OS === 'ios'
+      ? 'https://apps.apple.com/account/subscriptions'
+      : 'https://play.google.com/store/account/subscriptions';
+    Linking.openURL(url).catch((e) => console.log('Manage subscription open failed:', e));
+  };
+
   // If already premium, show success screen
   if (isPremium) {
     return (
@@ -163,7 +193,30 @@ export default function Subscription() {
           <Text style={styles.premiumSubtitle}>
             You have full access to all InterFitAI features
           </Text>
-          
+
+          {(planLabel || renewsLabel) && (
+            <View style={styles.planInfoCard}>
+              {planLabel && (
+                <View style={styles.planInfoRow}>
+                  <Ionicons name="ribbon-outline" size={18} color={colors.primary} />
+                  <Text style={styles.planInfoLabel}>{planLabel}</Text>
+                </View>
+              )}
+              {renewsLabel && (
+                <View style={styles.planInfoRow}>
+                  <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                  <Text style={styles.planInfoLabel}>Renews {renewsLabel}</Text>
+                </View>
+              )}
+              {!isComplimentary && (
+                <TouchableOpacity style={styles.manageBtn} onPress={openManageSubscription}>
+                  <Ionicons name="settings-outline" size={18} color="#000" style={{ marginRight: 8 }} />
+                  <Text style={styles.manageBtnText}>Manage Subscription</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           <TouchableOpacity style={styles.doneBtn} onPress={handleClose}>
             <Text style={styles.doneBtnText}>Done</Text>
           </TouchableOpacity>
@@ -559,6 +612,42 @@ const styles = StyleSheet.create({
   },
   doneBtnText: {
     fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  planInfoCard: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  planInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  planInfoLabel: {
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  manageBtn: {
+    marginTop: 8,
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manageBtnText: {
+    fontSize: 15,
     fontWeight: '600',
     color: '#000',
   },

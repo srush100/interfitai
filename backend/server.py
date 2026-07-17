@@ -87,7 +87,7 @@ def welcome_email_html(name: str) -> str:
         <ul style="margin:0 0 16px;padding-left:20px;">
           <li style="margin-bottom:6px;">Generate your first workout program</li>
           <li style="margin-bottom:6px;">Create a meal plan matched to your macros</li>
-          <li style="margin-bottom:6px;">Log food by search, photo, or barcode</li>
+          <li style="margin-bottom:6px;">Log food by search, photo, or AI</li>
         </ul>
         <p style="margin:0;">Let's get to work. 💪</p>
     """)

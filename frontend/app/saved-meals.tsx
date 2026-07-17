@@ -90,7 +90,7 @@ export default function SavedMeals() {
         carbs: favorite.meal.carbs,
         fats: favorite.meal.fats,
         serving_size: '1 serving',
-        meal_type: 'snack',
+        meal_type: favorite.meal.meal_type || 'snack',
         logged_date: today,
       });
       Alert.alert('Success', `${favorite.meal.name} logged to your food diary!`);
