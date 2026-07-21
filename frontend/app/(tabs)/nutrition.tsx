@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
+import usePremium from '../../src/hooks/usePremium';
 
 interface MealPlan {
   id: string;
@@ -28,6 +29,7 @@ interface MealPlan {
 export default function NutritionScreen() {
   const router = useRouter();
   const { profile } = useUserStore();
+  const { requirePremium } = usePremium();
   const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,6 +59,14 @@ export default function NutritionScreen() {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  // Gated navigation into the food-log screen. Nutrition tracking is a paid
+  // feature — free users get the "Premium Required" alert with a "View Plans"
+  // CTA instead of navigating in and being kicked straight back.
+  const goToFoodLog = async () => {
+    const ok = await requirePremium('Nutrition Tracking');
+    if (ok) router.push('/food-log');
   };
 
   const deleteMealPlan = async (planId: string) => {
@@ -117,7 +127,7 @@ export default function NutritionScreen() {
           <View style={styles.progressCard}>
             <View style={styles.progressHeader}>
               <Text style={styles.progressTitle}>Today's Progress</Text>
-              <TouchableOpacity onPress={() => router.push('/food-log')}>
+              <TouchableOpacity onPress={goToFoodLog}>
                 <Text style={styles.viewAll}>Log Food</Text>
               </TouchableOpacity>
             </View>
@@ -195,14 +205,14 @@ export default function NutritionScreen() {
         <View style={styles.quickActions}>
           <TouchableOpacity
             style={styles.quickAction}
-            onPress={() => router.push('/food-log')}
+            onPress={goToFoodLog}
           >
             <Ionicons name="camera" size={24} color={colors.primary} />
             <Text style={styles.quickActionText}>Snap Food</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickAction}
-            onPress={() => router.push('/food-log')}
+            onPress={goToFoodLog}
           >
             <Ionicons name="search" size={24} color={colors.primary} />
             <Text style={styles.quickActionText}>Search Food</Text>

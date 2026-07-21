@@ -21,12 +21,14 @@ import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
 import { getHealthConnectionStatus, syncHealthData } from '../../src/services/health';
+import usePremium from '../../src/hooks/usePremium';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
   const { profile } = useUserStore();
+  const { requirePremium } = usePremium();
   const [refreshing, setRefreshing] = useState(false);
   const [motivation, setMotivation] = useState('');
   const [todaySteps, setTodaySteps] = useState(0);
@@ -220,7 +222,10 @@ export default function HomeScreen() {
       title: 'Food Log',
       subtitle: 'Snap & track',
       color: '#45B7D1',
-      onPress: () => router.push('/food-log'),
+      onPress: async () => {
+        const ok = await requirePremium('Nutrition Tracking');
+        if (ok) router.push('/food-log');
+      },
     },
     {
       icon: 'body',

@@ -8018,6 +8018,11 @@ Use ONLY these allowed proteins: {', '.join(protein_alternatives) if protein_alt
 @api_router.post("/food/favorite")
 async def add_favorite_meal(user_id: str, meal_name: str, calories: int, protein: float, carbs: float, fats: float, serving_size: str = "1 serving"):
     """Add a meal to favorites"""
+    # Premium gate — same pattern as meal-plan / workout generation.
+    access = await check_subscription_access(user_id)
+    if not access.get("has_access"):
+        raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
+                                                     "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
     favorite = FavoriteMeal(
         user_id=user_id,
         meal=Meal(
@@ -8055,7 +8060,14 @@ async def toggle_food_log_favorite(log_id: str):
     log = await db.food_logs.find_one({"id": log_id})
     if not log:
         raise HTTPException(status_code=404, detail="Food log not found")
-    
+    # Premium gate — resolve user from the log doc.
+    log_user_id = log.get("user_id")
+    if log_user_id:
+        access = await check_subscription_access(log_user_id)
+        if not access.get("has_access"):
+            raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
+                                                         "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
+
     new_status = not log.get("is_favorite", False)
     await db.food_logs.update_one({"id": log_id}, {"$set": {"is_favorite": new_status}})
     return {"message": f"Favorite {'added' if new_status else 'removed'}", "is_favorite": new_status}
@@ -8066,6 +8078,11 @@ async def toggle_food_log_favorite(log_id: str):
 async def analyze_food_image(request: FoodImageAnalyzeRequest):
     """Analyze food image using OpenAI Vision to identify food and estimate nutrition"""
     try:
+        # Premium gate — snapping food is a paid action.
+        access = await check_subscription_access(request.user_id)
+        if not access.get("has_access"):
+            raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
+                                                         "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
         # Validate base64 image
         if not request.image_base64 or len(request.image_base64) < 100:
             raise HTTPException(status_code=400, detail="Invalid image data")
@@ -8204,6 +8221,11 @@ Respond with ONLY valid JSON, no other text. Use this exact format:
 @api_router.post("/food/log", response_model=FoodEntry)
 async def log_food(request: FoodLogRequest):
     """Manually log food entry"""
+    # Premium gate — logging food is a paid action.
+    access = await check_subscription_access(request.user_id)
+    if not access.get("has_access"):
+        raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
+                                                     "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
     food_entry = FoodEntry(**request.model_dump())
     await db.food_logs.insert_one(food_entry.model_dump())
     return food_entry
@@ -8262,8 +8284,13 @@ async def delete_food_log(log_id: str):
     return {"message": "Food log deleted successfully"}
 
 @api_router.get("/food/search")
-async def search_foods(query: str):
-    """Search food database - combines local database with API results for best coverage"""
+async def search_foods(query: str, user_id: str):
+    """Search food database - combines local database with API results for best coverage.
+    Requires an active subscription (`user_id` gates the paid nutrition feature)."""
+    access = await check_subscription_access(user_id)
+    if not access.get("has_access"):
+        raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
+                                                     "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
     logger.info(f"Searching food database for: {query}")
     query_lower = query.lower()
     
@@ -8765,9 +8792,14 @@ async def search_foods(query: str):
     return combined_results[:50]
 
 @api_router.get("/food/ai-search")
-async def ai_food_search(query: str):
+async def ai_food_search(query: str, user_id: str):
     """Return accurate nutrition for any food (generic, branded, or restaurant)
-    via Claude Sonnet — the same reliable path the rest of the app uses."""
+    via Claude Sonnet — the same reliable path the rest of the app uses.
+    Requires an active subscription (paid nutrition feature)."""
+    access = await check_subscription_access(user_id)
+    if not access.get("has_access"):
+        raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
+                                                     "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
     import re as _re
 
     system_prompt = (
@@ -8845,10 +8877,15 @@ async def ai_food_search(query: str):
 
 
 @api_router.get("/food/web-search")
-async def web_food_search(query: str):
+async def web_food_search(query: str, user_id: str):
     """Live, web-grounded nutrition lookup: Tavily search -> Haiku extraction.
     Returns real, sourced macros for branded/regional items. Opt-in (costs a
-    Tavily search), so only called when the user taps 'Verify on the web'."""
+    Tavily search), so only called when the user taps 'Verify on the web'.
+    Requires an active subscription (paid nutrition feature)."""
+    access = await check_subscription_access(user_id)
+    if not access.get("has_access"):
+        raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
+                                                     "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
     import re as _re
     from urllib.parse import urlparse
 

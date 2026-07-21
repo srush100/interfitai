@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
+import usePremium from '../src/hooks/usePremium';
 
 interface FoodEntry {
   id: string;
@@ -86,6 +87,9 @@ const skeletonStyles = StyleSheet.create({
 export default function FoodLog() {
   const router = useRouter();
   const { profile } = useUserStore();
+  const { requirePremium, isPremium, isLoading: premiumLoading } = usePremium();
+  const [premiumChecked, setPremiumChecked] = useState(false);
+  const gateRan = useRef(false);
   const [activeTab, setActiveTab] = useState<'log' | 'search' | 'snap' | 'manual'>('log');
   const [todayLogs, setTodayLogs] = useState<FoodEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -146,6 +150,23 @@ export default function FoodLog() {
   const [aiSearching, setAiSearching] = useState(false);
   const [aiResultExpanded, setAiResultExpanded] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Mount-time premium gate — nutrition tracking is a paid feature.
+  // Watches usePremium() state and runs exactly once (guarded by gateRan ref)
+  // to avoid the re-render loop that calling requirePremium inside a state-
+  // dependent effect would cause (checkAccess flips isLoading twice per call).
+  useEffect(() => {
+    if (premiumLoading || gateRan.current) return;
+    gateRan.current = true;
+    if (isPremium) {
+      setPremiumChecked(true);
+    } else {
+      // Show the standard paywall alert (same copy pattern the rest of the app
+      // uses) then send the user back to whichever screen brought them here.
+      requirePremium('Nutrition Tracking');
+      router.back();
+    }
+  }, [premiumLoading, isPremium]);
 
   useEffect(() => {
     loadTodayLogs();
@@ -284,7 +305,7 @@ export default function FoodLog() {
     setSearchResults([]);
     setAiResult(null);
     try {
-      const response = await api.get(`/food/search?query=${encodeURIComponent(q)}`);
+      const response = await api.get(`/food/search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}`);
       setSearchResults(response.data);
     } catch (error) {
       console.log('Error searching food:', error);
@@ -308,7 +329,7 @@ export default function FoodLog() {
     if (!searchQuery.trim()) return;
     setAiSearching(true);
     try {
-      const response = await api.get(`/food/ai-search?query=${encodeURIComponent(searchQuery)}`);
+      const response = await api.get(`/food/ai-search?query=${encodeURIComponent(searchQuery)}&user_id=${encodeURIComponent(profile?.id || '')}`);
       setAiResult(response.data);
       setAiResultExpanded(false);
     } catch (error) {
@@ -325,7 +346,7 @@ export default function FoodLog() {
     if (!q) return;
     setWebSearching(true);
     try {
-      const response = await api.get(`/food/web-search?query=${encodeURIComponent(q)}`);
+      const response = await api.get(`/food/web-search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}`);
       if (response.data && response.data.calories > 0 && response.data.verified) {
         setAiResult(response.data);
         setAiResultExpanded(false);
@@ -604,6 +625,16 @@ export default function FoodLog() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Premium gate — while the mount-time check is running (or if a free
+          user reached this screen), show a neutral loader instead of the food
+          UI. requirePremium() will have shown the paywall alert and routed
+          back to the previous screen. */}
+      {!premiumChecked ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+      <>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
@@ -1520,6 +1551,8 @@ export default function FoodLog() {
           </View>
         )}
       </ScrollView>
+      </>
+      )}
     </SafeAreaView>
   );
 }
