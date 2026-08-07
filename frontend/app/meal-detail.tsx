@@ -20,6 +20,35 @@ import { colors } from '../src/theme/colors';
 import { useUserStore } from '../src/store/userStore';
 import api from '../src/services/api';
 
+// ── Raw/cooked helper (Fix 5) ──────────────────────────────────────────
+// Meal plans specify COOKED weights (as the app has always done), but the
+// package labels users read at the shop show RAW weights. To reconcile the two
+// conventions without changing any macro figure, we render:
+//   "200g raw"  <— primary weight the user should weigh from the pack
+//   "≈150g cooked"  <— small grey line beneath (existing cooked figure)
+// Rule of thumb applied to strings that start with "<number>g":
+//   • Meat / fish / poultry: raw = cooked × 1.33  (≈25% water loss)
+//   • Grains / rice / pasta:  raw = cooked ÷ 3.1  (dry -> boiled)
+//   • Everything else: leave the original string alone.
+const _RAW_MEAT_RE = /\b(chicken|beef|steak|mince|turkey|pork|lamb|bacon|ham|salmon|tuna|cod|tilapia|shrimp|prawn|fish|duck|veal|venison)\b/i;
+const _DRY_GRAIN_RE = /\b(rice|pasta|oats|oatmeal|quinoa|couscous|barley|bulgur|noodle|spaghetti|penne|farro)\b/i;
+function formatIngredientWithRaw(ing: string): { primary: string; hint: string | null } {
+  const trimmed = (ing || '').trim();
+  const m = trimmed.match(/^(\d+(?:\.\d+)?)\s*g\s+(.+)$/i);
+  if (!m) return { primary: trimmed, hint: null };
+  const cookedG = parseFloat(m[1]);
+  const rest = m[2];
+  if (_RAW_MEAT_RE.test(rest)) {
+    const rawG = Math.round(cookedG * 1.33);
+    return { primary: `${rawG}g raw ${rest}`, hint: `≈${cookedG}g cooked` };
+  }
+  if (_DRY_GRAIN_RE.test(rest)) {
+    const dryG = Math.max(1, Math.round(cookedG / 3.1));
+    return { primary: `${dryG}g dry ${rest}`, hint: `≈${cookedG}g cooked` };
+  }
+  return { primary: trimmed, hint: null };
+}
+
 interface Meal {
   name: string;
   meal_type: string;
@@ -516,11 +545,16 @@ export default function MealDetail() {
               <View style={styles.mealDetails}>
                 <View style={styles.detailSection}>
                   <Text style={styles.detailLabel}>Ingredients</Text>
-                  {meal.ingredients.map((ing, ingIdx) => (
-                    <Text key={ingIdx} style={styles.ingredient}>
-                      • {ing}
-                    </Text>
-                  ))}
+                  <Text style={styles.rawHint}>Weigh meat raw where you can — it matches the pack label.</Text>
+                  {meal.ingredients.map((ing, ingIdx) => {
+                    const { primary, hint } = formatIngredientWithRaw(ing);
+                    return (
+                      <View key={ingIdx} style={styles.ingredientRow}>
+                        <Text style={styles.ingredient}>• {primary}</Text>
+                        {hint ? <Text style={styles.ingredientHint}>   {hint}</Text> : null}
+                      </View>
+                    );
+                  })}
                 </View>
 
                 <View style={styles.detailSection}>
@@ -1059,6 +1093,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     marginBottom: 4,
+  },
+  ingredientRow: {
+    marginBottom: 6,
+  },
+  ingredientHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginLeft: 16,
+    marginTop: -2,
+    fontStyle: 'italic',
+  },
+  rawHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: 8,
+    fontStyle: 'italic',
   },
   instructions: {
     fontSize: 14,

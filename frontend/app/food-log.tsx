@@ -22,6 +22,21 @@ import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 import usePremium from '../src/hooks/usePremium';
 
+// ── Raw-weight annotation (Fix 5) ────────────────────────────────────
+// Package labels the user photographs are ALWAYS raw / dry. So a logged
+// entry for meat/fish/poultry should surface that fact in the item name.
+// This is display-only — never touches the macro numbers.
+const _RAW_MEAT_RE = /\b(chicken|beef|steak|mince|turkey|pork|lamb|bacon|ham|salmon|tuna|cod|tilapia|shrimp|prawn|fish|duck|veal|venison)\b/i;
+function annotateRaw(name: string): string {
+  if (!name) return name;
+  if (/\braw\b|\bcooked\b/i.test(name)) return name;  // already annotated
+  if (!_RAW_MEAT_RE.test(name)) return name;
+  // Insert "(raw)" just before any trailing "(…)" gram tag, otherwise append.
+  const m = name.match(/^(.+?)\s*(\([^)]*(?:g|kg|oz|lb|serving)[^)]*\))\s*$/i);
+  if (m) return `${m[1]} (raw, ${m[2].replace(/^\(|\)$/g, '')})`;
+  return `${name} (raw)`;
+}
+
 interface FoodEntry {
   id: string;
   food_name: string;
@@ -838,7 +853,7 @@ export default function FoodLog() {
                 <View key={log.id} style={styles.logItem}>
                   <View style={styles.logInfo}>
                     <Text style={styles.logMealType}>{log.meal_type}</Text>
-                    <Text style={styles.logName}>{log.food_name}</Text>
+                    <Text style={styles.logName}>{annotateRaw(log.food_name)}</Text>
                     <Text style={styles.logMacros}>
                       {log.calories} cal • {log.protein}g P • {log.carbs}g C • {log.fats}g F
                     </Text>

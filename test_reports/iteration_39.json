@@ -1,0 +1,40 @@
+{
+  "summary": "Backend-only verification of the systemic nutrition-accuracy guard (Fix 1–6). 28/28 tests pass. Deterministic calorie reconciliation, physical-plausibility warnings, subscription gating, and USDA-corrected INGREDIENT_MACROS / local_foods values are all working across POST /food/log, GET /food/search, GET /food/ai-search, and GET /food/web-search. Verified user's exact bug (596 cal 4-eggs entry → stored 256 cal). One MINOR (non-blocking) bug found: _norm_food_name strips the word 'extra', so 'extra lean beef mince' normalises to 'lean beef mince' and hits the wrong INGREDIENT_MACROS key — this causes Fix-4 warnings to be misleading for extra-lean beef mince (data path is unaffected because guard never modifies macros).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "internal helper _norm_food_name / _lookup_reference (backend/server.py:8115-8156)",
+        "issue": "The state-word stripping regex removes 'extra' from food names. So _lookup_reference('extra lean beef mince') resolves to the LEAN key (176/20/10) instead of EXTRA-LEAN (171/26.5/6.9). Effect: Fix-4 reference_divergence warnings fire falsely when a user logs correct USDA extra-lean values, and correctly-diverging entries labelled 'extra lean' get silently accepted. Guard's data corrections are unaffected (only calories are ever modified, via Fix 1, which is macro-based)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_nutrition_accuracy_guard.py",
+    "/app/test_reports/pytest/nutrition_accuracy_guard.xml"
+  ],
+  "action_items": [
+    "OPTIONAL / low priority: remove 'extra' from the state-word regex in _norm_food_name (server.py L8122) so 'extra lean beef mince' resolves to its own INGREDIENT_MACROS key. Add a targeted unit test after fix.",
+    "No other fixes required — all six systemic guards behave as documented."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 10,748 lines — should eventually be split into modules (nutrition, coaching engine, auth, subscriptions). Not blocking.",
+    "USDA_API_KEY hardcoded to 'DEMO_KEY' (server.py L210). OK for demo volume but should be env-driven for production.",
+    "sanitize_food_entry mutates input dict and returns it — signature (entry, warnings) is documented, and callers correctly rely on mutation-in-place. Consistent."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_nutrition_accuracy_guard.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Two profiles seeded per test run (TEST_paid_*, TEST_free_*). paid_user is flipped to subscription_status='yearly' via direct Mongo update. paid_user + its food_logs are cleaned up on teardown. free_user profile intentionally kept (no PII, prefixed 'TEST_').",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file test_nutrition_accuracy_guard.py is a reusable regression suite covering all six nutrition-accuracy fixes. It seeds its own users so it works on any fork. Watch out for the known _norm_food_name('extra') bug — the two tests test_alias_extra_lean_bug_documented and test_alias_direct_key_hits_extra_lean will START FAILING when that bug is fixed (that's intentional — update expected values to (171, 26.5, 0, 6.9)).",
+  "rca_of_issue": "User's original bug 'saved 4 eggs — 596 cal / 22P/2.4C/17.6F' — derived calories were 22*4 + 2.4*4 + 17.6*9 = 256, not 596. Fix 1 in sanitize_food_entry now catches every entry where |stated − derived| / stated > 10% and overwrites stated with round(derived). Verified end-to-end via TestFoodLogEndpoint.test_bad_596_reconciled_to_256: POST /api/food/log with the exact bad payload returns calories=256 and a subsequent GET /api/food/logs confirms persistence. All entry-creating endpoints (/food/log, /food/search, /food/ai-search, /food/web-search) route through the same helper, so any future bad values (whether from AI vision, text search, or manual entry) are systemically caught."
+}

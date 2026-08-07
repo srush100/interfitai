@@ -5155,39 +5155,40 @@ INGREDIENT_MACROS = {
     "chicken thigh": (209, 26, 0, 11),
     "chicken thighs": (209, 26, 0, 11),
     "turkey breast": (135, 30, 0, 1),
-    "turkey": (170, 21, 0, 9),
-    "ground turkey": (170, 21, 0, 9),
+    "turkey": (189, 29, 0, 8),            # USDA: roasted whole turkey (was 170/21/9 — protein understated)
+    "ground turkey": (185, 27.4, 0, 8.4), # USDA: 93/7 pan-browned (was 170/21/9)
     # Proteins - Beef
-    "sirloin steak": (180, 26, 0, 8),
-    "sirloin": (180, 26, 0, 8),
-    "ribeye steak": (250, 25, 0, 17),
-    "ribeye": (250, 25, 0, 17),
-    "rump steak": (175, 27, 0, 7),
-    "rump": (175, 27, 0, 7),
-    "steak": (180, 26, 0, 8),  # default to sirloin
+    "sirloin steak": (207, 28, 0, 9.5),   # USDA: broiled, lean+fat (was 180/26/8)
+    "sirloin": (207, 28, 0, 9.5),
+    "ribeye steak": (291, 24, 0, 21),     # USDA: broiled (was 250/25/17 — fat understated)
+    "ribeye": (291, 24, 0, 21),
+    "rump steak": (180, 27, 0, 7.5),
+    "rump": (180, 27, 0, 7.5),
+    "steak": (207, 28, 0, 9.5),           # default to sirloin USDA
     "ground beef": (250, 26, 0, 17),
-    "extra lean beef mince": (153, 25, 0, 6),
-    "premium beef mince": (153, 25, 0, 6),
-    "premium ground beef": (153, 25, 0, 6),
-    "5 star beef mince": (153, 25, 0, 6),
-    "five star beef mince": (153, 25, 0, 6),
-    "lean beef mince": (170, 26, 0, 8),
-    "extra lean ground beef": (153, 25, 0, 6),
-    "lean ground beef": (170, 26, 0, 8),
-    "fatty beef mince": (250, 26, 0, 17),
-    "regular beef mince": (250, 26, 0, 17),
-    "fatty ground beef": (250, 26, 0, 17),
-    "regular ground beef": (250, 26, 0, 17),
+    # USDA 95/5 pan-browned: 171 cal / 26.5g P / 6.9g F (per-100g audit corrected)
+    "extra lean beef mince": (171, 26.5, 0, 6.9),
+    "premium beef mince": (171, 26.5, 0, 6.9),
+    "premium ground beef": (171, 26.5, 0, 6.9),
+    "5 star beef mince": (171, 26.5, 0, 6.9),
+    "five star beef mince": (171, 26.5, 0, 6.9),
+    "lean beef mince": (176, 20, 0, 10),  # USDA 90/10 pan-browned (was 170/26/8 — protein overstated)
+    "extra lean ground beef": (171, 26.5, 0, 6.9),
+    "lean ground beef": (176, 20, 0, 10),
+    "fatty beef mince": (254, 17, 0, 20), # USDA 80/20 pan-browned (was 250/26/17 — protein overstated)
+    "regular beef mince": (254, 17, 0, 20),
+    "fatty ground beef": (254, 17, 0, 20),
+    "regular ground beef": (254, 17, 0, 20),
     "beef mince": (250, 26, 0, 17),
-    "beef": (180, 26, 0, 8),
+    "beef": (207, 28, 0, 9.5),            # default to sirloin USDA (was 180/26/8)
     "extra lean beef": (175, 26, 0, 7),
     "lean beef": (175, 26, 0, 7),
     # Proteins - Fish/Seafood
     "salmon": (208, 20, 0, 13),
     "tilapia": (128, 26, 0, 2.7),
-    "tuna": (116, 26, 0, 0.8),
-    "shrimp": (99, 24, 0, 0.3),
-    "cod": (82, 18, 0, 0.7),
+    "tuna": (116, 26, 0, 1),              # USDA: yellowfin cooked (was 116/26/0.8 — fat rounded up)
+    "shrimp": (99, 24, 0.2, 0.3),         # USDA (carbs was 0)
+    "cod": (105, 23, 0, 0.9),             # USDA: cooked cod (was 82/18/0.7 — cal & protein understated)
     "fish": (100, 20, 0, 2),  # generic fish
     # Proteins - Eggs/Dairy
     "egg": (155, 13, 1.1, 11),  # per 100g (about 2 eggs)
@@ -8074,6 +8075,192 @@ async def toggle_food_log_favorite(log_id: str):
 
 # ==================== FOOD LOGGING ENDPOINTS ====================
 
+# ------------------------------------------------------------------------
+# Nutrition-accuracy safety net — applied to EVERY food-entry-creating path
+# (photo scan, text search results, AI lookup, manual entry).
+#
+# Purpose: catch systemic misreads (impossible macros, wrong reference values,
+# unreconciled calories) before they hit the DB. Every entry that reaches
+# storage has been checked against:
+#   Fix 1 — deterministic calorie reconciliation (10% threshold, overwrite on breach)
+#   Fix 2 — physical plausibility (mass-conservation, energy-density, per-macro ceiling)
+#   Fix 4 — reference-table cross-check (per-100g divergence >30% => flag)
+# The helper NEVER raises — it returns a sanitised dict plus a list of
+# structured warnings so callers can decide whether to retry (AI paths) or
+# accept the corrected values (manual entry).
+# ------------------------------------------------------------------------
+import re as _nutre
+
+_REFERENCE_FOOD_ALIASES = {
+    # Map common freeform names to their INGREDIENT_MACROS canonical key.
+    "eggs": "egg", "whole eggs": "egg", "large eggs": "egg",
+    "egg whites": "egg white",
+    "chicken": "chicken breast",
+    "beef mince": "beef mince", "ground beef": "ground beef",
+    "extra lean beef mince": "extra lean beef mince",
+    "extra lean ground beef": "extra lean beef mince",
+    "5% beef mince": "extra lean beef mince",
+    "95/5 beef": "extra lean beef mince",
+    "steak": "sirloin steak",
+    "rice": "white rice",
+    "pasta": "pasta",
+    "oats": "oats",
+    "oatmeal": "oats",
+    "milk": "milk",
+    "butter": "butter",
+    "olive oil": "olive oil",
+    "cheese": "cheddar cheese",
+}
+
+def _norm_food_name(name: str) -> str:
+    """Lowercase, strip parenthetical qualifiers, remove common state words.
+    Enough to match 'Beef Mince, 5% (raw, 100g)' against 'beef mince'."""
+    n = (name or "").lower()
+    n = _nutre.sub(r"\([^)]*\)", " ", n)         # remove parentheticals
+    n = _nutre.sub(r"[,\.]", " ", n)              # drop punctuation
+    n = _nutre.sub(
+        r"\b(raw|cooked|grilled|baked|boiled|fried|roasted|pan[- ]?browned|steamed|large|medium|small|whole|extra|per|serving|100g|1kg|1lb)\b",
+        " ",
+        n,
+    )
+    n = _nutre.sub(r"\s+", " ", n).strip()
+    return n
+
+def _lookup_reference(food_name: str):
+    """Return (cal, p, c, f) per 100g if the food matches an entry in
+    INGREDIENT_MACROS, else None. Uses fuzzy substring matching so
+    'Organic Extra Lean Beef Mince 5%' still hits 'extra lean beef mince'."""
+    if not food_name:
+        return None
+    normalized = _norm_food_name(food_name)
+    if not normalized:
+        return None
+    # 1. alias table
+    if normalized in _REFERENCE_FOOD_ALIASES:
+        key = _REFERENCE_FOOD_ALIASES[normalized]
+        if key in INGREDIENT_MACROS:
+            return INGREDIENT_MACROS[key]
+    # 2. exact hit
+    if normalized in INGREDIENT_MACROS:
+        return INGREDIENT_MACROS[normalized]
+    # 3. longest substring match — prefer longer keys so 'extra lean beef mince'
+    # beats plain 'beef' when both are present in the string.
+    best_key = None
+    for key in INGREDIENT_MACROS:
+        if len(key) < 4:
+            continue
+        if key in normalized and (best_key is None or len(key) > len(best_key)):
+            best_key = key
+    if best_key:
+        return INGREDIENT_MACROS[best_key]
+    return None
+
+def _extract_portion_grams(serving_size: str, food_name: str = "") -> float:
+    """Best-effort estimate of the portion mass in grams from a serving_size
+    string like '100g', '2x 1 serving', '1 cup', or '2 large eggs'. Used only
+    for plausibility bounds — never for macro maths."""
+    if not serving_size:
+        return 0.0
+    s = serving_size.lower()
+    # Explicit grams
+    m = _nutre.search(r"(\d+(?:\.\d+)?)\s*g\b", s)
+    if m:
+        return float(m.group(1))
+    # A count of countable items (eggs, slices, pieces) — rough per-unit mass
+    per_unit = {"egg": 50, "eggs": 50, "slice": 25, "slices": 25, "piece": 40, "pieces": 40,
+                "cup": 240, "tbsp": 15, "tsp": 5, "oz": 28}
+    m = _nutre.search(r"(\d+(?:\.\d+)?)\s*(egg|eggs|slice|slices|piece|pieces|cup|tbsp|tsp|oz)\b", s)
+    if m:
+        return float(m.group(1)) * per_unit.get(m.group(2), 0)
+    return 0.0
+
+def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = None) -> tuple[dict, list[str]]:
+    """Guardrail applied to every food entry before it's saved / returned.
+
+    Applies Fix 1 (deterministic calorie reconciliation), Fix 2 (physical
+    plausibility), and Fix 4 (reference cross-check). Mutates the input dict
+    in place with corrections and returns (sanitised_entry, warnings).
+    """
+    warnings: list[str] = []
+    if not isinstance(entry, dict):
+        return entry, warnings
+
+    def _f(key, default=0.0):
+        try:
+            return float(entry.get(key, default) or 0)
+        except (TypeError, ValueError):
+            return float(default)
+
+    # Some upstream endpoints label protein/carbs/fats as *_g — normalise here
+    # (non-destructively) so we can operate on a single canonical shape.
+    protein = _f("protein", _f("protein_g"))
+    carbs   = _f("carbs",   _f("carbs_g"))
+    fats    = _f("fats",    _f("fat_g"))
+    stated  = _f("calories")
+    fname   = food_name or entry.get("food_name") or entry.get("name") or ""
+
+    # ── Fix 1: deterministic calorie reconciliation ─────────────────────
+    derived = protein * 4 + carbs * 4 + fats * 9
+    if derived > 0:
+        gap = abs(stated - derived) / max(stated, 1.0)
+        if gap > 0.10:
+            corrected = round(derived)
+            warnings.append(
+                f"reconcile_calories food='{fname}' stated={stated:.0f} derived={derived:.0f} → set {corrected}"
+            )
+            entry["calories"] = int(corrected)
+            stated = float(corrected)
+
+    # ── Fix 2: physical plausibility ────────────────────────────────────
+    total_macros_g = protein + carbs + fats
+    if portion_g and portion_g > 0:
+        if total_macros_g > portion_g * 1.02:  # 2% tolerance for rounding
+            warnings.append(
+                f"plausibility_mass food='{fname}' macros={total_macros_g:.1f}g > portion={portion_g:.0f}g"
+            )
+        if stated > 0:
+            density = stated / portion_g
+            if density < 0.1 or density > 9.0:
+                warnings.append(
+                    f"plausibility_density food='{fname}' {density:.2f} cal/g outside [0.1, 9.0]"
+                )
+        # Single-macro ceiling only meaningful when portion is known
+        for macro_name, macro_val in (("protein", protein), ("carbs", carbs), ("fats", fats)):
+            per_100g = (macro_val / portion_g) * 100 if portion_g else 0
+            if per_100g > 90:
+                warnings.append(
+                    f"plausibility_macro_ceiling food='{fname}' {macro_name}={per_100g:.1f}g/100g > 90"
+                )
+
+    # ── Fix 4: reference cross-check (per-100g divergence) ──────────────
+    ref = _lookup_reference(fname)
+    if ref and portion_g and portion_g > 0:
+        ref_cal, ref_p, ref_c, ref_f = ref
+        p100 = protein / portion_g * 100
+        c100 = carbs   / portion_g * 100
+        f100 = fats    / portion_g * 100
+        cal100 = stated / portion_g * 100
+        def _div(a, b): return abs(a - b) / max(b, 1.0)
+        divergences = {
+            "calories": _div(cal100, ref_cal),
+            "protein":  _div(p100,   ref_p),
+            "carbs":    _div(c100,   ref_c),
+            "fats":     _div(f100,   ref_f),
+        }
+        big = {k: v for k, v in divergences.items() if v > 0.30}
+        if big:
+            warnings.append(
+                f"reference_divergence food='{fname}' per100g cal={cal100:.0f}/{ref_cal} "
+                f"p={p100:.1f}/{ref_p} c={c100:.1f}/{ref_c} f={f100:.1f}/{ref_f} "
+                f"(off: {','.join(f'{k}={v:.0%}' for k, v in big.items())})"
+            )
+
+    if warnings:
+        for w in warnings:
+            logger.warning(f"[nutrition-guard] {w}")
+
+    return entry, warnings
+
 @api_router.post("/food/analyze", response_model=FoodEntry)
 async def analyze_food_image(request: FoodImageAnalyzeRequest):
     """Analyze food image using OpenAI Vision to identify food and estimate nutrition"""
@@ -8089,25 +8276,46 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         
         # Build the user prompt with optional context
         user_prompt = (
-            "Analyze this food image and provide nutritional information in JSON format only. "
-            "If a nutrition information panel/label is visible, transcribe its printed AVG PER SERVING "
-            "values exactly (NOT the per-100g column) — do not estimate or compute anything that is printed."
+            "Analyze this food image and provide nutritional information as JSON. "
+            "If a nutrition information panel/label is visible, transcribe its printed per-serving "
+            "values exactly and scale strictly to the quantity the user specified. "
+            "Include a 'reasoning' field that shows your working (serving size, servings per pack, "
+            "the arithmetic) so a later reader can audit the answer."
         )
         if request.additional_context:
             user_prompt += f"\n\nAdditional context from user: {request.additional_context}"
         
-        vision_prompt = """You are an expert nutritionist analyzing a food photo. Maximise accuracy:
-0. IF A NUTRITION LABEL / INFORMATION PANEL IS VISIBLE (packaged food): TRANSCRIBE the printed values EXACTLY for EVERY field — calories, protein, carbs, fat, fibre, sugar, sodium. NEVER estimate any value that is printed on the label. Use the "per serving" / "per package" column, NOT the "per 100g" column, unless the user says otherwise. If energy is only in kJ, convert to calories (kJ / 4.184). Cross-check front-of-pack claims (e.g. "65g PROTEIN") against the panel — they should agree.
-1. Otherwise, identify EVERY food item visible — mains, sides, sauces, dressings, drinks.
-2. Estimate portion sizes from visual cues: plate/bowl diameter (~27cm standard dinner plate), cutlery, hands, glass/cup size, packaging dimensions.
-3. If branding or packaging is visible (restaurant wrapper, chain cup, product box), use that brand's known nutrition values for that item and size.
+        vision_prompt = """You are an expert nutritionist analysing a food photo. Your job is to return accurate, reconciled numbers — accuracy always beats speed.
+
+NUTRITION LABEL RULES (apply whenever a panel is visible — the printed panel always overrides general knowledge):
+A. Identify serving size, units per serving, and servings per package. Many products define a serving as multiple units (e.g. "1 serving = 2 eggs" on an egg carton, "1 serving = 3 biscuits", "1 serving = 30g" on cereal). This is the most common source of 2× errors.
+B. Use ONE column only — the per-serving column. NEVER blend it with the per-100g column.
+C. Scale strictly to the quantity the user specified. Show the arithmetic in the reasoning field (e.g. "label: 1 serving = 118g = 2 eggs = 168cal; user specified 4 eggs = 2 servings = 336cal").
+D. Row mapping is exact:
+   • carbs = ONLY the row labelled "Carbohydrate" (or "Total carbohydrate").
+     NEVER take carbs from "Saturated", "Sugars", "Fibre", "Sodium", or any fat row.
+   • protein = ONLY the "Protein" row.
+   • fats = ONLY the "Fat, total" row (never "Saturated" or "Trans" alone).
+   • A value shown as "<1.0g" is recorded as 1.0 or less (never blank).
+E. If energy is given only in kJ, convert: calories = kJ / 4.184.
+F. Cross-check front-of-pack claims (e.g. "65g PROTEIN") against the panel — they should agree.
+
+WHEN NO LABEL IS VISIBLE (prepared food, restaurant plate, etc.):
+1. Identify EVERY food item visible — mains, sides, sauces, dressings, drinks.
+2. Estimate portion sizes from visual cues (plate ~27cm, cutlery, hands, glass, packaging).
+3. If branding is visible (restaurant wrapper, chain cup, product box), use that brand's known values.
 4. Sum ALL identified items into ONE total covering the entire pictured serving.
-5. The user's additional context is the highest-priority correction — obey it exactly (e.g. '2 eggs', 'half portion', 'large size', 'no dressing').
-6. food_name should briefly list what you identified (e.g. "Grilled chicken, rice & side salad").
-7. Be realistic, not conservative — restaurant portions are usually larger than home portions.
-8. SANITY CHECK before answering: calories should roughly equal protein*4 + carbs*4 + fat*9. If your numbers don't reconcile, re-read the image — especially any label — and correct them.
-Respond with ONLY valid JSON, no other text. Use this exact format:
-{"food_name": "Name", "serving_size": "1 serving", "calories": 300, "protein": 25.0, "carbs": 30.0, "fats": 10.0, "fiber": 5.0, "sugar": 8.0, "sodium": 400.0}"""
+5. Restaurant portions are usually larger than home portions — be realistic, not conservative.
+
+USER CONTEXT: the user's additional context is the highest-priority correction — obey it exactly (e.g. "2 eggs", "half portion", "large size", "no dressing").
+
+FINAL SANITY CHECK — do this before responding:
+• calories should approximately equal protein*4 + carbs*4 + fats*9. If they don't reconcile, re-read the image (especially any label) and correct them.
+• macro mass (protein + carbs + fats) must be less than or equal to the portion mass in grams. If they exceed it, you have misread a row.
+• calories per gram of food must fall between 0.1 (water/lettuce) and 9.0 (pure oil). Anything outside is impossible.
+
+Respond with ONLY valid JSON, no other text. Use this exact schema:
+{"food_name":"Name","serving_size":"1 serving","calories":300,"protein":25.0,"carbs":30.0,"fats":10.0,"fiber":5.0,"sugar":8.0,"sodium":400.0,"reasoning":"one-line working"}"""
         content = await call_claude_sonnet(
             system_message=vision_prompt,
             user_message=user_prompt,
@@ -8152,29 +8360,37 @@ Respond with ONLY valid JSON, no other text. Use this exact format:
             else:
                 raise HTTPException(status_code=500, detail="Failed to parse food analysis. Please try with a clearer image.")
         
-        # Macro-consistency guard
-        # Calories should approx equal protein*4 + carbs*4 + fat*9. A large gap means a
-        # misread (worst case: a nutrition label read wrongly) — retry once,
-        # telling the model exactly what disagreed. Keep whichever answer reconciles better.
+        # ── Nutrition-accuracy guard (Fix 1 + Fix 2 + Fix 4) ─────────────
+        # Retry once if the AI's reading is either internally inconsistent
+        # (Fix 1) OR physically implausible / far from a known reference
+        # (Fix 2 + Fix 4). Whichever attempt has fewer warnings wins.
+        # After the retry, sanitize_food_entry always runs so the final
+        # persisted numbers are guaranteed to reconcile within 10%.
         def _derived_cal(fd: dict) -> float:
             return (float(fd.get("protein", 0)) * 4
                     + float(fd.get("carbs", 0)) * 4
                     + float(fd.get("fats", 0)) * 9)
         try:
-            stated = float(food_data.get("calories", 0))
-            derived = _derived_cal(food_data)
-            if stated > 0 and derived > 0 and abs(stated - derived) / stated > 0.25:
+            # Best-effort portion mass — only used for plausibility (Fix 2)
+            portion_g = _extract_portion_grams(food_data.get("serving_size", ""),
+                                               food_data.get("food_name", ""))
+            _, first_warnings = sanitize_food_entry(dict(food_data), portion_g=portion_g)
+            if first_warnings:
                 import re as _re2
+                # Explicitly cite each broken invariant so the retry gets a real
+                # correction, not a fresh guess.
+                complaint_lines = "\n".join(f"- {w}" for w in first_warnings)
                 retry_raw = await call_claude_sonnet(
                     system_message=vision_prompt,
                     user_message=(
-                        f"{user_prompt}\n\nIMPORTANT: your previous reading was internally inconsistent "
-                        f"(stated {stated:.0f} calories, but protein/carbs/fat imply {derived:.0f}). "
-                        "Re-read the image carefully — if a nutrition label is visible, transcribe its "
-                        "printed per-serving values exactly for every field."
+                        f"{user_prompt}\n\nIMPORTANT: your previous reading failed these checks:\n"
+                        f"{complaint_lines}\n\nRe-read the image carefully. If a nutrition label is "
+                        "visible, transcribe its printed per-serving values exactly and scale to the "
+                        "quantity the user specified. Then verify calories ≈ P*4 + C*4 + F*9 and that "
+                        "macro mass does not exceed portion mass."
                     ),
                     temperature=0.0,
-                    max_tokens=500,
+                    max_tokens=600,
                     image_base64=request.image_base64
                 )
                 rc = (retry_raw or "").strip()
@@ -8182,22 +8398,43 @@ Respond with ONLY valid JSON, no other text. Use this exact format:
                 m = _re2.search(r"\{[\s\S]+\}", rc)
                 if m:
                     retry_data = json.loads(m.group(0))
-                    rs, rd = float(retry_data.get("calories", 0)), _derived_cal(retry_data)
-                    if rs > 0 and rd > 0 and abs(rs - rd) / rs < abs(stated - derived) / stated:
+                    retry_portion_g = _extract_portion_grams(retry_data.get("serving_size", ""),
+                                                             retry_data.get("food_name", ""))
+                    _, retry_warnings = sanitize_food_entry(dict(retry_data),
+                                                            portion_g=retry_portion_g)
+                    if len(retry_warnings) < len(first_warnings):
                         food_data = retry_data
+                        logger.info(f"Nutrition guard retry accepted: {len(first_warnings)} -> {len(retry_warnings)} warnings")
+                    else:
+                        logger.warning(
+                            f"Nutrition guard retry NOT better ({len(retry_warnings)} vs {len(first_warnings)} warnings) — keeping first"
+                        )
         except Exception as _ve:
             logger.warning(f"Food analysis consistency check skipped: {_ve}")
         # Apply quantity multiplier
         qty = request.quantity if request.quantity > 0 else 1
         
+        # Final deterministic sanitize — after any retry, force calories to
+        # reconcile with macros so no impossible entry ever hits the DB.
+        _scaled = {
+            "food_name": food_data.get("food_name", "Unknown Food"),
+            "serving_size": food_data.get("serving_size", "1 serving"),
+            "calories": int(food_data.get("calories", 0)) * qty,
+            "protein": float(food_data.get("protein", 0)) * qty,
+            "carbs":   float(food_data.get("carbs", 0)) * qty,
+            "fats":    float(food_data.get("fats", 0)) * qty,
+        }
+        _final_portion_g = _extract_portion_grams(_scaled["serving_size"], _scaled["food_name"]) * qty
+        sanitize_food_entry(_scaled, portion_g=_final_portion_g)
+        
         food_entry = FoodEntry(
             user_id=request.user_id,
-            food_name=food_data.get("food_name", "Unknown Food"),
+            food_name=_scaled["food_name"],
             serving_size=f"{qty}x {food_data.get('serving_size', '1 serving')}",
-            calories=int(food_data.get("calories", 0)) * qty,
-            protein=float(food_data.get("protein", 0)) * qty,
-            carbs=float(food_data.get("carbs", 0)) * qty,
-            fats=float(food_data.get("fats", 0)) * qty,
+            calories=int(_scaled["calories"]),
+            protein=float(_scaled["protein"]),
+            carbs=float(_scaled["carbs"]),
+            fats=float(_scaled["fats"]),
             fiber=float(food_data.get("fiber", 0)) * qty,
             sugar=float(food_data.get("sugar", 0)) * qty,
             sodium=float(food_data.get("sodium", 0)) * qty,
@@ -8226,7 +8463,14 @@ async def log_food(request: FoodLogRequest):
     if not access.get("has_access"):
         raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
                                                      "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
-    food_entry = FoodEntry(**request.model_dump())
+    # Nutrition-accuracy guard — reconcile calories with macros (Fix 1) and
+    # log warnings if the entry is implausible (Fix 2) or diverges from a
+    # known reference (Fix 4). Manual entries can't be retried, so we
+    # deterministically correct the calorie total in place.
+    payload = request.model_dump()
+    portion_g = _extract_portion_grams(payload.get("serving_size", ""), payload.get("food_name", ""))
+    sanitize_food_entry(payload, portion_g=portion_g)
+    food_entry = FoodEntry(**payload)
     await db.food_logs.insert_one(food_entry.model_dump())
     return food_entry
 
@@ -8304,7 +8548,7 @@ async def search_foods(query: str, user_id: str):
         {"name": "Chicken Drumstick (1 piece)", "calories": 76, "protein": 12, "carbs": 0, "fats": 3},
         {"name": "Rotisserie Chicken (1/4)", "calories": 290, "protein": 36, "carbs": 0, "fats": 15},
         {"name": "Turkey Breast (100g)", "calories": 135, "protein": 30, "carbs": 0, "fats": 1},
-        {"name": "Turkey, Ground (100g)", "calories": 149, "protein": 27, "carbs": 0, "fats": 4},
+        {"name": "Turkey, Ground (100g)", "calories": 185, "protein": 27.4, "carbs": 0, "fats": 8.4},
         {"name": "Salmon, Atlantic (100g)", "calories": 208, "protein": 20, "carbs": 0, "fats": 13},
         {"name": "Salmon, Smoked (100g)", "calories": 117, "protein": 18, "carbs": 0, "fats": 4},
         {"name": "Tuna, Canned in Water (100g)", "calories": 116, "protein": 26, "carbs": 0, "fats": 1},
@@ -8312,12 +8556,13 @@ async def search_foods(query: str, user_id: str):
         {"name": "Shrimp (100g)", "calories": 99, "protein": 24, "carbs": 0.2, "fats": 0.3},
         {"name": "Shrimp, Fried (6 pieces)", "calories": 210, "protein": 18, "carbs": 10, "fats": 10},
         {"name": "Tilapia, Baked (100g)", "calories": 128, "protein": 26, "carbs": 0, "fats": 2.7},
-        {"name": "Cod, Baked (100g)", "calories": 105, "protein": 23, "carbs": 0, "fats": 1},
+        {"name": "Cod, Baked (100g)", "calories": 105, "protein": 23, "carbs": 0, "fats": 0.9},
         {"name": "Lobster (100g)", "calories": 89, "protein": 19, "carbs": 0.5, "fats": 0.9},
         {"name": "Crab Meat (100g)", "calories": 97, "protein": 19, "carbs": 0, "fats": 1.5},
         {"name": "Beef Steak, Ribeye (100g)", "calories": 291, "protein": 24, "carbs": 0, "fats": 21},
-        {"name": "Beef Steak, Sirloin (100g)", "calories": 207, "protein": 26, "carbs": 0, "fats": 11},
+        {"name": "Beef Steak, Sirloin (100g)", "calories": 207, "protein": 28, "carbs": 0, "fats": 9.5},
         {"name": "Beef Steak, Filet Mignon (100g)", "calories": 227, "protein": 26, "carbs": 0, "fats": 13},
+        {"name": "Ground Beef, 95% Lean (100g)", "calories": 171, "protein": 26.5, "carbs": 0, "fats": 6.9},
         {"name": "Ground Beef, 90% Lean (100g)", "calories": 176, "protein": 20, "carbs": 0, "fats": 10},
         {"name": "Ground Beef, 80% Lean (100g)", "calories": 254, "protein": 17, "carbs": 0, "fats": 20},
         {"name": "Beef Brisket (100g)", "calories": 246, "protein": 27, "carbs": 0, "fats": 15},
@@ -8789,6 +9034,21 @@ async def search_foods(query: str, user_id: str):
             combined_results.append(api_food)
     
     logger.info(f"Returning {len(combined_results)} combined results (local: {len(local_results)}, api: {len(api_results)})")
+    # Nutrition-accuracy guard — reconcile each result's calories with its
+    # macros (Fix 1) and log any physical-plausibility or reference
+    # divergences (Fix 2/4). Deterministic — never blocks a result.
+    for _r in combined_results:
+        _tmp = {
+            "food_name": _r.get("name", ""),
+            "calories": float(_r.get("calories", 0)),
+            "protein":  float(_r.get("protein", 0)),
+            "carbs":    float(_r.get("carbs", 0)),
+            "fats":     float(_r.get("fats", 0)),
+        }
+        _portion = _extract_portion_grams(_r.get("name", ""), _r.get("name", ""))
+        sanitize_food_entry(_tmp, portion_g=_portion)
+        if _tmp["calories"] != _r.get("calories"):
+            _r["calories"] = _tmp["calories"]
     return combined_results[:50]
 
 @api_router.get("/food/ai-search")
@@ -8861,6 +9121,20 @@ async def ai_food_search(query: str, user_id: str):
             "source": "Could not retrieve data — please add manually",
             "confidence": "low",
         }
+    else:
+        # Nutrition-accuracy guard — reconcile calories with macros (Fix 1),
+        # log any physical-plausibility or reference-table divergences (Fix 2/4).
+        _tmp = {
+            "food_name": data.get("food_name", query),
+            "calories": float(data.get("calories", 0)),
+            "protein_g": float(data.get("protein_g", 0)),
+            "carbs_g":   float(data.get("carbs_g", 0)),
+            "fat_g":     float(data.get("fat_g", 0)),
+        }
+        portion_g = _extract_portion_grams(data.get("serving_size", ""),
+                                           data.get("food_name", ""))
+        sanitize_food_entry(_tmp, portion_g=portion_g)
+        data["calories"] = _tmp["calories"]
 
     return {
         "name":           data.get("food_name", query.title()),
@@ -8956,6 +9230,19 @@ async def web_food_search(query: str, user_id: str):
 
     # 3. Build response
     if data and data.get("found", True) and float(data.get("calories", 0)) > 0:
+        # Nutrition-accuracy guard — reconcile calories with macros (Fix 1)
+        # and log any physical-plausibility or reference divergences (Fix 2/4).
+        _tmp = {
+            "food_name": data.get("food_name", query),
+            "calories": float(data.get("calories", 0)),
+            "protein_g": float(data.get("protein_g", 0)),
+            "carbs_g":   float(data.get("carbs_g", 0)),
+            "fat_g":     float(data.get("fat_g", 0)),
+        }
+        portion_g = _extract_portion_grams(data.get("serving_size", ""),
+                                           data.get("food_name", ""))
+        sanitize_food_entry(_tmp, portion_g=portion_g)
+        data["calories"] = _tmp["calories"]
         domain = urlparse(source_url).netloc.replace("www.", "") if source_url else "web"
         return {
             "name":           data.get("food_name", query.title()),

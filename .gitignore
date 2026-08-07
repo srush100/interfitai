@@ -84,3 +84,4 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+app.zip
