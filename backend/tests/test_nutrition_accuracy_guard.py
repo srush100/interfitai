@@ -188,25 +188,21 @@ class TestSanitizeGuardUnit:
 # 3. _lookup_reference — fuzzy alias matching (part of Fix 4)
 # ===========================================================================
 class TestReferenceLookup:
-    def test_alias_extra_lean_bug_documented(self):
-        """KNOWN BUG in _norm_food_name: strips the word 'extra', so
-        'Extra Lean Beef Mince' normalises to 'lean beef mince' and hits the
-        LEAN key (176/20/10) instead of EXTRA-LEAN (171/26.5/6.9). This will
-        cause Fix 4 to log FALSE reference_divergence warnings whenever a user
-        logs true USDA-corrected 5%-lean values. Guard's data path is not
-        affected (macros not modified), but the warning noise is misleading."""
+    def test_alias_extra_lean_fuzzy_match(self):
+        """After fix: 'extra' is preserved in _norm_food_name, so
+        'Organic Extra Lean Beef Mince 5% (raw, 100g)' resolves to the
+        EXTRA-LEAN key (171/26.5/6.9). This ensures Fix 4 reference-divergence
+        warnings are accurate for USDA-corrected 5%-lean values."""
         ref = _lookup_reference("Extra Lean Beef Mince 5% (raw, 100g)")
-        # Current (buggy) behaviour: matches plain 'lean beef mince'
-        assert ref == (176, 20, 0, 10), (
-            "If this now passes as (171, 26.5, 0, 6.9), the normaliser has "
-            "been fixed — update this test."
+        assert ref == (171, 26.5, 0, 6.9), (
+            f"expected extra-lean tuple (171, 26.5, 0, 6.9), got {ref}"
         )
 
     def test_alias_direct_key_hits_extra_lean(self):
-        """The alias table itself is correct — the normaliser is the problem."""
+        """Direct key 'extra lean beef mince' must resolve to the extra-lean
+        tuple (171/26.5/6.9) — the alias table and normaliser now agree."""
         ref = _lookup_reference("extra lean beef mince")
-        # After normalisation 'extra' is stripped → 'lean beef mince' → wrong key
-        assert ref == (176, 20, 0, 10)
+        assert ref == (171, 26.5, 0, 6.9)
 
     def test_alias_eggs(self):
         ref = _lookup_reference("4 large eggs")

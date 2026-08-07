@@ -8119,7 +8119,7 @@ def _norm_food_name(name: str) -> str:
     n = _nutre.sub(r"\([^)]*\)", " ", n)         # remove parentheticals
     n = _nutre.sub(r"[,\.]", " ", n)              # drop punctuation
     n = _nutre.sub(
-        r"\b(raw|cooked|grilled|baked|boiled|fried|roasted|pan[- ]?browned|steamed|large|medium|small|whole|extra|per|serving|100g|1kg|1lb)\b",
+        r"\b(raw|cooked|grilled|baked|boiled|fried|roasted|pan[- ]?browned|steamed|large|medium|small|whole|per|serving|100g|1kg|1lb)\b",
         " ",
         n,
     )

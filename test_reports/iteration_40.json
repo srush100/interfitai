@@ -1,0 +1,15 @@
+{
+  "summary": "Re-verification pass for _norm_food_name fix (removed 'extra' from state-word regex). All 28 tests in test_nutrition_accuracy_guard.py pass. Updated the 2 tests that previously documented the buggy behaviour (test_alias_extra_lean_bug_documented -> renamed to test_alias_extra_lean_fuzzy_match; test_alias_direct_key_hits_extra_lean) to now expect the correct extra-lean tuple (171, 26.5, 0, 6.9) instead of the fallback lean values (176, 20, 0, 10). Other 26 tests unchanged and still passing.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []},
+  "test_report_links": ["/app/backend/tests/test_nutrition_accuracy_guard.py", "/app/test_reports/pytest/iteration_40_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": ["/app/backend/tests/test_nutrition_accuracy_guard.py"],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "N/A - backend only"},
+  "seed_data_creation": "Paid + free profile fixtures created and cleaned up automatically (subscription_status flipped in Mongo for paid_user).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The _norm_food_name normaliser now preserves the word 'extra' (server.py ~line 8122). _lookup_reference('Organic Extra Lean Beef Mince 5% (raw, 100g)') correctly resolves to (171, 26.5, 0, 6.9). Fix 4 reference-divergence warnings are now accurate for USDA-corrected 5%-lean values. Suite is green — no further action needed on this specific bug.",
+  "rca_of_issue": "Original bug: _norm_food_name's state-word regex included 'extra', which was stripped during normalisation, causing 'extra lean beef mince' -> 'lean beef mince' -> wrong INGREDIENT_MACROS key. Fix: removed 'extra' from the alternation. Verified via test_alias_extra_lean_fuzzy_match (Organic Extra Lean Beef Mince 5% (raw, 100g) -> 171/26.5/0/6.9) and test_alias_direct_key_hits_extra_lean."
+}
