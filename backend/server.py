@@ -5440,9 +5440,12 @@ def calculate_ingredient_macros(ingredient_str):
         'piece': 1, 'pieces': 1, 'serving': 1, 'scoop': 1,
     }
     
-    # Weight per item for count-based ingredients (in grams)
+    # Weight per item for count-based ingredients (in grams).
+    # Egg weight: UK/AU "Large" grade eggs are ~58g shelled (USDA "large" spec
+    # is 50g but that's actually medium-large; real large eggs at retail weigh
+    # ~55–63g). 58g reflects two-large-eggs = ~116g which matches real cartons.
     ITEM_WEIGHTS = {
-        'egg': 50, 'eggs': 50, 'large egg': 50, 'whole egg': 50,
+        'egg': 58, 'eggs': 58, 'large egg': 58, 'whole egg': 58,
         'banana': 120, 'bananas': 120,
         'apple': 180, 'apples': 180,
         'orange': 130, 'oranges': 130,
@@ -6946,11 +6949,11 @@ Find alternative protein/carb/fat sources that are NOT on this list."""
         if fat_is_strict:
             fat_guidance = f"""FAT BUDGET: {ai_target_fat}g/day ({fat_pct:.0f}% of calories) — STRICT.
 ⚠️ COUNT FAT FROM EVERY SOURCE — protein foods have fat too:
-  Whole egg (50g each) = 5.5g fat | Salmon 100g = 13g fat | Ribeye 100g = 15g fat
+  Whole egg (58g each) = 6.4g fat | Salmon 100g = 13g fat | Ribeye 100g = 15g fat
   Chicken breast 100g = 3.6g fat | Turkey breast = 1g | Cod/Tuna/Shrimp ≈ 0.5-1g
 RULE: Fat in each meal = fat from protein + fat from added oils/nuts/dairy — TOTAL must stay ≤ meal fat target.
 - PREFER zero-fat proteins (chicken breast, turkey, tuna, shrimp, cod, egg WHITES, cottage cheese)
-- LIMIT whole eggs: max {round(ai_target_fat * 0.2 / 5.5):.0f} eggs total per day (each egg = 5.5g fat)
+- LIMIT whole eggs: max {round(ai_target_fat * 0.2 / 6.4):.0f} eggs total per day (each egg = 6.4g fat)
 - Added oil: if using whole eggs or salmon, use ZERO added oil
 - NO avocado >30g/day, NO full-fat cheese, NO nuts if fat budget is tight"""
         else:
@@ -7006,7 +7009,7 @@ ABSOLUTE PROHIBITIONS — NEVER include these:
 MACRO REFERENCE (per 100g cooked unless noted — USDA FoodData Central):
 Chicken breast: 165cal 31P 0C 3.6F | Turkey breast: 135cal 30P 0C 1F | Tuna (canned in water): 116cal 25.5P 0C 0.8F
 Beef sirloin (broiled): 212cal 27P 0C 10.6F | Extra-lean beef mince 5% (cooked): 171cal 26.5P 0C 6.9F | Lean beef mince 10% (cooked): 217cal 26.6P 0C 11.7F | Fatty beef mince 20% (cooked): 272cal 25.8P 0C 18.2F | Shrimp: 99cal 24P 0.2C 0.3F | Cod: 105cal 23P 0C 0.9F
-Salmon (Atlantic, farmed): 206cal 22P 0C 12.4F | Egg whites (100g): 52cal 11P 0.7C 0.2F | Whole egg (50g ea): 78cal 6.5P 0.5C 5.5F
+Salmon (Atlantic, farmed): 206cal 22P 0C 12.4F | Egg whites (100g): 52cal 11P 0.7C 0.2F | Whole egg (58g ea): 90cal 7.5P 0.6C 6.4F
 Tofu firm: 144cal 17P 3C 8F | Tempeh: 192cal 20P 8C 11F | Greek yogurt 0%: 59cal 10P 4C 0.4F
 Cottage cheese: 84cal 11P 4C 2.5F | White rice cooked: 130cal 2.7P 28C 0.3F | Brown rice cooked: 123cal 2.7P 25.6C 1F
 Sweet potato: 86cal 1.6P 20C 0.1F | Quinoa cooked: 120cal 4.4P 21C 1.9F | Oats dry: 389cal 17P 66C 7F | Pasta cooked: 158cal 5.8P 30.9C 0.9F
@@ -7017,7 +7020,7 @@ EXACT QUANTITIES TO HIT EACH MEAL TARGET:
 
 Breakfast ({breakfast_cal}cal | {breakfast_pro}g P | {breakfast_carb}g C | {breakfast_fat}g F total):
   Protein: {b_pro_chicken}g chicken breast (only 4g fat) OR use egg whites if fat is tight
-  Note: 1 whole egg = 5.5g fat — if using eggs, count their fat against {breakfast_fat}g budget
+  Note: 1 whole egg ≈ 6.4g fat — if using eggs, count their fat against {breakfast_fat}g budget
   Carbs: {b_carb_rice}g cooked rice OR {b_carb_potato}g sweet potato
   Max added fat (oil/butter): {breakfast_fat}g minus fat already in your protein choice
 
@@ -8169,7 +8172,7 @@ def _extract_portion_grams(serving_size: str, food_name: str = "") -> float:
     if m:
         return float(m.group(1))
     # A count of countable items (eggs, slices, pieces) — rough per-unit mass
-    per_unit = {"egg": 50, "eggs": 50, "slice": 25, "slices": 25, "piece": 40, "pieces": 40,
+    per_unit = {"egg": 58, "eggs": 58, "slice": 25, "slices": 25, "piece": 40, "pieces": 40,
                 "cup": 240, "tbsp": 15, "tsp": 5, "oz": 28}
     m = _nutre.search(r"(\d+(?:\.\d+)?)\s*(egg|eggs|slice|slices|piece|pieces|cup|tbsp|tsp|oz)\b", s)
     if m:

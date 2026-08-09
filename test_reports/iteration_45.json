@@ -1,0 +1,32 @@
+{
+  "summary": "Fix 5 (egg weight 50g → 58g + meal-detail.tsx ingredient state-stripping) backend + source-level verification COMPLETE. Added new pytest module test_fix5_egg_weight_and_ingredient_state.py with 23 targeted tests covering: (a) calculate_ingredient_macros for '1 large egg', '2 large eggs', '3 eggs' — all now return 58g-derived macros (2 large eggs = 180cal/15.1P/1.3C/12.8F), (b) _extract_portion_grams for eggs — uses new per_unit value of 58g (verified 1/2/3/4 eggs + regression guard vs old 50g), (c) meal-plan prompt strings — asserts presence of new '(58g ea): 90cal 7.5P 0.6C 6.4F', 'Whole egg (58g each) = 6.4g fat', '1 whole egg ≈ 6.4g fat', LIMIT-eggs formula '* 0.2 / 6.4' AND absence of every old '(50g ea)', '5.5F', 'each egg = 5.5g fat' and '* 0.2 / 5.5' string, (d) end-to-end /food/log POST of 2 large eggs @ 180cal/15P/1.3C/12.8F stored unmodified (derived 180.4, gap 0.22% < 10% Fix-1 tolerance), (e) source-level assertions on meal-detail.tsx for _EXISTING_STATE_RE regex (raw|cooked|dry|dried|boiled|steamed|grilled|baked|roasted|fried|pan-browned|braised), _stripExistingState helper, mealContainsMeat helper, AND the 'Weigh meat raw' <Text> being guarded by `mealContainsMeat(meal.ingredients) && (...)`. Ran the new 23-test module TOGETHER with the pre-existing 58-test nutrition-accuracy guard suite → 81/81 PASS in 16.43s. Zero regressions. Notably TestReferenceLookup.test_alias_eggs still passes because INGREDIENT_MACROS['egg'] per-100g values (155,13,1.1,11) are unchanged — only the count-to-grams weight was bumped.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fix5_egg_weight_and_ingredient_state.py",
+    "/app/backend/tests/test_nutrition_accuracy_guard.py",
+    "/app/test_reports/pytest/iteration_45_fix5.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Non-blocking: _extract_portion_grams does not parse the 'large' modifier in '2 large eggs' (returns 0.0) because its regex requires the count immediately adjacent to the unit word. In the real meal-plan pipeline this is harmless — serving_size strings always carry explicit grams ('2 large eggs (116g)') which matches the first regex branch. Documented in the new test class docstring and covered by an explicit test.",
+    "Non-blocking (carried over from iter 44): server.py still uses deprecated @app.on_event('shutdown'); FastAPI recommends lifespan handlers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fix5_egg_weight_and_ingredient_state.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (23/23 new + 58/58 existing = 81/81)", "frontend": "n/a (source-level asserts only, per request)"},
+  "seed_data_creation": "New paid-user fixture (TEST_fix5_paid_*) scoped to the Fix5 module; auto-cleaned in teardown (profile + food_logs). No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fix 5 is fully verified at the backend + source-code level (81/81 pass, 16.4s). If the main agent adds any further changes to meal-detail.tsx or the egg-weight constants in server.py (ITEM_WEIGHTS L5448, per_unit L8175, MACRO REFERENCE L7012, fat-lookup L6952, LIMIT-eggs L6956, breakfast note L7023), re-run: `pytest /app/backend/tests/test_fix5_egg_weight_and_ingredient_state.py /app/backend/tests/test_nutrition_accuracy_guard.py -v`. End-to-end UI verification of the ingredient state-strip and the mealContainsMeat guard was intentionally skipped per the review request (source-level asserts are sufficient).",
+  "rca_of_issue": "N/A — this iteration verifies previously-applied fixes. All three Fix 5 changes reported by the main agent (egg weight, meat guidance guard, state-word stripping) were correctly applied and are now covered by regression tests."
+}

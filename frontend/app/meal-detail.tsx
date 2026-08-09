@@ -32,12 +32,28 @@ import api from '../src/services/api';
 //   • Everything else: leave the original string alone.
 const _RAW_MEAT_RE = /\b(chicken|beef|steak|mince|turkey|pork|lamb|bacon|ham|salmon|tuna|cod|tilapia|shrimp|prawn|fish|duck|veal|venison)\b/i;
 const _DRY_GRAIN_RE = /\b(rice|pasta|oats|oatmeal|quinoa|couscous|barley|bulgur|noodle|spaghetti|penne|farro)\b/i;
+// State words we might find already prepended in the meal-plan text (e.g.
+// "58g cooked basmati rice"). Strip these before injecting our own prefix so
+// we never produce "58g dry cooked basmati rice" or "200g raw cooked chicken".
+const _EXISTING_STATE_RE = /^\s*(?:raw|cooked|dry|dried|boiled|steamed|grilled|baked|roasted|fried|pan[- ]?browned|braised)\s+/i;
+function _stripExistingState(rest: string): string {
+  let s = rest;
+  // Loop in case there's more than one qualifier ("cooked dry rice" etc.).
+  while (_EXISTING_STATE_RE.test(s)) {
+    s = s.replace(_EXISTING_STATE_RE, '');
+  }
+  return s;
+}
+function mealContainsMeat(ingredients: string[] | undefined): boolean {
+  if (!ingredients || !ingredients.length) return false;
+  return ingredients.some((ing) => _RAW_MEAT_RE.test(ing));
+}
 function formatIngredientWithRaw(ing: string): { primary: string; hint: string | null } {
   const trimmed = (ing || '').trim();
   const m = trimmed.match(/^(\d+(?:\.\d+)?)\s*g\s+(.+)$/i);
   if (!m) return { primary: trimmed, hint: null };
   const cookedG = parseFloat(m[1]);
-  const rest = m[2];
+  const rest = _stripExistingState(m[2]);
   if (_RAW_MEAT_RE.test(rest)) {
     const rawG = Math.round(cookedG * 1.33);
     return { primary: `${rawG}g raw ${rest}`, hint: `≈${cookedG}g cooked` };
@@ -46,7 +62,9 @@ function formatIngredientWithRaw(ing: string): { primary: string; hint: string |
     const dryG = Math.max(1, Math.round(cookedG / 3.1));
     return { primary: `${dryG}g dry ${rest}`, hint: `≈${cookedG}g cooked` };
   }
-  return { primary: trimmed, hint: null };
+  // Unknown food type — return with state stripped so we don't leave "cooked X"
+  // where the numeric weight has already been kept as the cooked value.
+  return { primary: `${cookedG}g ${rest}`, hint: null };
 }
 
 interface Meal {
@@ -545,7 +563,9 @@ export default function MealDetail() {
               <View style={styles.mealDetails}>
                 <View style={styles.detailSection}>
                   <Text style={styles.detailLabel}>Ingredients</Text>
-                  <Text style={styles.rawHint}>Weigh meat raw where you can — it matches the pack label.</Text>
+                  {mealContainsMeat(meal.ingredients) && (
+                    <Text style={styles.rawHint}>Weigh meat raw where you can — it matches the pack label.</Text>
+                  )}
                   {meal.ingredients.map((ing, ingIdx) => {
                     const { primary, hint } = formatIngredientWithRaw(ing);
                     return (
