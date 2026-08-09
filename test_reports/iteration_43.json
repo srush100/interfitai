@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 43 (backend only, regression re-verification): Re-ran the full 58-test nutrition-accuracy guard suite after the two iteration_42 regressions were fixed. Result: 57/58 PASS (98.3%). Both iteration_42 regression fixes are confirmed working: (1) TestIngredientMacrosCleanupSpotCheck::test_maple_syrup_retains_0_1_precision PASSES — server.py:5353 now correctly reads `\"maple syrup\": (260, 0.1, 67, 0.1),`; (2) TestIngredientMacrosCleanupSpotCheck::test_nutritional_yeast_and_yeast_flakes_alias PASSES — server.py:5214 now correctly has `\"yeast flakes\": (355, 50, 35, 7),` right after `\"nutritional yeast\"`. Duplicate-key guard (TestIngredientMacrosNoDuplicates: test_no_duplicate_keys_in_dict_literal + test_total_key_count_matches_runtime) still passes — no new duplicates introduced by the restoration edits. The single remaining failure, TestFoodSearchReconciles::test_search_beef_mince_reconciles, was rerun 3x and fails DETERMINISTICALLY 3/3 (not flaky). Confirmed root cause: local_foods array only contains 'Ground Beef, XX% Lean, cooked' entries — literal 'beef mince' substring is absent — and both external food APIs (FatSecret + USDA) return empty in this preview environment for query='beef mince'. This is a persistent pre-existing gap, NOT a regression from this iteration's edits, and per the problem-statement instructions ('let me know if it's persistent or just flakiness') we are only reporting on it, not fixing it.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/food/search?query=beef mince (test_search_beef_mince_reconciles)",
+        "issue": "PERSISTENT (3/3 reruns), NOT flaky. Endpoint returns [] because local_foods in server.py:8544+ contains 'Ground Beef, 95%/90%/80% Lean, cooked' entries but zero rows containing the literal substring 'beef mince', and external FatSecret + USDA fallbacks return empty in this preview environment. Not a regression from iteration_43's restoration edits — predates iteration_42. Cheap fixes: (a) add three local_foods rows named 'Beef Mince, 95%/90%/80% Lean, cooked' (values already exist in INGREDIENT_MACROS at server.py:5172/5178/5180), OR (b) widen the substring match so any of ['ground beef','beef mince','minced beef'] hits the ground-beef rows, OR (c) change the test query to 'ground beef' (least preferred — hides the UX gap)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_nutrition_accuracy_guard.py",
+    "/app/test_reports/pytest/iteration_43_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (not blocking): fix the 'beef mince' search gap — recommended approach is (a) above: add 3 rows to local_foods in server.py:8544+ with names 'Beef Mince, 95% Lean, cooked (100g)', 'Beef Mince, 90% Lean, cooked (100g)', 'Beef Mince, 80% Lean, cooked (100g)' using the same macro tuples as the corresponding Ground Beef rows. This restores UK/AU-terminology parity with the US 'ground beef' naming AND makes test_search_beef_mince_reconciles green.",
+    "No other action required — iteration_43 regression fixes are fully verified. Both TestIngredientMacrosCleanupSpotCheck::test_maple_syrup_retains_0_1_precision and ::test_nutritional_yeast_and_yeast_flakes_alias now PASS; duplicate-key guard tests still PASS."
+  ],
+  "critical_code_review_comments": [
+    "server.py at 10,750 lines with INGREDIENT_MACROS as a 270+ line dict literal AND local_foods as a ~460 line list literal continues to be an obvious extraction candidate — moving both into backend/nutrition_reference.py would let the same source-of-truth power ingredient lookup AND food search, which would also structurally prevent the 'beef mince' gap (local_foods and INGREDIENT_MACROS could share aliases).",
+    "The nutrition_accuracy_guard suite is now solid regression insurance for the INGREDIENT_MACROS dict — recommend keeping TestIngredientMacrosNoDuplicates + TestIngredientMacrosCleanupSpotCheck permanently."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "98.3% (57/58; single failure is a persistent pre-existing search gap, NOT this iteration's responsibility per problem statement)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "Reused existing TEST_paid_*@example.com and TEST_free_*@example.com module-scoped fixtures from prior iterations. No new seed data created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration_42's two regressions (maple syrup precision + yeast flakes alias) are RESOLVED and locked in by permanent regression tests. The one remaining failure (test_search_beef_mince_reconciles) is deterministic, well-characterised, has a 3-line fix documented in action_items, and is orthogonal to the INGREDIENT_MACROS cleanup work.",
+  "rca_of_issue": "test_search_beef_mince_reconciles RCA — /api/food/search flow: (1) query_lower='beef mince' → substring-searched against local_foods names — zero matches because all beef mince entries are named 'Ground Beef, XX% Lean, cooked'; (2) search_fatsecret('beef mince') returns [] (env has no working FatSecret creds); (3) search_usda('beef mince') returns [] (env has no working USDA creds OR API is rate-limited); (4) combined_results = [] → assertion `len(results) > 0` fails. Mitigation options in the 'minor' issue above. Neither iteration_42 nor iteration_43 edits touched any of this code path — the gap has existed since local_foods was authored with US-only naming."
+}

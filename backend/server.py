@@ -5211,6 +5211,7 @@ INGREDIENT_MACROS = {
     "edamame": (121, 11, 8, 5),           # shelled edamame — 11g P per 100g
     "shelled edamame": (121, 11, 8, 5),
     "nutritional yeast": (355, 50, 35, 7), # 50g P per 100g!
+    "yeast flakes": (355, 50, 35, 7),      # alias for nutritional yeast
     # hemp seeds → declared with the rest of the seeds/nuts section below
     "tahini": (595, 17, 23, 54),           # sesame paste — high fat
     "pork": (242, 27, 0, 14),
@@ -5349,7 +5350,7 @@ INGREDIENT_MACROS = {
     "mayonnaise": (680, 1, 0, 75),
     "mustard": (66, 4, 5, 4),
     "honey": (304, 0.3, 82, 0),
-    "maple syrup": (260, 0, 67, 0),
+    "maple syrup": (260, 0.1, 67, 0.1),
     # Legumes
     "black beans": (132, 9, 24, 0.5),
     "chickpeas": (164, 9, 27, 2.6),
