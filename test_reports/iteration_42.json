@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 42 (backend only, INGREDIENT_MACROS duplicate-cleanup verification): Re-ran the 49-test nutrition-accuracy guard suite AND added 9 new source-inspection + spot-check tests (58 total, 55 passing, 3 failing). Duplicate-key guard passed: ast-parsing server.py's INGREDIENT_MACROS dict literal shows every key is now declared exactly once (source-parsed keys == runtime dict len). BUT the cleanup accidentally introduced two data regressions that the spot-check surfaced: (a) 'maple syrup' kept the earlier (260, 0, 67, 0) row instead of the later, more-precise (260, 0.1, 67, 0.1) row the problem statement said should be retained; (b) 'yeast flakes' alias was fully removed (not 'declared earlier' as the replacement comment claims — the earlier section only had 'nutritional yeast', never 'yeast flakes'). One additional failure (test_search_beef_mince_reconciles) is a pre-existing/flaky external-search test (empty result list from /api/food/search?query=beef mince) unrelated to the cleanup.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "INGREDIENT_MACROS['maple syrup'] @ /app/backend/server.py:5352",
+        "issue": "REGRESSION from iteration_42 cleanup. Pre-cleanup the dict had TWO 'maple syrup' declarations: L5352 = (260, 0, 67, 0) and (previous) L5418 = (260, 0.1, 67, 0.1). Python dict semantics = later declaration wins, so the EFFECTIVE runtime value pre-cleanup was (260, 0.1, 67, 0.1). Cleanup deleted the LATER (correct) row and kept the EARLIER (0, 0) row. Problem statement explicitly says '(260, 0.1, 67, 0.1) — retained the (0.1, 0.1) version, not (0, 0)'. Fix: change L5352 to `(260, 0.1, 67, 0.1)`."
+      },
+      {
+        "endpoint": "INGREDIENT_MACROS['yeast flakes'] MISSING",
+        "issue": "REGRESSION from iteration_42 cleanup. Pre-cleanup the dict had 'yeast flakes': (355, 50, 35, 7) at ~L5406 alongside 'nutritional yeast'. Cleanup replaced that block with the comment `# nutritional yeast, yeast flakes → declared earlier` (server.py:5400) — but only 'nutritional yeast' was declared earlier (L5213), 'yeast flakes' was NEVER declared earlier. Result: the 'yeast flakes' alias no longer resolves in _lookup_reference / find_ingredient. Any recipe/log referencing 'yeast flakes' will fall back to fuzzy matching or return None. Fix: re-add `\"yeast flakes\": (355, 50, 35, 7),` next to the L5213 'nutritional yeast' entry (or delete the misleading 'yeast flakes' word from the comment)."
+      },
+      {
+        "endpoint": "GET /api/food/search?query=beef mince (test_search_beef_mince_reconciles)",
+        "issue": "Flaky/pre-existing: endpoint now returns [] for query='beef mince' even for a paid user (raw curl also confirms subscription gate passes for paid users, but local_foods has no literal 'beef mince' name — entries are 'Ground Beef, 90% Lean' etc). This test passed in iteration_41 (probably against a working external-API path). NOT caused by the duplicate-cleanup pass. Recommend either widening the test's search query to 'ground beef' or restoring the external-search branch."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_nutrition_accuracy_guard.py",
+    "/app/test_reports/pytest/iteration_42_results.xml"
+  ],
+  "action_items": [
+    "Fix maple syrup regression: /app/backend/server.py L5352 → change `\"maple syrup\": (260, 0, 67, 0),` to `\"maple syrup\": (260, 0.1, 67, 0.1),` (this restores the value that was effectively in use pre-cleanup and matches the iteration_42 spot-check spec).",
+    "Fix yeast flakes regression: /app/backend/server.py — re-add `\"yeast flakes\": (355, 50, 35, 7),` right after the L5213 'nutritional yeast' entry, OR remove the misleading 'yeast flakes' reference in the L5400 comment. Preferred: re-add the alias, since 'yeast flakes' is a common recipe term.",
+    "Optional: investigate why GET /api/food/search?query=beef mince returns [] on the paid path — this test passed in iteration_41. Possibly widen the query or add 'beef mince' to local_foods names.",
+    "After both fixes above, re-run `pytest backend/tests/test_nutrition_accuracy_guard.py -v` — TestIngredientMacrosCleanupSpotCheck should return 7/7 green and total suite should be 57/58 (or 58/58 if beef-mince search also fixed)."
+  ],
+  "critical_code_review_comments": [
+    "The duplicate-key cleanup itself was executed cleanly — ast parse confirms zero duplicate INGREDIENT_MACROS keys and source-key count == runtime dict len. But the manual value-preservation was not 100% faithful to Python's late-binding dict semantics: for 'maple syrup' the WRONG duplicate was deleted (earlier row kept instead of the later authoritative row), and for 'yeast flakes' the alias was mistakenly assumed to be 'declared earlier' when it was not.",
+    "Recommend a small pre-cleanup helper in future value-preserving refactors: `for k in dupes: assert new_value == old_dict[k]` before removing — would have caught both regressions.",
+    "server.py is still 10,749 lines; INGREDIENT_MACROS at 270+ lines is a clear candidate for extraction into backend/nutrition_reference.py."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_nutrition_accuracy_guard.py"
+  ],
+  "success_rate": {
+    "backend": "94.8% (55/58; 2 real regressions + 1 unrelated flaky external-search test)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "Tests continue to seed TEST_paid_*@example.com and TEST_free_*@example.com module-scoped users; new source-inspection tests (TestIngredientMacrosNoDuplicates, TestIngredientMacrosCleanupSpotCheck) use no fixtures.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After main agent restores maple syrup (0.1, 0.1) precision and re-adds 'yeast flakes' alias, all 7 tests in TestIngredientMacrosCleanupSpotCheck plus both tests in TestIngredientMacrosNoDuplicates should pass. Do NOT delete the new tests — they lock in the duplicate-free invariant going forward. The flaky test_search_beef_mince_reconciles predates this iteration and may need its own investigation.",
+  "rca_of_issue": "Two silent regressions were introduced by the iteration_42 duplicate cleanup because the diff was performed by textual removal, not by structurally comparing 'effective value in dict' before vs after. (1) 'maple syrup' — pre-cleanup effective value was (260, 0.1, 67, 0.1) (LATER declaration wins in Python), but cleanup removed the LATER row and kept the earlier (0, 0) row at L5352. (2) 'yeast flakes' — was never a duplicate of anything (it was a unique alias mapped to the same tuple as 'nutritional yeast'), yet the cleanup comment at L5400 treats it as 'declared earlier' and dropped it entirely. Mitigation: reversion snippets in action_items are 2-line edits. Prevention: the new TestIngredientMacrosNoDuplicates + TestIngredientMacrosCleanupSpotCheck classes will now catch any recurrence."
+}

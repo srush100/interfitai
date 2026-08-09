@@ -5150,11 +5150,6 @@ async def get_exercise_gif(exercise_id: str, resolution: str = "360"):
 # Format: (calories, protein, carbs, fat)
 INGREDIENT_MACROS = {
     # Proteins - Poultry
-    "chicken breast": (165, 31, 0, 3.6),
-    "chicken": (165, 31, 0, 3.6),  # default to breast
-    "chicken thigh": (209, 26, 0, 11),
-    "chicken thighs": (209, 26, 0, 11),
-    # Proteins - Poultry
     # (all values USDA per-100g COOKED unless noted — the file convention)
     "chicken breast": (165, 31, 0, 3.6),   # SR Legacy #05064 breast, meat only, cooked, roasted
     "chicken": (165, 31, 0, 3.6),           # default = chicken breast (as above)
@@ -5216,9 +5211,8 @@ INGREDIENT_MACROS = {
     "edamame": (121, 11, 8, 5),           # shelled edamame — 11g P per 100g
     "shelled edamame": (121, 11, 8, 5),
     "nutritional yeast": (355, 50, 35, 7), # 50g P per 100g!
-    "hemp seeds": (553, 31, 8.7, 49),      # 31g P per 100g
-    "hemp seed": (553, 31, 8.7, 49),
-    "tahini": (595, 17, 23, 54),           # sesame paste
+    # hemp seeds → declared with the rest of the seeds/nuts section below
+    "tahini": (595, 17, 23, 54),           # sesame paste — high fat
     "pork": (242, 27, 0, 14),
     "pork chop": (231, 27, 0, 13),
     "bacon": (417, 13, 1.4, 40),
@@ -5328,7 +5322,8 @@ INGREDIENT_MACROS = {
     "flax seeds": (534, 18, 29, 42),
     "sunflower seeds": (584, 21, 20, 51),
     "pumpkin seeds": (559, 30, 11, 49),
-    "hemp seeds": (553, 32, 9, 49),
+    "hemp seeds": (553, 32, 9, 49),        # SR Legacy #12012 shelled hemp seeds — 32g P per 100g
+    "hemp seed": (553, 32, 9, 49),
     "macadamia": (718, 8, 14, 76),
     "pecans": (691, 9, 14, 72),
     "pistachios": (560, 20, 28, 45),
@@ -5402,8 +5397,7 @@ INGREDIENT_MACROS = {
     "apple cider vinegar": (22, 0, 0.9, 0),
     "lemon juice": (22, 0.4, 7, 0.2),
     "lime juice": (25, 0.4, 8, 0.1),
-    "nutritional yeast": (355, 50, 35, 7),
-    "yeast flakes": (355, 50, 35, 7),
+    # nutritional yeast, yeast flakes → declared earlier (Proteins - Other section)
     "miso paste": (199, 12, 26, 6),
     "miso": (199, 12, 26, 6),
     "coconut aminos": (74, 2, 18, 0),
@@ -5415,11 +5409,11 @@ INGREDIENT_MACROS = {
     "vegan protein": (380, 72, 8, 5),  # generic vegan protein powder
     "pea protein": (380, 72, 8, 5),
     "brown sugar": (380, 0, 98, 0),
-    "maple syrup": (260, 0.1, 67, 0.1),
-    "tahini": (595, 17, 23, 54),        # sesame paste — high fat
+    # maple syrup → declared earlier (sweeteners section)
+    # tahini → declared earlier (Proteins - Other section)
     "almond flour": (571, 21, 20, 50),
     "flaxseed meal": (534, 18, 29, 42),
-    "chia seeds": (486, 17, 42, 31),
+    # chia seeds → declared earlier (seeds/nuts section)
     "spirulina": (290, 57, 24, 8),
     "maca powder": (325, 11, 66, 4),
     "matcha powder": (306, 26, 52, 5),

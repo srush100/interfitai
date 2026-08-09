@@ -562,3 +562,111 @@ class TestWebSearchSanitizes:
         if derived > 0 and stated > 0:
             gap = abs(stated - derived) / max(stated, 1.0)
             assert gap <= 0.10
+
+
+
+# ---------------------------------------------------------------------------
+# Iteration 42 — INGREDIENT_MACROS source-level cleanup guard
+# ---------------------------------------------------------------------------
+# Light source-inspection test: parses backend/server.py, extracts the
+# INGREDIENT_MACROS dict literal via ast, and asserts every key is declared
+# EXACTLY ONCE. Python dict semantics silently allow duplicate keys (later
+# declaration wins), which caused the pre-iteration-42 confusion where 9 keys
+# were shadowed — including one case (maple syrup) where the wrong version
+# was inadvertently retained after cleanup. This guard makes any future
+# duplicate declaration a hard test failure.
+
+import ast
+
+
+class TestIngredientMacrosNoDuplicates:
+    """Ensure every INGREDIENT_MACROS key is declared exactly once in source."""
+
+    @pytest.fixture(scope="class")
+    def macros_dict_node(self):
+        source_path = "/app/backend/server.py"
+        with open(source_path, "r") as fh:
+            source = fh.read()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "INGREDIENT_MACROS"
+                and isinstance(node.value, ast.Dict)
+            ):
+                return node.value
+        pytest.fail("INGREDIENT_MACROS dict literal not found in server.py")
+
+    def test_no_duplicate_keys_in_dict_literal(self, macros_dict_node):
+        """Every INGREDIENT_MACROS key must be declared exactly once."""
+        keys = []
+        for k in macros_dict_node.keys:
+            if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                keys.append(k.value)
+        seen = {}
+        duplicates = []
+        for key in keys:
+            seen[key] = seen.get(key, 0) + 1
+        for key, count in seen.items():
+            if count > 1:
+                duplicates.append(f"{key} (declared {count}x)")
+        assert not duplicates, (
+            "Duplicate INGREDIENT_MACROS keys found in server.py: "
+            + ", ".join(duplicates)
+        )
+
+    def test_total_key_count_matches_runtime(self, macros_dict_node):
+        """Source-parsed key count must equal runtime dict size (no shadowing)."""
+        source_keys = [
+            k.value for k in macros_dict_node.keys
+            if isinstance(k, ast.Constant) and isinstance(k.value, str)
+        ]
+        assert len(source_keys) == len(INGREDIENT_MACROS), (
+            f"Source has {len(source_keys)} key declarations but runtime dict "
+            f"has {len(INGREDIENT_MACROS)} — indicates shadowing/duplicates."
+        )
+
+
+class TestIngredientMacrosCleanupSpotCheck:
+    """Iteration 42 spot-checks: values that had subtly different duplicate
+    declarations must have the correct (USDA-cited) version retained."""
+
+    def test_chicken_thigh_uses_usda_10_9(self):
+        assert INGREDIENT_MACROS["chicken thigh"] == (209, 26, 0, 10.9)
+        assert INGREDIENT_MACROS["chicken thighs"] == (209, 26, 0, 10.9)
+
+    def test_chicken_breast_and_default(self):
+        assert INGREDIENT_MACROS["chicken breast"] == (165, 31, 0, 3.6)
+        assert INGREDIENT_MACROS["chicken"] == (165, 31, 0, 3.6)
+
+    def test_hemp_seeds_single_declaration_32g_protein(self):
+        assert INGREDIENT_MACROS["hemp seeds"] == (553, 32, 9, 49)
+        assert INGREDIENT_MACROS["hemp seed"] == (553, 32, 9, 49)
+
+    def test_maple_syrup_retains_0_1_precision(self):
+        # Per iteration_42 problem-statement: (260, 0.1, 67, 0.1) — the
+        # more-precise USDA row should have been retained, not (260, 0, 67, 0).
+        assert INGREDIENT_MACROS["maple syrup"] == (260, 0.1, 67, 0.1), (
+            f"maple syrup got {INGREDIENT_MACROS['maple syrup']} — expected "
+            "(260, 0.1, 67, 0.1). Cleanup pass may have removed the wrong "
+            "duplicate (kept the earlier zero-precision row)."
+        )
+
+    def test_nutritional_yeast_and_yeast_flakes_alias(self):
+        assert INGREDIENT_MACROS["nutritional yeast"] == (355, 50, 35, 7)
+        # yeast flakes existed as an alias pre-cleanup; cleanup comment
+        # implies "declared earlier" — verify the alias survived.
+        assert "yeast flakes" in INGREDIENT_MACROS, (
+            "'yeast flakes' alias was removed by cleanup pass but comment says "
+            "'declared earlier' — the alias must still resolve or the comment "
+            "is wrong."
+        )
+        assert INGREDIENT_MACROS["yeast flakes"] == (355, 50, 35, 7)
+
+    def test_tahini_single_declaration(self):
+        assert INGREDIENT_MACROS["tahini"] == (595, 17, 23, 54)
+
+    def test_chia_seeds_single_declaration(self):
+        assert INGREDIENT_MACROS["chia seeds"] == (486, 17, 42, 31)
