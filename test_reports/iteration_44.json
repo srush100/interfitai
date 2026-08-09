@@ -1,0 +1,28 @@
+{
+  "summary": "Final green pass on the nutrition-accuracy guard suite. Ran /app/backend/tests/test_nutrition_accuracy_guard.py in full — all 58 tests PASS in 14.20s, including the previously-flaky test_search_beef_mince_reconciles (now returns 3 UK-named results reconciling within 3% via added 'Beef Mince, 5/10/20% Fat, cooked (100g)' rows) and TestIngredientMacrosNoDuplicates (no duplicate keys introduced).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_nutrition_accuracy_guard.py",
+    "/app/test_reports/pytest/iteration_44_nutrition.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Non-blocking: server.py uses deprecated @app.on_event('shutdown'); FastAPI recommends lifespan event handlers. Not required for this iteration."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (58/58)", "frontend": "n/a"},
+  "seed_data_creation": "None. Reused existing test profiles per request.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Full nutrition-accuracy suite is green. UK beef-mince search coverage has been added (Beef Mince, 5%/10%/20% Fat, cooked (100g)) alongside US 'Ground Beef' rows; both name variants reconcile within 3% of USDA references. No duplicate-key regressions detected in INGREDIENT_MACROS.",
+  "rca_of_issue": "Prior failure of test_search_beef_mince_reconciles was caused by local_foods only containing US-named 'Ground Beef' rows, so /food/search?query=beef+mince returned 0 items. Fix (already applied by main agent) added 3 UK-named rows with the same USDA-cooked values (171/26.5/0/6.9, 217/26.6/0/11.7, 272/25.8/0/18.2). Verified by live API and pytest — search now returns 3 UK results, all reconciling within 3%."
+}
