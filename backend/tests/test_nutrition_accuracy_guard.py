@@ -110,17 +110,66 @@ class TestIngredientMacrosCorrections:
     def test_extra_lean_beef_mince_171(self):
         assert INGREDIENT_MACROS["extra lean beef mince"] == (171, 26.5, 0, 6.9)
 
-    def test_sirloin_207(self):
-        assert INGREDIENT_MACROS["sirloin"] == (207, 28, 0, 9.5)
+    def test_lean_beef_mince_217(self):
+        # Iteration 41: raw→cooked correction. SR Legacy #23572 90/10 pan-browned.
+        assert INGREDIENT_MACROS["lean beef mince"] == (217, 26.6, 0, 11.7)
 
-    def test_turkey_189(self):
-        assert INGREDIENT_MACROS["turkey"] == (189, 29, 0, 8)
+    def test_lean_ground_beef_217(self):
+        assert INGREDIENT_MACROS["lean ground beef"] == (217, 26.6, 0, 11.7)
+
+    def test_fatty_beef_mince_272(self):
+        # Iteration 41: raw→cooked correction. SR Legacy #23566 80/20 pan-browned.
+        assert INGREDIENT_MACROS["fatty beef mince"] == (272, 25.8, 0, 18.2)
+
+    def test_regular_beef_mince_272(self):
+        assert INGREDIENT_MACROS["regular beef mince"] == (272, 25.8, 0, 18.2)
+
+    def test_ground_beef_default_272(self):
+        # Iteration 41: reconciled to 80/20 retail standard.
+        assert INGREDIENT_MACROS["ground beef"] == (272, 25.8, 0, 18.2)
+
+    def test_beef_mince_default_272(self):
+        assert INGREDIENT_MACROS["beef mince"] == (272, 25.8, 0, 18.2)
+
+    def test_ground_beef_equals_fatty_ground_beef(self):
+        # Locks in the reconciliation: same product cannot appear with two
+        # contradictory macro tuples.
+        assert INGREDIENT_MACROS["ground beef"] == INGREDIENT_MACROS["fatty ground beef"]
+
+    def test_sirloin_212(self):
+        # Iteration 41: re-verified SR Legacy #23621 top sirloin, broiled.
+        assert INGREDIENT_MACROS["sirloin"] == (212, 27, 0, 10.6)
+
+    def test_turkey_170(self):
+        # Iteration 41: re-verified SR Legacy #05171 all classes, meat only, cooked.
+        assert INGREDIENT_MACROS["turkey"] == (170, 29, 0, 5)
+
+    def test_ground_turkey_203(self):
+        assert INGREDIENT_MACROS["ground turkey"] == (203, 27, 0, 11.5)
+
+    def test_rump_194(self):
+        assert INGREDIENT_MACROS["rump"] == (194, 28, 0, 8.3)
+
+    def test_salmon_206(self):
+        assert INGREDIENT_MACROS["salmon"] == (206, 22, 0, 12.4)
+
+    def test_tuna_116(self):
+        assert INGREDIENT_MACROS["tuna"] == (116, 25.5, 0, 0.8)
 
     def test_cod_105(self):
         assert INGREDIENT_MACROS["cod"] == (105, 23, 0, 0.9)
 
     def test_ribeye_291(self):
         assert INGREDIENT_MACROS["ribeye"] == (291, 24, 0, 21)
+
+    def test_brown_rice_123(self):
+        assert INGREDIENT_MACROS["brown rice"] == (123, 2.7, 25.6, 1)
+
+    def test_pasta_158(self):
+        assert INGREDIENT_MACROS["pasta"] == (158, 5.8, 30.9, 0.9)
+
+    def test_couscous_112(self):
+        assert INGREDIENT_MACROS["couscous"] == (112, 3.8, 23, 0.2)
 
 
 # ===========================================================================
@@ -182,6 +231,28 @@ class TestSanitizeGuardUnit:
         # (protein 25 vs 26.5 = 5.7%, fat 6 vs 6.9 = 13% → likely no divergence)
         # So we just assert the guard runs cleanly; log-based test below.
         assert isinstance(warnings, list)
+
+    def test_lean_beef_mince_raw_values_not_mutated(self):
+        """Iteration 41: user submits old-raw lean-beef-mince values
+        (176/20/0/10). Guard should NOT mutate macros (design), and calories
+        should NOT be reconciled (derived=170, stated=176, gap≈3.4% <10%)."""
+        entry = {"food_name": "lean beef mince", "calories": 176,
+                 "protein": 20, "carbs": 0, "fats": 10}
+        _, warnings = sanitize_food_entry(entry, portion_g=100)
+        # sanitize helper NEVER mutates macros by design
+        assert entry["protein"] == 20
+        assert entry["fats"] == 10
+        # No calorie reconcile fires (within 10%)
+        assert not any(w.startswith("reconcile_calories") for w in warnings)
+
+    def test_extra_lean_beef_mince_raw_clean(self):
+        """Iteration 41: 171/26.5/0/6.9 raw values should reconcile cleanly —
+        NO divergence, NO reconcile."""
+        entry = {"food_name": "extra lean beef mince", "calories": 171,
+                 "protein": 26.5, "carbs": 0, "fats": 6.9}
+        _, warnings = sanitize_food_entry(entry, portion_g=100)
+        assert not any(w.startswith("reconcile_calories") for w in warnings)
+        assert not any(w.startswith("reference_divergence") for w in warnings)
 
 
 # ===========================================================================
@@ -297,6 +368,40 @@ class TestFoodLogEndpoint:
         r = requests.post(f"{BASE_URL}/api/food/log", json=payload, timeout=30)
         assert r.status_code == 200  # guard warns but does not block
 
+    def test_lean_beef_mince_raw_logs_ok(self, paid_user):
+        """Iteration 41 live guard: submit old-raw 176/20/0/10 for lean beef
+        mince (100g). Endpoint must accept it (guard does not block) and must
+        NOT mutate macros — derived=170, gap<10%, no reconcile."""
+        payload = {
+            "user_id": paid_user["id"], "food_name": "Lean Beef Mince (raw, 100g)",
+            "serving_size": "100g", "calories": 176,
+            "protein": 20, "carbs": 0, "fats": 10,
+            "meal_type": "lunch", "logged_date": "2026-01-18",
+        }
+        r = requests.post(f"{BASE_URL}/api/food/log", json=payload, timeout=30)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["protein"] == 20
+        assert body["fats"] == 10
+        # Calories should be unchanged (within 10% tolerance)
+        assert body["calories"] == 176
+
+    def test_extra_lean_beef_mince_raw_logs_clean(self, paid_user):
+        """Iteration 41 live guard: 171/26.5/0/6.9 matches USDA reference —
+        should log cleanly with no macro adjustments."""
+        payload = {
+            "user_id": paid_user["id"], "food_name": "Extra Lean Beef Mince (raw, 100g)",
+            "serving_size": "100g", "calories": 171,
+            "protein": 26.5, "carbs": 0, "fats": 6.9,
+            "meal_type": "lunch", "logged_date": "2026-01-19",
+        }
+        r = requests.post(f"{BASE_URL}/api/food/log", json=payload, timeout=30)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["calories"] == 171
+        assert body["protein"] == 26.5
+        assert body["fats"] == 6.9
+
 
 # ===========================================================================
 # 6. GET /food/search — every returned result reconciles within ~15%
@@ -341,6 +446,75 @@ class TestFoodSearchReconciles:
         assert match["calories"] == 171
         assert match["protein"] == 26.5
         assert match["fats"] == 6.9
+
+    def test_local_ground_beef_90_lean_cooked_updated(self, paid_user):
+        """Iteration 41: local_foods 90% Lean must be the cooked USDA value
+        217/26.6/0/11.7 — the old 176/20/0/10 raw row MUST be gone."""
+        r = requests.get(
+            f"{BASE_URL}/api/food/search",
+            params={"query": "ground beef", "user_id": paid_user["id"]},
+            timeout=45,
+        )
+        assert r.status_code == 200
+        results = r.json()
+        match = next(
+            (x for x in results if "90% Lean" in x.get("name", "") and "cooked" in x.get("name", "").lower()),
+            None,
+        )
+        assert match is not None, "Ground Beef 90% Lean, cooked missing from local_foods"
+        assert match["calories"] == 217, f"expected 217, got {match['calories']}"
+        assert match["protein"] == 26.6
+        assert match["fats"] == 11.7
+        # Old 'Ground Beef, 90% Lean (100g)' at 176/20/0/10 must NOT exist
+        bad = next(
+            (x for x in results if x.get("name") == "Ground Beef, 90% Lean (100g)"),
+            None,
+        )
+        assert bad is None, f"Old raw-based 90% Lean row still present: {bad}"
+
+    def test_local_ground_beef_80_lean_cooked(self, paid_user):
+        """Iteration 41: 80% Lean cooked USDA row = 272/25.8/0/18.2."""
+        r = requests.get(
+            f"{BASE_URL}/api/food/search",
+            params={"query": "ground beef", "user_id": paid_user["id"]},
+            timeout=45,
+        )
+        assert r.status_code == 200
+        results = r.json()
+        match = next(
+            (x for x in results if "80% Lean" in x.get("name", "") and "cooked" in x.get("name", "").lower()),
+            None,
+        )
+        assert match is not None, "Ground Beef 80% Lean, cooked missing"
+        assert match["calories"] == 272
+        assert match["protein"] == 25.8
+        assert match["fats"] == 18.2
+
+    def test_search_beef_mince_reconciles(self, paid_user):
+        """Every 'beef mince' search result reconciles within 15%."""
+        r = requests.get(
+            f"{BASE_URL}/api/food/search",
+            params={"query": "beef mince", "user_id": paid_user["id"]},
+            timeout=45,
+        )
+        assert r.status_code == 200
+        results = r.json()
+        assert isinstance(results, list) and len(results) > 0
+        checked = 0
+        for res in results[:25]:
+            stated = float(res.get("calories", 0))
+            derived = (float(res.get("protein", 0)) * 4
+                       + float(res.get("carbs", 0)) * 4
+                       + float(res.get("fats", 0)) * 9)
+            if derived == 0 or stated == 0:
+                continue
+            gap = abs(stated - derived) / max(stated, 1.0)
+            assert gap <= 0.15, (
+                f"'beef mince' row out of tolerance: '{res.get('name')}' "
+                f"stated={stated} derived={derived:.0f} gap={gap:.0%}"
+            )
+            checked += 1
+        assert checked >= 1, "no reconcilable beef-mince results checked"
 
 
 # ===========================================================================

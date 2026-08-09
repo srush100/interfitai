@@ -5154,41 +5154,48 @@ INGREDIENT_MACROS = {
     "chicken": (165, 31, 0, 3.6),  # default to breast
     "chicken thigh": (209, 26, 0, 11),
     "chicken thighs": (209, 26, 0, 11),
-    "turkey breast": (135, 30, 0, 1),
-    "turkey": (189, 29, 0, 8),            # USDA: roasted whole turkey (was 170/21/9 — protein understated)
-    "ground turkey": (185, 27.4, 0, 8.4), # USDA: 93/7 pan-browned (was 170/21/9)
-    # Proteins - Beef
-    "sirloin steak": (207, 28, 0, 9.5),   # USDA: broiled, lean+fat (was 180/26/8)
-    "sirloin": (207, 28, 0, 9.5),
-    "ribeye steak": (291, 24, 0, 21),     # USDA: broiled (was 250/25/17 — fat understated)
+    # Proteins - Poultry
+    # (all values USDA per-100g COOKED unless noted — the file convention)
+    "chicken breast": (165, 31, 0, 3.6),   # SR Legacy #05064 breast, meat only, cooked, roasted
+    "chicken": (165, 31, 0, 3.6),           # default = chicken breast (as above)
+    "chicken thigh": (209, 26, 0, 10.9),   # SR Legacy #05098 thigh, meat only, cooked, roasted
+    "chicken thighs": (209, 26, 0, 10.9),
+    "turkey breast": (135, 30, 0, 1),      # SR Legacy #05192 breast, meat only, cooked, roasted
+    "turkey": (170, 29, 0, 5),             # SR Legacy #05171 all classes, meat only, cooked, roasted
+    "ground turkey": (203, 27, 0, 11.5),   # SR Legacy #05306 ground, cooked, pan-browned
+    # Proteins - Beef  (all cooked / broiled / pan-browned; USDA "lean+fat, trimmed to 1/8"" versions)
+    "sirloin steak": (212, 27, 0, 10.6),   # SR Legacy #23621 top sirloin, lean+fat 1/8", broiled
+    "sirloin": (212, 27, 0, 10.6),
+    "ribeye steak": (291, 24, 0, 21),      # SR Legacy #23111 rib eye small end, lean+fat 1/8", broiled
     "ribeye": (291, 24, 0, 21),
-    "rump steak": (180, 27, 0, 7.5),
-    "rump": (180, 27, 0, 7.5),
-    "steak": (207, 28, 0, 9.5),           # default to sirloin USDA
-    "ground beef": (250, 26, 0, 17),
-    # USDA 95/5 pan-browned: 171 cal / 26.5g P / 6.9g F (per-100g audit corrected)
-    "extra lean beef mince": (171, 26.5, 0, 6.9),
+    "rump steak": (194, 28, 0, 8.3),       # SR Legacy #23086 bottom round steak, lean+fat 1/8", roasted
+    "rump": (194, 28, 0, 8.3),
+    "steak": (212, 27, 0, 10.6),           # default = sirloin (as above)
+    # Ground beef family — one product should not appear twice with different macros,
+    # so the generic aliases ("ground beef", "beef mince") default to 80/20 (retail standard).
+    "ground beef": (272, 25.8, 0, 18.2),   # SR Legacy #23566 80/20, pan-browned, cooked
+    "extra lean beef mince": (171, 26.5, 0, 6.9),  # SR Legacy #23576 95/5, pan-browned, cooked
     "premium beef mince": (171, 26.5, 0, 6.9),
     "premium ground beef": (171, 26.5, 0, 6.9),
     "5 star beef mince": (171, 26.5, 0, 6.9),
     "five star beef mince": (171, 26.5, 0, 6.9),
-    "lean beef mince": (176, 20, 0, 10),  # USDA 90/10 pan-browned (was 170/26/8 — protein overstated)
     "extra lean ground beef": (171, 26.5, 0, 6.9),
-    "lean ground beef": (176, 20, 0, 10),
-    "fatty beef mince": (254, 17, 0, 20), # USDA 80/20 pan-browned (was 250/26/17 — protein overstated)
-    "regular beef mince": (254, 17, 0, 20),
-    "fatty ground beef": (254, 17, 0, 20),
-    "regular ground beef": (254, 17, 0, 20),
-    "beef mince": (250, 26, 0, 17),
-    "beef": (207, 28, 0, 9.5),            # default to sirloin USDA (was 180/26/8)
+    "lean beef mince": (217, 26.6, 0, 11.7),  # SR Legacy #23572 90/10, pan-browned, cooked
+    "lean ground beef": (217, 26.6, 0, 11.7),
+    "fatty beef mince": (272, 25.8, 0, 18.2),  # SR Legacy #23566 80/20, pan-browned, cooked
+    "regular beef mince": (272, 25.8, 0, 18.2),
+    "fatty ground beef": (272, 25.8, 0, 18.2),
+    "regular ground beef": (272, 25.8, 0, 18.2),
+    "beef mince": (272, 25.8, 0, 18.2),     # default = 80/20 (retail standard)
+    "beef": (212, 27, 0, 10.6),             # default = sirloin
     "extra lean beef": (175, 26, 0, 7),
     "lean beef": (175, 26, 0, 7),
-    # Proteins - Fish/Seafood
-    "salmon": (208, 20, 0, 13),
-    "tilapia": (128, 26, 0, 2.7),
-    "tuna": (116, 26, 0, 1),              # USDA: yellowfin cooked (was 116/26/0.8 — fat rounded up)
-    "shrimp": (99, 24, 0.2, 0.3),         # USDA (carbs was 0)
-    "cod": (105, 23, 0, 0.9),             # USDA: cooked cod (was 82/18/0.7 — cal & protein understated)
+    # Proteins - Fish/Seafood  (all COOKED)
+    "salmon": (206, 22, 0, 12.4),          # SR Legacy #15236 Atlantic, farmed, cooked, dry heat
+    "tilapia": (128, 26, 0, 2.7),          # SR Legacy #15261 tilapia, cooked, dry heat
+    "tuna": (116, 25.5, 0, 0.8),           # SR Legacy #15122 light, canned in water, drained
+    "shrimp": (99, 24, 0.2, 0.3),          # SR Legacy #15271 mixed species, cooked, moist heat
+    "cod": (105, 23, 0, 0.9),              # SR Legacy #15016 Atlantic cod, cooked, dry heat
     "fish": (100, 20, 0, 2),  # generic fish
     # Proteins - Eggs/Dairy
     "egg": (155, 13, 1.1, 11),  # per 100g (about 2 eggs)
@@ -5197,9 +5204,9 @@ INGREDIENT_MACROS = {
     "large eggs": (155, 13, 1.1, 11),
     "egg white": (52, 11, 0.7, 0.2),
     "egg whites": (52, 11, 0.7, 0.2),
-    "greek yogurt": (59, 10, 4, 0.4),
-    "yogurt": (59, 10, 4, 0.4),
-    "cottage cheese": (84, 11, 4, 2.5),
+    "greek yogurt": (59, 10, 4, 0.4),    # SR Legacy #01256 Greek plain, nonfat
+    "yogurt": (59, 10, 4, 0.4),          # aliased to Greek nonfat (fitness-app convention)
+    "cottage cheese": (84, 11, 4, 2.5),  # SR Legacy #01169 lowfat 2% milkfat
     # Proteins - Other
     "tofu": (144, 17, 3, 8),
     "tofu firm": (144, 17, 3, 8),
@@ -5216,26 +5223,26 @@ INGREDIENT_MACROS = {
     "pork chop": (231, 27, 0, 13),
     "bacon": (417, 13, 1.4, 40),
     "ham": (145, 21, 1, 6),
-    # Carbs - Grains
-    "rice": (130, 2.7, 28, 0.3),
+    # Carbs - Grains  (cooked unless the food is generally weighed dry in recipes)
+    "rice": (130, 2.7, 28, 0.3),          # SR Legacy #20045 white long-grain, cooked
     "white rice": (130, 2.7, 28, 0.3),
-    "brown rice": (112, 2.6, 24, 0.9),
-    "oats": (389, 17, 66, 7),
-    "oatmeal": (68, 2.4, 12, 1.4),
-    "quinoa": (120, 4.4, 21, 1.9),
-    "pasta": (131, 5, 25, 1.1),
-    "whole wheat pasta": (131, 5, 25, 1.1),
+    "brown rice": (123, 2.7, 25.6, 1),    # SR Legacy #20037 long-grain, cooked (was 112/2.6/24/0.9)
+    "oats": (389, 17, 66, 7),             # SR Legacy #20038 raw oats — recipe convention (dry weight)
+    "oatmeal": (68, 2.4, 12, 1.4),        # SR Legacy #08123 cooked with water
+    "quinoa": (120, 4.4, 21, 1.9),        # SR Legacy #20137 cooked
+    "pasta": (158, 5.8, 30.9, 0.9),       # SR Legacy #20421 enriched, cooked (was 131/5/25/1.1 — 20% cal understated)
+    "whole wheat pasta": (149, 6, 30, 1.1), # SR Legacy #20124 whole-wheat, cooked
     "bread": (265, 9, 49, 3.2),
     "whole wheat bread": (247, 10, 41, 3.4),
     "wrap": (310, 8, 52, 8),
     "whole wheat wrap": (310, 8, 52, 8),
     "tortilla": (312, 8, 52, 8),
-    "couscous": (176, 6, 36, 0.3),
+    "couscous": (112, 3.8, 23, 0.2),      # SR Legacy #20028 cooked (was 176/6/36/0.3 — was actually a dry-ish value)
     "cooked couscous": (112, 3.8, 23, 0.2),
-    "bulgur": (83, 3, 19, 0.2),
-    "farro": (170, 7, 34, 1.5),
-    "barley": (123, 2.3, 28, 0.4),
-    "noodles": (138, 5, 25, 2),
+    "bulgur": (83, 3, 19, 0.2),           # SR Legacy #20014 cooked
+    "farro": (170, 7, 34, 1.5),           # no direct USDA row; industry-standard cooked farro
+    "barley": (123, 2.3, 28, 0.4),        # SR Legacy #20005 pearled, cooked
+    "noodles": (138, 5, 25, 2),           # SR Legacy #20110 egg noodles, cooked
     "ramen": (138, 5, 25, 2),
     "rice noodles": (109, 0.9, 25, 0.2),
     "soba noodles": (99, 5, 21, 0.1),
@@ -7001,13 +7008,13 @@ ABSOLUTE PROHIBITIONS — NEVER include these:
 {protein_guidance_for_prompt}
 {protein_guidance}
 
-MACRO REFERENCE (per 100g cooked unless noted):
-Chicken breast: 165cal 31P 0C 3.6F | Turkey breast: 135cal 30P 0C 1F | Tuna: 116cal 26P 0C 0.8F
-Beef sirloin: 207cal 26P 0C 11F | Extra-lean beef mince 5% (cooked): 153cal 25P 0C 6F | Regular/fatty beef mince (cooked): 250cal 26P 0C 17F | Shrimp: 99cal 24P 0C 0.3F | Cod: 82cal 18P 0C 0.7F
-Salmon: 208cal 20P 0C 13F | Egg whites (100g): 52cal 11P 0.7C 0.2F | Whole egg (50g ea): 78cal 6.5P 0.5C 5.5F
+MACRO REFERENCE (per 100g cooked unless noted — USDA FoodData Central):
+Chicken breast: 165cal 31P 0C 3.6F | Turkey breast: 135cal 30P 0C 1F | Tuna (canned in water): 116cal 25.5P 0C 0.8F
+Beef sirloin (broiled): 212cal 27P 0C 10.6F | Extra-lean beef mince 5% (cooked): 171cal 26.5P 0C 6.9F | Lean beef mince 10% (cooked): 217cal 26.6P 0C 11.7F | Fatty beef mince 20% (cooked): 272cal 25.8P 0C 18.2F | Shrimp: 99cal 24P 0.2C 0.3F | Cod: 105cal 23P 0C 0.9F
+Salmon (Atlantic, farmed): 206cal 22P 0C 12.4F | Egg whites (100g): 52cal 11P 0.7C 0.2F | Whole egg (50g ea): 78cal 6.5P 0.5C 5.5F
 Tofu firm: 144cal 17P 3C 8F | Tempeh: 192cal 20P 8C 11F | Greek yogurt 0%: 59cal 10P 4C 0.4F
-Cottage cheese: 84cal 11P 4C 2.5F | White rice cooked: 130cal 2.7P 28C 0.3F | Brown rice: 112cal 2.7P 24C 0.9F
-Sweet potato: 86cal 1.6P 20C 0.1F | Quinoa cooked: 120cal 4.4P 21C 1.9F | Oats dry: 389cal 17P 66C 7F
+Cottage cheese: 84cal 11P 4C 2.5F | White rice cooked: 130cal 2.7P 28C 0.3F | Brown rice cooked: 123cal 2.7P 25.6C 1F
+Sweet potato: 86cal 1.6P 20C 0.1F | Quinoa cooked: 120cal 4.4P 21C 1.9F | Oats dry: 389cal 17P 66C 7F | Pasta cooked: 158cal 5.8P 30.9C 0.9F
 Banana (120g): 107cal 1.3P 27.6C 0.4F | Avocado (50g): 80cal 1P 4.5C 7.5F | Olive oil (10ml): 88cal 0P 0C 10F
 
 EXACT QUANTITIES TO HIT EACH MEAL TARGET:
@@ -8548,10 +8555,10 @@ async def search_foods(query: str, user_id: str):
         {"name": "Chicken Drumstick (1 piece)", "calories": 76, "protein": 12, "carbs": 0, "fats": 3},
         {"name": "Rotisserie Chicken (1/4)", "calories": 290, "protein": 36, "carbs": 0, "fats": 15},
         {"name": "Turkey Breast (100g)", "calories": 135, "protein": 30, "carbs": 0, "fats": 1},
-        {"name": "Turkey, Ground (100g)", "calories": 185, "protein": 27.4, "carbs": 0, "fats": 8.4},
-        {"name": "Salmon, Atlantic (100g)", "calories": 208, "protein": 20, "carbs": 0, "fats": 13},
+        {"name": "Turkey, Ground, cooked (100g)", "calories": 203, "protein": 27, "carbs": 0, "fats": 11.5},
+        {"name": "Salmon, Atlantic (100g)", "calories": 206, "protein": 22, "carbs": 0, "fats": 12.4},
         {"name": "Salmon, Smoked (100g)", "calories": 117, "protein": 18, "carbs": 0, "fats": 4},
-        {"name": "Tuna, Canned in Water (100g)", "calories": 116, "protein": 26, "carbs": 0, "fats": 1},
+        {"name": "Tuna, Canned in Water (100g)", "calories": 116, "protein": 25.5, "carbs": 0, "fats": 0.8},
         {"name": "Tuna Steak, Grilled (100g)", "calories": 132, "protein": 29, "carbs": 0, "fats": 1},
         {"name": "Shrimp (100g)", "calories": 99, "protein": 24, "carbs": 0.2, "fats": 0.3},
         {"name": "Shrimp, Fried (6 pieces)", "calories": 210, "protein": 18, "carbs": 10, "fats": 10},
@@ -8560,11 +8567,11 @@ async def search_foods(query: str, user_id: str):
         {"name": "Lobster (100g)", "calories": 89, "protein": 19, "carbs": 0.5, "fats": 0.9},
         {"name": "Crab Meat (100g)", "calories": 97, "protein": 19, "carbs": 0, "fats": 1.5},
         {"name": "Beef Steak, Ribeye (100g)", "calories": 291, "protein": 24, "carbs": 0, "fats": 21},
-        {"name": "Beef Steak, Sirloin (100g)", "calories": 207, "protein": 28, "carbs": 0, "fats": 9.5},
+        {"name": "Beef Steak, Sirloin (100g)", "calories": 212, "protein": 27, "carbs": 0, "fats": 10.6},
         {"name": "Beef Steak, Filet Mignon (100g)", "calories": 227, "protein": 26, "carbs": 0, "fats": 13},
-        {"name": "Ground Beef, 95% Lean (100g)", "calories": 171, "protein": 26.5, "carbs": 0, "fats": 6.9},
-        {"name": "Ground Beef, 90% Lean (100g)", "calories": 176, "protein": 20, "carbs": 0, "fats": 10},
-        {"name": "Ground Beef, 80% Lean (100g)", "calories": 254, "protein": 17, "carbs": 0, "fats": 20},
+        {"name": "Ground Beef, 95% Lean, cooked (100g)", "calories": 171, "protein": 26.5, "carbs": 0, "fats": 6.9},
+        {"name": "Ground Beef, 90% Lean, cooked (100g)", "calories": 217, "protein": 26.6, "carbs": 0, "fats": 11.7},
+        {"name": "Ground Beef, 80% Lean, cooked (100g)", "calories": 272, "protein": 25.8, "carbs": 0, "fats": 18.2},
         {"name": "Beef Brisket (100g)", "calories": 246, "protein": 27, "carbs": 0, "fats": 15},
         {"name": "Pork Tenderloin (100g)", "calories": 143, "protein": 26, "carbs": 0, "fats": 3.5},
         {"name": "Pork Chop, Grilled (100g)", "calories": 231, "protein": 25, "carbs": 0, "fats": 14},

@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 41 (backend only): Verified the raw→cooked regression fix for the 6 corrected beef-mince entries and the reconciliation of the ground-beef family. Updated /app/backend/tests/test_nutrition_accuracy_guard.py — expanded from 28 → 49 tests: added assertions for all corrected INGREDIENT_MACROS entries (lean/fatty/regular beef mince, ground beef defaults, sirloin/turkey/ground turkey/rump/salmon/tuna/cod/ribeye/brown rice/pasta/couscous), added the requested ground_beef==fatty_ground_beef reconciliation lock, added two live /food/log guard tests (Lean Beef Mince raw 176/20/0/10 and Extra Lean Beef Mince raw 171/26.5/0/6.9), added a beef-mince search reconciliation sweep, and added local_foods assertions confirming the old raw '90% Lean (100g)' row at 176/20/0/10 is gone and the new 90%/80% cooked rows are 217/26.6/0/11.7 and 272/25.8/0/18.2 respectively. Also updated pre-existing incorrect expected values (sirloin 207→212, turkey 189→170). Subscription gate 403 for free user still enforced. All 49 tests PASS (20.2s).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "INGREDIENT_MACROS dict (server.py:5151-5165, 5219 vs 5331)",
+        "issue": "Dict has duplicate keys declared twice: 'chicken breast', 'chicken', 'chicken thigh', 'chicken thighs' appear in both the old block (L5153-5156, thigh=11) and the new USDA-cited block (L5159-5162, thigh=10.9); 'hemp seeds' also declared at L5219 (553,31,8.7,49) and L5331 (553,32,9,49). Python keeps the last declaration so runtime behaviour is correct, but the dead first block is confusing and error-prone — should be removed."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_nutrition_accuracy_guard.py",
+    "/app/test_reports/pytest/iteration_41_results.xml"
+  ],
+  "action_items": [
+    "Clean up the duplicate INGREDIENT_MACROS keys (chicken*, hemp seeds) in server.py L5152-5165 — delete the old pre-USDA block to avoid future confusion (functional impact is nil today but very easy to regress).",
+    "Optional: on the meal-plan MACRO REFERENCE block (~L7013), the new cooked values are present and inline. No action needed unless dry/raw variants are expected."
+  ],
+  "critical_code_review_comments": [
+    "INGREDIENT_MACROS has redundant duplicate declarations for the poultry rows (see backend_issues.minor). The new USDA-cited block correctly overrides the old one, but the duplicate keys should be pruned.",
+    "server.py is now 10,755 lines — well past the 700-line guideline. Not blocking this iteration, but recommend splitting nutrition (INGREDIENT_MACROS + sanitize_food_entry + food endpoints) into its own module."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_nutrition_accuracy_guard.py"
+  ],
+  "success_rate": {"backend": "100% (49/49)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Tests create TEST_paid_*@example.com (flipped to yearly in Mongo) and TEST_free_*@example.com per test module. Cleaned up in module teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All 6 beef-mince values (extra lean 171, lean 217, fatty 272, regular 272, ground beef default 272, beef mince default 272) plus reconciliation (ground beef == fatty ground beef) are locked in by TestIngredientMacrosCorrections. Live guard tests confirm the sanitize helper does NOT mutate macros (design). If the main agent later changes reference_divergence threshold below 30% or makes sanitize modify macros, the 'test_lean_beef_mince_raw_values_not_mutated' + 'test_lean_beef_mince_raw_logs_ok' tests will start catching it.",
+  "rca_of_issue": "N/A — this iteration verified an already-applied fix. Regression prior to fix: iteration_40 accidentally used SR-Legacy RAW rows for 'lean beef mince' (176/20/0/10) and 'fatty beef mince' (254/17/0/20). Since the file convention is per-100g COOKED, meal plans that used these entries under-counted protein 25-35%. Fix in iteration_41 substituted the correct pan-browned COOKED USDA rows (#23572 for 90/10 → 217/26.6/0/11.7 and #23566 for 80/20 → 272/25.8/0/18.2) plus reconciled the generic 'ground beef' + 'beef mince' defaults to 80/20. All values now flagged with inline #SR-Legacy-ID comments. Verified end-to-end via 49 pytest cases (unit + endpoint)."
+}
