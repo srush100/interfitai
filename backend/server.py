@@ -3281,7 +3281,14 @@ class FoodImageAnalyzeRequest(BaseModel):
     image_base64: str
     meal_type: str = "snack"
     additional_context: Optional[str] = None  # e.g., "no dressing", "large size"
-    portion_g: Optional[float] = None  # structured portion in grams — the app applies scaling
+    # Legacy: pre-computed grams. Kept for backward compat.
+    portion_g: Optional[float] = None
+    # New structured portion input (portion_amount + portion_unit). The backend
+    # resolves this to grams deterministically using the LABEL's serving size /
+    # units_per_serving, so "4 eggs" on a "2 eggs per serving" label yields
+    # exactly (4/2)*serving_size_g grams — no unit-per-item guessing.
+    portion_amount: Optional[float] = None
+    portion_unit: Optional[str] = None  # "grams" | "servings" | "count"
     quantity: int = 1
     preview: bool = False  # True = analyze only, don't log — user reviews first
 
@@ -8272,6 +8279,100 @@ def _extract_portion_grams(serving_size: str, food_name: str = "") -> float:
         return float(m.group(1)) * per_unit.get(m.group(2), 0)
     return 0.0
 
+# ─── Fix 9: deterministic portion resolution ────────────────────────────
+# Fallback per-unit weights used ONLY when the label doesn't state
+# `units_per_serving`. When the label does state it (e.g. "Edible Portion of
+# 2 Eggs, 104g"), the label ALWAYS wins — the per-unit weight is
+# serving_size_g / units_per_serving = 52g, even if this table says 58g.
+_ITEM_FALLBACK_WEIGHTS_G = {
+    "egg": 58, "eggs": 58,
+    "slice": 25, "slices": 25,
+    "piece": 40, "pieces": 40,
+    "biscuit": 15, "biscuits": 15, "cookie": 15, "cookies": 15,
+    "cracker": 3,  "crackers": 3,
+    "chicken tender": 30, "chicken tenders": 30,
+    "sausage": 60, "sausages": 60,
+    "fillet": 120, "fillets": 120,
+    "patty": 100, "patties": 100,
+    "meatball": 20, "meatballs": 20,
+    "nugget": 20, "nuggets": 20,
+    "bar": 40, "bars": 40,
+    "cup": 240, "tbsp": 15, "tsp": 5, "oz": 28,
+}
+
+def resolve_portion_g(
+    portion_amount: float | None,
+    portion_unit: str | None,
+    serving_size_g: float | None,
+    units_per_serving: float | None,
+    unit_name: str | None,
+    legacy_portion_g: float | None = None,
+) -> tuple[float | None, str, dict]:
+    """Deterministically convert a user-stated portion (amount + unit) into
+    grams using the label's own reference points.
+
+    Three shapes the user can state their portion in:
+      1. Grams:    portion_amount=200, portion_unit='grams'    → 200
+      2. Servings: portion_amount=2,   portion_unit='servings' → 2 × serving_size_g
+      3. Count:    portion_amount=4,   portion_unit='count'    → (4 / units_per_serving) × serving_size_g
+         Falls back to _ITEM_FALLBACK_WEIGHTS_G[unit_name] only if the label
+         didn't state units_per_serving.
+
+    Returns (portion_g, source_tag, debug) — source_tag is one of
+    "grams" / "servings" / "count_label" / "count_fallback" / "legacy" / "none".
+    """
+    debug: dict = {
+        "portion_amount": portion_amount,
+        "portion_unit": portion_unit,
+        "serving_size_g": serving_size_g,
+        "units_per_serving": units_per_serving,
+        "unit_name": unit_name,
+    }
+
+    # 0. Legacy: caller already resolved to grams. Preserve for backward compat.
+    if (portion_amount is None or portion_amount <= 0) and legacy_portion_g and legacy_portion_g > 0:
+        return float(legacy_portion_g), "legacy", debug
+
+    if portion_amount is None or portion_amount <= 0:
+        return None, "none", debug
+
+    amt = float(portion_amount)
+    u = (portion_unit or "grams").lower().strip()
+
+    # 1. Grams (or ml — treated 1:1 for label-scaling purposes)
+    if u in ("g", "gram", "grams", "gm", "gms", "ml", "milliliter", "milliliters"):
+        return amt, "grams", debug
+
+    # 2. Servings — needs serving_size_g from the label
+    if u in ("serving", "servings", "srv"):
+        if serving_size_g and serving_size_g > 0:
+            return amt * float(serving_size_g), "servings", debug
+        return None, "servings_no_label", debug
+
+    # 3. Count of units (eggs, slices, pieces, bars, …)
+    #    Label wins: units_per_serving + serving_size_g → per-unit grams.
+    if serving_size_g and serving_size_g > 0 and units_per_serving and units_per_serving > 0:
+        per_unit_g = float(serving_size_g) / float(units_per_serving)
+        return amt * per_unit_g, "count_label", {**debug, "per_unit_g": round(per_unit_g, 2)}
+
+    #    No label info → per-item fallback table (rough averages).
+    #    Try the model's unit_name first, then the user's portion_unit token.
+    for token in (unit_name, portion_unit):
+        if not token:
+            continue
+        key = token.lower().strip().rstrip("s")
+        # Also match the plural form for robustness
+        for candidate in (key, key + "s"):
+            if candidate in _ITEM_FALLBACK_WEIGHTS_G:
+                return (
+                    amt * float(_ITEM_FALLBACK_WEIGHTS_G[candidate]),
+                    "count_fallback",
+                    {**debug, "fallback_per_unit_g": _ITEM_FALLBACK_WEIGHTS_G[candidate]},
+                )
+
+    # 4. Unresolvable — caller can raise 422 or use best-effort path.
+    return None, "unresolved", debug
+
 def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = None) -> tuple[dict, list[str]]:
     """Guardrail applied to every food entry before it's saved / returned.
 
@@ -8559,14 +8660,26 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         )
         if request.additional_context:
             user_prompt += f"\n\nAdditional context from user: {request.additional_context}"
-        if request.portion_g:
+        # Portion hint — purely informational for the AI. We do not ask it to
+        # scale. `resolve_portion_g` will convert the user's stated portion to
+        # grams deterministically after we have the label's serving_size_g and
+        # units_per_serving.
+        if request.portion_amount and request.portion_amount > 0:
+            _u = (request.portion_unit or "grams").lower()
+            user_prompt += (
+                f"\n\nThe user is measuring {request.portion_amount:g} {_u} of this food. "
+                "You do NOT need to scale to that portion — return per-100g values plus the "
+                "label's own serving_size_g / units_per_serving / unit_name, and the app "
+                "will convert."
+            )
+        elif request.portion_g:
             user_prompt += (
                 f"\n\nThe user is measuring {request.portion_g:.0f}g of this food, but you "
                 "do NOT need to scale to that portion — return per-100g values only and the "
                 "app will scale."
             )
 
-        vision_prompt = """You are an expert nutritionist analysing a food photo. Your only job is to identify the food and return accurate PER-100G nutrition values — the app applies portion scaling itself.
+        vision_prompt = """You are an expert nutritionist analysing a food photo. Your only job is to identify the food and return accurate PER-100G nutrition values plus the label's own portion reference points — the app applies portion scaling itself.
 
 ═══════════════════════════════════════════════════════════════════════
 WHEN A NUTRITION LABEL / INFO PANEL IS VISIBLE (the printed panel overrides general knowledge):
@@ -8581,12 +8694,18 @@ C. Row mapping is exact:
 D. ENERGY IS TRANSCRIBED, NEVER DERIVED. Copy the printed kJ or Cal value (convert kJ ÷ 4.184 if needed) and set `energy_source: "label"`. Do NOT compute calories from P*4 + C*4 + F*9 when a label energy row exists — AU/EU labels use food-specific Atwater factors and exclude fibre from carbs.
 E. If a per-100g energy row is illegible, set `energy_source: "derived"`.
 
+F. PORTION REFERENCE POINTS — you MUST also return these three fields so the app can convert any portion the user states into grams:
+   • `serving_size_g` — the numeric grams of ONE serving as printed on the label (e.g. label says "Serving size: 104g" → 104; label says "Serving size: 40g (2 biscuits)" → 40).
+   • `units_per_serving` — how many countable items make up one serving, as stated on the label (e.g. "Edible Portion of 2 Eggs" → 2; "2 biscuits per serving" → 2; "1 slice" → 1). If the label does NOT state a countable item, return null.
+   • `unit_name` — the singular noun for one item (e.g. "egg", "biscuit", "slice", "piece", "bar", "cookie"). If not applicable, return null.
+   • DO NOT COMPUTE the total portion. Never multiply. Just report what the label prints.
+
 ═══════════════════════════════════════════════════════════════════════
 WHEN NO LABEL IS VISIBLE (restaurant plate, prepared food, produce, etc.):
 
 1. Identify the primary food item(s).
 2. Estimate reasonable per-100g values based on general nutrition knowledge for that food.
-3. Also return a `serving_size` string with the estimated visible portion mass in grams (best guess). This lets the app derive per-100g if needed.
+3. Also return a `serving_size_g` (best-guess grams of the visible portion). Set `units_per_serving` and `unit_name` to null unless the food is naturally countable (eggs, apples).
 4. Set `energy_source: "derived"` and `per_100g_source: "estimated"`.
 
 ═══════════════════════════════════════════════════════════════════════
@@ -8594,22 +8713,25 @@ QUALITY GATES — do this before responding:
 • The per-100g values you return must be plausible: no macro > 100g/100g (impossible); calories/gram between 0.1 and 9.0.
 • If the label is blurry or partially obscured such that you cannot read the per-100g or per-serving column confidently → set `confidence: "low"` and DO NOT INVENT VALUES. It is better to fail visibly than to guess plausibly.
 • If confident you have read the values accurately → set `confidence: "high"`.
-• Return the arithmetic in `reasoning` for auditability: "label per-100g: 62cal / 9.5P / 3.4C / 0.2F; serving size 160g".
+• Return the arithmetic in `reasoning` for auditability: "label per-100g: 143cal/12.2P/1.3C/9.9F; per-serving: 104g (2 eggs)".
 
 ═══════════════════════════════════════════════════════════════════════
 Respond with ONLY valid JSON, no other text. Exact schema:
 {
-  "food_name": "High Protein Yogurt",
-  "serving_size": "160g",
-  "per_100g": {"calories": 62, "protein": 9.5, "carbs": 3.4, "fats": 0.2},
-  "calories": 99, "protein": 15.2, "carbs": 5.4, "fats": 0.3,
-  "fiber": 0, "sugar": 3.4, "sodium": 45,
+  "food_name": "Free Range Eggs",
+  "serving_size": "104g (2 eggs)",
+  "serving_size_g": 104,
+  "units_per_serving": 2,
+  "unit_name": "egg",
+  "per_100g": {"calories": 143, "protein": 12.2, "carbs": 1.3, "fats": 9.9},
+  "calories": 149, "protein": 12.7, "carbs": 1.4, "fats": 10.3,
+  "fiber": 0, "sugar": 0.4, "sodium": 140,
   "energy_source": "label",
   "confidence": "high",
-  "reasoning": "label per-100g col: 62cal/9.5P/3.4C/0.2F; per-serving 160g col: 93cal/15.2P/5.4C/0.3F. Both agree (62 × 1.6 = 99cal ≈ 93cal within Atwater tolerance)."
+  "reasoning": "label per-100g col: 143cal/12.2P/1.3C/9.9F; per-serving 104g = 2 eggs (52g/egg)."
 }
 
-The `calories/protein/carbs/fats` top-level fields describe ONE label serving as a sanity anchor. The app uses `per_100g` × user_portion_g / 100 as the source of truth for what gets logged."""
+The `calories/protein/carbs/fats` top-level fields describe ONE label serving as a sanity anchor. The app uses `per_100g` × resolved_portion_g / 100 as the source of truth for what gets logged. NEVER multiply anything yourself."""
         content = await call_claude_sonnet(
             system_message=vision_prompt,
             user_message=user_prompt,
@@ -8711,21 +8833,50 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
         food_name_raw = food_data.get("food_name", "Unknown Food")
 
         # ── STRUCTURED PORTION PATH (deterministic) ──────────────────────
-        # If the caller provided a numeric portion_g we OWN the arithmetic —
-        # the model's only job is to identify the food and read per-100g from
-        # the label. This removes the whole class of "model ignored the
-        # portion" bug rather than trying to prompt around it.
-        user_portion_g = None
+        # The model returns per-100g PLUS the label's own reference points
+        # (serving_size_g, units_per_serving, unit_name). The APP then
+        # converts the user's stated portion (amount + unit) into grams —
+        # the model NEVER multiplies. This is what makes "4 eggs" become
+        # exactly (4 / label's units_per_serving) × serving_size_g instead
+        # of a 58g/egg guess that overrides a 52g/egg label.
+        #
+        # Order of precedence for `serving_size_g`:
+        #   1. explicit `serving_size_g` numeric field (new schema)
+        #   2. `_extract_portion_grams(serving_size)` on the legacy string
         try:
-            if request.portion_g and float(request.portion_g) > 0:
-                user_portion_g = float(request.portion_g)
+            _label_serving_g = float(food_data.get("serving_size_g") or 0)
         except (TypeError, ValueError):
-            user_portion_g = None
+            _label_serving_g = 0.0
+        if _label_serving_g <= 0:
+            _label_serving_g = _extract_portion_grams(
+                food_data.get("serving_size", ""), food_data.get("food_name", "")
+            )
+        try:
+            _label_units_per_serving = float(food_data.get("units_per_serving") or 0) or None
+        except (TypeError, ValueError):
+            _label_units_per_serving = None
+        _label_unit_name = food_data.get("unit_name") or None
+
+        user_portion_g, _portion_source, _portion_debug = resolve_portion_g(
+            portion_amount=request.portion_amount,
+            portion_unit=request.portion_unit,
+            serving_size_g=_label_serving_g if _label_serving_g > 0 else None,
+            units_per_serving=_label_units_per_serving,
+            unit_name=_label_unit_name,
+            legacy_portion_g=request.portion_g,
+        )
+        if _portion_source not in ("none",):
+            logger.info(
+                f"[portion-resolve] source={_portion_source} → portion_g={user_portion_g} "
+                f"debug={_portion_debug}"
+            )
 
         # Extract or derive per_100g
         _per_100g_model = food_data.get("per_100g") if isinstance(food_data.get("per_100g"), dict) else None
         _model_serving_g = _extract_portion_grams(food_data.get("serving_size", ""),
                                                   food_data.get("food_name", ""))
+        if _label_serving_g and _label_serving_g > 0:
+            _model_serving_g = _label_serving_g  # explicit numeric wins over parsed string
         _per_100g = _per_100g_model
         _per_100g_source = "label" if _per_100g_model else None
         if not _per_100g:
@@ -8852,6 +9003,29 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                 "energy_source": "label" if _per_100g_source in ("label", "retry_label") else "derived",
             }
             _portion_applied = user_portion_g * qty
+        elif request.portion_amount and request.portion_amount > 0 and _portion_source in (
+            "servings_no_label", "unresolved"
+        ):
+            # User gave "2 servings" or "4 eggs" but the label didn't state the
+            # required reference (serving_size_g or units_per_serving) and no
+            # fallback unit mass matched. Fail visibly instead of silently
+            # under-scaling to one serving.
+            logger.warning(
+                f"[portion-resolve] unresolved_portion food='{food_name_raw}' source={_portion_source} debug={_portion_debug}"
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "portion_unresolvable",
+                    "message": (
+                        "Couldn't work out the portion size from that label. Try a "
+                        "clearer photo of the nutrition panel (including the serving-"
+                        "size line), enter the portion in grams, or log it manually."
+                    ),
+                    "food_name_guess": food_name_raw,
+                    "portion_source": _portion_source,
+                },
+            )
         else:
             # BEST-EFFORT PATH — no structured portion. Trust the model's
             # per-serving totals, but still run Fix 7 as a safety net when
@@ -8905,6 +9079,14 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
         result["portion_g_applied"] = _portion_applied
         result["per_100g_source"] = _per_100g_source or "none"
         result["hallucination_fallback"] = hallucinated  # true only when we fell back to reference
+        # Fix 9 — expose the label's portion reference points AND how the
+        # user's stated portion was resolved. Lets the UI show "4 eggs → 208g
+        # (label: 52g/egg)" instead of a mystery number.
+        result["label_serving_size_g"] = _label_serving_g or None
+        result["label_units_per_serving"] = _label_units_per_serving
+        result["label_unit_name"] = _label_unit_name
+        result["portion_source"] = _portion_source
+        result["portion_debug"] = _portion_debug
         return result
 
     except HTTPException:

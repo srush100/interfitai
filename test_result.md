@@ -1671,3 +1671,17 @@ agent_communication:
       RESULT: Youfoodz + all branded meals now record label-honored values when the AI reads them correctly (no more chicken-breast substitution), and fail visibly rather than silently corrupt when the AI reads poorly. Yogurt + other single-ingredient references still fall back cleanly.
       TESTS: 20/20 pass on test_fix8_structured_portion.py (with 1 xfailed documented limitation for "High Protein Yogurt" borderline name). 124/124 pass across full nutrition suite (fix5+fix7+fix8+accuracy). Added 4 new tests: `test_youfoodz_composite_readable_label_records_serving`, `test_composite_bad_reading_no_wrong_reference_substitution`, `test_single_ingredient_still_falls_back_to_reference`, `test_composite_ready_meal_generic_name_also_protected`. Backend + expo restarted.
       DEFERRED (per user, separate future phases): image preprocessing (crop/upscale/contrast normalise) for small dark labels; barcode scanning via Open Food Facts API for deterministic packaged-food lookup.
+
+
+  - agent: "main"
+    message: |
+      FIX 9 — DETERMINISTIC UNIT-COUNT PORTION RESOLUTION (2026-06):
+      Closed user's final defect: scanning an egg carton with "4 eggs" was returning 149 cal (exactly half of the correct 297) because the app fell back to serving_size in grams (104g) instead of converting count → grams using the label's own units_per_serving (2 eggs/serving → 52g/egg, so 4 eggs = 208g).
+      Contract change (backend/server.py):
+      1) Extended vision prompt so the model MUST return three new label reference fields: `serving_size_g` (numeric), `units_per_serving` (e.g. 2), `unit_name` (e.g. "egg"). The model performs NO multiplication.
+      2) Extended FoodImageAnalyzeRequest with `portion_amount: Optional[float]` + `portion_unit: Optional[str]` ("grams"|"servings"|"count"); legacy `portion_g` retained for backward compat.
+      3) Added pure function `resolve_portion_g(amount, unit, serving_size_g, units_per_serving, unit_name, legacy_portion_g)` that deterministically converts any of the three portion shapes: grams direct, servings × serving_size_g, count label-wins ((amount/units_per_serving) × serving_size_g), fallback to _ITEM_FALLBACK_WEIGHTS_G only when label lacks units_per_serving.
+      4) Wired resolve_portion_g into analyze_food_image; unresolved count/servings → 422 `portion_unresolvable`.
+      5) Response envelope now surfaces `label_serving_size_g`, `label_units_per_serving`, `label_unit_name`, `portion_source`, `portion_debug`.
+      Frontend (food-log.tsx): replaced single "Portion (g)" input with amount input + 3-pill segmented control [Grams | Servings | Items]. "What we read" preview panel now shows label serving size + per-item breakdown (e.g. "Label serving: 104g (2 eggs → 52.0g each)" + "Your portion: 208g (count label)"). 422 handler recognizes both `label_unreadable` and `portion_unresolvable`.
+      TESTS (backend/tests/test_fix9_portion_resolution.py — NEW, 22/22 pass) — covers user's exact regression checklist: 4 eggs → 208g → 297/25.4/2.7/20.6, 2 eggs → 104g → 149/12.7/1.4/10.3, 1 serving → 104g same, 150g → 215/18.3/2.0/14.9, yogurt 1 serving → 99/15.2/5.4/0.3, yogurt 200g → 124/19.0/6.8/0.4, meat 2 servings → 342/53.0/0/13.8, fallback + fail-visible + regression-guard + legacy compat. TOTAL: 146/146 pass across fix5/fix7/fix8/fix9 + nutrition-accuracy. Backend + expo restarted.
