@@ -502,21 +502,40 @@ export default function FoodLog() {
   };
 
   const [photoResult, setPhotoResult] = useState<any>(null);
+  const [portionG, setPortionG] = useState<string>('');  // structured portion input (grams)
   const analyzeFood = async () => {
     if (!capturedImage || !profile?.id) return;
     setAnalyzing(true);
     try {
+      // Portion is structured (numeric grams). The backend does the arithmetic
+      // deterministically — we never rely on the model to scale.
+      const portionNum = parseFloat(portionG);
       const response = await api.post('/food/analyze', {
         user_id: profile.id,
         image_base64: capturedImage,
         meal_type: selectedMealType,
         additional_context: additionalContext || undefined,
+        portion_g: !isNaN(portionNum) && portionNum > 0 ? portionNum : undefined,
         quantity: quantity,
         preview: true,
       });
       setPhotoResult(response.data);
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to analyze food');
+      const detail = error.response?.data?.detail;
+      // Structured 422 — label unreadable / low confidence. Show clear message
+      // instead of silently accepting invented numbers.
+      if (detail && typeof detail === 'object' && detail.error === 'label_unreadable') {
+        Alert.alert(
+          'Couldn\u2019t read that label',
+          detail.message || 'Try a closer, well-lit photo of the nutrition panel, or enter the food manually.',
+          [
+            { text: 'Try Again', style: 'default' },
+            { text: 'Enter Manually', onPress: () => { setActiveTab('manual'); setPhotoResult(null); } },
+          ],
+        );
+      } else {
+        Alert.alert('Error', (typeof detail === 'string' && detail) || detail?.message || 'Failed to analyze food');
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -540,6 +559,7 @@ export default function FoodLog() {
       setCapturedImage(null);
       setPhotoResult(null);
       setAdditionalContext('');
+      setPortionG('');
       setQuantity(1);
       loadTodayLogs();
       setActiveTab('log');
@@ -1319,8 +1339,33 @@ export default function FoodLog() {
                       <Text style={styles.photoResultMacros}>
                         {photoResult.calories} cal • {photoResult.protein}g P • {photoResult.carbs}g C • {photoResult.fats}g F
                       </Text>
+
+                      {/* Preview: show exactly what was read + portion applied so
+                          the user can spot a bad read at a glance. */}
+                      {photoResult.label_per_100g ? (
+                        <View style={styles.labelReadBox}>
+                          <Text style={styles.labelReadTitle}>What we read</Text>
+                          <Text style={styles.labelReadLine}>
+                            {photoResult.per_100g_source === 'reference_fallback'
+                              ? '⚠️ Label unreadable — used reference values'
+                              : photoResult.per_100g_source === 'derived_from_serving'
+                                ? 'Label (derived from per-serving)'
+                                : 'Label per-100g'}: {' '}
+                            {Math.round(photoResult.label_per_100g.calories)} cal / {' '}
+                            {photoResult.label_per_100g.protein}g P / {' '}
+                            {photoResult.label_per_100g.carbs}g C / {' '}
+                            {photoResult.label_per_100g.fats}g F
+                          </Text>
+                          {photoResult.portion_g_applied ? (
+                            <Text style={styles.labelReadLine}>
+                              Your portion: {Math.round(photoResult.portion_g_applied)}g
+                            </Text>
+                          ) : null}
+                        </View>
+                      ) : null}
+
                       <Text style={styles.photoResultHint}>
-                        Not right? Add a correction below and re-analyze — e.g. "half portion", "large size", "2 pieces", "no sauce".
+                        Not right? Set the portion in grams above and re-analyze — the app scales the label values exactly.
                       </Text>
                     </View>
                     <TextInput
@@ -1369,10 +1414,27 @@ export default function FoodLog() {
                   </>
                 ) : (
                   <>
-                    {/* Additional Context Input */}
+                    {/* Structured portion input — the backend applies scaling deterministically */}
+                    <View style={styles.portionRow}>
+                      <Text style={styles.portionLabel}>Portion (g)</Text>
+                      <TextInput
+                        style={styles.portionInput}
+                        placeholder="e.g. 200"
+                        placeholderTextColor={colors.textMuted}
+                        value={portionG}
+                        onChangeText={(t) => setPortionG(t.replace(/[^0-9.]/g, ''))}
+                        keyboardType="decimal-pad"
+                        maxLength={6}
+                      />
+                    </View>
+                    <Text style={styles.portionHint}>
+                      Optional but recommended for packaged foods — the app scales from the label's per-100g values.
+                    </Text>
+
+                    {/* Additional Context Input — free-text notes only */}
                     <TextInput
                       style={styles.contextInput}
-                      placeholder="Add context (e.g., '2 eggs, half portion')"
+                      placeholder="Notes (optional, e.g. 'no dressing', 'half portion')"
                       placeholderTextColor={colors.textMuted}
                       value={additionalContext}
                       onChangeText={setAdditionalContext}
@@ -1389,6 +1451,7 @@ export default function FoodLog() {
                           setCapturedImage(null);
                           setPhotoResult(null);
                           setAdditionalContext('');
+                          setPortionG('');
                           setQuantity(1);
                         }}
                       >
@@ -2122,6 +2185,56 @@ const styles = StyleSheet.create({
     color: colors.text,
     minHeight: 60,
     textAlignVertical: 'top',
+  },
+  portionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    gap: 12,
+  },
+  portionLabel: {
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: '600',
+    minWidth: 90,
+  },
+  portionInput: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  portionHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+  labelReadBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,204,0,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,204,0,0.25)',
+  },
+  labelReadTitle: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '700',
+    marginBottom: 6,
+    letterSpacing: 0.5,
+  },
+  labelReadLine: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 2,
+    lineHeight: 18,
   },
   energyHeader: {
     flexDirection: 'row',

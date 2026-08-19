@@ -301,26 +301,31 @@ class TestGuardNoOps:
 
 
 # ---------------------------------------------------------------------------
-# sanitize_food_entry Fix-1 tolerance branching (10% vs 12%)
+# sanitize_food_entry Fix-1 tolerance branching (10% derived vs 30% label)
 # ---------------------------------------------------------------------------
 class TestFix1ToleranceBranching:
-    """energy_source='label' → 12% tol; 'derived' or absent → 10%."""
+    """energy_source='label' → 30% "gross-error" safety net;
+       'derived' or absent → 10% strict reconciliation.
 
-    def test_label_at_11pct_gap_preserved(self):
+    Label-transcribed energies are treated as ground truth (Option A) because
+    printed labels use food-specific Atwater factors and exclude fibre from
+    carbs — the ~10-20% delta from P*4+C*4+F*9 is legitimate for many foods
+    (yogurt, milk, cereals). The 30% ceiling still catches gross misreads.
+    """
+
+    def test_label_at_15pct_gap_preserved(self):
         # protein*4 + carbs*4 + fats*9 = 100*4+0+0 = 400
-        # stated = 356 → gap = |356-400|/356 = 12.36% — need 11%: 400*0.89=356
-        # Use stated=360 → derived=400 → gap = 40/360 = 11.11%
-        entry = {"food_name": "X", "calories": 360,
+        # stated=352, derived=400 → gap = 48/352 = 13.6% — within label tol
+        entry = {"food_name": "X", "calories": 352,
                  "protein": 100, "carbs": 0, "fats": 0,
                  "energy_source": "label"}
         out, warnings = sanitize_food_entry(dict(entry), portion_g=100)
-        # 11.11% < 12% label tolerance → preserved
-        assert out["calories"] == 360, f"label 11% should preserve, got {out['calories']}"
+        assert out["calories"] == 352, f"label 13% should preserve, got {out['calories']}"
         assert not any("reconcile_calories" in w for w in warnings)
 
-    def test_label_at_13pct_gap_overwritten(self):
-        # stated=350, derived=400 → gap = 50/350 = 14.28%
-        entry = {"food_name": "X", "calories": 350,
+    def test_label_at_35pct_gap_overwritten(self):
+        # stated=280, derived=400 → gap = 120/280 = 42.86% > 30% label ceiling
+        entry = {"food_name": "X", "calories": 280,
                  "protein": 100, "carbs": 0, "fats": 0,
                  "energy_source": "label"}
         out, warnings = sanitize_food_entry(dict(entry), portion_g=100)

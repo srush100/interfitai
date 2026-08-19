@@ -1648,3 +1648,12 @@ agent_communication:
       Deleted 3 dead entries: kettlebell romanian deadlift (1455), rowing machine intervals (1161), swiss ball leg curl (2403) - API search/fallback handles them now.
       Applied via single atomic scripted write with count assertions (per corruption incident lesson). Backend restarted (in-memory GIF cache cleared).
       VERIFIED: all 15 changed IDs return HTTP 200 with real GIF data (GIF89a magic bytes, 165-405KB) via /api/exercises/gif/{id}.
+
+
+  - agent: "main"
+    message: |
+      FIX 8 CLOSED — OPTION A: LABEL ENERGY IS GROUND TRUTH (2026-06):
+      Resolved the Fix-1 vs Fix-8 tension flagged in iteration_47. In `sanitize_food_entry` (backend/server.py:8208-8223) the label calorie tolerance widened from 12% → 30% "gross-error" safety net when `energy_source == "label"`. Legitimate food-specific-Atwater deltas (yogurt 62 vs 53 derived, milk, cereals) now flow through untouched, while truly misread labels (30%+ off the 4/4/9 sum) are still corrected.
+      TESTS UPDATED: tests/test_fix8_structured_portion.py ARCHETYPES yogurt values now expect the label-honored 62/112/124 (was reconciled 53/96/107); happy-path assertion widened to 118-130. tests/test_fix7_portion_scaling.py TestFix1ToleranceBranching renamed to reflect the new 30% policy; test_label_at_11pct_gap_preserved → test_label_at_15pct_gap_preserved; test_label_at_13pct_gap_overwritten → test_label_at_35pct_gap_overwritten.
+      RESULT: 16/17 Fix-8 tests pass. 120/121 across Fix-5/7/8 + nutrition-accuracy suites. Single remaining failure (`test_yogurt_hallucination_falls_back_to_reference`) is the pre-flagged _lookup_reference bug ('protein' longest-substring match beats 'yogurt' for "High Protein Yogurt") — deferred per user's "just option a only" scope; will be addressed as a separate lookup-table fix.
+      NO REGRESSIONS from the widened tolerance. Backend + expo restarted, health 200.
