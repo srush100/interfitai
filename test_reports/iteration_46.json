@@ -1,0 +1,39 @@
+{
+  "summary": "Fix 7 (portion-scaling guard + prompt rewrite + energy_source tolerance) fully verified. New pytest module test_fix7_portion_scaling.py adds 23 unit tests: 5 archetypes (yogurt, Youfoodz, beef mince, eggs, milk) exercising enforce_portion_scaling across per-serving misreads, per-100g misreads, correctly-scaled inputs, close-enough label energies, and grossly-wrong energy corrections; plus 8 no-op / edge-case tests (per_100g=None, all-zero, portion<=0, portion<0, impossible per_100g logs skip, correction log shape includes name+per_100g+X→Y deltas, protein_g/carbs_g/fat_g alias variants); plus 4 sanitize_food_entry Fix-1 tolerance-branching tests proving energy_source='label' honours 12% while 'derived'/missing honour 10%. Each archetype test runs the guard 5x and asserts identical output — determinism confirmed. Regression: total 104/104 pass across Fix7 (23) + nutrition-accuracy guard (58) + Fix5 egg-weight (23) in 20.68s. Zero regressions. Compact before/after table printed at end of Fix7 run for user's pre/post comparison (see test_zzz_print_before_after_table). Integration test against /food/log intentionally skipped — FoodLogRequest does NOT accept per_100g or energy_source fields (Pydantic strips unknowns), so enforce_portion_scaling is unreachable via /food/log; the review request explicitly acknowledged this is intentional (portion-scaling belongs to /food/analyze which reads labels). Fix-1 tolerance branching still works on any dict passed to sanitize_food_entry directly, verified by 4 dedicated unit tests.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fix7_portion_scaling.py",
+    "/app/backend/tests/test_nutrition_accuracy_guard.py",
+    "/app/backend/tests/test_fix5_egg_weight_and_ingredient_state.py",
+    "/app/test_reports/pytest/iteration_46_fix7.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py line 8347: enforce_portion_scaling uses `energy_source == 'label'` (case-sensitive). analyze_food_image already lowercases the incoming value (line 8547 `_energy_source = str(...).lower()`) so this works end-to-end, but any external caller passing 'LABEL' or 'Label' directly to the helper would fall through to the 10% derived tolerance. Non-blocking; consider lowercasing inside the helper for defence-in-depth.",
+    "server.py line 8363: correction stores `int(round(exp))` for calories and `round(exp, 2)` for macros. Egg archetype protein result is 29.23 (12.6 * 2.32 = 29.232) — this matches. Good.",
+    "server.py line 8332: rejects per_100g when protein/carbs/fats > 100. Calories >100 per 100g is legitimate (e.g. oil = 900cal/100g), so calories are correctly excluded from the ceiling check. Good.",
+    "server.py FoodLogRequest (line 3264) does not include `per_100g` or `energy_source` fields. This is fine per the review scope (portion-scaling is only for /food/analyze) but any future work that wants /food/log to honour a caller-provided energy_source will need those fields added. Documented as intentional.",
+    "Non-blocking (carried over): server.py still uses deprecated @app.on_event('shutdown') at lines 10880/10893; migrate to lifespan handlers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fix7_portion_scaling.py (NEW — 23 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (23/23 new Fix7 + 58/58 nutrition guard + 23/23 Fix5 = 104/104 in 20.68s)",
+    "frontend": "n/a (backend-only review request)"
+  },
+  "seed_data_creation": "None — Fix 7 tests are pure unit tests against sanitize_food_entry and enforce_portion_scaling. No DB writes, no HTTP calls, no seed data. Determinism proven by running each archetype 5x per call.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fix 7 is fully covered by test_fix7_portion_scaling.py. Re-run the full 104-test regression bundle with `pytest /app/backend/tests/test_fix7_portion_scaling.py /app/backend/tests/test_nutrition_accuracy_guard.py /app/backend/tests/test_fix5_egg_weight_and_ingredient_state.py -v` after any change to server.py `enforce_portion_scaling` (line 8274), `sanitize_food_entry` (line 8182), the vision prompt block starting at line 8395, or the analyze_food_image guard hookup at lines 8541-8573. If the main agent later adds `per_100g`/`energy_source` fields to FoodLogRequest and wires enforce_portion_scaling into /food/log, add an integration test class TestFoodLogPortionScaling to test_fix7_portion_scaling.py (existing tests use no DB fixtures). Compact before/after archetype table is emitted by test_zzz_print_before_after_table — run with `-s` to view.",
+  "rca_of_issue": "N/A — this iteration verifies newly-added Fix 7 deterministic portion-scaling guard. Root cause of the systemic defect (per user report): Vision model copied the label's per-serving row verbatim without applying the user's portion multiplier, producing 24% under-count on 180g yogurt scan (85 cal reported vs 112 cal correct). Fix: (a) prompt rewritten to demand explicit per_100g + portion_g fields + energy_source enum, (b) new pure-math enforce_portion_scaling helper computes expected = per_100g × portion_g/100 and overwrites any macro >10% off (12% for label-transcribed calories to accommodate Atwater deltas), (c) helper invoked in analyze_food_image after sanitize+retry, before quantity multiplier, (d) sanitize_food_entry Fix-1 tolerance widened to 12% when energy_source='label' so label calories aren't clobbered. All four fix legs verified: prompt strings present in server.py, helper deterministic across 5 trials × 5 archetypes, tolerance branching correct at 11%/13% boundary values, and the retry+guard+sanitize chain preserved in analyze_food_image."
+}

@@ -8205,10 +8205,15 @@ def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = N
     fname   = food_name or entry.get("food_name") or entry.get("name") or ""
 
     # ── Fix 1: deterministic calorie reconciliation ─────────────────────
+    # Label-transcribed energies (energy_source=="label") get a slightly wider
+    # 12% tolerance to accommodate legitimate food-specific-Atwater deltas
+    # (AU/EU labels exclude fibre from carbs and use per-food Atwater factors,
+    # so the printed energy can legitimately differ from 4/4/9 by a few %).
+    _cal_tol = 0.12 if str(entry.get("energy_source", "")).lower() == "label" else 0.10
     derived = protein * 4 + carbs * 4 + fats * 9
     if derived > 0:
         gap = abs(stated - derived) / max(stated, 1.0)
-        if gap > 0.10:
+        if gap > _cal_tol:
             corrected = round(derived)
             warnings.append(
                 f"reconcile_calories food='{fname}' stated={stated:.0f} derived={derived:.0f} → set {corrected}"
@@ -8266,6 +8271,108 @@ def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = N
 
     return entry, warnings
 
+def enforce_portion_scaling(
+    entry: dict,
+    per_100g: dict | None,
+    portion_g: float | None,
+    energy_source: str = "derived",
+) -> tuple[dict, list[str]]:
+    """DETERMINISTIC portion-scaling guard for label scans (Fix 7).
+
+    When the AI has read a nutrition panel it should return both the per-100g
+    (or per-100ml) column AND the final macros scaled to the user's portion.
+    Historically the model sometimes copies the per-serving row verbatim
+    without scaling, producing a 20–40% under- or over-count.
+
+    This helper computes `expected = per_100g × (portion_g / 100)` for every
+    macro and overwrites any actual value that's more than 10% off. It is a
+    hard maths check with no retry — prompt reinforcement alone doesn't beat
+    stochastic misreads. Every correction is logged with the product name and
+    both values so the real-world failure rate is measurable from logs.
+
+    Args:
+        entry: mutable dict with keys calories/protein/carbs/fats (mass or
+            "*_g" variants are also honoured).
+        per_100g: dict with the same macro keys giving per-100g values, or
+            None when the label had no per-100g column.
+        portion_g: numeric portion mass in grams (or ml for liquids).
+        energy_source: "label" if the AI transcribed a printed energy row —
+            in that case calories get a wider (12%) tolerance to accommodate
+            legitimate food-specific-Atwater deltas from the 4/4/9 sum.
+
+    Returns (entry, warnings). Never raises.
+    """
+    warnings: list[str] = []
+    if not isinstance(entry, dict) or not isinstance(per_100g, dict):
+        return entry, warnings
+    if not portion_g or portion_g <= 0:
+        return entry, warnings
+
+    def _f(d, key, default=0.0):
+        # Support both plain and *_g suffixes for interoperability
+        for k in (key, f"{key}_g"):
+            if k in d:
+                try:
+                    return float(d[k] or 0)
+                except (TypeError, ValueError):
+                    return float(default)
+        return float(default)
+
+    fname = entry.get("food_name") or entry.get("name") or "unknown"
+    ratio = portion_g / 100.0
+
+    # Reject nonsense per-100g values (e.g. all zeros, or macros>100 which is
+    # impossible per-100g) before using them as ground truth.
+    p100_cal = _f(per_100g, "calories")
+    p100_p   = _f(per_100g, "protein")
+    p100_c   = _f(per_100g, "carbs")
+    p100_f   = _f(per_100g, "fats")
+    if p100_cal <= 0 and p100_p <= 0 and p100_c <= 0 and p100_f <= 0:
+        return entry, warnings
+    if p100_p > 100 or p100_c > 100 or p100_f > 100:
+        logger.warning(
+            f"[nutrition-guard] portion_scaling_skip food='{fname}' per_100g impossible ({p100_p}/{p100_c}/{p100_f})"
+        )
+        return entry, warnings
+
+    # Compute expected scaled values from the per-100g reference
+    expected = {
+        "calories": p100_cal * ratio,
+        "protein":  p100_p   * ratio,
+        "carbs":    p100_c   * ratio,
+        "fats":     p100_f   * ratio,
+    }
+    # Widen calorie tolerance when the AI reports the energy row was
+    # transcribed from the label (Atwater deltas ≈ 2–8% are legitimate).
+    cal_tol = 0.12 if energy_source == "label" else 0.10
+    tolerances = {"calories": cal_tol, "protein": 0.10, "carbs": 0.10, "fats": 0.10}
+
+    def _canon(key):
+        # Prefer the canonical key, else the *_g variant
+        return key if key in entry else (f"{key}_g" if f"{key}_g" in entry else key)
+
+    corrections = {}
+    for macro, exp in expected.items():
+        canon = _canon(macro)
+        actual = _f(entry, macro)
+        denom = max(exp, 0.5)  # avoid divide-by-tiny for near-zero macros
+        gap = abs(actual - exp) / denom
+        if gap > tolerances[macro]:
+            corrections[canon] = (actual, exp)
+            # calories are stored as int elsewhere in the app
+            entry[canon] = int(round(exp)) if macro == "calories" else round(exp, 2)
+
+    if corrections:
+        details = " | ".join(f"{k}: {a:.1f} → {e:.1f}" for k, (a, e) in corrections.items())
+        warnings.append(
+            f"portion_scaling food='{fname}' portion={portion_g:.0f}g "
+            f"per_100g={{cal:{p100_cal},p:{p100_p},c:{p100_c},f:{p100_f}}} "
+            f"corrections: {details}"
+        )
+        for w in warnings:
+            logger.warning(f"[nutrition-guard] {w}")
+    return entry, warnings
+
 @api_router.post("/food/analyze", response_model=FoodEntry)
 async def analyze_food_image(request: FoodImageAnalyzeRequest):
     """Analyze food image using OpenAI Vision to identify food and estimate nutrition"""
@@ -8294,15 +8401,18 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
 
 NUTRITION LABEL RULES (apply whenever a panel is visible — the printed panel always overrides general knowledge):
 A. Identify serving size, units per serving, and servings per package. Many products define a serving as multiple units (e.g. "1 serving = 2 eggs" on an egg carton, "1 serving = 3 biscuits", "1 serving = 30g" on cereal). This is the most common source of 2× errors.
-B. Use ONE column only — the per-serving column. NEVER blend it with the per-100g column.
-C. Scale strictly to the quantity the user specified. Show the arithmetic in the reasoning field (e.g. "label: 1 serving = 118g = 2 eggs = 168cal; user specified 4 eggs = 2 servings = 336cal").
+B. Return TWO sets of numbers when the label prints them:
+   • the per-100g (or per-100ml) column, verbatim → `per_100g` field
+   • the final scaled values for the user's requested portion → the top-level `calories/protein/carbs/fats` fields
+   Never blend the two columns into one row.
+C. Scale strictly to the quantity the user specified. Show the arithmetic in the `reasoning` field (e.g. "label: 62 cal/100g; user specified 180g = 62 × 1.8 = 111.6 cal"). Return the numeric portion mass in grams in the `portion_g` field.
 D. Row mapping is exact:
    • carbs = ONLY the row labelled "Carbohydrate" (or "Total carbohydrate").
      NEVER take carbs from "Saturated", "Sugars", "Fibre", "Sodium", or any fat row.
    • protein = ONLY the "Protein" row.
    • fats = ONLY the "Fat, total" row (never "Saturated" or "Trans" alone).
    • A value shown as "<1.0g" is recorded as 1.0 or less (never blank).
-E. If energy is given only in kJ, convert: calories = kJ / 4.184.
+E. ENERGY IS TRANSCRIBED, NEVER DERIVED. If the label prints an energy value (kJ or Cal), copy it directly (converting kJ ÷ 4.184 if needed) and set `energy_source: "label"`. Do NOT compute calories from protein × 4 + carbs × 4 + fat × 9 when a label energy value is visible — Australian/EU labels use food-specific Atwater factors and exclude fibre from the carbohydrate row, so a small delta from the 4/4/9 sum is normal and correct. Only fall back to derived energy (setting `energy_source: "derived"`) when no energy row is legible at all.
 F. Cross-check front-of-pack claims (e.g. "65g PROTEIN") against the panel — they should agree.
 
 WHEN NO LABEL IS VISIBLE (prepared food, restaurant plate, etc.):
@@ -8311,16 +8421,17 @@ WHEN NO LABEL IS VISIBLE (prepared food, restaurant plate, etc.):
 3. If branding is visible (restaurant wrapper, chain cup, product box), use that brand's known values.
 4. Sum ALL identified items into ONE total covering the entire pictured serving.
 5. Restaurant portions are usually larger than home portions — be realistic, not conservative.
+6. Omit `per_100g` (set to null) and set `energy_source: "derived"`.
 
-USER CONTEXT: the user's additional context is the highest-priority correction — obey it exactly (e.g. "2 eggs", "half portion", "large size", "no dressing").
+USER CONTEXT: the user's additional context is the highest-priority correction — obey it exactly (e.g. "2 eggs", "half portion", "large size", "180g", "no dressing"). If they specify a portion in grams or ml, put that value into `portion_g`.
 
 FINAL SANITY CHECK — do this before responding:
-• calories should approximately equal protein*4 + carbs*4 + fats*9. If they don't reconcile, re-read the image (especially any label) and correct them.
+• When `per_100g` is set, verify each returned macro ≈ per-100g × (portion_g / 100) within 5%. Fix any that don't.
 • macro mass (protein + carbs + fats) must be less than or equal to the portion mass in grams. If they exceed it, you have misread a row.
 • calories per gram of food must fall between 0.1 (water/lettuce) and 9.0 (pure oil). Anything outside is impossible.
 
 Respond with ONLY valid JSON, no other text. Use this exact schema:
-{"food_name":"Name","serving_size":"1 serving","calories":300,"protein":25.0,"carbs":30.0,"fats":10.0,"fiber":5.0,"sugar":8.0,"sodium":400.0,"reasoning":"one-line working"}"""
+{"food_name":"Name","serving_size":"1 serving","portion_g":180,"calories":112,"protein":17.1,"carbs":6.1,"fats":0.36,"fiber":0,"sugar":6.1,"sodium":45,"per_100g":{"calories":62,"protein":9.5,"carbs":3.4,"fats":0.2},"energy_source":"label","reasoning":"label per-100g: 62cal/9.5P/3.4C/0.2F; user portion 180g → 62 × 1.8 = 111.6 → 112cal"}"""
         content = await call_claude_sonnet(
             system_message=vision_prompt,
             user_message=user_prompt,
@@ -8418,9 +8529,35 @@ Respond with ONLY valid JSON, no other text. Use this exact schema:
             logger.warning(f"Food analysis consistency check skipped: {_ve}")
         # Apply quantity multiplier
         qty = request.quantity if request.quantity > 0 else 1
-        
-        # Final deterministic sanitize — after any retry, force calories to
-        # reconcile with macros so no impossible entry ever hits the DB.
+
+        # Fix 7 — DETERMINISTIC portion-scaling guard.
+        # If the AI returned both a per-100g reference block and an explicit
+        # portion_g, verify that the final macros equal per-100g × portion/100
+        # within 10% (12% for label-transcribed calories). This is a pure-math
+        # post-check — no retry — because the failure mode (model copies
+        # per-serving values verbatim without scaling) is stochastic and prompt
+        # reinforcement alone doesn't fix it. Any correction is logged with
+        # product name + both values so real-world failure rate is measurable.
+        _per_100g = food_data.get("per_100g") if isinstance(food_data.get("per_100g"), dict) else None
+        _model_portion_g = 0.0
+        try:
+            _model_portion_g = float(food_data.get("portion_g") or 0)
+        except (TypeError, ValueError):
+            _model_portion_g = 0.0
+        _energy_source = str(food_data.get("energy_source") or "derived").lower()
+        _guard_portion_g = _model_portion_g or _extract_portion_grams(
+            food_data.get("serving_size", ""), food_data.get("food_name", "")
+        )
+        if _per_100g and _guard_portion_g > 0:
+            enforce_portion_scaling(
+                food_data, _per_100g, _guard_portion_g, energy_source=_energy_source
+            )
+
+        # Final deterministic sanitize — after any retry / scaling correction,
+        # force calories to reconcile with macros so no impossible entry ever
+        # hits the DB. For label-transcribed energy we accept a slightly wider
+        # gap (via energy_source consideration inside enforce_portion_scaling);
+        # here we run the last-line safety net (Fix 1 / 2 / 4).
         _scaled = {
             "food_name": food_data.get("food_name", "Unknown Food"),
             "serving_size": food_data.get("serving_size", "1 serving"),
@@ -8428,8 +8565,11 @@ Respond with ONLY valid JSON, no other text. Use this exact schema:
             "protein": float(food_data.get("protein", 0)) * qty,
             "carbs":   float(food_data.get("carbs", 0)) * qty,
             "fats":    float(food_data.get("fats", 0)) * qty,
+            "energy_source": _energy_source,  # honoured by sanitize Fix 1 tolerance
         }
-        _final_portion_g = _extract_portion_grams(_scaled["serving_size"], _scaled["food_name"]) * qty
+        _final_portion_g = (_guard_portion_g or _extract_portion_grams(
+            _scaled["serving_size"], _scaled["food_name"]
+        )) * qty
         sanitize_food_entry(_scaled, portion_g=_final_portion_g)
         
         food_entry = FoodEntry(
