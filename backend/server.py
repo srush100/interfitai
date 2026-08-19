@@ -8135,9 +8135,21 @@ def _norm_food_name(name: str) -> str:
 def _lookup_reference(food_name: str):
     """Return (cal, p, c, f) per 100g if the food matches an entry in
     INGREDIENT_MACROS, else None. Uses fuzzy substring matching so
-    'Organic Extra Lean Beef Mince 5%' still hits 'extra lean beef mince'."""
+    'Organic Extra Lean Beef Mince 5%' still hits 'extra lean beef mince'.
+
+    IMPORTANT: If the food name looks branded / composite / prepared
+    (anything containing a `_COMPOSITE_INDICATORS` token, or with too many
+    unrelated qualifiers), we return None instead of a wrong single-
+    ingredient match. This is what protects "Youfoodz Chicken Teriyaki"
+    from being force-matched to plain chicken breast."""
     if not food_name:
         return None
+    # Composite / branded product? The single-ingredient reference table is
+    # not a valid substitute for it, so we refuse to guess.
+    lower = food_name.lower()
+    for kw in _COMPOSITE_INDICATORS:
+        if _nutre.search(rf"\b{_nutre.escape(kw)}\b", lower):
+            return None
     normalized = _norm_food_name(food_name)
     if not normalized:
         return None
@@ -8160,6 +8172,86 @@ def _lookup_reference(food_name: str):
     if best_key:
         return INGREDIENT_MACROS[best_key]
     return None
+
+# ── Composite-product safety guard ─────────────────────────────────────
+# The reference table (INGREDIENT_MACROS) contains SINGLE INGREDIENT whole
+# foods. It must NEVER substitute nutrition for a branded / packaged /
+# composite product, because a substring match on the product name will
+# silently corrupt the total by hundreds of calories.
+#
+# Concrete failure that motivated this guard:
+#   "Youfoodz Chicken Teriyaki Meal" → _lookup_reference matched "chicken"
+#   → returned chicken-breast macros (165/31/0/3.6) → scaled to 430g
+#   → recorded 710 cal / 133g protein / 0g carbs / 15g fat.
+#   Correct value from the label: 718 / 44.9 / 86.5 / 19.9.
+#
+# Rule: reference fallback is only allowed for an EXACT normalised match
+# against this allow-list. Anything else → fail visibly with 422 and prompt
+# the user to try a clearer photo or enter manually.
+_SAFE_FALLBACK_FOODS = {
+    # Fruits (single whole item)
+    "apple", "banana", "orange", "pear", "peach", "plum", "kiwi", "mango",
+    "grapes", "strawberries", "blueberries", "raspberries", "watermelon",
+    "pineapple", "avocado",
+    # Vegetables (plain, single item)
+    "broccoli", "spinach", "kale", "carrot", "carrots", "tomato", "tomatoes",
+    "cucumber", "lettuce", "capsicum", "bell pepper", "zucchini",
+    "cauliflower", "sweet potato", "potato", "green beans",
+    # Grains / starches (plain, cooked)
+    "white rice", "brown rice", "rice", "oats", "oatmeal", "quinoa", "pasta",
+    "bread", "wholemeal bread",
+    # Proteins (plain, unseasoned)
+    "chicken breast", "chicken thigh", "egg", "eggs", "salmon", "tuna",
+    "sirloin steak", "beef mince", "extra lean beef mince", "lean beef mince",
+    "ground beef",
+    # Dairy (plain)
+    "milk", "greek yogurt", "greek yogurt plain", "cottage cheese", "butter",
+    "cheddar cheese",
+    # Nuts / legumes (plain)
+    "almonds", "peanut butter", "black beans", "chickpeas", "lentils",
+    # Fats
+    "olive oil",
+}
+
+# Words that flag a food name as branded / composite / prepared — even if
+# some tokens match a whole food, presence of any of these keywords means
+# we MUST NOT substitute a reference value.
+_COMPOSITE_INDICATORS = {
+    "meal", "ready", "readymade", "ready-made", "microwave", "microwaveable",
+    "frozen", "pack", "packet", "bar", "bars", "shake", "shakes", "drink",
+    "smoothie", "sauce", "curry", "stir", "fry", "burrito", "wrap", "pizza",
+    "burger", "sandwich", "roll", "pasta bake", "casserole", "soup", "stew",
+    "salad", "bowl", "protein bar", "protein shake", "protein powder",
+    "supplement", "muesli", "granola", "cereal", "yogurt drink",
+    # Brand tokens common in AU / global packaged foods
+    "youfoodz", "my muscle chef", "lite n easy", "weight watchers",
+    "healthy choice", "mccain", "birds eye", "sunrice", "kelloggs",
+    "nestle", "sanitarium", "vitasoy", "so good",
+}
+
+
+def _is_safe_reference_fallback(food_name: str) -> bool:
+    """Return True only when the food name is an unambiguous single-ingredient
+    whole food that is safe to substitute a reference value for.
+
+    Two hard rules (both must hold):
+      1. Contains NO composite / branded / prepared indicator word.
+      2. Its normalised form is an EXACT match to `_SAFE_FALLBACK_FOODS`
+         (no substring / fuzzy match — that's exactly how the Youfoodz-vs-
+         chicken-breast confusion happened).
+    """
+    if not food_name:
+        return False
+    lower = food_name.lower()
+    for kw in _COMPOSITE_INDICATORS:
+        # word-boundary match to avoid false positives (e.g. "peppermint"
+        # matching "pepper mint" — but here everything is a full word anyway)
+        if _nutre.search(rf"\b{_nutre.escape(kw)}\b", lower):
+            return False
+    n = _norm_food_name(food_name)
+    if not n:
+        return False
+    return n in _SAFE_FALLBACK_FOODS
 
 def _extract_portion_grams(serving_size: str, food_name: str = "") -> float:
     """Best-effort estimate of the portion mass in grams from a serving_size
@@ -8420,8 +8512,13 @@ def detect_hallucination(per_100g: dict, food_name: str) -> tuple[bool, dict | N
 
     Returns (is_hallucination, reference_tuple_or_None, max_divergence_ratio).
     A per-100g value that is more than 100% off a matched reference on ANY
-    macro is treated as a hallucination (product variation stays within ~50%
-    even across brands; 210% deltas like the yoghurt bug are invented).
+    macro is treated as a hallucination (product variation stays within ~90%
+    even across sub-types like whole vs skim milk or 95/5 vs 80/20 mince;
+    only truly invented values (e.g. 31g P / 100g yogurt) exceed 100%).
+
+    Note: `_lookup_reference` now returns None for composite / branded product
+    names, so this check only ever fires against single-ingredient references
+    where the comparison is semantically meaningful.
     """
     ref = _lookup_reference(food_name)
     if not ref or not isinstance(per_100g, dict):
@@ -8689,14 +8786,42 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                 except Exception as _re:
                     logger.error(f"Hallucination retry failed: {_re}")
 
-            # If still hallucinating after the retry, fall back to reference
+            # If still hallucinating after the retry, decide the safest exit:
+            #   • single-ingredient whole food (apple, chicken breast, milk, …)
+            #     → we can safely substitute the reference values
+            #   • branded / composite / prepared product (ready meal, bar,
+            #     shake, protein powder, ...) → the reference table has NO
+            #     usable substitute. A wrong number silently corrupts the
+            #     daily total; an honest failure costs the user ten seconds.
             if hallucinated and ref_tuple:
-                _per_100g = {
-                    "calories": ref_tuple[0], "protein": ref_tuple[1],
-                    "carbs":    ref_tuple[2], "fats":    ref_tuple[3],
-                }
-                _per_100g_source = "reference_fallback"
-                logger.warning(f"[nutrition-guard] hallucination_fallback_to_reference food='{food_name_raw}' per_100g={_per_100g}")
+                if _is_safe_reference_fallback(food_name_raw):
+                    _per_100g = {
+                        "calories": ref_tuple[0], "protein": ref_tuple[1],
+                        "carbs":    ref_tuple[2], "fats":    ref_tuple[3],
+                    }
+                    _per_100g_source = "reference_fallback"
+                    logger.warning(
+                        f"[nutrition-guard] hallucination_fallback_to_reference "
+                        f"food='{food_name_raw}' per_100g={_per_100g}"
+                    )
+                else:
+                    logger.warning(
+                        f"[nutrition-guard] composite_reject food='{food_name_raw}' "
+                        "hallucination detected but food is branded/composite — "
+                        "not in safe-fallback allowlist. Failing visibly."
+                    )
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error": "label_unreadable",
+                            "message": (
+                                "We couldn't read that label accurately. Try a "
+                                "closer, well-lit photo of the nutrition panel, "
+                                "or enter it manually."
+                            ),
+                            "food_name_guess": food_name_raw,
+                        },
+                    )
 
         if user_portion_g is not None:
             # STRUCTURED PATH — code owns the arithmetic.
