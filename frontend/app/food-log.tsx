@@ -502,28 +502,26 @@ export default function FoodLog() {
   };
 
   const [photoResult, setPhotoResult] = useState<any>(null);
-  const [portionG, setPortionG] = useState<string>('');  // legacy — kept for backward compat
-  // Fix 9 — structured portion input. User picks amount + unit; backend
-  // resolves to grams deterministically using the label's own serving_size_g
-  // and units_per_serving, so "4 eggs" on a "2 eggs per serving" label
-  // becomes exactly (4/2)×serving_size_g grams (no per-item guessing).
-  const [portionAmount, setPortionAmount] = useState<string>('');
-  const [portionUnit, setPortionUnit] = useState<'grams' | 'servings' | 'count'>('grams');
+  // Fix 9b — single natural-language portion input. User types "200 grams",
+  // "4 eggs", "1 serving", "2 slices" etc. Backend parses + resolves via the
+  // label deterministically, so "4 eggs" and "2 servings" on a 2-eggs-per-
+  // serving carton always yield the same total.
+  const [portionText, setPortionText] = useState<string>('');
   const analyzeFood = async () => {
     if (!capturedImage || !profile?.id) return;
     setAnalyzing(true);
     try {
-      // Portion is structured (amount + unit). The backend does the arithmetic
-      // deterministically — we never rely on the model to scale or convert.
-      const amt = parseFloat(portionAmount);
-      const hasAmount = !isNaN(amt) && amt > 0;
+      // Portion is a free-text description. Backend parses natural language
+      // ("4 eggs", "200 grams", "1 serving") and resolves against the label's
+      // own serving_size_g / units_per_serving. We never rely on the model
+      // to scale or convert.
+      const trimmed = portionText.trim();
       const response = await api.post('/food/analyze', {
         user_id: profile.id,
         image_base64: capturedImage,
         meal_type: selectedMealType,
         additional_context: additionalContext || undefined,
-        portion_amount: hasAmount ? amt : undefined,
-        portion_unit: hasAmount ? portionUnit : undefined,
+        portion_text: trimmed.length > 0 ? trimmed : undefined,
         quantity: quantity,
         preview: true,
       });
@@ -1392,7 +1390,7 @@ export default function FoodLog() {
                       ) : null}
 
                       <Text style={styles.photoResultHint}>
-                        Not right? Switch to grams / servings / items above and re-analyze — the app scales the label values exactly.
+                        Not right? Update the portion above (e.g. &quot;4 eggs&quot; or &quot;200 grams&quot;) and re-analyze.
                       </Text>
                     </View>
                     <TextInput
@@ -1441,49 +1439,27 @@ export default function FoodLog() {
                   </>
                 ) : (
                   <>
-                    {/* Structured portion input — the backend applies scaling deterministically.
-                        Three shapes: grams / servings / count (of items). The label's own
-                        serving_size_g and units_per_serving decide the conversion, so "4 eggs"
-                        on a "2 eggs per serving, 104g" label becomes exactly 208g. */}
+                    {/* Fix 9b — single natural-language portion input.
+                        User writes exactly what they mean: "200 grams", "4 eggs",
+                        "1 serving", "2 slices". Backend parses and resolves via
+                        the label's own serving_size_g / units_per_serving, so
+                        "4 eggs" and "2 servings" on a 2-eggs-per-serving carton
+                        always return the same numbers. */}
                     <View style={styles.portionRow}>
                       <Text style={styles.portionLabel}>Portion</Text>
                       <TextInput
                         style={styles.portionInput}
-                        placeholder={portionUnit === 'grams' ? 'e.g. 200' : portionUnit === 'servings' ? 'e.g. 2' : 'e.g. 4'}
+                        placeholder="e.g. 200 grams, 4 eggs, 1 serving"
                         placeholderTextColor={colors.textMuted}
-                        value={portionAmount}
-                        onChangeText={(t) => setPortionAmount(t.replace(/[^0-9.]/g, ''))}
-                        keyboardType="decimal-pad"
-                        maxLength={6}
+                        value={portionText}
+                        onChangeText={setPortionText}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        maxLength={60}
                       />
                     </View>
-                    <View style={styles.portionUnitRow}>
-                      {(['grams', 'servings', 'count'] as const).map((u) => (
-                        <TouchableOpacity
-                          key={u}
-                          style={[
-                            styles.portionUnitPill,
-                            portionUnit === u && styles.portionUnitPillActive,
-                          ]}
-                          onPress={() => setPortionUnit(u)}
-                        >
-                          <Text
-                            style={[
-                              styles.portionUnitPillText,
-                              portionUnit === u && styles.portionUnitPillTextActive,
-                            ]}
-                          >
-                            {u === 'grams' ? 'Grams' : u === 'servings' ? 'Servings' : 'Items'}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
                     <Text style={styles.portionHint}>
-                      {portionUnit === 'grams'
-                        ? 'Enter grams and the app scales from the label\u2019s per-100g values.'
-                        : portionUnit === 'servings'
-                          ? 'Enter number of servings; the app multiplies by the label\u2019s serving size.'
-                          : 'Enter number of items (eggs, slices, bars, ...) and the app converts using the label.'}
+                      Type any portion — grams, servings, or a count (eggs, slices, bars). The app converts it using the label.
                     </Text>
 
                     {/* Additional Context Input — free-text notes only */}
@@ -1506,9 +1482,7 @@ export default function FoodLog() {
                           setCapturedImage(null);
                           setPhotoResult(null);
                           setAdditionalContext('');
-                          setPortionG('');
-                          setPortionAmount('');
-                          setPortionUnit('grams');
+                          setPortionText('');
                           setQuantity(1);
                         }}
                       >
@@ -2271,34 +2245,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 6,
     fontStyle: 'italic',
-  },
-  portionUnitRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
-  },
-  portionUnitPill: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-  },
-  portionUnitPillActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  portionUnitPillText: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  portionUnitPillTextActive: {
-    color: colors.background,
-    fontWeight: '700',
   },
   labelReadBox: {
     marginTop: 12,

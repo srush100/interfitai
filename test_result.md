@@ -1685,3 +1685,12 @@ agent_communication:
       5) Response envelope now surfaces `label_serving_size_g`, `label_units_per_serving`, `label_unit_name`, `portion_source`, `portion_debug`.
       Frontend (food-log.tsx): replaced single "Portion (g)" input with amount input + 3-pill segmented control [Grams | Servings | Items]. "What we read" preview panel now shows label serving size + per-item breakdown (e.g. "Label serving: 104g (2 eggs → 52.0g each)" + "Your portion: 208g (count label)"). 422 handler recognizes both `label_unreadable` and `portion_unresolvable`.
       TESTS (backend/tests/test_fix9_portion_resolution.py — NEW, 22/22 pass) — covers user's exact regression checklist: 4 eggs → 208g → 297/25.4/2.7/20.6, 2 eggs → 104g → 149/12.7/1.4/10.3, 1 serving → 104g same, 150g → 215/18.3/2.0/14.9, yogurt 1 serving → 99/15.2/5.4/0.3, yogurt 200g → 124/19.0/6.8/0.4, meat 2 servings → 342/53.0/0/13.8, fallback + fail-visible + regression-guard + legacy compat. TOTAL: 146/146 pass across fix5/fix7/fix8/fix9 + nutrition-accuracy. Backend + expo restarted.
+
+
+  - agent: "main"
+    message: |
+      FIX 9b — SINGLE NATURAL-LANGUAGE PORTION INPUT (2026-06):
+      User feedback: the 3-pill segmented control was confusing. Replaced with a single free-text portion field. Any of these now work identically on the same egg carton: "200 grams", "4 eggs", "1 serving", "2 slices", "half a serving", "two eggs", "1 kg", "250 ml".
+      Backend: added parse_portion_text(text) pure function that normalises → (amount, unit_token). Handles word numbers, unit conversions (kg/ml/oz/lb → g), filler articles ("half a serving"), "of X" tails ("3 slices of bread"), bare numbers → grams, gibberish → None. Extended request with portion_text; analyze_food_image priority: portion_amount → portion_text → legacy portion_g. Unparseable text → 422 portion_unresolvable.
+      Frontend: removed segmented control + amount input; single "Portion" text input placeholder "e.g. 200 grams, 4 eggs, 1 serving".
+      TESTS: 24 new tests. KEY assertion `test_4_eggs_equals_2_servings` — "4 eggs" and "2 servings" MUST yield identical output on a 2-eggs-per-serving carton. Both → 208g / 297 cal / 25.4P / 2.7C / 20.6F ✓. Full parametrised suites for eggs, yogurt, meat, kg/ml/oz/lb conversions, word numbers, gibberish → 422. TOTAL: 171/171 pass, 1 xfailed documented. Backend + expo restarted.

@@ -347,3 +347,187 @@ async def test_legacy_portion_g_still_works(client, paid_user, monkeypatch):
     assert b["portion_g_applied"] == 200
     assert b["portion_source"] == "legacy"
     assert 118 <= b["calories"] <= 130
+
+
+
+# ─── Natural-language `portion_text` end-to-end ─────────────────────────
+
+class TestParsePortionText:
+    """Direct unit tests on the free-text parser."""
+
+    def test_basic_number_and_unit(self):
+        from server import parse_portion_text as p
+        assert p("200 grams") == (200.0, "grams")
+        assert p("200g") == (200.0, "grams")
+        assert p("200 g") == (200.0, "grams")
+        assert p("4 eggs") == (4.0, "egg")
+        assert p("4 egg") == (4.0, "egg")
+        assert p("1 slice") == (1.0, "slice")
+        assert p("3 slices") == (3.0, "slice")
+        assert p("2 servings") == (2.0, "servings")
+        assert p("1 serving") == (1.0, "servings")
+
+    def test_word_numbers(self):
+        from server import parse_portion_text as p
+        assert p("one serving") == (1.0, "servings")
+        assert p("two eggs") == (2.0, "egg")
+        assert p("half a serving") == (0.5, "servings")
+        assert p("an egg") == (1.0, "egg")
+        assert p("a serving") == (1.0, "servings")
+
+    def test_unit_conversions(self):
+        from server import parse_portion_text as p
+        assert p("1 kg") == (1000.0, "grams")
+        assert p("2 kg") == (2000.0, "grams")
+        assert p("250 ml") == (250.0, "grams")  # 1:1 for label scaling
+        assert p("1 l") == (1000.0, "grams")
+        # ounces / pounds
+        amt, unit = p("1 oz")
+        assert unit == "grams" and abs(amt - 28.35) < 0.1
+        amt, unit = p("1 lb")
+        assert unit == "grams" and abs(amt - 453.6) < 0.5
+
+    def test_bare_number_defaults_to_grams(self):
+        from server import parse_portion_text as p
+        assert p("200") == (200.0, "grams")
+        assert p("150.5") == (150.5, "grams")
+
+    def test_of_x_suffix_stripped(self):
+        from server import parse_portion_text as p
+        assert p("3 slices of bread") == (3.0, "slice")
+        assert p("2 cups of rice") == (2.0, "cup")
+
+    def test_empty_or_gibberish(self):
+        from server import parse_portion_text as p
+        assert p("") == (None, None)
+        assert p("gibberish") == (None, None)
+        assert p("no numbers here") == (None, None)
+
+    def test_zero_or_negative_rejected(self):
+        from server import parse_portion_text as p
+        assert p("0 grams") == (None, None)
+
+
+# ─── User's exact regression: "4 eggs" via portion_text ──────────────────
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text,exp_g,exp_cal,exp_p,exp_c,exp_f", [
+    ("4 eggs",       208, 297, 25.4, 2.7, 20.6),
+    ("2 eggs",       104, 149, 12.7, 1.4, 10.3),
+    ("1 egg",         52,  74,  6.3, 0.7,  5.1),  # 104/2 = 52g per egg
+    ("2 servings",   208, 297, 25.4, 2.7, 20.6),  # 2 × 104g
+    ("1 serving",    104, 149, 12.7, 1.4, 10.3),
+    ("150 grams",    150, 215, 18.3, 2.0, 14.9),
+    ("150g",         150, 215, 18.3, 2.0, 14.9),
+    ("half a serving", 52, 74,  6.3, 0.7,  5.1),
+    ("two eggs",     104, 149, 12.7, 1.4, 10.3),
+    ("four eggs",    208, 297, 25.4, 2.7, 20.6),
+])
+async def test_egg_carton_portion_text(client, paid_user, monkeypatch,
+                                        text, exp_g, exp_cal, exp_p, exp_c, exp_f):
+    """User writes free-text portion in the description box. Backend parses
+    and resolves via the label. '4 eggs' and '2 servings' MUST return the
+    same numbers on this label (2 eggs / serving)."""
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(EGG_CARTON_LABEL))
+    r = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "breakfast",
+        "portion_text": text,
+        "preview": True,
+    })
+    assert r.status_code == 200, r.text[:300]
+    b = r.json()
+    assert b["portion_g_applied"] == exp_g, (
+        f"'{text}' → portion_g={b['portion_g_applied']}, expected {exp_g}"
+    )
+    assert abs(b["calories"] - exp_cal) <= 2, f"'{text}' cal off: {b['calories']} vs {exp_cal}"
+    assert abs(b["protein"] - exp_p) <= 0.3, f"'{text}' protein off: {b['protein']} vs {exp_p}"
+    assert abs(b["carbs"]   - exp_c) <= 0.3
+    assert abs(b["fats"]    - exp_f) <= 0.3
+
+
+@pytest.mark.asyncio
+async def test_4_eggs_equals_2_servings(client, paid_user, monkeypatch):
+    """User's explicit requirement: '4 eggs' and '2 servings' must yield the
+    IDENTICAL result on a 2-eggs-per-serving carton."""
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(EGG_CARTON_LABEL, EGG_CARTON_LABEL))
+    r1 = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "breakfast",
+        "portion_text": "4 eggs", "preview": True,
+    })
+    r2 = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "breakfast",
+        "portion_text": "2 servings", "preview": True,
+    })
+    assert r1.status_code == 200 and r2.status_code == 200
+    a, b = r1.json(), r2.json()
+    assert a["portion_g_applied"] == b["portion_g_applied"] == 208, (
+        f"'4 eggs' ({a['portion_g_applied']}g) must equal '2 servings' ({b['portion_g_applied']}g) = 208g"
+    )
+    assert a["calories"] == b["calories"]
+    assert a["protein"]  == b["protein"]
+    assert a["carbs"]    == b["carbs"]
+    assert a["fats"]     == b["fats"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text,exp_g,exp_cal", [
+    ("1 serving", 160,  99),
+    ("2 servings", 320, 198),
+    ("200 grams", 200, 124),
+    ("200g", 200, 124),
+])
+async def test_yogurt_portion_text(client, paid_user, monkeypatch, text, exp_g, exp_cal):
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(YOGURT_LABEL))
+    r = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "snack",
+        "portion_text": text, "preview": True,
+    })
+    assert r.status_code == 200, r.text[:300]
+    b = r.json()
+    assert b["portion_g_applied"] == exp_g
+    assert abs(b["calories"] - exp_cal) <= 2
+
+
+@pytest.mark.asyncio
+async def test_meat_two_servings_via_text(client, paid_user, monkeypatch):
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(MEAT_LABEL))
+    r = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "dinner",
+        "portion_text": "2 servings", "preview": True,
+    })
+    assert r.status_code == 200
+    b = r.json()
+    assert b["portion_g_applied"] == 200
+    assert abs(b["calories"] - 342) <= 3
+
+
+@pytest.mark.asyncio
+async def test_gibberish_portion_text_fails_visibly(client, paid_user, monkeypatch):
+    """Non-parseable text → 422 portion_unresolvable with a friendly message."""
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(EGG_CARTON_LABEL))
+    r = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "breakfast",
+        "portion_text": "banana pancake", "preview": True,
+    })
+    assert r.status_code == 422
+    d = r.json().get("detail", {})
+    assert d.get("error") == "portion_unresolvable"
+    assert "portion" in d.get("message", "").lower() or "description" in d.get("message", "").lower()
+
+
+@pytest.mark.asyncio
+async def test_empty_portion_text_falls_to_best_effort(client, paid_user, monkeypatch):
+    """No portion text → 200 with best-effort per-serving values (no 422)."""
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(EGG_CARTON_LABEL))
+    r = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "breakfast",
+        "portion_text": "", "preview": True,
+    })
+    assert r.status_code == 200

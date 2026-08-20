@@ -3283,10 +3283,13 @@ class FoodImageAnalyzeRequest(BaseModel):
     additional_context: Optional[str] = None  # e.g., "no dressing", "large size"
     # Legacy: pre-computed grams. Kept for backward compat.
     portion_g: Optional[float] = None
-    # New structured portion input (portion_amount + portion_unit). The backend
-    # resolves this to grams deterministically using the LABEL's serving size /
-    # units_per_serving, so "4 eggs" on a "2 eggs per serving" label yields
-    # exactly (4/2)*serving_size_g grams — no unit-per-item guessing.
+    # Preferred: free-text natural-language portion. Backend parses and
+    # resolves via the label. Examples: "200 grams", "4 eggs", "2 servings",
+    # "1 slice", "3 chicken tenders".
+    portion_text: Optional[str] = None
+    # Alternative: pre-parsed portion (amount + unit). Used by tests / API
+    # clients that already have structured input; frontend now sends
+    # `portion_text` only.
     portion_amount: Optional[float] = None
     portion_unit: Optional[str] = None  # "grams" | "servings" | "count"
     quantity: int = 1
@@ -8373,6 +8376,103 @@ def resolve_portion_g(
     # 4. Unresolvable — caller can raise 422 or use best-effort path.
     return None, "unresolved", debug
 
+
+# ── Fix 9b: natural-language portion parser ─────────────────────────────
+# One text field on the UI. User types anything: "200 grams", "4 eggs",
+# "2 servings", "1 slice", "3 chicken tenders", "half a serving", "1.5 cups".
+# We normalise + tokenise, then hand off to resolve_portion_g.
+
+_PARSE_UNIT_GRAMS = {"g", "gm", "gms", "gram", "grams"}
+_PARSE_UNIT_ML    = {"ml", "milliliter", "millilitre", "milliliters", "millilitres"}
+_PARSE_UNIT_KG    = {"kg", "kgs", "kilo", "kilos", "kilogram", "kilograms"}
+_PARSE_UNIT_L     = {"l", "liter", "litre", "liters", "litres"}
+_PARSE_UNIT_OZ    = {"oz", "ounce", "ounces"}
+_PARSE_UNIT_LB    = {"lb", "lbs", "pound", "pounds"}
+_PARSE_UNIT_SERVING = {"serving", "servings", "srv", "srvs", "portion", "portions"}
+
+_PARSE_WORD_NUMBERS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "a": 1, "an": 1,
+    "half": 0.5, "quarter": 0.25, "third": 1 / 3,
+}
+
+
+def parse_portion_text(text: str) -> tuple[float | None, str | None]:
+    """Turn free-text like "4 eggs" / "200 grams" / "1 slice" / "2 servings"
+    into (amount, unit_token). unit_token is one of:
+      • "grams"           — user gave mass; use directly
+      • "servings"        — multiply by label serving_size_g
+      • a bare noun like "egg" / "slice" / "bar" — count of items; the resolver
+        prefers the label's units_per_serving, else _ITEM_FALLBACK_WEIGHTS_G
+
+    Returns (None, None) if no usable portion is found — caller falls to
+    the best-effort path.
+    """
+    if not text or not text.strip():
+        return None, None
+    s = _nutre.sub(r"\s+", " ", text.lower().strip())
+    # Strip "of X" tails ("4 slices of bread" → "4 slices")
+    s = _nutre.sub(r"\s+of\s+.*$", "", s)
+    s = s.rstrip(".,;:!?")
+
+    # Try numeric prefix first
+    m = _nutre.match(r"([\d]+(?:\.\d+)?|\.\d+)\s*(.*)$", s)
+    amount: float | None = None
+    rest: str = s
+    if m:
+        try:
+            amount = float(m.group(1))
+            rest = m.group(2).strip()
+        except ValueError:
+            amount = None
+
+    # Word-number prefix fallback: "one serving", "half a cup", "two eggs"
+    if amount is None:
+        tokens = s.split()
+        if tokens and tokens[0] in _PARSE_WORD_NUMBERS:
+            amount = float(_PARSE_WORD_NUMBERS[tokens[0]])
+            rest = " ".join(tokens[1:]).strip()
+        else:
+            return None, None
+
+    # Strip filler articles ("a"/"an"/"the") so "half a serving" → "serving"
+    rest = _nutre.sub(r"^(a|an|the)\s+", "", rest).strip()
+
+    if amount <= 0:
+        return None, None
+
+    # ── Classify the tail ──────────────────────────────────────────────
+    if not rest:
+        # Bare number → grams (safest default; matches label per-100g scaling)
+        return amount, "grams"
+
+    first_word = rest.split()[0].rstrip(".,;:")
+    first_word_sing = first_word.rstrip("s")
+
+    # Mass / volume units → normalised to grams
+    if first_word in _PARSE_UNIT_GRAMS or first_word_sing in _PARSE_UNIT_GRAMS:
+        return amount, "grams"
+    if first_word in _PARSE_UNIT_ML or first_word_sing in _PARSE_UNIT_ML:
+        return amount, "grams"  # ml treated 1:1 for label scaling
+    if first_word in _PARSE_UNIT_KG or first_word_sing in _PARSE_UNIT_KG:
+        return amount * 1000.0, "grams"
+    if first_word in _PARSE_UNIT_L or first_word_sing in _PARSE_UNIT_L:
+        return amount * 1000.0, "grams"
+    if first_word in _PARSE_UNIT_OZ or first_word_sing in _PARSE_UNIT_OZ:
+        return amount * 28.35, "grams"
+    if first_word in _PARSE_UNIT_LB or first_word_sing in _PARSE_UNIT_LB:
+        return amount * 453.6, "grams"
+
+    # Servings
+    if first_word in _PARSE_UNIT_SERVING or first_word_sing in _PARSE_UNIT_SERVING:
+        return amount, "servings"
+
+    # Otherwise treat as count of a specific unit; hand the raw noun
+    # (singular) to resolve_portion_g, which will try label first, then the
+    # _ITEM_FALLBACK_WEIGHTS_G table.
+    return amount, first_word_sing
+
 def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = None) -> tuple[dict, list[str]]:
     """Guardrail applied to every food entry before it's saved / returned.
 
@@ -8857,15 +8957,45 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
             _label_units_per_serving = None
         _label_unit_name = food_data.get("unit_name") or None
 
-        user_portion_g, _portion_source, _portion_debug = resolve_portion_g(
-            portion_amount=request.portion_amount,
-            portion_unit=request.portion_unit,
-            serving_size_g=_label_serving_g if _label_serving_g > 0 else None,
-            units_per_serving=_label_units_per_serving,
-            unit_name=_label_unit_name,
-            legacy_portion_g=request.portion_g,
-        )
-        if _portion_source not in ("none",):
+        user_portion_g, _portion_source, _portion_debug = None, "none", {}
+        # 1) Explicit structured input from API clients / tests
+        if request.portion_amount and request.portion_amount > 0:
+            user_portion_g, _portion_source, _portion_debug = resolve_portion_g(
+                portion_amount=request.portion_amount,
+                portion_unit=request.portion_unit,
+                serving_size_g=_label_serving_g if _label_serving_g > 0 else None,
+                units_per_serving=_label_units_per_serving,
+                unit_name=_label_unit_name,
+                legacy_portion_g=request.portion_g,
+            )
+        # 2) Natural-language portion text — the primary path from the app UI.
+        #    Parse "4 eggs" / "200 grams" / "1 serving" / "2 slices" / …
+        elif request.portion_text and request.portion_text.strip():
+            parsed_amt, parsed_unit = parse_portion_text(request.portion_text)
+            if parsed_amt and parsed_unit:
+                user_portion_g, _portion_source, _portion_debug = resolve_portion_g(
+                    portion_amount=parsed_amt,
+                    portion_unit=parsed_unit,
+                    serving_size_g=_label_serving_g if _label_serving_g > 0 else None,
+                    units_per_serving=_label_units_per_serving,
+                    unit_name=_label_unit_name,
+                    legacy_portion_g=None,
+                )
+                _portion_debug = {**_portion_debug, "raw_text": request.portion_text,
+                                  "parsed_amount": parsed_amt, "parsed_unit": parsed_unit}
+            else:
+                # Unparseable text (e.g. gibberish, empty after normalisation)
+                _portion_source = "text_unparseable"
+                _portion_debug = {"raw_text": request.portion_text}
+        # 3) Legacy pre-grams field
+        elif request.portion_g and request.portion_g > 0:
+            user_portion_g, _portion_source, _portion_debug = resolve_portion_g(
+                portion_amount=None, portion_unit=None,
+                serving_size_g=None, units_per_serving=None, unit_name=None,
+                legacy_portion_g=request.portion_g,
+            )
+
+        if _portion_source != "none":
             logger.info(
                 f"[portion-resolve] source={_portion_source} → portion_g={user_portion_g} "
                 f"debug={_portion_debug}"
@@ -9003,25 +9133,31 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                 "energy_source": "label" if _per_100g_source in ("label", "retry_label") else "derived",
             }
             _portion_applied = user_portion_g * qty
-        elif request.portion_amount and request.portion_amount > 0 and _portion_source in (
-            "servings_no_label", "unresolved"
-        ):
-            # User gave "2 servings" or "4 eggs" but the label didn't state the
-            # required reference (serving_size_g or units_per_serving) and no
-            # fallback unit mass matched. Fail visibly instead of silently
-            # under-scaling to one serving.
+        elif (
+            (request.portion_amount and request.portion_amount > 0)
+            or (request.portion_text and request.portion_text.strip())
+        ) and _portion_source in ("servings_no_label", "unresolved", "text_unparseable"):
+            # User gave "2 servings" / "4 eggs" / free text but we couldn't
+            # resolve it (label lacks the required reference, or the text
+            # didn't parse). Fail visibly instead of silently under-scaling.
             logger.warning(
-                f"[portion-resolve] unresolved_portion food='{food_name_raw}' source={_portion_source} debug={_portion_debug}"
+                f"[portion-resolve] unresolved_portion food='{food_name_raw}' "
+                f"source={_portion_source} debug={_portion_debug}"
+            )
+            msg = (
+                "Couldn't work out the portion size from your description. Try a "
+                "phrase like \"200 grams\", \"4 eggs\", or \"1 serving\" — or a "
+                "clearer photo of the nutrition panel."
+                if _portion_source == "text_unparseable"
+                else "Couldn't work out the portion size from that label. Try a "
+                     "clearer photo of the nutrition panel (including the serving-"
+                     "size line), enter the portion in grams, or log it manually."
             )
             raise HTTPException(
                 status_code=422,
                 detail={
                     "error": "portion_unresolvable",
-                    "message": (
-                        "Couldn't work out the portion size from that label. Try a "
-                        "clearer photo of the nutrition panel (including the serving-"
-                        "size line), enter the portion in grams, or log it manually."
-                    ),
+                    "message": msg,
                     "food_name_guess": food_name_raw,
                     "portion_source": _portion_source,
                 },
