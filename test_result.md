@@ -1694,3 +1694,16 @@ agent_communication:
       Backend: added parse_portion_text(text) pure function that normalises → (amount, unit_token). Handles word numbers, unit conversions (kg/ml/oz/lb → g), filler articles ("half a serving"), "of X" tails ("3 slices of bread"), bare numbers → grams, gibberish → None. Extended request with portion_text; analyze_food_image priority: portion_amount → portion_text → legacy portion_g. Unparseable text → 422 portion_unresolvable.
       Frontend: removed segmented control + amount input; single "Portion" text input placeholder "e.g. 200 grams, 4 eggs, 1 serving".
       TESTS: 24 new tests. KEY assertion `test_4_eggs_equals_2_servings` — "4 eggs" and "2 servings" MUST yield identical output on a 2-eggs-per-serving carton. Both → 208g / 297 cal / 25.4P / 2.7C / 20.6F ✓. Full parametrised suites for eggs, yogurt, meat, kg/ml/oz/lb conversions, word numbers, gibberish → 422. TOTAL: 171/171 pass, 1 xfailed documented. Backend + expo restarted.
+
+  - agent: "main"
+    message: |
+      FIX 9c — ONE DESCRIPTION BOX, MINIMAL RESULT CARD (2026-06):
+      User feedback: even the single portion field was one thing too many. Removed the "Portion" input entirely; users now write everything into a single description/notes box before scanning. After scan, the result card is stripped down to just the food name + serving size + calories/macros (no more "What we read" panel, no more "Not right?" hint).
+      Frontend (food-log.tsx):
+      1) Deleted `portionText` state and the separate portion input row + hint.
+      2) The notes box (`additionalContext`) is now the only text field. Placeholder updated to "Add a description (e.g. '4 eggs', '200 grams', '1 serving', 'no dressing')". Its value is sent as BOTH `portion_text` (so parse_portion_text can extract portion info) AND `additional_context` (so the AI still sees free-form hints like "no dressing"). If the text has no parseable portion mention, the parser returns None and the backend falls back to per-serving best-effort — never blocks.
+      3) Removed the "What we read" preview panel (`labelReadBox` + `labelReadTitle` + `labelReadLine`) and the trailing "Not right?" hint. Result card now shows just food_name, serving_size, and the macro summary line.
+      4) Retake reset handlers cleaned up (removed setPortionText/setPortionG refs).
+      Backend: no changes — the natural-language parser already handles this exact case. Verified with the existing 67/67-test suite (test_fix9_portion_resolution.py + test_fix8_structured_portion.py). The user's "4 eggs equals 2 servings" invariant continues to hold — the test asserts on portion_text end-to-end.
+      Backend + expo restarted.
+

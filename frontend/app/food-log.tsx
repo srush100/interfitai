@@ -502,25 +502,22 @@ export default function FoodLog() {
   };
 
   const [photoResult, setPhotoResult] = useState<any>(null);
-  // Fix 9b — single natural-language portion input. User types "200 grams",
-  // "4 eggs", "1 serving", "2 slices" etc. Backend parses + resolves via the
-  // label deterministically, so "4 eggs" and "2 servings" on a 2-eggs-per-
-  // serving carton always yield the same total.
-  const [portionText, setPortionText] = useState<string>('');
   const analyzeFood = async () => {
     if (!capturedImage || !profile?.id) return;
     setAnalyzing(true);
     try {
-      // Portion is a free-text description. Backend parses natural language
-      // ("4 eggs", "200 grams", "1 serving") and resolves against the label's
-      // own serving_size_g / units_per_serving. We never rely on the model
-      // to scale or convert.
-      const trimmed = portionText.trim();
+      // Fix 9c — one description box does it all. The user's notes are sent as
+      // BOTH `portion_text` (so parse_portion_text can extract "4 eggs" / "200
+      // grams" / "1 serving") AND `additional_context` (so the AI still sees
+      // free-form hints like "no dressing" / "large size"). If no portion is
+      // mentioned, the parser returns None and the backend falls back to
+      // per-serving best-effort — never blocks.
+      const trimmed = additionalContext.trim();
       const response = await api.post('/food/analyze', {
         user_id: profile.id,
         image_base64: capturedImage,
         meal_type: selectedMealType,
-        additional_context: additionalContext || undefined,
+        additional_context: trimmed.length > 0 ? trimmed : undefined,
         portion_text: trimmed.length > 0 ? trimmed : undefined,
         quantity: quantity,
         preview: true,
@@ -528,8 +525,7 @@ export default function FoodLog() {
       setPhotoResult(response.data);
     } catch (error: any) {
       const detail = error.response?.data?.detail;
-      // Structured 422 — label unreadable / portion unresolvable. Show clear
-      // message instead of silently accepting invented numbers.
+      // 422 handling — label unreadable / portion unresolvable → clear alert.
       if (
         detail &&
         typeof detail === 'object' &&
@@ -573,7 +569,6 @@ export default function FoodLog() {
       setCapturedImage(null);
       setPhotoResult(null);
       setAdditionalContext('');
-      setPortionG('');
       setQuantity(1);
       loadTodayLogs();
       setActiveTab('log');
@@ -1346,56 +1341,17 @@ export default function FoodLog() {
                 
                 {photoResult ? (
                   <>
-                    {/* AI result — review before logging */}
+                    {/* AI result — simple. Food name + macros. That's it. */}
                     <View style={styles.photoResultCard}>
                       <Text style={styles.photoResultName}>{photoResult.food_name}</Text>
                       <Text style={styles.photoResultServing}>{photoResult.serving_size}</Text>
                       <Text style={styles.photoResultMacros}>
                         {photoResult.calories} cal • {photoResult.protein}g P • {photoResult.carbs}g C • {photoResult.fats}g F
                       </Text>
-
-                      {/* Preview: show exactly what was read + portion applied so
-                          the user can spot a bad read at a glance. */}
-                      {photoResult.label_per_100g ? (
-                        <View style={styles.labelReadBox}>
-                          <Text style={styles.labelReadTitle}>What we read</Text>
-                          <Text style={styles.labelReadLine}>
-                            {photoResult.per_100g_source === 'reference_fallback'
-                              ? '⚠️ Label unreadable — used reference values'
-                              : photoResult.per_100g_source === 'derived_from_serving'
-                                ? 'Label (derived from per-serving)'
-                                : 'Label per-100g'}: {' '}
-                            {Math.round(photoResult.label_per_100g.calories)} cal / {' '}
-                            {photoResult.label_per_100g.protein}g P / {' '}
-                            {photoResult.label_per_100g.carbs}g C / {' '}
-                            {photoResult.label_per_100g.fats}g F
-                          </Text>
-                          {photoResult.label_serving_size_g ? (
-                            <Text style={styles.labelReadLine}>
-                              Label serving: {Math.round(photoResult.label_serving_size_g)}g
-                              {photoResult.label_units_per_serving && photoResult.label_unit_name
-                                ? ` (${photoResult.label_units_per_serving} ${photoResult.label_unit_name}${photoResult.label_units_per_serving > 1 ? 's' : ''} → ${(photoResult.label_serving_size_g / photoResult.label_units_per_serving).toFixed(1)}g each)`
-                                : ''}
-                            </Text>
-                          ) : null}
-                          {photoResult.portion_g_applied ? (
-                            <Text style={styles.labelReadLine}>
-                              Your portion: {Math.round(photoResult.portion_g_applied)}g
-                              {photoResult.portion_source && photoResult.portion_source !== 'grams' && photoResult.portion_source !== 'legacy' && photoResult.portion_source !== 'none'
-                                ? ` (${photoResult.portion_source.replace('_', ' ')})`
-                                : ''}
-                            </Text>
-                          ) : null}
-                        </View>
-                      ) : null}
-
-                      <Text style={styles.photoResultHint}>
-                        Not right? Update the portion above (e.g. &quot;4 eggs&quot; or &quot;200 grams&quot;) and re-analyze.
-                      </Text>
                     </View>
                     <TextInput
                       style={styles.contextInput}
-                      placeholder="Add a correction (e.g., 'half portion, no dressing')"
+                      placeholder="Add a correction (e.g., '4 eggs', 'half portion, no dressing')"
                       placeholderTextColor={colors.textMuted}
                       value={additionalContext}
                       onChangeText={setAdditionalContext}
@@ -1439,33 +1395,13 @@ export default function FoodLog() {
                   </>
                 ) : (
                   <>
-                    {/* Fix 9b — single natural-language portion input.
-                        User writes exactly what they mean: "200 grams", "4 eggs",
-                        "1 serving", "2 slices". Backend parses and resolves via
-                        the label's own serving_size_g / units_per_serving, so
-                        "4 eggs" and "2 servings" on a 2-eggs-per-serving carton
-                        always return the same numbers. */}
-                    <View style={styles.portionRow}>
-                      <Text style={styles.portionLabel}>Portion</Text>
-                      <TextInput
-                        style={styles.portionInput}
-                        placeholder="e.g. 200 grams, 4 eggs, 1 serving"
-                        placeholderTextColor={colors.textMuted}
-                        value={portionText}
-                        onChangeText={setPortionText}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        maxLength={60}
-                      />
-                    </View>
-                    <Text style={styles.portionHint}>
-                      Type any portion — grams, servings, or a count (eggs, slices, bars). The app converts it using the label.
-                    </Text>
-
-                    {/* Additional Context Input — free-text notes only */}
+                    {/* Fix 9c — one description box. User can write "4 eggs",
+                        "200 grams", "1 serving", "no dressing", "half portion" —
+                        anything. Backend parses portion info out of it AND passes
+                        the full text to the AI as context. Simplest possible UI. */}
                     <TextInput
                       style={styles.contextInput}
-                      placeholder="Notes (optional, e.g. 'no dressing', 'half portion')"
+                      placeholder="Add a description (e.g. '4 eggs', '200 grams', '1 serving', 'no dressing')"
                       placeholderTextColor={colors.textMuted}
                       value={additionalContext}
                       onChangeText={setAdditionalContext}
@@ -1482,7 +1418,6 @@ export default function FoodLog() {
                           setCapturedImage(null);
                           setPhotoResult(null);
                           setAdditionalContext('');
-                          setPortionText('');
                           setQuantity(1);
                         }}
                       >
