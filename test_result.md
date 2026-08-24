@@ -1707,3 +1707,25 @@ agent_communication:
       Backend: no changes — the natural-language parser already handles this exact case. Verified with the existing 67/67-test suite (test_fix9_portion_resolution.py + test_fix8_structured_portion.py). The user's "4 eggs equals 2 servings" invariant continues to hold — the test asserts on portion_text end-to-end.
       Backend + expo restarted.
 
+
+  - agent: "main"
+    message: |
+      FIX 10 — PHYSICAL-PLAUSIBILITY GATE + SPEED FIX (2026-06):
+      User reported photo scan returning "API error / can't read label" for a "Chicken & Bacon Macaroni" ready meal even though the label was legible. Backend logs showed the exact bug:
+        Model per_100g (149cal/13.1P/14.9C/3.9F) was CORRECT (Atwater P*4+C*4+F*9 = 149.3 = stated 149).
+        _lookup_reference("Chicken & Bacon Macaroni") substring-matched "chicken" → returned plain chicken breast (165/31/0/3.6).
+        detect_hallucination: 14.9g carbs vs 0g in chicken breast → 1490% divergence → false hallucination flag.
+        Composite-name reject fires → 422 label_unreadable.
+      Root cause: reference cross-check was second-guessing correctly-read labels for composite dishes.
+      Fix (backend/server.py):
+      1) Added `_is_physically_plausible_per_100g(per_100g)` — laws-of-physics-only check: no macro >100g/100g, mass sum ≤100g, calories 0-900, |cal - P*4-C*4-F*9| ≤ 30% of max. No reference table involved.
+      2) Gated `detect_hallucination` in analyze_food_image so it now only runs when the per-100g values are ALREADY physically implausible. Correctly-read labels for composite dishes flow through untouched (Chicken & Bacon Macaroni, ready meals, protein bars, mixed dishes — all fixed).
+      3) Relaxed the low-confidence bailout: `confidence: low` + physically plausible values → accept (AI hedging shouldn't 422 legible labels). `confidence: low` + implausible → 422 as before.
+      4) SPEED: consistency-retry no longer fires on reference_divergence-only warnings (saved ~4s of Claude latency per scan on composite dishes — the user's #1 complaint was slowness).
+      TESTS:
+      - Added `test_chicken_and_bacon_macaroni_records_label_correctly` — regression test for user's exact bug (must record 522 cal / 45.8 P / 52.2 C / 13.6 F, NOT 578/108/0/13 from chicken-breast substitution).
+      - Added `test_free_range_eggs_bad_read_still_falls_back_safely` — verifies the safety net still fires for physically-implausible egg reads (596 cal/100g).
+      - Added `test_low_confidence_but_plausible_still_accepted` — legible-but-hedged labels no longer 422.
+      - Updated `test_hallucination_retry_succeeds` + `test_fail_visibly_on_low_confidence` to use physically-implausible bad values (matches new gating semantics).
+      TOTAL: 174/174 pass across fix5/fix7/fix8/fix9/fix10 + nutrition-accuracy suites, 1 xfailed documented. Backend + expo restarted.
+

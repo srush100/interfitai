@@ -280,11 +280,15 @@ async def test_fail_visibly_when_no_per100g_and_non_gram_serving(client, paid_us
 
 @pytest.mark.asyncio
 async def test_fail_visibly_on_low_confidence(client, paid_user, monkeypatch):
+    """Low-confidence read + physically-implausible values → 422. If the AI
+    self-reports low confidence AND its per-100g fails Atwater (P*4+C*4+F*9),
+    we fail visibly — never log invented numbers."""
     payload = {
         "food_name": "Blurry Food",
         "serving_size": "100g",
-        "per_100g": {"calories": 100, "protein": 5, "carbs": 10, "fats": 3},
-        "calories": 100, "protein": 5, "carbs": 10, "fats": 3,
+        # 800cal but only 5P+10C+3F → derived 87cal → gap 89% → IMPLAUSIBLE
+        "per_100g": {"calories": 800, "protein": 5, "carbs": 10, "fats": 3},
+        "calories": 800, "protein": 5, "carbs": 10, "fats": 3,
         "confidence": "low", "energy_source": "label",
     }
     monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(payload))
@@ -295,6 +299,26 @@ async def test_fail_visibly_on_low_confidence(client, paid_user, monkeypatch):
     assert r.status_code == 422
     detail = r.json().get("detail", {})
     assert detail.get("error") == "label_unreadable"
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_but_plausible_still_accepted(client, paid_user, monkeypatch):
+    """Low confidence but Atwater-consistent values → accept. The AI hedging
+    on confidence shouldn't 422 legible labels."""
+    payload = {
+        "food_name": "Standard Food",
+        "serving_size": "100g",
+        # 100cal with 5P+10C+3F → derived 87cal → gap 13% → PLAUSIBLE
+        "per_100g": {"calories": 100, "protein": 5, "carbs": 10, "fats": 3},
+        "calories": 100, "protein": 5, "carbs": 10, "fats": 3,
+        "confidence": "low", "energy_source": "label",
+    }
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(payload))
+    r = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "snack", "portion_g": 200, "preview": True,
+    })
+    assert r.status_code == 200, r.text[:300]
 
 
 # ─── 8. No-portion best-effort path preserved ────────────────────────────
@@ -401,13 +425,15 @@ async def test_archetype_determinism_5x(client, paid_user, monkeypatch,
 
 @pytest.mark.asyncio
 async def test_hallucination_retry_succeeds(client, paid_user, monkeypatch):
-    """First call: bad values. Retry with reference anchor: good values.
-    Must use retry values, not fallback to reference."""
+    """First call: physically-implausible values (Atwater mismatch → triggers
+    reference check and retry). Retry: good values. Must use retry values,
+    not fallback to reference."""
+    # Bad: 400cal with only 10P+4C+1F → derived P*4+C*4+F*9 = 65cal → gap 84% → IMPLAUSIBLE
     bad = {
         "food_name": "Greek Yogurt",
         "serving_size": "100g",
-        "per_100g": {"calories": 138, "protein": 31, "carbs": 1, "fats": 1},
-        "calories": 138, "protein": 31, "carbs": 1, "fats": 1,
+        "per_100g": {"calories": 400, "protein": 10, "carbs": 4, "fats": 1},
+        "calories": 400, "protein": 10, "carbs": 4, "fats": 1,
         "confidence": "high", "energy_source": "label",
     }
     good = {
@@ -417,7 +443,6 @@ async def test_hallucination_retry_succeeds(client, paid_user, monkeypatch):
         "calories": 60, "protein": 10, "carbs": 4, "fats": 0.4,
         "confidence": "high", "energy_source": "label",
     }
-    # Call 1: initial vision. May also do consistency retry. Let's give 2 bad then good.
     monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(bad, bad, good))
     r = await client.post("/api/food/analyze", json={
         "user_id": paid_user, "image_base64": TEST_IMAGE,

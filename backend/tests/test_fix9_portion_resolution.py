@@ -531,3 +531,85 @@ async def test_empty_portion_text_falls_to_best_effort(client, paid_user, monkey
         "portion_text": "", "preview": True,
     })
     assert r.status_code == 200
+
+
+
+
+# ─── User's real-world regression: composite dish with "chicken" in name ──
+
+@pytest.mark.asyncio
+async def test_chicken_and_bacon_macaroni_records_label_correctly(client, paid_user, monkeypatch):
+    """User's REAL bug from the field: scanning a "Chicken & Bacon Macaroni"
+    ready meal returned API error 422 even though the AI read the label
+    correctly. Root cause: _lookup_reference substring-matched "chicken" →
+    returned plain chicken breast (165/31/0/3.6), and any composite dish
+    with pasta has 14.9g carbs vs 0g in chicken breast → 1490% divergence →
+    false hallucination flag → composite_reject → 422.
+
+    Fix: when the label read passes physical plausibility (Atwater within
+    30%, no macro over 100g/100g), we TRUST it and skip the reference
+    check entirely. Reference cross-check only runs on already-suspect data.
+    """
+    macaroni = {
+        "food_name": "Chicken & Bacon Macaroni",
+        "serving_size": "350g",
+        "serving_size_g": 350,
+        "units_per_serving": None,
+        "unit_name": None,
+        "per_100g": {"calories": 149, "protein": 13.1, "carbs": 14.9, "fats": 3.9},
+        "calories": 522, "protein": 45.8, "carbs": 52.2, "fats": 13.6,
+        "confidence": "high", "energy_source": "label",
+    }
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(macaroni))
+    r = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "lunch",
+        "portion_text": "1 serving",  # user's exact input
+        "preview": True,
+    })
+    assert r.status_code == 200, f"REGRESSION: composite dish rejected. {r.text[:400]}"
+    b = r.json()
+    assert b["hallucination_fallback"] is False, "must NOT have swapped in chicken breast"
+    assert b["per_100g_source"] == "label"
+    # 149cal/100g × 350g = 521 cal (label-honored)
+    assert 510 <= b["calories"] <= 535, f"cal off: {b['calories']}"
+    assert 44 <= b["protein"] <= 48, f"protein was reading 108g under old bug: {b['protein']}"
+    assert 50 <= b["carbs"] <= 55, f"carbs must not be 0 (chicken-breast substitution): {b['carbs']}"
+    assert 12 <= b["fats"] <= 15
+
+
+@pytest.mark.asyncio
+async def test_free_range_eggs_bad_read_still_falls_back_safely(client, paid_user, monkeypatch):
+    """When the AI hallucinates a WILDLY WRONG calorie value on eggs
+    (e.g. 596cal/100g), the physical-plausibility check fires (Atwater
+    mismatch), we retry, and if the retry still fails, fall back to the
+    eggs reference (since "Free Range Eggs" contains the safe token "eggs")."""
+    bad = {
+        "food_name": "Free Range Eggs",
+        "serving_size": "104g (2 eggs)",
+        "serving_size_g": 104,
+        "units_per_serving": 2,
+        "unit_name": "egg",
+        # 596cal but 12.1P/1.3C/9.9F → derived only ~143cal → 76% Atwater gap → IMPLAUSIBLE
+        "per_100g": {"calories": 596, "protein": 12.1, "carbs": 1.3, "fats": 9.9},
+        "calories": 620, "protein": 12.7, "carbs": 1.4, "fats": 10.3,
+        "confidence": "high", "energy_source": "label",
+    }
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(bad, bad, bad))
+    r = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE,
+        "meal_type": "breakfast",
+        "portion_text": "4 eggs",
+        "preview": True,
+    })
+    # Either the retry produced a plausible read (200), or we fell back to
+    # eggs reference values (200 with per_100g_source == "reference_fallback"),
+    # or we honestly failed (422). All three are acceptable — none silently
+    # writes 596cal/100g to the log.
+    if r.status_code == 200:
+        b = r.json()
+        # Whatever route we took, the final per-100g must be plausible
+        cal_per_g = b["calories"] / max(b["portion_g_applied"] or 1, 1)
+        assert cal_per_g < 5.0, f"still reporting an impossible {cal_per_g:.1f} cal/g"
+    else:
+        assert r.status_code == 422

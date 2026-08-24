@@ -8142,6 +8142,47 @@ def _norm_food_name(name: str) -> str:
     n = _nutre.sub(r"\s+", " ", n).strip()
     return n
 
+def _is_physically_plausible_per_100g(per_100g: dict) -> tuple[bool, str]:
+    """Physical-laws-only plausibility check for a per-100g nutrition block.
+    No reference table involved — this is Atwater + basic conservation.
+
+    Returns (ok, reason). Rejects impossible values no legitimate food label
+    could produce:
+      • any macro > 100g per 100g
+      • protein+carbs+fats mass exceeds 100g
+      • calories ∉ [0, 900] (900 = pure fat upper bound)
+      • calories vs P*4+C*4+F*9 diverges more than 30% (widened for label
+        food-specific Atwater factors; catches 596cal/100g claimed for eggs
+        where derived is 143)
+
+    This is the SAFETY NET for correctly-read labels — it never false-positives
+    on legitimate composite dishes (which pass 4/4/9 perfectly) but catches
+    the model returning fabricated calorie numbers on a real label."""
+    if not isinstance(per_100g, dict):
+        return False, "not_a_dict"
+    try:
+        cal = float(per_100g.get("calories") or 0)
+        p   = float(per_100g.get("protein")  or 0)
+        c   = float(per_100g.get("carbs")    or 0)
+        f   = float(per_100g.get("fats")     or 0)
+    except (TypeError, ValueError):
+        return False, "non_numeric"
+    if p < 0 or c < 0 or f < 0 or cal < 0:
+        return False, "negative"
+    if p > 100 or c > 100 or f > 100:
+        return False, f"macro_over_100g p={p} c={c} f={f}"
+    if p + c + f > 100.5:  # tiny slack for rounding
+        return False, f"mass_sum_over_100g sum={p+c+f:.1f}"
+    if cal > 900:
+        return False, f"cal_over_900 cal={cal}"
+    derived = p * 4 + c * 4 + f * 9
+    if cal > 0 and derived > 0:
+        gap = abs(cal - derived) / max(cal, derived, 1.0)
+        if gap > 0.30:  # 30% is generous for legit Atwater variance
+            return False, f"cal_atwater_mismatch stated={cal:.0f} derived={derived:.0f} gap={gap:.0%}"
+    return True, "ok"
+
+
 def _lookup_reference(food_name: str):
     """Return (cal, p, c, f) per 100g if the food matches an entry in
     INGREDIENT_MACROS, else None. Uses fuzzy substring matching so
@@ -8876,32 +8917,47 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
             else:
                 raise HTTPException(status_code=500, detail="Failed to parse food analysis. Please try with a clearer image.")
 
-        # Low-confidence bail-out — if the model self-reports it couldn't read
-        # the label clearly, we FAIL VISIBLY rather than log invented numbers.
-        # Silently returning plausible-looking macros corrupts daily totals
-        # with no signal that anything went wrong.
+        # Low-confidence bail-out — only fail visibly when the model reports
+        # low confidence AND its per-100g values are ALSO physically
+        # implausible. If the model was cautious but the numbers themselves
+        # pass Atwater/mass conservation, trust them (this stops the endpoint
+        # 422'ing legible labels just because the AI hedged on confidence).
         if str(food_data.get("confidence", "high")).lower() == "low":
-            logger.warning(f"[nutrition-guard] low_confidence_scan food_data={food_data}")
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": "label_unreadable",
-                    "message": "Couldn't read that label clearly. Try a closer, well-lit photo of the nutrition panel, or enter the food manually.",
-                    "food_name_guess": food_data.get("food_name"),
-                },
-            )
+            _low_p100 = food_data.get("per_100g") if isinstance(food_data.get("per_100g"), dict) else None
+            if not _low_p100:
+                _low_p100 = derive_per_100g(food_data, _extract_portion_grams(
+                    food_data.get("serving_size", ""), food_data.get("food_name", "")))
+            _low_ok, _low_reason = _is_physically_plausible_per_100g(_low_p100 or {})
+            if not _low_ok:
+                logger.warning(f"[nutrition-guard] low_confidence_scan+implausible reason={_low_reason} food_data={food_data}")
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "label_unreadable",
+                        "message": "Couldn't read that label clearly. Try a closer, well-lit photo of the nutrition panel, or enter the food manually.",
+                        "food_name_guess": food_data.get("food_name"),
+                    },
+                )
+            logger.info(f"[nutrition-guard] low_confidence_but_plausible food='{food_data.get('food_name')}' — accepting")
         
         # ── Nutrition-accuracy guard: Fix 1 + 2 + 4 (internal-consistency retry) ──
-        # Retry once if the AI's first reading is either internally inconsistent
-        # (Fix 1) OR physically implausible / far from a known reference
-        # (Fix 2 + Fix 4). Whichever attempt has fewer warnings wins.
+        # Retry once if the AI's first reading is internally inconsistent
+        # (Fix 1 Atwater) OR mass-conservation-violating (Fix 2). We do NOT
+        # retry on reference-divergence-only warnings (Fix 4) because those
+        # false-positive on legitimate composite dishes ("Chicken & Bacon
+        # Macaroni" vs plain chicken breast reference has 15g carb delta and
+        # trips this every time). A pointless retry costs ~4s of Claude
+        # latency per scan — the user's #1 complaint is speed.
         try:
             portion_g_for_check = _extract_portion_grams(food_data.get("serving_size", ""),
                                                         food_data.get("food_name", ""))
             _, first_warnings = sanitize_food_entry(dict(food_data), portion_g=portion_g_for_check)
-            if first_warnings:
+            # Only truly-actionable warnings warrant a retry.
+            _retry_worthy = [w for w in first_warnings
+                             if not str(w).startswith("reference_divergence")]
+            if _retry_worthy:
                 import re as _re2
-                complaint_lines = "\n".join(f"- {w}" for w in first_warnings)
+                complaint_lines = "\n".join(f"- {w}" for w in _retry_worthy)
                 retry_raw = await call_claude_sonnet(
                     system_message=vision_prompt,
                     user_message=(
@@ -9015,14 +9071,25 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                 _per_100g = derived
                 _per_100g_source = "derived_from_serving"
 
-        # Hallucination check on per_100g against reference table (Fix 4 escalation).
-        # A per-100g value >100% off a matched reference is invented, not a
-        # product variation. Retry once with the reference as anchor; if the
-        # retry still hallucinates, fall back to the reference values for the
-        # user's portion.
+        # Hallucination check on per_100g against reference table.
+        #
+        # DESIGN: A correctly-read label of a COMPOSITE dish (e.g. "Chicken &
+        # Bacon Macaroni" 149cal/13P/14.9C/3.9F per 100g) will ALWAYS diverge
+        # wildly from a single-ingredient reference — pasta dish vs plain
+        # chicken breast has 14.9x more carbs → 1490% divergence and a false
+        # hallucination flag. We therefore ONLY run the reference check when
+        # the per-100g values are ALREADY physically implausible (impossible
+        # macros, calorie/Atwater mismatch, macro mass > 100g/100g). Physically
+        # valid label reads are TRUSTED without reference cross-check.
         hallucinated = False
         ref_tuple = None
-        if _per_100g:
+        physically_ok, plaus_reason = _is_physically_plausible_per_100g(_per_100g) if _per_100g else (False, "no_per_100g")
+
+        if _per_100g and not physically_ok:
+            logger.warning(
+                f"[nutrition-guard] implausible_read food='{food_name_raw}' reason={plaus_reason} "
+                f"per_100g={_per_100g}"
+            )
             hallucinated, ref_tuple, max_div = detect_hallucination(_per_100g, food_name_raw)
             if hallucinated and ref_tuple:
                 logger.warning(
@@ -9055,13 +9122,16 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                         if not rd_p100:
                             rd_p100 = derive_per_100g(rd, _extract_portion_grams(
                                 rd.get("serving_size", ""), rd.get("food_name", "")))
+                        # Retry passes if it becomes physically plausible OR the
+                        # divergence relaxes below hallucination threshold.
+                        rd_ok, _ = _is_physically_plausible_per_100g(rd_p100 or {})
                         h2, _, div2 = detect_hallucination(rd_p100 or {}, food_name_raw)
-                        if rd_p100 and not h2:
+                        if rd_p100 and (rd_ok or not h2):
                             food_data = rd
                             _per_100g = rd_p100
                             _per_100g_source = "retry_label" if rd.get("per_100g") else "retry_derived"
                             hallucinated = False
-                            logger.info(f"[nutrition-guard] hallucination_retry_accepted food='{food_name_raw}' new_max_div={div2:.0%}")
+                            logger.info(f"[nutrition-guard] hallucination_retry_accepted food='{food_name_raw}' new_max_div={div2:.0%} plausible={rd_ok}")
                         else:
                             logger.error(f"[nutrition-guard] hallucination_persists food='{food_name_raw}' — falling back to reference")
                 except Exception as _re:
@@ -9070,10 +9140,7 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
             # If still hallucinating after the retry, decide the safest exit:
             #   • single-ingredient whole food (apple, chicken breast, milk, …)
             #     → we can safely substitute the reference values
-            #   • branded / composite / prepared product (ready meal, bar,
-            #     shake, protein powder, ...) → the reference table has NO
-            #     usable substitute. A wrong number silently corrupts the
-            #     daily total; an honest failure costs the user ten seconds.
+            #   • branded / composite / prepared product → fail visibly.
             if hallucinated and ref_tuple:
                 if _is_safe_reference_fallback(food_name_raw):
                     _per_100g = {
@@ -9096,13 +9163,25 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                         detail={
                             "error": "label_unreadable",
                             "message": (
-                                "We couldn't read that label accurately. Try a "
+                                "Couldn't read that label accurately. Try a "
                                 "closer, well-lit photo of the nutrition panel, "
                                 "or enter it manually."
                             ),
                             "food_name_guess": food_name_raw,
                         },
                     )
+        elif _per_100g:
+            # Physically plausible read — log a soft note if the reference is
+            # far off (useful for debugging drift) but DO NOT block or replace.
+            try:
+                _, _ref, _div = detect_hallucination(_per_100g, food_name_raw)
+                if _ref and _div > 1.0:
+                    logger.info(
+                        f"[nutrition-guard] plausible_read_ignoring_reference food='{food_name_raw}' "
+                        f"div={_div:.0%} per_100g={_per_100g} — trusting label over reference for composite/branded dish"
+                    )
+            except Exception:
+                pass
 
         if user_portion_g is not None:
             # STRUCTURED PATH — code owns the arithmetic.
