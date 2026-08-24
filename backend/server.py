@@ -775,7 +775,17 @@ CACHED_EXERCISE_GIFS = {
     "dumbbell calf raise": "1373",
     "dumbbell leg curl": "0331",        # dumbbell lying leg curl
     "dumbbell pullover": "0375",        # dumbbell pullover
-    "overhead dumbbell extension": "0340",  # dumbbell lying extension
+    # Fix: 0340 was actually "dumbbell lying hammer press" (a CHEST exercise).
+    # The correct skull-crusher-style movement is 0351 "dumbbell lying triceps
+    # extension" (two-arm dumbbell skullcrusher). Also alias the common
+    # spellings so meal-plan / workout AI variations all hit the right GIF.
+    "overhead dumbbell extension":       "0351",  # dumbbell lying triceps extension (skullcrusher)
+    "dumbbell skullcrusher":             "0351",
+    "dumbbell skull crusher":            "0351",
+    "dumbbell skullcrushers":            "0351",
+    "dumbbell skull crushers":           "0351",
+    "dumbbell lying triceps extension":  "0351",
+    "lying dumbbell triceps extension":  "0351",
     "chest supported row": "0327",
     "bent over rear delt raise": "0380",   # dumbbell rear lateral raise
 

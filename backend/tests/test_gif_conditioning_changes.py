@@ -77,6 +77,31 @@ class TestStaticCodeVerification:
         assert '"side plank": "1775"' not in content, \
             "side plank must not map to old ID 1775"
 
+    def test_overhead_dumbbell_extension_maps_to_dumbbell_lying_skullcrusher(self):
+        """User bug: 'overhead dumbbell extension' was mapped to 0340 which is
+        actually 'dumbbell lying hammer press' (a CHEST exercise). The correct
+        movement is 0351 'dumbbell lying triceps extension' (dumbbell skull
+        crusher). Also lock in all common spellings as aliases."""
+        server_path = os.path.join(os.path.dirname(__file__), '..', 'server.py')
+        with open(server_path, 'r') as f:
+            content = f.read()
+        for alias in (
+            "overhead dumbbell extension",
+            "dumbbell skullcrusher",
+            "dumbbell skull crusher",
+            "dumbbell skullcrushers",
+            "dumbbell skull crushers",
+            "dumbbell lying triceps extension",
+            "lying dumbbell triceps extension",
+        ):
+            assert f'"{alias}":' in content and f'"0351"' in content, \
+                f'"{alias}" must be present in CACHED_EXERCISE_GIFS mapped to 0351'
+        # 0340 must NOT be the mapping for overhead dumbbell extension anymore
+        assert '"overhead dumbbell extension": "0340"' not in content, \
+            "must not use 0340 for overhead dumbbell extension (that GIF is a chest press)"
+
+
+
     def test_ski_erg_added_to_cache(self):
         """Change 6: ski erg 2142 added to CACHED_EXERCISE_GIFS"""
         server_path = os.path.join(os.path.dirname(__file__), '..', 'server.py')

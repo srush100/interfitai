@@ -1729,3 +1729,15 @@ agent_communication:
       - Updated `test_hallucination_retry_succeeds` + `test_fail_visibly_on_low_confidence` to use physically-implausible bad values (matches new gating semantics).
       TOTAL: 174/174 pass across fix5/fix7/fix8/fix9/fix10 + nutrition-accuracy suites, 1 xfailed documented. Backend + expo restarted.
 
+
+
+  - agent: "main"
+    message: |
+      FIX 11 — WRONG GIF FOR "OVERHEAD DUMBBELL EXTENSION" (2026-06):
+      User reported the exercise GIF was showing the wrong movement. Root cause: CACHED_EXERCISE_GIFS mapped "overhead dumbbell extension" → 0340 with a comment claiming "dumbbell lying extension", but 0340 is actually "dumbbell lying HAMMER PRESS" (a chest exercise). Verified against live ExerciseDB API.
+      Fix (backend/server.py):
+      - Remapped "overhead dumbbell extension" → 0351 ("dumbbell lying triceps extension" = dumbbell skullcrusher).
+      - Added six alias keys so any AI-generated variant spelling hits 0351: "dumbbell skullcrusher", "dumbbell skull crusher", "dumbbell skullcrushers", "dumbbell skull crushers", "dumbbell lying triceps extension", "lying dumbbell triceps extension".
+      - Barbell skull crusher (0060) stays untouched.
+      Test: added `test_overhead_dumbbell_extension_maps_to_dumbbell_lying_skullcrusher` — passes; asserts all seven aliases map to 0351 and 0340 is never used for this exercise again.
+      Verified GIF 0351 loads via ExerciseDB API (HTTP 200, 381KB, valid GIF89a). Backend + expo restarted.
