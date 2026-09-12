@@ -116,6 +116,17 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
   - INGREDIENT_MACROS: added fatty/regular beef mince + fatty/regular ground beef keys (250,26,0,17).
   - Verified via live generation ("fatty beef mince, eggs, rice"): plan used "cooked regular beef mince" with regular macros (not swapped to lean); day totals = meal sums exactly. Observation: in that sample Day 3 had no mince meal (LLM adherence variance on the once-per-day rule; Days 1–2 anchored 1–2 mince meals each).
 
+- **[Jun 2026] Expo SDK 54 → 57 Platform Upgrade**:
+  - Trigger: user's Expo Go app is on SDK 57 and refused to open the SDK 54 project ("Project is incompatible with this version of Expo Go"). Manifest now advertises `exposdk:57.0.0`.
+  - Core: expo 54.0.35 → 57.0.22, react-native 0.81.5 → 0.86.3, react/react-dom 19.1.0 → 19.2.3, reanimated 4.1.1 → 4.5.1, worklets 0.5.1 → 0.10.1, gesture-handler 2.32, screens 4.26, safe-area-context 5.7, view-shot 5.1.0, webview 13.16.1, all `expo-*` → ~57.0.x, typescript 5.9 → 6.0.3.
+  - Added `@expo/log-box` (new required peer of expo-router 57). Bumped `react-native-purchases`/`-ui` 9.12 → 10.9.1.
+  - Removed unused/deprecated: `expo-av` (deleted in SDK 55), `expo-health` (bogus stub), `react-native-draggable-flatlist`, `react-native-dotenv`, `@expo/vector-icons`. Deleted stale `package-lock.json` (project is yarn).
+  - Icons: `npx @react-native-vector-icons/codemod` migrated 23 files to `@react-native-vector-icons/ionicons` using the DYNAMIC (expo-font) import path — works in Expo Go with no prebuild.
+  - app.json: removed `newArchEnabled`, `android.edgeToEdgeEnabled`, and the legacy top-level `notification` block (all dropped from the SDK 57 config schema).
+  - RevenueCat v10 API: `addCustomerInfoUpdateListener` returns void (unsubscribe via `removeCustomerInfoUpdateListener`); `logOut()` resolves to `CustomerInfo` directly.
+  - **RESOLVED the long-standing "Unexpected text node: ." console warning** — React 19.2 promoted it to a hard error. Root cause: JSX guards on empty-string state (`{motivation && ...}` where `motivation = useState('')`). Hardened ~20 such guards across index/workout-detail/ask-ai/food-log/subscription/meal-questionnaire/body-analyzer.
+  - Verified: `tsc --noEmit` 0 errors, expo-doctor 18/21 (3 benign pre-existing), Metro bundles 1520 modules, 2 full testing-agent regression rounds PASS (iteration_48 + iteration_49) + manual sweep of workout-detail / food-log / nutrition / subscription with 0 console errors. Rollback branch: `pre-sdk57-snapshot`.
+
 ## Backlog (Prioritized)
 ### P0 — Critical
 - (none)

@@ -1769,3 +1769,26 @@ agent_communication:
          - app/workout-detail.tsx: confetti `leftPct` typed as `${number}%`; `uploadPhotoResult` param typed as `ImagePicker.ImagePickerAsset`; `completedSessionData.duration` null-guarded
       VERIFICATION: expo-doctor 18/21 (remaining 3 are pre-existing/benign — non-square adaptive icon asset, react-native-health duplicate @expo/fingerprint + "untested on New Arch", and "no metadata" for the new vector-icons package). `tsc --noEmit` clean. Metro bundles 1520 modules with no errors. Manifest now advertises `runtimeVersion: exposdk:57.0.0`. Landing + login screens render correctly with icons.
       Backend untouched. Expo restarted. Git: snapshot branch `pre-sdk57-snapshot` kept for instant rollback.
+
+  - agent: "main"
+    message: |
+      SDK 57 — ROUND 2: REACT 19.2 TEXT-NODE ERROR FIXED (2026-06):
+      Testing agent round 1 (iteration_48.json) passed everything EXCEPT a runtime error on every HomeScreen mount:
+        `Unexpected text node: . A text node cannot be a child of a <View>.`  (LogBox → app/(tabs)/index.tsx:255)
+      Root cause: React 19.2.3 (shipped with SDK 57) promoted this from a WARNING to a hard error. The offending pattern is a JSX conditional guarded by an EMPTY-STRING state:
+        `{motivation && profile?.motivation_enabled && (...)}`  where `const [motivation, setMotivation] = useState('')`
+      When `motivation === ''` the `&&` short-circuits to `''` — an empty string child rendered directly inside a <View>/<ScrollView>. NOTE: PRD.md had already logged this exact warning as "known console noise, pre-existing, multiple screens" — so this upgrade actually closed a long-standing latent bug.
+      FIXES:
+      - app/(tabs)/index.tsx: `{motivation !== '' && ...}` and `{!!profile?.profile_image && ...}`
+      - Swept the whole app for the same pattern (string-typed guard on a conditional block) and hardened ~18 more with `!!`:
+        workout-detail.tsx (substitution_hint, hint, split_rationale, progression_method, deload_timing, weekSummaryData.notes),
+        ask-ai.tsx (selectedNote.question), food-log.tsx (aiResult.source),
+        subscription.tsx (planLabel, renewsLabel, plan.savings),
+        meal-questionnaire.tsx (preferred_foods, foods_to_avoid),
+        body-analyzer.tsx (analysis_confidence, overall_assessment, motivation_message, beforeImage, afterImage, beforeWeight && afterWeight)
+      - Audited all `? ... : ''` ternaries — every one is already inside a <Text>, so none needed changing. Boolean/object guards left alone.
+      VERIFICATION:
+      - `tsc --noEmit` → 0 errors.
+      - Testing agent round 2 (iteration_49.json): text-node error GONE (0 errors across login → Home mount → 2 hard reloads); motivation card still RENDERS when populated (fix didn't hide content); 10/10 route crash sweep (/subscription /body-analyzer /meal-questionnaire /workout-questionnaire /food-log /saved-meals /macro-targets /settings /grocery-list /admin); 5/5 tabs with Ionicons visible.
+      - Manual sweep of the 2 screens round 2 couldn't reach (test user had no workout + was free-tier): seeded a rich workout and granted `free_access` to sdk57tester@example.com, then verified with 0 console errors — workout-detail renders the full Elite Coaching Breakdown (WHY THIS SPLIT / PROGRESSION METHOD / DELOAD PROTOCOL all visible → `!!` guards not hiding content), /food-log opens and renders macro rings + empty state, /nutrition renders, /subscription renders "You're Premium! · Complimentary access" (planLabel shows, renewsLabel correctly hidden).
+      SDK 57 upgrade regression is CLOSED. Backend never touched. Rollback branch: `pre-sdk57-snapshot`.

@@ -4,7 +4,8 @@
 - **email**: `sdk57tester@example.com`
 - **password**: `Test1234!`
 - **user_id**: `2663e0c4-d8b9-4feb-b42a-8b055631ea25`
-- **subscription_status**: free
+- **subscription_status**: `free_access` (complimentary premium — gated screens like /food-log and meal plans OPEN for this user)
+- **seeded workout**: `SDK57 Regression Program` (id `d2637e9f-4f8c-46f4-8dda-7a20ec0a9f2e`) — 4-day Upper/Lower with split_rationale / progression_method / deload_timing populated, useful for workout-detail regression tests
 
 ## Test User
 - **user_id**: `cbd82a69-3a37-48c2-88e8-0fe95081fa4b`
