@@ -7,13 +7,6 @@
     "icon": "./assets/icon-1024.png",
     "scheme": "interfitai",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "notification": {
-      "icon": "./assets/logo-icon-yellow.png",
-      "color": "#FFD700",
-      "androidMode": "default",
-      "androidCollapsedTitle": "InterFitAI"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.interfitai.app",
@@ -31,7 +24,6 @@
         "backgroundColor": "#000000"
       },
       "package": "com.interfitai.app",
-      "edgeToEdgeEnabled": true,
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
@@ -63,7 +55,10 @@
       ],
       "expo-web-browser",
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-image",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true
