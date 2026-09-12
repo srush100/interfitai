@@ -1741,3 +1741,31 @@ agent_communication:
       - Barbell skull crusher (0060) stays untouched.
       Test: added `test_overhead_dumbbell_extension_maps_to_dumbbell_lying_skullcrusher` — passes; asserts all seven aliases map to 0351 and 0340 is never used for this exercise again.
       Verified GIF 0351 loads via ExerciseDB API (HTTP 200, 381KB, valid GIF89a). Backend + expo restarted.
+
+  - agent: "main"
+    message: |
+      EXPO SDK 54 → 57 UPGRADE (2026-06):
+      User's Expo Go app is on SDK 57 and refused to open the SDK 54 project ("Project is incompatible with this version of Expo Go"). Upgraded the whole frontend.
+      DEPENDENCY CHANGES (frontend/package.json):
+      - expo 54.0.35 → ^57.0.0 (resolved 57.0.22); react-native 0.81.5 → 0.86.3; react/react-dom 19.1.0 → 19.2.3
+      - react-native-reanimated 4.1.1 → 4.5.1; react-native-worklets 0.5.1 → 0.10.1; react-native-gesture-handler 2.28 → 2.32
+      - react-native-screens 4.16 → 4.26; react-native-safe-area-context 5.6 → 5.7; react-native-view-shot 4.0.3 → 5.1.0; react-native-webview 13.15 → 13.16.1
+      - all expo-* modules → ~57.0.x; @expo/metro-runtime → ~57.0.15; @react-native-picker/picker → 2.11.4
+      - ADDED @expo/log-box@^57.0.4 (new required peer of expo-router 57 / @expo/metro-runtime 57)
+      - react-native-purchases + react-native-purchases-ui 9.12 → 10.9.1
+      - devDeps: typescript 5.9 → 6.0.3, @types/react → 19.2.4, eslint-config-expo → 57.0.2, @babel/core → 7.29
+      - REMOVED expo-av (deleted from SDK 55, unused), expo-health (bogus ^0.0.0 stub, unused), react-native-draggable-flatlist (unused, reanimated-v2 era), react-native-dotenv (unused, no babel config), @expo/vector-icons (deprecated in SDK 56)
+      - Deleted stale package-lock.json (project is yarn — expo-doctor flagged mixed lockfiles)
+      BREAKING-CHANGE FIXES:
+      1) Vector icons: ran `npx @react-native-vector-icons/codemod` → 23 files migrated from `import { Ionicons } from '@expo/vector-icons'` to `import Ionicons from "@react-native-vector-icons/ionicons"`. Codemod auto-detected Expo Go and used the DYNAMIC (expo-font) import path, so icons still work in Expo Go with no prebuild/config plugin. Verified visually on /login (mail/lock/eye icons render).
+      2) app.json: removed `newArchEnabled` (New Arch is the only arch from SDK 55) and `android.edgeToEdgeEnabled` (now default) and the legacy top-level `notification` block (no longer in the config schema — icon/color already supplied via the expo-notifications plugin entry).
+      3) react-native-purchases v10 API changes in src/services/revenuecat.ts:
+         - `Purchases.addCustomerInfoUpdateListener()` now returns void → unsubscribe via `Purchases.removeCustomerInfoUpdateListener(callback)`
+         - `Purchases.logOut()` now resolves to `CustomerInfo` directly (was `{ customerInfo }`)
+      4) Pre-existing/newly-surfaced type errors fixed so `tsc --noEmit` is clean (0 errors):
+         - app/(tabs)/ask-ai.tsx: `styles.emptySubtitle` → `styles.emptyText` (style never existed)
+         - app/(tabs)/profile.tsx: removed duplicate `cardHeader` StyleSheet key (kept the later one that was already winning at runtime)
+         - app/meal-detail.tsx: `new Set(...)` → `new Set<string>(...)`
+         - app/workout-detail.tsx: confetti `leftPct` typed as `${number}%`; `uploadPhotoResult` param typed as `ImagePicker.ImagePickerAsset`; `completedSessionData.duration` null-guarded
+      VERIFICATION: expo-doctor 18/21 (remaining 3 are pre-existing/benign — non-square adaptive icon asset, react-native-health duplicate @expo/fingerprint + "untested on New Arch", and "no metadata" for the new vector-icons package). `tsc --noEmit` clean. Metro bundles 1520 modules with no errors. Manifest now advertises `runtimeVersion: exposdk:57.0.0`. Landing + login screens render correctly with icons.
+      Backend untouched. Expo restarted. Git: snapshot branch `pre-sdk57-snapshot` kept for instant rollback.

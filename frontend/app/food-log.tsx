@@ -1217,7 +1217,7 @@ export default function FoodLog() {
                         </View>
                       </View>
                       {/* Source line — tappable when web-verified */}
-                      {aiResult.source && (
+                      {!!aiResult.source && (
                         aiResult.source_url ? (
                           <TouchableOpacity onPress={() => Linking.openURL(aiResult.source_url!)}>
                             <Text style={styles.aiSourceLink} numberOfLines={1}>

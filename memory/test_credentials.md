@@ -1,5 +1,11 @@
 # InterFitAI Test Credentials
 
+## Primary Test User (SDK 57 fork — WORKING, verified via /api/auth/login)
+- **email**: `sdk57tester@example.com`
+- **password**: `Test1234!`
+- **user_id**: `2663e0c4-d8b9-4feb-b42a-8b055631ea25`
+- **subscription_status**: free
+
 ## Test User
 - **user_id**: `cbd82a69-3a37-48c2-88e8-0fe95081fa4b`
 - **name**: Test User

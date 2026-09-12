@@ -359,7 +359,7 @@ export default function BodyAnalyzer() {
                       <Text style={styles.historyPeriod}>
                         Period: {selectedHistoryItem.time_period}
                       </Text>
-                      {selectedHistoryItem.analysis?.analysis_confidence && (
+                      {!!selectedHistoryItem.analysis?.analysis_confidence && (
                         <Text style={styles.historyPeriod}>
                           Confidence: {selectedHistoryItem.analysis.analysis_confidence}
                         </Text>
@@ -370,7 +370,7 @@ export default function BodyAnalyzer() {
                   <View style={styles.divider} />
 
                   {/* Overall Assessment */}
-                  {selectedHistoryItem.analysis?.overall_assessment && (
+                  {!!selectedHistoryItem.analysis?.overall_assessment && (
                     <>
                       <Text style={styles.assessmentTitle}>Overall Assessment</Text>
                       <Text style={styles.assessmentText}>
@@ -424,7 +424,7 @@ export default function BodyAnalyzer() {
                   )}
 
                   {/* Motivation */}
-                  {selectedHistoryItem.analysis?.motivation_message && (
+                  {!!selectedHistoryItem.analysis?.motivation_message && (
                     <View style={styles.motivationCard}>
                       <Ionicons name="heart" size={24} color={colors.primary} />
                       <Text style={styles.motivationText}>
@@ -609,7 +609,7 @@ export default function BodyAnalyzer() {
                 <View style={styles.resultPhotosRow}>
                   <View style={styles.resultPhotoCell}>
                     <Text style={styles.resultPhotoLabel}>Before</Text>
-                    {beforeImage && (
+                    {!!beforeImage && (
                       <Image
                         source={{ uri: `data:image/jpeg;base64,${beforeImage}` }}
                         style={styles.resultPhoto}
@@ -618,7 +618,7 @@ export default function BodyAnalyzer() {
                   </View>
                   <View style={styles.resultPhotoCell}>
                     <Text style={styles.resultPhotoLabel}>After</Text>
-                    {afterImage && (
+                    {!!afterImage && (
                       <Image
                         source={{ uri: `data:image/jpeg;base64,${afterImage}` }}
                         style={styles.resultPhoto}
@@ -635,7 +635,7 @@ export default function BodyAnalyzer() {
                   </View>
                   <Text style={styles.scoreLabel}>Progress Score</Text>
                   {/* Polish B — weight delta badge */}
-                  {beforeWeight && afterWeight && (
+                  {!!beforeWeight && !!afterWeight && (
                     <View style={styles.weightDeltaBadge}>
                       <Text style={styles.weightDeltaText}>
                         {(parseFloat(afterWeight) - parseFloat(beforeWeight)) >= 0 ? '+' : ''}

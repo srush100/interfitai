@@ -196,13 +196,13 @@ export default function Subscription() {
 
           {(planLabel || renewsLabel) && (
             <View style={styles.planInfoCard}>
-              {planLabel && (
+              {!!planLabel && (
                 <View style={styles.planInfoRow}>
                   <Ionicons name="ribbon-outline" size={18} color={colors.primary} />
                   <Text style={styles.planInfoLabel}>{planLabel}</Text>
                 </View>
               )}
-              {renewsLabel && (
+              {!!renewsLabel && (
                 <View style={styles.planInfoRow}>
                   <Ionicons name="calendar-outline" size={18} color={colors.primary} />
                   <Text style={styles.planInfoLabel}>Renews {renewsLabel}</Text>
@@ -298,7 +298,7 @@ export default function Subscription() {
                 </View>
                 <View>
                   <Text style={styles.planName}>{plan.name}</Text>
-                  {plan.savings && (
+                  {!!plan.savings && (
                     <Text style={styles.planSavings}>{plan.savings}</Text>
                   )}
                 </View>

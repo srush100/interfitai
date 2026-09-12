@@ -325,7 +325,7 @@ export default function MealQuestionnaire() {
             {EATING_STYLES.find(s => s.id === formData.eating_style)?.label || 'Balanced'} eating style
           </Text>
         </View>
-        {formData.preferred_foods && (
+        {!!formData.preferred_foods && (
           <View style={styles.summaryRow}>
             <Ionicons name="heart" size={18} color={colors.primary} />
             <Text style={styles.summaryText} numberOfLines={1}>
@@ -333,7 +333,7 @@ export default function MealQuestionnaire() {
             </Text>
           </View>
         )}
-        {formData.foods_to_avoid && (
+        {!!formData.foods_to_avoid && (
           <View style={styles.summaryRow}>
             <Ionicons name="close-circle" size={18} color={colors.error} />
             <Text style={styles.summaryText} numberOfLines={1}>

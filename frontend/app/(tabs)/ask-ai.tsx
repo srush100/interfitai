@@ -476,7 +476,7 @@ export default function AskAIScreen() {
                 <View style={styles.noteDetailDivider} />
                 
                 {/* Question */}
-                {selectedNote.question && (
+                {!!selectedNote.question && (
                   <View style={styles.conversationBlock}>
                     <View style={styles.questionHeader}>
                       <Ionicons name="person-circle" size={20} color={colors.textSecondary} />

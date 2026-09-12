@@ -1,0 +1,33 @@
+{
+  "summary": "SDK 57 upgrade regression test (frontend only). App boots on web preview cleanly, landing/login render, login with sdk57tester@example.com succeeds and reaches the tabs. Ionicons load and render correctly on every screen tested (login mail/lock/eye, tab bar, Home, Profile) — @react-native-vector-icons/ionicons font loads via expo-font with status='loaded'. Bottom tab navigation works via role=tab (URL updates to /profile etc.). Home tab (only reanimated screen) renders, scrolls, and does not crash. Profile tab renders with card headers intact (avatar, weight/height/age row, Daily Targets, Step Tracking, Health Data — layout looks correct despite duplicate cardHeader key removal). Ask AI tab renders. Landing shows correct 'INTERFITAI', Get Started, Sign In. ONE new runtime console error found: 'Unexpected text node: . A text node cannot be a child of a <View>.' — LogBox pinpoints app/(tabs)/index.tsx:255:7 (HomeScreen ScrollView). The error is diagnostic only; the screen still renders and functions, but it fires on every mount and shows a red LogBox toast which was NOT present pre-upgrade. Benign warnings (shadow*, expo-notifications web, pointerEvents) ignored per request. Deprecated packages detected: none new; expo-av / expo-health / react-native-draggable-flatlist were already removed in this upgrade.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "HomeScreen (app/(tabs)/index.tsx)",
+        "issue": "Runtime React Native error 'Unexpected text node: . A text node cannot be a child of a <View>.' fires on every mount of HomeScreen after SDK 57 upgrade. LogBox stack points to the outer ScrollView at app/(tabs)/index.tsx:255:7 inside HomeScreen; the offending stray text node value is '.' (period). Component stack: ScrollView#render -> React.forwardRef -> HomeScreen -> WrappedScreenComponent. Screen still renders/scrolls fine, but a red LogBox toast covers the bottom of the screen in dev mode and this is a new regression from the SDK 54 -> 57 bump (React 19.2.3 tightened text-node checks). Please audit the JSX between lines 254-796 for a stray '.' inside a <View> (common culprits: `{condition && '.'}`, `{value?.field}.` outside a <Text>, or a trailing '.' after a JSX expression that lives inside a <View> instead of a <Text>).",
+        "testID": "n/a",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_48.json"],
+  "action_items": [
+    "Fix the 'Unexpected text node: . A text node cannot be a child of a <View>' warning in app/(tabs)/index.tsx (HomeScreen). LogBox stack: app/(tabs)/index.tsx:255:7 -> ScrollView -> HomeScreen. Search the JSX for a lone '.' character rendered as a direct child of a View (not wrapped in <Text>). Likely candidates: any pattern like `{value}.` , `{ready && '.'}`, or a stray period after a conditional. This is a new regression under React 19.2.3 strict text-node validation."
+  ],
+  "critical_code_review_comments": [
+    "package.json versions all resolve to SDK 57 compatible ranges. Metro bundles 1520/1570 modules cleanly.",
+    "@react-native-vector-icons/ionicons font is verified loaded on web (document.fonts status='loaded') — icon migration is successful across all screens sampled.",
+    "app/(tabs)/index.tsx is 796 lines — exceeds the 700-line guideline. Consider splitting HomeScreen (quick actions, modal, profile picture viewer, workout stats tile) into subcomponents; this would also make the text-node hunt easier."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per request)", "frontend": "~95% — 1 new dev-only console error, all functional flows pass"},
+  "seed_data_creation": "None — used existing sdk57tester@example.com account.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "SDK 57 upgrade is functionally green. The only outstanding issue is a stray text-node inside a <View> in app/(tabs)/index.tsx (HomeScreen). LogBox pinpoints line 255 (the outer ScrollView) but the actual stray '.' character is somewhere in one of the many child blocks (lines 262-696). After fix, re-verify by loading /login, signing in, and confirming no console errors on the Home tab. Also worth spot-checking that no other screen throws similar strict-text warnings under React 19.2.3.",
+  "rca_of_issue": "Root cause of the 'Unexpected text node: .' error: React Native Web 0.21 + React 19.2.3 enforce stricter text-node parenting — text like '.' or empty strings that render as a direct child of <View> (rather than <Text>) now throw a LogBox error. Pre-SDK-57 (React 19.1.0 / RNW 0.20) the same code emitted only a silent warning or nothing. Reproduction: (1) yarn start, (2) open web preview, (3) log in as sdk57tester@example.com / Test1234!, (4) land on Home tab — a red LogBox toast 'Unexpected text node: . A text node cannot be a child of a <View>.' appears and remains. Stack shows ScrollView#render -> HomeScreen (app/(tabs)/index.tsx:255:7). Mitigation: audit HomeScreen JSX for any bare '.' text rendered outside <Text>. This is a small, localized fix and does not require rolling back the SDK 57 upgrade."
+}

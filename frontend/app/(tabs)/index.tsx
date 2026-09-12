@@ -347,7 +347,7 @@ export default function HomeScreen() {
             
             <GestureDetector gesture={composedGesture}>
               <ReanimatedModule.View style={[styles.profilePictureContainer, animatedImageStyle]}>
-                {profile?.profile_image && (
+                {!!profile?.profile_image && (
                   <Image
                     source={{ uri: `data:image/jpeg;base64,${profile.profile_image}` }}
                     style={styles.profilePictureLarge}
@@ -360,7 +360,7 @@ export default function HomeScreen() {
         </Modal>
 
         {/* Motivation */}
-        {motivation && profile?.motivation_enabled && (
+        {motivation !== '' && profile?.motivation_enabled && (
           <View style={styles.motivationCard}>
             <Ionicons name="flash" size={20} color={colors.primary} />
             <Text style={styles.motivationText}>{motivation}</Text>

@@ -1225,7 +1225,7 @@ export default function WorkoutDetail() {
           </Text>
         </View>
       </View>
-      {exercise.substitution_hint && (
+      {!!exercise.substitution_hint && (
         <View style={styles.substitutionRow}>
           <Ionicons name="swap-horizontal" size={14} color={colors.textSecondary} />
           <Text style={styles.substitutionText}>
@@ -1277,7 +1277,7 @@ export default function WorkoutDetail() {
                   <Ionicons name="close-circle" size={22} color={colors.error} />
                 </TouchableOpacity>
               </View>
-              {hint && (
+              {!!hint && (
                 <Text style={styles.lastTimeHint}>Last time: {hint}</Text>
               )}
             </View>
@@ -1459,7 +1459,7 @@ export default function WorkoutDetail() {
               <Text style={styles.coachingPanelTitle}>Elite Coaching Breakdown</Text>
             </View>
 
-            {workout.split_rationale && (
+            {!!workout.split_rationale && (
               <View style={styles.coachingRow}>
                 <View style={styles.coachingIcon}>
                   <Ionicons name="information-circle" size={16} color={colors.primary} />
@@ -1473,7 +1473,7 @@ export default function WorkoutDetail() {
 
             {/* Effort guideline removed per product philosophy — keep it simple */}
 
-            {workout.progression_method && (
+            {!!workout.progression_method && (
               <View style={styles.coachingRow}>
                 <View style={styles.coachingIcon}>
                   <Ionicons name="trending-up" size={16} color={colors.primary} />
@@ -1485,7 +1485,7 @@ export default function WorkoutDetail() {
               </View>
             )}
 
-            {workout.deload_timing && (
+            {!!workout.deload_timing && (
               <View style={styles.coachingRow}>
                 <View style={styles.coachingIcon}>
                   <Ionicons name="refresh-circle" size={16} color={colors.primary} />
@@ -1986,7 +1986,7 @@ export default function WorkoutDetail() {
                 )}
 
                 {/* Notes */}
-                {weekSummaryData.notes && (
+                {!!weekSummaryData.notes && (
                   <View style={{ backgroundColor: colors.surface, borderRadius: 8, padding: 10, marginBottom: 14 }}>
                     <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 2 }}>Notes</Text>
                     <Text style={{ color: colors.text, fontSize: 13 }}>{weekSummaryData.notes}</Text>
