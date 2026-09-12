@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { colors } from '../src/theme/colors';
 import { useUserStore } from '../src/store/userStore';
 import api from '../src/services/api';
@@ -151,7 +151,7 @@ export default function MealDetail() {
     if (!profile?.id) return;
     try {
       const response = await api.get(`/food/favorites/${profile.id}`);
-      const favoriteNames = new Set(response.data.map((f: any) => f.meal?.name || f.meal_name));
+      const favoriteNames = new Set<string>(response.data.map((f: any) => f.meal?.name || f.meal_name));
       setFavoriteMeals(favoriteNames);
     } catch (error) {
       console.log('Error loading favorites:', error);

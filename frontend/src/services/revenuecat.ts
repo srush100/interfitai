@@ -164,11 +164,9 @@ export const addCustomerInfoUpdateListener = (
   }
   
   try {
-    const listener = Purchases.addCustomerInfoUpdateListener(callback);
+    Purchases.addCustomerInfoUpdateListener(callback);
     return () => {
-      if (listener && typeof listener.remove === 'function') {
-        listener.remove();
-      }
+      Purchases.removeCustomerInfoUpdateListener(callback);
     };
   } catch (error) {
     console.error('Failed to add listener:', error);
@@ -194,7 +192,7 @@ export const logoutUser = async (): Promise<CustomerInfo | null> => {
   if (!isRevenueCatAvailable) return null;
   
   try {
-    const { customerInfo } = await Purchases.logOut();
+    const customerInfo = await Purchases.logOut();
     return customerInfo;
   } catch (error) {
     console.error('Failed to logout:', error);

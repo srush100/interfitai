@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../src/theme/colors';
@@ -128,13 +128,13 @@ const CONFETTI_PALETTE = ['#FFD700','#FFC300','#FF9500','#FFECB3','#FF6B6B','#87
 const CONFETTI_PIECES = Array.from({ length: 26 }, (_, i) => ({
   id: i,
   color: CONFETTI_PALETTE[i % CONFETTI_PALETTE.length],
-  leftPct: `${Math.round(2 + (i / 25) * 93 + Math.sin(i * 2.39) * 4)}%`,
+  leftPct: `${Math.round(2 + (i / 25) * 93 + Math.sin(i * 2.39) * 4)}%` as `${number}%`,
   delay: (i % 7) * 110,
   w: 7 + (i % 4) * 2,
 }));
 
 const ConfettiPiece = React.memo(function ConfettiPiece({ color, leftPct, delay, w }: {
-  color: string; leftPct: string; delay: number; w: number;
+  color: string; leftPct: `${number}%`; delay: number; w: number;
 }) {
   const y = useRef(new Animated.Value(0)).current;
   const alpha = useRef(new Animated.Value(0)).current;
@@ -479,7 +479,7 @@ export default function WorkoutDetail() {
   };
 
   // Shared photo upload helper
-  const uploadPhotoResult = async (asset: { base64: string | null | undefined; uri: string }) => {
+  const uploadPhotoResult = async (asset: ImagePicker.ImagePickerAsset) => {
     if (!asset.base64 || !completedSessionData?.session_id) return;
     setPhotoUploading(true);
     try {
@@ -1726,7 +1726,7 @@ export default function WorkoutDetail() {
                     </Text>
                   </View>
                 )}
-                {completedSessionData.duration > 0 && (
+                {(completedSessionData.duration ?? 0) > 0 && (
                   <View style={styles.completeStatRow}>
                     <Ionicons name="time" size={18} color={colors.primary} />
                     <Text style={styles.completeStat}>

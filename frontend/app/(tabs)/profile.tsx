@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { Pedometer } from 'expo-sensors';
 import * as ImagePicker from 'expo-image-picker';
 import { useUserStore } from '../../src/store/userStore';
@@ -702,10 +702,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   avatar: {
     width: 56,

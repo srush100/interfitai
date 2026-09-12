@@ -14,7 +14,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { useRouter } from 'expo-router';
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
@@ -500,7 +500,7 @@ export default function AskAIScreen() {
             <View style={styles.emptyState}>
               <Ionicons name="folder-open-outline" size={48} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No Saved Notes</Text>
-              <Text style={styles.emptySubtitle}>Tap the bookmark icon on any AI response to save it here</Text>
+              <Text style={styles.emptyText}>Tap the bookmark icon on any AI response to save it here</Text>
             </View>
           ) : (
             // Note list view
