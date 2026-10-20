@@ -202,7 +202,7 @@ EXERCISEDB_API_HOST = "exercisedb.p.rapidapi.com"
 EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 
 # USDA FoodData Central API (free, no IP restrictions)
-USDA_API_KEY = "DEMO_KEY"  # Using demo key - works for reasonable usage
+USDA_API_KEY = os.environ.get("USDA_API_KEY", "DEMO_KEY")
 USDA_API_BASE = "https://api.nal.usda.gov/fdc/v1"
 
 async def search_usda(query: str, max_results: int = 50):
