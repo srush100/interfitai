@@ -42,9 +42,15 @@ interface SelectedMeal {
 //             aggregate numerically, display "{amount} {name}" (unit is inside {name})
 //   'none'  → bare ingredient with no leading number (e.g. "salt to taste"),
 //             display the key text only
+// 'unit' → whole-unit meal-plan items ("2 large eggs (116g)"), keyed by plural name.
+const pluralUnitName = (name: string): string =>
+  name.startsWith('slice ') ? `slices ${name.slice(6)}` : name.startsWith('slices ') || name.endsWith('s') ? name : `${name}s`;
+const singularUnitName = (name: string): string =>
+  name.startsWith('slices ') ? `slice ${name.slice(7)}` : name.replace(/s$/, '');
+
 interface GroceryEntry {
   amount: number;
-  unit: 'g' | 'count' | 'none';
+  unit: 'g' | 'count' | 'unit' | 'none';
 }
 
 export default function GroceryListScreen() {
@@ -131,6 +137,20 @@ export default function GroceryListScreen() {
           return;
         }
 
+        // Whole-unit items: "2 large eggs (116g)", "1 slice sourdough bread (30g)".
+        const unitMatch = ing.match(/^(\d+)\s+(.+?)\s*\(\d+(?:\.\d+)?\s*g\)$/i);
+        if (unitMatch) {
+          const amt = parseInt(unitMatch[1], 10) * quantity;
+          const name = pluralUnitName(unitMatch[2].trim().toLowerCase());
+          const cur = ingredients.get(name);
+          if (cur && cur.unit === 'unit') {
+            cur.amount += amt;
+          } else if (!cur) {
+            ingredients.set(name, { amount: amt, unit: 'unit' });
+          }
+          return;
+        }
+
         // Any other number-prefix: "2 eggs", "1 tbsp olive oil".
         // Key = the trailing text (unit + name) so identical units aggregate cleanly.
         const numMatch = ing.match(/^(\d+(?:\.\d+)?)\s+(.+)$/);
@@ -161,6 +181,7 @@ export default function GroceryListScreen() {
   // Format one grocery entry for display / share. Never appends "g" to non-gram items.
   const formatGrocery = (item: string, entry: GroceryEntry): string => {
     if (entry.unit === 'none') return item;
+    if (entry.unit === 'unit') return `${entry.amount} ${entry.amount === 1 ? singularUnitName(item) : item}`;
     const cleanAmt = entry.amount % 1 === 0
       ? entry.amount.toString()
       : entry.amount.toFixed(1);

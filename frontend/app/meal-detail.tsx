@@ -46,6 +46,18 @@ function _stripExistingState(rest: string): string {
   }
   return s;
 }
+// Foods whose reference values are DRY / RAW weights get a "(dry)" / "(raw)"
+// suffix so the user knows what to weigh: "25g rolled oats (dry)".
+const _DRY_STATE_RE = /\b(oats|flour|protein powder|whey|pea protein|vegan protein|egg white protein|casein)\b/i;
+const _NOT_DRY_RE = /\b(cooked|oat ?milk|oatmeal|porridge)\b/i;
+const _RAW_VEG_RE = /\b(sweet potato(?:es)?|potato(?:es)?|broccoli|spinach|kale|asparagus|zucchini|courgette|bell peppers?|onions?|carrots?|cucumber|tomato(?:es)?|mushrooms?|cauliflower|green beans|snap peas|peas|brussels sprouts|bok choy|cabbage|lettuce|romaine|arugula|mixed greens|greens|eggplant|celery|leeks?|beets?|butternut squash|squash|mixed vegetables|vegetables)\b/i;
+const _NOT_RAW_RE = /\b(canned|sauce|paste|juice|powder|flakes|dried|pickled|chips|soup|broth|puree|roasted|marinara|salsa)\b/i;
+function stateSuffix(original: string, rest: string): string {
+  if (/\((?:dry|raw)\)/i.test(rest)) return '';
+  if (_DRY_STATE_RE.test(rest) && !_NOT_DRY_RE.test(original)) return ' (dry)';
+  if (_RAW_VEG_RE.test(rest) && !_NOT_RAW_RE.test(original) && !/\bcooked\b/i.test(original)) return ' (raw)';
+  return '';
+}
 function mealContainsMeat(ingredients: string[] | undefined): boolean {
   if (!ingredients || !ingredients.length) return false;
   return ingredients.some((ing) => _RAW_MEAT_RE.test(ing));
@@ -66,7 +78,7 @@ function formatIngredientWithRaw(ing: string): { primary: string; hint: string |
   }
   // Unknown food type — return with state stripped so we don't leave "cooked X"
   // where the numeric weight has already been kept as the cooked value.
-  return { primary: `${cookedG}g ${rest}`, hint: null };
+  return { primary: `${cookedG}g ${rest}${stateSuffix(m[2], rest)}`, hint: null };
 }
 
 interface Meal {

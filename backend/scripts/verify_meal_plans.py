@@ -22,7 +22,7 @@ from pymongo import MongoClient
 
 sys.path.insert(0, "/app/backend")
 from food_database import INGREDIENT_MACROS  # noqa: E402
-from nutrition_engine import FoodRules, calculate_ingredient_macros, finalize_meal, items_from_raw, make_draft, resolve_food  # noqa: E402
+from nutrition_engine import FoodRules, UNIT_FOODS, calculate_ingredient_macros, finalize_meal, items_from_raw, make_draft, resolve_food  # noqa: E402
 
 load_dotenv("/app/backend/.env")
 load_dotenv("/app/frontend/.env")
@@ -39,15 +39,21 @@ KEYS = ("calories", "protein", "carbs", "fats")
 
 
 def per_ingredient(ing: str):
-    """Independent recalculation: 'Xg label' → database entry → grams/100 × per-100g."""
+    """Independent recalculation: 'Xg label' or 'N units label (Xg)' → database entry → grams/100 × per-100g."""
     m = re.match(r"^(\d+(?:\.\d+)?)g (.+)$", ing)
-    if not m:
+    u = re.match(r"^(\d+) (?:slices? )?(.+?) \((\d+(?:\.\d+)?)g\)$", ing)
+    if m:
+        grams, label = float(m.group(1)), m.group(2)
+    elif u:
+        grams, label = float(u.group(3)), u.group(2)
+    else:
         return None
-    grams, label = float(m.group(1)), m.group(2)
     key = resolve_food(label)
     cal, p, c, f = INGREDIENT_MACROS[key]
     x = grams / 100
-    return {"grams": grams, "label": label, "key": key, "per100": (cal, p, c, f),
+    # whole-unit foods (eggs, bread slices…) must be listed as whole units
+    whole = not UNIT_FOODS.get(key) or (bool(u) and grams == int(u.group(1)) * UNIT_FOODS[key][0])
+    return {"grams": grams, "label": label, "key": key, "per100": (cal, p, c, f), "whole": whole,
             "calories": round(cal * x), "protein": round(p * x, 1), "carbs": round(c * x, 1), "fats": round(f * x, 1)}
 
 
@@ -56,7 +62,8 @@ def check_meal(meal):
     if any(r is None for r in rows):
         return rows, None, False
     calc = {k: sum(r[k] for r in rows) for k in KEYS}
-    ok = calc["calories"] == meal["calories"] and all(abs(calc[k] - meal[k]) <= 0.051 for k in KEYS[1:])
+    ok = (calc["calories"] == meal["calories"] and all(abs(calc[k] - meal[k]) <= 0.051 for k in KEYS[1:])
+          and all(r["whole"] for r in rows))
     return rows, calc, ok
 
 

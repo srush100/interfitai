@@ -11,6 +11,7 @@ from food_database.INGREDIENT_MACROS:
 so the numbers on screen always match the food that is listed.
 """
 import logging
+import math
 import re
 
 from food_database import INGREDIENT_MACROS
@@ -125,6 +126,28 @@ ITEM_WEIGHTS = {
     "sweet potato": 130, "cucumber": 300, "almonds": 1.2, "almond": 1.2, "walnuts": 4,
     "brazil nuts": 5, "olives": 4, "falafel": 17,
 }
+# Foods bought and cooked as whole units: portions always end on whole units
+# and are shown as e.g. "2 large eggs (116g)".
+# key → (grams per unit, singular, plural); None names = "N slice(s) <label>".
+UNIT_FOODS = {k: (58, "large egg", "large eggs") for k in ("egg", "eggs", "whole eggs", "large eggs")}
+UNIT_FOODS.update({k: (30, None, None) for k in ("bread", "whole wheat bread", "sourdough bread", "rye bread",
+                                                   "toast", "whole wheat toast")})
+UNIT_FOODS.update({
+    "tortilla": (45, "tortilla", "tortillas"), "corn tortilla": (26, "corn tortilla", "corn tortillas"),
+    "corn tortillas": (26, "corn tortilla", "corn tortillas"), "wrap": (60, "wrap", "wraps"),
+    "whole wheat wrap": (60, "whole wheat wrap", "whole wheat wraps"), "pita bread": (60, "pita bread", "pita breads"),
+    "whole wheat pita": (60, "whole wheat pita", "whole wheat pitas"), "bagel": (105, "bagel", "bagels"),
+    "english muffin": (57, "English muffin", "English muffins"), "naan": (90, "naan", "naans"),
+    "rice cake": (9, "rice cake", "rice cakes"), "rice cakes": (9, "rice cake", "rice cakes"),
+})
+
+
+def unit_grams(key: str):
+    """Grams per whole unit for foods portioned in units (eggs, slices…), else None."""
+    u = UNIT_FOODS.get(key)
+    return u[0] if u else None
+
+
 _SIZE_FACTORS = {"small": 0.8, "medium": 1.0, "large": 1.25, "extra large": 1.4}
 _EGG_SIZES = {"small": 42, "medium": 50, "large": 58, "extra large": 66, "jumbo": 70}
 _SLICE_WEIGHTS = [({"bread", "toast", "sourdough", "rye", "ciabatta"}, 30), ({"bacon"}, 8),
@@ -206,7 +229,7 @@ def parse_ingredient(text: str):
         mult = 1000 if unit.startswith("k") else 28.35 if unit.startswith(("oz", "ounce")) else 453.6 if unit.startswith(("lb", "pound")) else 1
         grams = float(m.group(1)) * mult
         rest = s[:m.start()] + " " + s[m.end():]
-        rest = re.sub(rf"^\s*{_NUM}\s*(x\s+)?(small|medium|large|extra large)?\s*", "", rest)
+        rest = re.sub(rf"^\s*{_NUM}\s*(x\s+)?(small|medium|large|extra large)?\s*(slices?\s+(of\s+)?)?", "", rest)
         label = _clean_label(rest)
         key = resolve_food(label)
         return (label, grams, key) if key else None
@@ -273,9 +296,21 @@ def calculate_ingredient_macros(ingredient_str):
     return macros_for(key, grams)
 
 
-def format_ingredient(label: str, grams: float) -> str:
+def format_ingredient(label: str, grams: float, key: str = None) -> str:
+    """'245g Sweet potato', or for whole-unit foods '2 large eggs (116g)' /
+    '2 slices sourdough bread (60g)'. Both forms parse back to the same grams."""
     g = round(grams, 1)
     g_txt = str(int(g)) if float(g).is_integer() else f"{g}"
+    unit = UNIT_FOODS.get(key)
+    if unit:
+        n = grams / unit[0]
+        if n >= 1 and abs(n - round(n)) < 1e-6:
+            n = int(round(n))
+            if unit[1] is None:
+                what = f"slice{'s' if n != 1 else ''} {label.lower()}"
+            else:
+                what = unit[1] if n == 1 else unit[2]
+            return f"{n} {what} ({g_txt}g)"
     return f"{g_txt}g {label}"
 
 
@@ -570,6 +605,13 @@ def _bounds(it, widen: bool):
     return lo, hi
 
 
+def _unit_bounds(bounds, u):
+    """Bounds on whole units: at least one unit, never a fraction."""
+    lo, hi = bounds
+    lo_u = max(u, math.ceil(lo / u - 1e-9) * u)
+    return lo_u, max(lo_u, math.floor(hi / u + 1e-9) * u)
+
+
 def _tolerances(targets):
     return {k: max(TOLERANCE * targets[k], 0 if k == "calories" else MACRO_FLOOR_G) for k in MACRO_KEYS}
 
@@ -594,7 +636,8 @@ def optimise_portions(meals, targets, widen=False, shares=None, adjustable=None)
     macros approach `targets` (dict of calories/protein/carbs/fats). Mutates
     the drafts. Only meals whose index is in `adjustable` change (default: all);
     the others count towards the totals as they are. Returns True when every
-    macro is within tolerance."""
+    macro is within tolerance. Whole-unit foods (eggs, bread slices, wraps…)
+    always end on whole units; the other foods are re-tuned around them."""
     adjustable = set(range(len(meals))) if adjustable is None else set(adjustable)
     items, fixed = [], []
     for mi, m in enumerate(meals):
@@ -610,7 +653,8 @@ def optimise_portions(meals, targets, widen=False, shares=None, adjustable=None)
     total_share = sum((shares or MEAL_SHARES).get(m["meal_type"], 0.2) for m in meals) or 1.0
     S = [T["calories"] * (shares or MEAL_SHARES).get(m["meal_type"], 0.2) / total_share for m in meals]
     vecs = [_item_vec(it) for _, it in items]
-    bnds = [_bounds(it, widen) for _, it in items]
+    units = [unit_grams(it["key"]) for _, it in items]
+    bnds = [_unit_bounds(_bounds(it, widen), u) if u else _bounds(it, widen) for (_, it), u in zip(items, units)]
 
     def totals():
         tot = [0.0, 0.0, 0.0, 0.0]
@@ -628,34 +672,53 @@ def optimise_portions(meals, targets, widen=False, shares=None, adjustable=None)
 
     tk = [T[k] for k in MACRO_KEYS]
     wk = [W[k] for k in MACRO_KEYS]
-    # continuous coordinate descent on a bounded weighted least-squares objective
-    for _sweep in range(150):
-        tot, mc = totals()
-        moved = 0.0
-        for idx, ((mi, it), v, (lo, hi)) in enumerate(zip(items, vecs, bnds)):
-            s = max(it["g0"], 20.0)
-            num = sum(wk[k] * v[k] * (tot[k] - tk[k]) / tk[k] ** 2 for k in range(4))
-            num += MU * (it["grams"] - it["g0"]) / s ** 2
-            num += NU * v[0] * (mc[mi] - S[mi]) / T["calories"] ** 2
-            den = sum(wk[k] * v[k] ** 2 / tk[k] ** 2 for k in range(4)) + MU / s ** 2 + NU * v[0] ** 2 / T["calories"] ** 2
-            if den <= 0:
-                continue
-            new_g = min(max(it["grams"] - num / den, lo), hi)
-            delta = new_g - it["grams"]
-            if abs(delta) > 1e-9:
-                for k in range(4):
-                    tot[k] += v[k] * delta
-                mc[mi] += v[0] * delta
-                it["grams"] = new_g
-                moved += abs(delta)
-        if moved < 0.05:
-            break
+
+    def descend(frozen=frozenset()):
+        """Continuous coordinate descent on a bounded weighted least-squares objective."""
+        for _sweep in range(150):
+            tot, mc = totals()
+            moved = 0.0
+            for idx, ((mi, it), v, (lo, hi)) in enumerate(zip(items, vecs, bnds)):
+                if idx in frozen:
+                    continue
+                moved += _descent_step(it, mi, v, lo, hi, tot, mc)
+            if moved < 0.05:
+                break
+
+    def _descent_step(it, mi, v, lo, hi, tot, mc):
+        s = max(it["g0"], 20.0)
+        num = sum(wk[k] * v[k] * (tot[k] - tk[k]) / tk[k] ** 2 for k in range(4))
+        num += MU * (it["grams"] - it["g0"]) / s ** 2
+        num += NU * v[0] * (mc[mi] - S[mi]) / T["calories"] ** 2
+        den = sum(wk[k] * v[k] ** 2 / tk[k] ** 2 for k in range(4)) + MU / s ** 2 + NU * v[0] ** 2 / T["calories"] ** 2
+        if den <= 0:
+            return 0.0
+        new_g = min(max(it["grams"] - num / den, lo), hi)
+        delta = new_g - it["grams"]
+        if abs(delta) <= 1e-9:
+            return 0.0
+        for k in range(4):
+            tot[k] += v[k] * delta
+        mc[mi] += v[0] * delta
+        it["grams"] = new_g
+        return abs(delta)
+
+    descend()
+    # whole-unit foods snap to whole units, then the other foods are re-tuned around them
+    unit_idx = frozenset(i for i, u in enumerate(units) if u)
+    for i in unit_idx:
+        (_, it), (lo, hi), u = items[i], bnds[i], units[i]
+        it["grams"] = min(max(round(it["grams"] / u) * u, lo), hi)
+    if unit_idx:
+        descend(unit_idx)
 
     # round to kitchen-friendly amounts, then greedy integer refinement
-    def step_of(g):
-        return 5 if g >= 25 else 1
-    for (_, it), (lo, hi) in zip(items, bnds):
-        st = step_of(it["grams"])
+    def step_of(i, g):
+        return units[i] or (5 if g >= 25 else 1)
+    for i, ((_, it), (lo, hi)) in enumerate(zip(items, bnds)):
+        if units[i]:
+            continue
+        st = step_of(i, it["grams"])
         it["grams"] = min(max(round(it["grams"] / st) * st, 0 if lo == 0 else max(st, round(lo))), max(hi, st))
 
     def score(d):
@@ -667,8 +730,8 @@ def optimise_portions(meals, targets, widen=False, shares=None, adjustable=None)
         if cur[1] <= 0.6:
             break
         best = None
-        for (_, it), (lo, hi) in zip(items, bnds):
-            st = step_of(it["grams"])
+        for i, ((_, it), (lo, hi)) in enumerate(zip(items, bnds)):
+            st = step_of(i, it["grams"])
             for d in (-st, st):
                 ng = it["grams"] + d
                 if ng < lo - 1e-9 or ng > hi + 1e-9 or ng < 0:
@@ -751,7 +814,7 @@ def finalize_meal(draft, meal_id) -> dict:
     ingredients, tot = [], {k: 0.0 for k in MACRO_KEYS}
     for it in draft["items"]:
         label = it["label"] if resolve_food(it["label"]) == it["key"] else it["key"]
-        s = format_ingredient(label[:1].upper() + label[1:], it["grams"])
+        s = format_ingredient(label[:1].upper() + label[1:], it["grams"], it["key"])
         m = calculate_ingredient_macros(s)
         if m is None:  # cannot happen: label resolves to key by construction
             m = macros_for(it["key"], it["grams"])

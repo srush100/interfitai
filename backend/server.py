@@ -5148,6 +5148,7 @@ _INGREDIENT_RULES = """INGREDIENT RULES (critical):
 - Every ingredient is an object {"food": "<exact name from FOOD LIST>", "grams": <number>}.
 - GRAMS ONLY. Never cups, ml, scoops, slices or counts: 2 eggs -> 116g eggs, a scoop of whey -> 30g whey protein,
   15ml honey -> 21g honey, 2 rice cakes -> 18g rice cakes.
+- Whole-unit foods in whole units' weight: eggs 58g each, bread 30g per slice, wraps 60g, rice cakes 9g.
 - Meat, fish, rice, pasta, grains and legumes are COOKED weights. Oats are DRY weight ("rolled oats").
 - Pick grams so the meal lands near its target using the per-100g values (kcal/protein/carbs/fat).
   Protein, carbs and fat come from EVERY food (grains, legumes, dairy and bread add protein too) —

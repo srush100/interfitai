@@ -1801,3 +1801,11 @@ agent_communication:
       - FatSecret code + env vars removed; /api/food/search = local list + USDA FoodData Central only.
       - scripts/verify_meal_plans.py: 9/9 runs (7 styles + 2 allergy combos) PASS — meals = ingredient sums, days within 5%, allergy/diet safe, swaps PASS. Report: /app/memory/meal_plan_verification.md
       - NOTE: meal-plan generation has a 4/month cap per non-admin user — delete db.meal_generation_events for the test user before generating.
+
+  - agent: "main"
+    message: |
+      WHOLE-UNIT FOODS + RAW/DRY LABELS (2026-06):
+      - nutrition_engine.UNIT_FOODS: eggs 58g, bread/toast slices 30g, tortillas, wraps, pita, bagel, English muffin, naan, rice cakes. Optimiser snaps them to whole units then re-tunes the other foods. Shown as "2 large eggs (116g)", "2 slices sourdough bread (60g)", "3 rice cakes (27g)"; parse back to the same grams.
+      - meal-detail.tsx formatIngredientWithRaw: adds " (dry)" to oats/flour/protein powder and " (raw)" to vegetables/sweet potato/potato (meat "raw" and rice/pasta "dry" prefixes unchanged).
+      - grocery-list.tsx aggregates whole-unit strings by count ("4 large eggs").
+      - verify_meal_plans.py re-run: 9/9 PASS incl. new whole-unit check.

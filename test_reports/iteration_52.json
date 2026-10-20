@@ -1,0 +1,27 @@
+{
+  "summary": "Full-stack regression for whole-unit (eggs/bread/rice-cakes) + raw/dry display changes. Backend: generated fresh balanced and paleo plans for sdk57tester, verified every egg ingredient renders as 'N large egg(s) (N*58g)' (never '95g Eggs'), unit foods (bread/wraps/bagels/english muffin/pita/naan/rice cakes) end on whole units, meal.calories/protein/carbs/fats == sum of calculate_ingredient_macros per ingredient (<=0.11g drift), and each day is on_target within 5%. Swap breakfast with swap_preference='similar' keeps whole units and the day stays on target. Reference plan 19ee0e84 also validates. Frontend (390x844): logged in sdk57tester, opened /meal-detail?id=19ee0e84, expanded all meals Day 1 — ingredients render exactly as spec: breakfast '400g Sweet potato (raw)', '2 large eggs (116g)', '40g Spinach (raw)', '55g Avocado' (no suffix), '4g Olive oil' (no suffix); lunch '140g raw Chicken breast'/'≈105g cooked', '129g dry Wild rice'/'≈400g cooked', '175g Broccoli (raw)', '95g Cherry tomatoes (raw)', '14g Tahini', '17g Lemon juice' (no suffix); snack '20g Pea protein powder (dry)', '210g Banana', '12g Cashew butter' (no suffix). day-target-status reads '✓ On target (within 5% of 2759 cal • 144g P • 372g C • 77g F)'. Grocery list for the same plan aggregates eggs as a single '2 large eggs' line (count unit) with no separate '(116g)' line. All backend tests pass (5/5); all frontend display rules verified. No bugs found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_whole_unit_and_raw_dry.py",
+    "/app/test_reports/pytest/whole_unit_and_raw_dry.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "nutrition_engine.format_ingredient / UNIT_FOODS cleanly emit 'N large egg(s) (Xg)' and 'N slice(s) <bread> (Xg)'; verify_meal_plans.per_ingredient parses them back to the exact grams, so meal totals and ingredient-sum are identical as expected.",
+    "frontend meal-detail.formatIngredientWithRaw correctly leaves the '2 large eggs (116g)' pattern untouched (regex /^\\d+g.../ fails to match the egg string, so no suffix added). stateSuffix only fires for gram-prefixed strings. Olive oil, garlic, lemon juice, banana, cashew butter correctly receive no suffix because they do not match _RAW_VEG_RE or _DRY_STATE_RE.",
+    "grocery-list.unitMatch regex /^(\\d+)\\s+(.+?)\\s*\\(\\d+g\\)$/ correctly folds egg lines into a single count entry keyed by plural name; singularUnitName restores '1 large egg' for a single unit."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Deleted db.meal_generation_events for user 2663e0c4... to bypass the 4/month cap before generating balanced + paleo plans (as instructed).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reference meal plan id 19ee0e84-c48d-48ab-b661-5c0e06b0d0d1 (balanced, 2759 cal) exhibits the final whole-unit + raw/dry formatting and is a reliable fixture for future regression. Backend regression file: /app/backend/tests/test_whole_unit_and_raw_dry.py (5 tests, ~75s with 2 generations + 1 swap). Clear db.meal_generation_events for the test user before any generate call. Generation takes 25-60s so use timeout>=300s.",
+  "rca_of_issue": "No bug to RCA — this iteration was a verification of a shipped display change. All assertions in the review request held: backend emits whole-unit eggs/bread/etc. with grams in parentheses and meal macros equal the sum of ingredient macros; frontend injects '(raw)' on vegetables/sweet potato, '(dry)' on oats/flour/protein powder, 'N g raw ...' with '≈N g cooked' hint on meat, and 'N g dry ...' with '≈N g cooked' on grains; grocery list aggregates whole-unit items by count."
+}
