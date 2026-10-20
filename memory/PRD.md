@@ -135,7 +135,7 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 - **[Jun 2026] FatSecret removed** — food search = local list + USDA FoodData Central only (env vars removed).
 - **[Jun 2026] Fixes**: `/api/food/analyze` returns 422 `no_food_detected` (was 500) for non-food photos; food-log search waits for profile; testIDs on login + meal swap buttons. Tests: iteration_50/51 PASS.
 
-- **[Jun 2026] Whole-unit foods + raw/dry labels**: eggs (58g), bread/toast slices (30g), tortillas, wraps, pita, bagels, English muffins, naan and rice cakes always land on whole units ("2 large eggs (116g)", "2 slices sourdough bread (60g)"); the optimiser re-tunes the other foods around them. meal-detail shows "(dry)" on oats/flour/protein powder and "(raw)" on vegetables/potatoes; the grocery list counts whole units. Tests: iteration_52 PASS; verify script 9/9 PASS.
+- **[Jun 2026] Whole-unit foods + raw/dry labels**: eggs (58g), bread/toast slices (30g), tortillas, wraps, pita, bagels, English muffins, naan and rice cakes always land on whole units ("2 large eggs (116g)", "2 slices sourdough bread (60g)"); the optimiser re-tunes the other foods around them. meal-detail shows "(dry)" on oats/flour/protein powder, "(raw)" on vegetables/potatoes and "(cooked)" on lentils/beans/chickpeas (not green beans/bean sprouts); the grocery list counts whole units. Tests: iteration_52 PASS; verify script 9/9 PASS.
 - **[Jun 2026] USDA key** read from `USDA_API_KEY` in backend/.env (user key added).
 
 ## Backlog (Prioritized)

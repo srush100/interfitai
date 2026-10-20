@@ -41,20 +41,24 @@ const _EXISTING_STATE_RE = /^\s*(?:raw|cooked|dry|dried|boiled|steamed|grilled|b
 function _stripExistingState(rest: string): string {
   let s = rest;
   // Loop in case there's more than one qualifier ("cooked dry rice" etc.).
-  while (_EXISTING_STATE_RE.test(s)) {
+  while (_EXISTING_STATE_RE.test(s) && !/^baked beans\b/i.test(s)) {
     s = s.replace(_EXISTING_STATE_RE, '');
   }
   return s;
 }
-// Foods whose reference values are DRY / RAW weights get a "(dry)" / "(raw)"
-// suffix so the user knows what to weigh: "25g rolled oats (dry)".
+// Foods whose reference values are DRY / RAW / COOKED weights get a "(dry)" /
+// "(raw)" / "(cooked)" suffix so the user knows what to weigh: "25g rolled oats (dry)".
 const _DRY_STATE_RE = /\b(oats|flour|protein powder|whey|pea protein|vegan protein|egg white protein|casein)\b/i;
 const _NOT_DRY_RE = /\b(cooked|oat ?milk|oatmeal|porridge)\b/i;
 const _RAW_VEG_RE = /\b(sweet potato(?:es)?|potato(?:es)?|broccoli|spinach|kale|asparagus|zucchini|courgette|bell peppers?|onions?|carrots?|cucumber|tomato(?:es)?|mushrooms?|cauliflower|green beans|snap peas|peas|brussels sprouts|bok choy|cabbage|lettuce|romaine|arugula|mixed greens|greens|eggplant|celery|leeks?|beets?|butternut squash|squash|mixed vegetables|vegetables)\b/i;
 const _NOT_RAW_RE = /\b(canned|sauce|paste|juice|powder|flakes|dried|pickled|chips|soup|broth|puree|roasted|marinara|salsa)\b/i;
+// Lentils, beans and chickpeas are stored as COOKED (or canned, drained) weights.
+const _COOKED_LEGUME_RE = /\b(lentils?|chickpeas?|soybeans?|beans?)\b/i;
+const _NOT_LEGUME_RE = /\b(green|string|runner|french|coffee|vanilla|jelly)\s+beans?\b|\bbean sprouts?\b/i;
 function stateSuffix(original: string, rest: string): string {
-  if (/\((?:dry|raw)\)/i.test(rest)) return '';
+  if (/\((?:dry|raw|cooked)\)/i.test(rest)) return '';
   if (_DRY_STATE_RE.test(rest) && !_NOT_DRY_RE.test(original)) return ' (dry)';
+  if (_COOKED_LEGUME_RE.test(rest) && !_NOT_LEGUME_RE.test(rest)) return ' (cooked)';
   if (_RAW_VEG_RE.test(rest) && !_NOT_RAW_RE.test(original) && !/\bcooked\b/i.test(original)) return ' (raw)';
   return '';
 }
