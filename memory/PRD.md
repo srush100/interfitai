@@ -127,6 +127,14 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
   - **RESOLVED the long-standing "Unexpected text node: ." console warning** — React 19.2 promoted it to a hard error. Root cause: JSX guards on empty-string state (`{motivation && ...}` where `motivation = useState('')`). Hardened ~20 such guards across index/workout-detail/ask-ai/food-log/subscription/meal-questionnaire/body-analyzer.
   - Verified: `tsc --noEmit` 0 errors, expo-doctor 18/21 (3 benign pre-existing), Metro bundles 1520 modules, 2 full testing-agent regression rounds PASS (iteration_48 + iteration_49) + manual sweep of workout-detail / food-log / nutrition / subscription with 0 console errors. Rollback branch: `pre-sdk57-snapshot`.
 
+- **[Jun 2026] Meal Engine Accuracy Overhaul**:
+  - New `backend/nutrition_engine.py` (pure code): AI returns food + grams only; meal macros = Σ grams/100 × `INGREDIENT_MACROS` (`backend/food_database.py`); day totals = Σ meals; "On target" = every macro within 5% (2g floor for tiny targets).
+  - Expanded `ALLERGEN_SYNONYMS` (seitan, soy sauce, noodles, parmesan, mozzarella…); banned meals are regenerated (AI → template → safe meal). Templates (`backend/meal_templates.py`) store grams only. Oats stored dry. Per-food cup/ml/item weights (no blanket 240g cups).
+  - `/api/mealplan/alternate`: tries up to 5 candidate dishes and keeps one whose tuned grams keep the day within 5%.
+  - Verification: `backend/scripts/verify_meal_plans.py` → `/app/memory/meal_plan_verification.md` — 9/9 PASS (7 styles + gluten/dairy + vegan nuts/soy, each with a swap).
+- **[Jun 2026] FatSecret removed** — food search = local list + USDA FoodData Central only (env vars removed).
+- **[Jun 2026] Fixes**: `/api/food/analyze` returns 422 `no_food_detected` (was 500) for non-food photos; food-log search waits for profile; testIDs on login + meal swap buttons. Tests: iteration_50/51 PASS.
+
 ## Backlog (Prioritized)
 ### P0 — Critical
 - (none)

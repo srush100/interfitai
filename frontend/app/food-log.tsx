@@ -315,7 +315,7 @@ export default function FoodLog() {
 
   const searchFood = async (query?: string) => {
     const q = (query ?? searchQuery).trim();
-    if (!q) return;
+    if (!q || !profile?.id) return;
     setSearching(true);
     setSearchResults([]);
     setAiResult(null);
@@ -341,7 +341,7 @@ export default function FoodLog() {
   };
 
   const searchWithAI = async () => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || !profile?.id) return;
     setAiSearching(true);
     try {
       const response = await api.get(`/food/ai-search?query=${encodeURIComponent(searchQuery)}&user_id=${encodeURIComponent(profile?.id || '')}`);

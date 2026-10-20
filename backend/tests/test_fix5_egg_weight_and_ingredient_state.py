@@ -28,10 +28,8 @@ import requests
 from motor.motor_asyncio import AsyncIOMotorClient
 
 sys.path.insert(0, "/app/backend")
-from server import (  # noqa: E402
-    calculate_ingredient_macros,
-    _extract_portion_grams,
-)
+from nutrition_engine import calculate_ingredient_macros  # noqa: E402
+from server import _extract_portion_grams  # noqa: E402
 
 # Match the pattern used by test_nutrition_accuracy_guard.py to keep both
 # suites runnable together — falls back to the preview URL from frontend/.env
@@ -174,53 +172,18 @@ class TestExtractPortionGramsEggs:
 # 3. Meal-plan prompt source assertions — presence of new values, absence of old
 # ===========================================================================
 class TestMealPlanPromptStrings:
-    @pytest.fixture(scope="class")
-    def source(self):
-        with open(SERVER_PY_PATH, "r", encoding="utf-8") as f:
-            return f.read()
+    """The old hand-written MACRO REFERENCE prompt block was replaced by a food
+    list generated from INGREDIENT_MACROS, so the AI sees the same egg values
+    the code uses (155/13/1.1/11 per 100g; one large egg = 58g)."""
 
-    def test_macro_reference_has_58g_ea(self, source):
-        assert "Whole egg (58g ea): 90cal 7.5P 0.6C 6.4F" in source, (
-            "MACRO REFERENCE block missing new egg line 'Whole egg (58g ea): 90cal 7.5P 0.6C 6.4F'"
-        )
+    def test_prompt_food_list_uses_database_egg_values(self):
+        import server
+        from nutrition_engine import FoodRules
+        assert "eggs 155/13/1.1/11" in server._food_list_text(FoodRules([], [], "balanced"))
 
-    def test_macro_reference_no_old_50g_ea(self, source):
-        assert "(50g ea)" not in source, "Old '(50g ea)' string still present"
-
-    def test_macro_reference_no_old_5_5F_egg(self, source):
-        # Old line was: 'Whole egg (50g ea): 78cal 6.5P 0.5C 5.5F'
-        assert "0.5C 5.5F" not in source, "Old egg macro '0.5C 5.5F' still present"
-
-    def test_fat_lookup_uses_58g_each(self, source):
-        assert "Whole egg (58g each) = 6.4g fat" in source, (
-            "Fat lookup line missing 'Whole egg (58g each) = 6.4g fat'"
-        )
-
-    def test_fat_lookup_no_50g_each(self, source):
-        assert "Whole egg (50g each)" not in source, (
-            "Old fat lookup 'Whole egg (50g each)' still present"
-        )
-
-    def test_breakfast_note_uses_6_4g_fat(self, source):
-        assert "1 whole egg ≈ 6.4g fat" in source, (
-            "Breakfast note '1 whole egg ≈ 6.4g fat' missing"
-        )
-
-    def test_breakfast_note_no_5_5g_fat(self, source):
-        assert "1 whole egg = 5.5g fat" not in source, (
-            "Old breakfast note '1 whole egg = 5.5g fat' still present"
-        )
-
-    def test_limit_eggs_formula_uses_6_4(self, source):
-        # Expect: 'each egg = 6.4g fat' and the formula divisor '/ 6.4'
-        assert "each egg = 6.4g fat" in source, "'each egg = 6.4g fat' missing"
-        assert "* 0.2 / 6.4" in source, (
-            "LIMIT-eggs formula divisor should be '/ 6.4', not '/ 5.5'"
-        )
-
-    def test_limit_eggs_formula_no_old_5_5_divisor(self, source):
-        assert "* 0.2 / 5.5" not in source, "Old '* 0.2 / 5.5' divisor still present"
-        assert "each egg = 5.5g fat" not in source, "Old 'each egg = 5.5g fat' still present"
+    def test_grams_only_rule_converts_eggs_at_58g(self):
+        import server
+        assert "2 eggs -> 116g eggs" in server._INGREDIENT_RULES
 
 
 # ===========================================================================

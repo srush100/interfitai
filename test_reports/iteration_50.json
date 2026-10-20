@@ -1,0 +1,49 @@
+{
+  "summary": "Review-request regression: 11/12 backend tests PASS (1 xfail = confirmed 500 bug on /food/analyze with non-food images). Food search (local+USDA, no FatSecret), food logging CRUD, daily summary totals, AI search all green. Meal-plan generate macros/ingredients match for balanced + carnivore + balanced-w/gluten-dairy allergies (recomputed via nutrition_engine.resolve_food + INGREDIENT_MACROS, within 2 kcal / 0.3g per meal, days within 5% of target_* at the floor). /mealplan/alternate 'similar' swap matches ingredient macros and keeps day within 5%. Frontend food-log screen renders all 4 tabs (Today/Search/Snap/Manual) — but full UI E2E was blocked because /app/frontend/app/login.tsx has no testID attributes, so auth-dependent flows (meal-detail swap, log + persist via UI) could not be exercised by Playwright. API calls from Food Log without a logged-in profile correctly return 403 (user_id missing), confirming server-side gating works but the frontend harness needs testIDs to proceed.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/food/analyze", "issue": "Returns 500 'int() argument must be ... not NoneType' when the image is unreadable / not food (e.g. solid-color 300x300 JPEG). Expected 422 label_unreadable per review spec. Root cause: handler calls int() on a None weight/count returned by the AI parser; needs a null guard before the int() cast around server.py:~6700-6860 and should map to 422.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "login.tsx", "issue": "No testID attributes anywhere in /app/frontend/app/login.tsx — blocks any Playwright/E2E that must authenticate. Needs login-email-input, login-password-input, login-submit-button.", "testID": "login-email-input/login-password-input/login-submit-button", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "food-log Search tab without profile", "issue": "When app renders food-log without a loaded profile (profile?.id === ''), it calls /api/food/search?user_id= and server returns 403; UI shows a toast 'API Error' plus 'No results for banana'. Not a backend bug (gate is correct) but the frontend should either wait for profile load or send a loud 'please log in' state instead of a vague API Error toast.", "affected_testIDs": ["food-log-search-input"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — present on multiple screens including login/food-log."},
+      {"component": "Image.style.resizeMode", "issue": "Console warns: 'Image: style.resizeMode is deprecated. Please use props.resizeMode.'"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_meal_food_review.py",
+    "/app/test_reports/pytest/review_iter50.xml"
+  ],
+  "action_items": [
+    "Fix /api/food/analyze to return 422 label_unreadable (or 400 with clear message) instead of 500 when the AI parser returns None for weights/count. Add a null-check before int() in the analyze handler (server.py ~6700-6860).",
+    "Add testIDs to /app/frontend/app/login.tsx: login-email-input, login-password-input, login-submit-button. Without them, no automated agent can authenticate.",
+    "Food-log Search tab: block the search request (or show 'Please sign in') when profile?.id is empty, instead of calling /api/food/search?user_id= and surfacing the 403 as a generic API Error toast.",
+    "Address deprecated RN props (shadow* -> boxShadow, Image style.resizeMode -> prop resizeMode) across screens — console flags them on every page load."
+  ],
+  "critical_code_review_comments": [
+    "nutrition_engine.FoodRules.violations() is the correct single source of truth for allergy/diet gating — my test now uses it directly. Keep that boundary.",
+    "/mealplan/alternate correctly uses the 5-candidate loop added this session; the day totals I measured after a snack swap stayed within 5% (balanced: 2719 kcal vs 2759).",
+    "FatSecret cleanly removed from server.py (grep -n fatsecret → 0 hits) and food/search now returns a plain array mix of local + USDA sources."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_meal_food_review.py (new)"
+  ],
+  "success_rate": {
+    "backend": "92% (11/12 pass; 1 xfail = confirmed /food/analyze 500 bug)",
+    "frontend": "partial — food-log screen renders correctly with all 4 tabs; full E2E blocked by missing login testIDs"
+  },
+  "seed_data_creation": "Deleted meal_generation_events docs for user 2663e0c4-d8b9-4feb-b42a-8b055631ea25 before each generate pass to clear the 4/month cap. Created and deleted one TEST_banana food log entry during /food/log CRUD verification.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend macro+allergy+swap pipeline is verified (11/12). The one remaining backend bug is /api/food/analyze crashing on unreadable/non-food images (returns 500 instead of 422). Frontend UI could not be exercised past the login screen because login.tsx has no testIDs — add them and re-run E2E for meal-detail swap + food-log search/log flow. Clear meal_generation_events before any new meal-plan generation (4/month cap).",
+  "rca_of_issue": "Reproduction for /food/analyze 500: POST /api/food/analyze with user_id=2663e0c4-d8b9-4feb-b42a-8b055631ea25 and image_base64 of any valid but non-food JPEG (e.g. PIL Image.new('RGB',(300,300),(200,150,100))). Server log: 'Food analysis error: int() argument must be a string, a bytes-like object or a real number, not NoneType'. Fix: in the analyze handler (around server.py 6700-6860), guard every int(...) / float(...) call against None (prefer int(x or 0) or an explicit 422 raise with detail='label_unreadable' when the AI returns no portion/weight)."
+}

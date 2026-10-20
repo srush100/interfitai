@@ -7,9 +7,8 @@ Proofs required by the review request:
       returned meal has NO nut derivatives.
   (b) 'mushrooms' ban catches 'mushroom' (singular) and vice versa; and
       'gluten-free oats' does NOT trigger banned 'gluten'.
-  (c) strip_banned_and_recompute removes the offending ingredient AND recomputes
-      the meal's macros from the SUM of remaining ingredients' macros via
-      calculate_ingredient_macros.
+  (c) A meal containing a banned food is REJECTED (FoodRules.violations) so a
+      new meal is generated — the ingredient is never just deleted.
 
 Plus a LIVE end-to-end sanity:
   POST /api/mealplans/generate with allergies=['nuts'] for the seeded test user
@@ -30,12 +29,13 @@ import requests
 sys.path.insert(0, "/app/backend")
 import server  # noqa: E402  — importing runs load_dotenv + Mongo client setup
 
-from server import (  # noqa: E402
-    ALLERGEN_SYNONYMS,
+from nutrition_engine import (  # noqa: E402
+    FoodRules,
     expand_banned_terms,
     contains_banned_food,
-    strip_banned_and_recompute,
-    calculate_ingredient_macros,
+    items_from_raw,
+)
+from server import (  # noqa: E402
     AlternateMealRequest,
     generate_alternate_meal,
     db,
@@ -81,50 +81,18 @@ class TestProofB_StemMatching:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# PROOF (c) — strip removes offending ingredient AND recomputes meal macros
+# PROOF (c) — a meal with a banned food is rejected (regenerated, not trimmed)
 # ────────────────────────────────────────────────────────────────────────────
-class TestProofC_StripAndRecompute:
-    """strip_banned_and_recompute recomputes macros from remaining ingredients."""
+class TestProofC_RejectNotStrip:
+    def test_almond_meal_is_rejected(self):
+        items, unknown = items_from_raw(["150g chicken breast", "200g cooked white rice", "30g almonds"])
+        assert not unknown
+        problems = FoodRules(["nuts"], [], "balanced").violations("Chicken & Rice with Almonds", items)
+        assert any("almond" in p for p in problems), problems
 
-    def test_almonds_stripped_and_macros_recomputed(self):
-        meal = {
-            "name": "Chicken & Rice with Almonds",
-            "ingredients": ["150g chicken breast", "200g cooked white rice", "30g almonds"],
-            "calories": 999,
-            "protein": 999,
-            "carbs": 999,
-            "fats": 999,
-        }
-        banned = expand_banned_terms(["nuts"])
-        removed = strip_banned_and_recompute(meal, banned)
-
-        # 30g almonds must be the removed one; the other two must remain
-        assert any("almond" in r.lower() for r in removed), f"almond not removed: {removed}"
-        remaining_lower = [i.lower() for i in meal["ingredients"]]
-        assert not any("almond" in i for i in remaining_lower), remaining_lower
-        assert "150g chicken breast" in meal["ingredients"]
-        assert "200g cooked white rice" in meal["ingredients"]
-
-        # Macros must equal the SUM of remaining-ingredient macros (via
-        # calculate_ingredient_macros), rounded the same way as the impl.
-        expected_cal = 0.0
-        expected_pro = 0.0
-        expected_carb = 0.0
-        expected_fat = 0.0
-        for ing in meal["ingredients"]:
-            m = calculate_ingredient_macros(ing)
-            assert m is not None, f"calculate_ingredient_macros returned None for {ing!r}"
-            expected_cal += m["calories"]
-            expected_pro += m["protein"]
-            expected_carb += m["carbs"]
-            expected_fat += m["fats"]
-
-        assert meal["calories"] == round(expected_cal), (meal["calories"], expected_cal)
-        assert meal["protein"] == round(expected_pro, 1), (meal["protein"], expected_pro)
-        assert meal["carbs"] == round(expected_carb, 1), (meal["carbs"], expected_carb)
-        assert meal["fats"] == round(expected_fat, 1), (meal["fats"], expected_fat)
-        # And the placeholder 999s must be gone
-        assert meal["calories"] != 999
+    def test_clean_meal_passes(self):
+        items, _ = items_from_raw(["150g chicken breast", "200g cooked white rice", "100g broccoli"])
+        assert FoodRules(["nuts"], [], "balanced").violations("Chicken & Rice", items) == []
 
 
 # ────────────────────────────────────────────────────────────────────────────

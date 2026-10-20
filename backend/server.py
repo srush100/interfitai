@@ -14,6 +14,7 @@ import openai
 import stripe
 import base64
 import json
+import asyncio
 import httpx
 import time
 import smtplib
@@ -200,143 +201,9 @@ APP_SUPPORT_EMAIL = "srush@interfitai.com"
 EXERCISEDB_API_HOST = "exercisedb.p.rapidapi.com"
 EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 
-# FatSecret API configuration
-FATSECRET_CLIENT_ID = os.getenv("FATSECRET_CLIENT_ID")
-FATSECRET_CLIENT_SECRET = os.getenv("FATSECRET_CLIENT_SECRET")
-FATSECRET_TOKEN_URL = "https://oauth.fatsecret.com/connect/token"
-FATSECRET_API_BASE = "https://platform.fatsecret.com/rest/server.api"
-
 # USDA FoodData Central API (free, no IP restrictions)
 USDA_API_KEY = "DEMO_KEY"  # Using demo key - works for reasonable usage
 USDA_API_BASE = "https://api.nal.usda.gov/fdc/v1"
-
-# Cache for FatSecret access token
-fatsecret_token_cache = {
-    "access_token": None,
-    "expires_at": 0
-}
-
-async def get_fatsecret_token():
-    """Get FatSecret OAuth 2.0 access token (with caching)"""
-    global fatsecret_token_cache
-    
-    # Check if we have a valid cached token
-    if fatsecret_token_cache["access_token"] and time.time() < fatsecret_token_cache["expires_at"]:
-        return fatsecret_token_cache["access_token"]
-    
-    # Request new token
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            FATSECRET_TOKEN_URL,
-            auth=(FATSECRET_CLIENT_ID, FATSECRET_CLIENT_SECRET),
-            data={
-                "grant_type": "client_credentials",
-                "scope": "basic"
-            }
-        )
-        
-        if response.status_code != 200:
-            logger.error(f"FatSecret token error: {response.text}")
-            return None
-        
-        token_data = response.json()
-        fatsecret_token_cache["access_token"] = token_data["access_token"]
-        # Token typically expires in 24 hours, cache for 23 hours
-        fatsecret_token_cache["expires_at"] = time.time() + (23 * 60 * 60)
-        
-        return token_data["access_token"]
-
-async def search_fatsecret(query: str, max_results: int = 50):
-    """Search FatSecret food database"""
-    token = await get_fatsecret_token()
-    if not token:
-        return []
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            FATSECRET_API_BASE,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/x-www-form-urlencoded"
-            },
-            data={
-                "method": "foods.search",
-                "search_expression": query,
-                "format": "json",
-                "max_results": max_results
-            }
-        )
-        
-        if response.status_code != 200:
-            logger.error(f"FatSecret search error: {response.text}")
-            return []
-        
-        data = response.json()
-        logger.info(f"FatSecret raw response keys: {data.keys()}")
-        
-        # Parse FatSecret response
-        foods_data = data.get("foods", {})
-        if not foods_data:
-            logger.warning(f"No foods_data in response: {data}")
-            return []
-        
-        food_list = foods_data.get("food", [])
-        # If only one result, it comes as a dict not a list
-        if isinstance(food_list, dict):
-            food_list = [food_list]
-        
-        logger.info(f"Found {len(food_list)} foods from FatSecret")
-        
-        results = []
-        for food in food_list:
-            # Parse the description for serving size and macros
-            description = food.get("food_description", "")
-            
-            # Default values
-            calories = 0
-            protein = 0
-            carbs = 0
-            fats = 0
-            serving = "Per serving"
-            
-            # Parse FatSecret format: "Per 100g - Calories: 165kcal | Fat: 3.6g | Carbs: 0g | Protein: 31g"
-            if description:
-                # Extract serving info
-                if " - " in description:
-                    parts = description.split(" - ")
-                    serving = parts[0]
-                    macro_part = parts[1] if len(parts) > 1 else ""
-                else:
-                    macro_part = description
-                
-                # Extract macros using simple parsing
-                import re
-                cal_match = re.search(r'Calories:\s*(\d+)', macro_part, re.I)
-                fat_match = re.search(r'Fat:\s*([\d.]+)', macro_part, re.I)
-                carb_match = re.search(r'Carbs:\s*([\d.]+)', macro_part, re.I)
-                protein_match = re.search(r'Protein:\s*([\d.]+)', macro_part, re.I)
-                
-                if cal_match:
-                    calories = int(cal_match.group(1))
-                if fat_match:
-                    fats = float(fat_match.group(1))
-                if carb_match:
-                    carbs = float(carb_match.group(1))
-                if protein_match:
-                    protein = float(protein_match.group(1))
-            
-            results.append({
-                "name": f"{food.get('food_name', 'Unknown')} ({serving})",
-                "brand": food.get("brand_name", ""),
-                "calories": calories,
-                "protein": round(protein, 1),
-                "carbs": round(carbs, 1),
-                "fats": round(fats, 1),
-                "food_id": food.get("food_id"),
-                "source": "fatsecret"
-            })
-        
-        return results
 
 async def search_usda(query: str, max_results: int = 50):
     """Search USDA FoodData Central database (free, no IP restrictions)"""
@@ -3206,6 +3073,7 @@ class MealDay(BaseModel):
     total_protein: float
     total_carbs: float
     total_fats: float
+    on_target: Optional[bool] = None  # every macro within 5% of the plan's targets
 
 class MealPlan(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -5166,555 +5034,287 @@ async def get_exercise_gif(exercise_id: str, resolution: str = "360"):
         raise HTTPException(status_code=500, detail="Failed to fetch GIF")
 
 # ==================== MEAL PLAN ENDPOINTS ====================
+# Every number in a meal plan is calculated by nutrition_engine from the
+# listed ingredients (food + grams). The AI only chooses foods and grams.
+from food_database import INGREDIENT_MACROS  # noqa: E402  (also used by the food-log reference check)
+from nutrition_engine import (  # noqa: E402
+    DIET_BANNED_TERMS, FoodRules, MACRO_KEYS, balance_day, build_day, build_safe_meal,
+    day_totals, finalize_meal, is_on_target, items_from_raw, make_draft, max_deviation, meal_targets,
+    optimise_portions, prompt_food_names, template_draft,
+)
+from meal_templates import TEMPLATES_BY_STYLE  # noqa: E402
 
-# Ingredient database for accurate macro calculation (per 100g)
-# Format: (calories, protein, carbs, fat)
-INGREDIENT_MACROS = {
-    # Proteins - Poultry
-    # (all values USDA per-100g COOKED unless noted — the file convention)
-    "chicken breast": (165, 31, 0, 3.6),   # SR Legacy #05064 breast, meat only, cooked, roasted
-    "chicken": (165, 31, 0, 3.6),           # default = chicken breast (as above)
-    "chicken thigh": (209, 26, 0, 10.9),   # SR Legacy #05098 thigh, meat only, cooked, roasted
-    "chicken thighs": (209, 26, 0, 10.9),
-    "turkey breast": (135, 30, 0, 1),      # SR Legacy #05192 breast, meat only, cooked, roasted
-    "turkey": (170, 29, 0, 5),             # SR Legacy #05171 all classes, meat only, cooked, roasted
-    "ground turkey": (203, 27, 0, 11.5),   # SR Legacy #05306 ground, cooked, pan-browned
-    # Proteins - Beef  (all cooked / broiled / pan-browned; USDA "lean+fat, trimmed to 1/8"" versions)
-    "sirloin steak": (212, 27, 0, 10.6),   # SR Legacy #23621 top sirloin, lean+fat 1/8", broiled
-    "sirloin": (212, 27, 0, 10.6),
-    "ribeye steak": (291, 24, 0, 21),      # SR Legacy #23111 rib eye small end, lean+fat 1/8", broiled
-    "ribeye": (291, 24, 0, 21),
-    "rump steak": (194, 28, 0, 8.3),       # SR Legacy #23086 bottom round steak, lean+fat 1/8", roasted
-    "rump": (194, 28, 0, 8.3),
-    "steak": (212, 27, 0, 10.6),           # default = sirloin (as above)
-    # Ground beef family — one product should not appear twice with different macros,
-    # so the generic aliases ("ground beef", "beef mince") default to 80/20 (retail standard).
-    "ground beef": (272, 25.8, 0, 18.2),   # SR Legacy #23566 80/20, pan-browned, cooked
-    "extra lean beef mince": (171, 26.5, 0, 6.9),  # SR Legacy #23576 95/5, pan-browned, cooked
-    "premium beef mince": (171, 26.5, 0, 6.9),
-    "premium ground beef": (171, 26.5, 0, 6.9),
-    "5 star beef mince": (171, 26.5, 0, 6.9),
-    "five star beef mince": (171, 26.5, 0, 6.9),
-    "extra lean ground beef": (171, 26.5, 0, 6.9),
-    "lean beef mince": (217, 26.6, 0, 11.7),  # SR Legacy #23572 90/10, pan-browned, cooked
-    "lean ground beef": (217, 26.6, 0, 11.7),
-    "fatty beef mince": (272, 25.8, 0, 18.2),  # SR Legacy #23566 80/20, pan-browned, cooked
-    "regular beef mince": (272, 25.8, 0, 18.2),
-    "fatty ground beef": (272, 25.8, 0, 18.2),
-    "regular ground beef": (272, 25.8, 0, 18.2),
-    "beef mince": (272, 25.8, 0, 18.2),     # default = 80/20 (retail standard)
-    "beef": (212, 27, 0, 10.6),             # default = sirloin
-    "extra lean beef": (175, 26, 0, 7),
-    "lean beef": (175, 26, 0, 7),
-    # Proteins - Fish/Seafood  (all COOKED)
-    "salmon": (206, 22, 0, 12.4),          # SR Legacy #15236 Atlantic, farmed, cooked, dry heat
-    "tilapia": (128, 26, 0, 2.7),          # SR Legacy #15261 tilapia, cooked, dry heat
-    "tuna": (116, 25.5, 0, 0.8),           # SR Legacy #15122 light, canned in water, drained
-    "shrimp": (99, 24, 0.2, 0.3),          # SR Legacy #15271 mixed species, cooked, moist heat
-    "cod": (105, 23, 0, 0.9),              # SR Legacy #15016 Atlantic cod, cooked, dry heat
-    "fish": (100, 20, 0, 2),  # generic fish
-    # Proteins - Eggs/Dairy
-    "egg": (155, 13, 1.1, 11),  # per 100g (about 2 eggs)
-    "eggs": (155, 13, 1.1, 11),
-    "whole eggs": (155, 13, 1.1, 11),
-    "large eggs": (155, 13, 1.1, 11),
-    "egg white": (52, 11, 0.7, 0.2),
-    "egg whites": (52, 11, 0.7, 0.2),
-    "greek yogurt": (59, 10, 4, 0.4),    # SR Legacy #01256 Greek plain, nonfat
-    "yogurt": (59, 10, 4, 0.4),          # aliased to Greek nonfat (fitness-app convention)
-    "cottage cheese": (84, 11, 4, 2.5),  # SR Legacy #01169 lowfat 2% milkfat
-    # Proteins - Other
-    "tofu": (144, 17, 3, 8),
-    "tofu firm": (144, 17, 3, 8),
-    "firm tofu": (144, 17, 3, 8),
-    "tempeh": (192, 20, 8, 11),
-    "seitan": (166, 25, 14, 2),          # wheat gluten — 25g P per 100g
-    "edamame": (121, 11, 8, 5),           # shelled edamame — 11g P per 100g
-    "shelled edamame": (121, 11, 8, 5),
-    "nutritional yeast": (355, 50, 35, 7), # 50g P per 100g!
-    "yeast flakes": (355, 50, 35, 7),      # alias for nutritional yeast
-    # hemp seeds → declared with the rest of the seeds/nuts section below
-    "tahini": (595, 17, 23, 54),           # sesame paste — high fat
-    "pork": (242, 27, 0, 14),
-    "pork chop": (231, 27, 0, 13),
-    "bacon": (417, 13, 1.4, 40),
-    "ham": (145, 21, 1, 6),
-    # Carbs - Grains  (cooked unless the food is generally weighed dry in recipes)
-    "rice": (130, 2.7, 28, 0.3),          # SR Legacy #20045 white long-grain, cooked
-    "white rice": (130, 2.7, 28, 0.3),
-    "brown rice": (123, 2.7, 25.6, 1),    # SR Legacy #20037 long-grain, cooked (was 112/2.6/24/0.9)
-    "oats": (389, 17, 66, 7),             # SR Legacy #20038 raw oats — recipe convention (dry weight)
-    "oatmeal": (68, 2.4, 12, 1.4),        # SR Legacy #08123 cooked with water
-    "quinoa": (120, 4.4, 21, 1.9),        # SR Legacy #20137 cooked
-    "pasta": (158, 5.8, 30.9, 0.9),       # SR Legacy #20421 enriched, cooked (was 131/5/25/1.1 — 20% cal understated)
-    "whole wheat pasta": (149, 6, 30, 1.1), # SR Legacy #20124 whole-wheat, cooked
-    "bread": (265, 9, 49, 3.2),
-    "whole wheat bread": (247, 10, 41, 3.4),
-    "wrap": (310, 8, 52, 8),
-    "whole wheat wrap": (310, 8, 52, 8),
-    "tortilla": (312, 8, 52, 8),
-    "couscous": (112, 3.8, 23, 0.2),      # SR Legacy #20028 cooked (was 176/6/36/0.3 — was actually a dry-ish value)
-    "cooked couscous": (112, 3.8, 23, 0.2),
-    "bulgur": (83, 3, 19, 0.2),           # SR Legacy #20014 cooked
-    "farro": (170, 7, 34, 1.5),           # no direct USDA row; industry-standard cooked farro
-    "barley": (123, 2.3, 28, 0.4),        # SR Legacy #20005 pearled, cooked
-    "noodles": (138, 5, 25, 2),           # SR Legacy #20110 egg noodles, cooked
-    "ramen": (138, 5, 25, 2),
-    "rice noodles": (109, 0.9, 25, 0.2),
-    "soba noodles": (99, 5, 21, 0.1),
-    "udon noodles": (118, 3, 24, 0.3),
-    # Carbs - Starchy Vegetables
-    "sweet potato": (86, 1.6, 20, 0.1),
-    "potato": (77, 2, 17, 0.1),
-    "potatoes": (77, 2, 17, 0.1),
-    "corn": (86, 3.2, 19, 1.2),
-    # Carbs - Fruits
-    "banana": (89, 1.1, 23, 0.3),
-    "bananas": (89, 1.1, 23, 0.3),
-    "apple": (52, 0.3, 14, 0.2),
-    "apples": (52, 0.3, 14, 0.2),
-    "berries": (43, 1, 10, 0.3),
-    "mixed berries": (43, 1, 10, 0.3),
-    "orange": (47, 0.9, 12, 0.1),
-    "oranges": (47, 0.9, 12, 0.1),
-    "grapes": (67, 0.6, 17, 0.4),
-    "mango": (60, 0.8, 15, 0.4),
-    "pineapple": (50, 0.5, 13, 0.1),
-    # Vegetables - Leafy Greens
-    "spinach": (23, 2.9, 3.6, 0.4),
-    "kale": (49, 4.3, 9, 0.9),
-    "lettuce": (15, 1.4, 2.9, 0.2),
-    "greens": (20, 2, 3.5, 0.3),  # generic greens
-    "mixed greens": (20, 2, 3.5, 0.3),
-    "salad greens": (20, 2, 3.5, 0.3),
-    "romaine": (17, 1.2, 3.3, 0.3),
-    "arugula": (25, 2.6, 3.7, 0.7),
-    # Vegetables - Cruciferous
-    "broccoli": (34, 2.8, 7, 0.4),
-    "cauliflower": (25, 1.9, 5, 0.3),
-    "cabbage": (25, 1.3, 6, 0.1),
-    "brussels sprouts": (43, 3.4, 9, 0.3),
-    # Vegetables - Other
-    "asparagus": (20, 2.2, 4, 0.1),
-    "zucchini": (17, 1.2, 3.1, 0.3),
-    "bell pepper": (31, 1, 6, 0.3),
-    "pepper": (31, 1, 6, 0.3),
-    "peppers": (31, 1, 6, 0.3),
-    "tomato": (18, 0.9, 3.9, 0.2),
-    "tomatoes": (18, 0.9, 3.9, 0.2),
-    "cherry tomatoes": (18, 0.9, 3.9, 0.2),
-    "cucumber": (15, 0.7, 3.6, 0.1),
-    "carrots": (41, 0.9, 10, 0.2),
-    "carrot": (41, 0.9, 10, 0.2),
-    "onion": (40, 1.1, 9, 0.1),
-    "onions": (40, 1.1, 9, 0.1),
-    "mushroom": (22, 3.1, 3.3, 0.3),
-    "mushrooms": (22, 3.1, 3.3, 0.3),
-    "avocado": (160, 2, 9, 15),
-    "celery": (16, 0.7, 3, 0.2),
-    "green beans": (31, 1.8, 7, 0.1),
-    "peas": (81, 5.4, 14, 0.4),
-    "mixed vegetables": (50, 2.5, 10, 0.3),
-    "vegetables": (50, 2.5, 10, 0.3),
-    "sweet peppers": (31, 1, 6, 0.3),
-    "eggplant": (25, 1, 6, 0.2),
-    "squash": (16, 0.6, 3.4, 0.2),
-    "beets": (43, 1.6, 10, 0.2),
-    "radish": (16, 0.7, 3.4, 0.1),
-    "leek": (61, 1.5, 14, 0.3),
-    "bok choy": (13, 1.5, 2, 0.2),
-    # Fats/Oils
-    "olive oil": (884, 0, 0, 100),
-    "coconut oil": (862, 0, 0, 100),
-    "vegetable oil": (884, 0, 0, 100),
-    "butter": (717, 0.9, 0.1, 81),
-    "ghee": (876, 0, 0, 97),
-    "avocado oil": (884, 0, 0, 100),
-    # Nuts and Seeds
-    "almond": (579, 21, 22, 50),
-    "almonds": (579, 21, 22, 50),
-    "peanut butter": (588, 25, 20, 50),
-    "almond butter": (614, 21, 19, 56),
-    "walnut": (654, 15, 14, 65),
-    "walnuts": (654, 15, 14, 65),
-    "cashews": (553, 18, 30, 44),
-    "peanuts": (567, 26, 16, 49),
-    "seeds": (534, 18, 23, 45),  # average seeds
-    "chia seeds": (486, 17, 42, 31),
-    "flax seeds": (534, 18, 29, 42),
-    "sunflower seeds": (584, 21, 20, 51),
-    "pumpkin seeds": (559, 30, 11, 49),
-    "hemp seeds": (553, 32, 9, 49),        # SR Legacy #12012 shelled hemp seeds — 32g P per 100g
-    "hemp seed": (553, 32, 9, 49),
-    "macadamia": (718, 8, 14, 76),
-    "pecans": (691, 9, 14, 72),
-    "pistachios": (560, 20, 28, 45),
-    "hazelnuts": (628, 15, 17, 61),
-    # Dairy
-    "milk": (42, 3.4, 5, 1),
-    "whole milk": (61, 3.2, 4.8, 3.3),
-    "almond milk": (17, 0.6, 1.4, 1.1),
-    "cheese": (403, 25, 1.3, 33),
-    "cheddar": (403, 25, 1.3, 33),
-    "mozzarella": (280, 28, 3, 17),
-    "parmesan": (431, 38, 4, 29),
-    "feta": (264, 14, 4, 21),
-    "cream cheese": (342, 6, 4, 34),
-    # Protein Supplements
-    "whey protein": (400, 80, 10, 3.3),
-    "protein powder": (400, 80, 10, 3.3),
-    "protein": (400, 80, 10, 3.3),
-    # Condiments/Spreads
-    "hummus": (166, 8, 14, 10),
-    "salsa": (36, 2, 8, 0.2),
-    "mayo": (680, 1, 0, 75),
-    "mayonnaise": (680, 1, 0, 75),
-    "mustard": (66, 4, 5, 4),
-    "honey": (304, 0.3, 82, 0),
-    "maple syrup": (260, 0.1, 67, 0.1),
-    # Legumes
-    "black beans": (132, 9, 24, 0.5),
-    "chickpeas": (164, 9, 27, 2.6),
-    "lentils": (116, 9, 20, 0.4),
-    "kidney beans": (127, 9, 23, 0.5),
-    # Lamb
-    "lamb": (258, 25, 0, 17),
-    "lamb chop": (258, 25, 0, 17),
-    "lamb chops": (258, 25, 0, 17),
-    "lamb loin": (258, 25, 0, 17),
-    "lamb leg": (225, 28, 0, 12),
-    "ground lamb": (283, 23, 0, 21),
-    "minced lamb": (283, 23, 0, 21),
-    # More seafood
-    "prawn": (99, 24, 0, 0.3),
-    "prawns": (99, 24, 0, 0.3),
-    "scallops": (111, 21, 5, 1),
-    "crab": (97, 19, 0.5, 1.5),
-    # Breakfast / snack staples
-    "granola": (471, 10, 64, 20),
-    "rice cake": (387, 8, 82, 3),
-    "rice cakes": (387, 8, 82, 3),
-    "blueberry": (57, 0.7, 14, 0.3),
-    "blueberries": (57, 0.7, 14, 0.3),
-    "strawberry": (32, 0.7, 8, 0.3),
-    "strawberries": (32, 0.7, 8, 0.3),
-    "raspberries": (52, 1.2, 12, 0.7),
-    # Condiments
-    "soy sauce": (53, 8, 5, 0),
-    "tamari": (53, 8, 5, 0),
-    "teriyaki sauce": (89, 3.5, 17, 0),
-    "tomato sauce": (29, 1.5, 6, 0.3),
-    "garlic": (149, 6, 33, 0.5),
-    "ginger": (80, 1.8, 18, 0.8),
-    # Vegan / specialty ingredients (frequently missing)
-    "chickpea flour": (387, 22, 58, 6),
-    "besan": (387, 22, 58, 6),         # Indian name for chickpea flour
-    "dark chocolate": (598, 7.8, 43, 42),
-    "dark chocolate chips": (598, 7.8, 43, 42),
-    "cacao": (228, 20, 28, 14),
-    "cocoa powder": (228, 20, 28, 14),
-    "agave nectar": (310, 0.1, 76, 0),
-    "agave syrup": (310, 0.1, 76, 0),
-    "balsamic vinegar": (88, 0.5, 17, 0),
-    "apple cider vinegar": (22, 0, 0.9, 0),
-    "lemon juice": (22, 0.4, 7, 0.2),
-    "lime juice": (25, 0.4, 8, 0.1),
-    # nutritional yeast, yeast flakes → declared earlier (Proteins - Other section)
-    "miso paste": (199, 12, 26, 6),
-    "miso": (199, 12, 26, 6),
-    "coconut aminos": (74, 2, 18, 0),
-    "plant milk": (35, 1.5, 4, 1.8),   # generic plant milk
-    "soy milk": (54, 3.3, 4.5, 2.2),
-    "oat milk": (47, 1.5, 8, 0.9),
-    "coconut yogurt": (100, 0.7, 6, 9),
-    "soy yogurt": (67, 3.9, 6.6, 2.4),
-    "vegan protein": (380, 72, 8, 5),  # generic vegan protein powder
-    "pea protein": (380, 72, 8, 5),
-    "brown sugar": (380, 0, 98, 0),
-    # maple syrup → declared earlier (sweeteners section)
-    # tahini → declared earlier (Proteins - Other section)
-    "almond flour": (571, 21, 20, 50),
-    "flaxseed meal": (534, 18, 29, 42),
-    # chia seeds → declared earlier (seeds/nuts section)
-    "spirulina": (290, 57, 24, 8),
-    "maca powder": (325, 11, 66, 4),
-    "matcha powder": (306, 26, 52, 5),
+MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"]
+PLAN_NAMES = {"keto": "Keto", "carnivore": "Carnivore", "paleo": "Paleo", "vegan": "Vegan",
+              "vegetarian": "Vegetarian", "high_protein": "High Protein", "balanced": "Balanced"}
+# Banning a protein family by name bans every member ("beef" → sirloin, ribeye…)
+PROTEIN_GROUPS = {
+    'chicken': ['chicken breast', 'chicken thigh', 'chicken', 'chicken wings', 'chicken drumstick', 'poultry'],
+    'beef': ['beef', 'sirloin', 'ribeye', 'ground beef', 'steak', 'beef mince', 'brisket', 'flank steak', 'filet mignon', 'tenderloin', 'roast beef', 'corned beef', 'prime rib', 'eye of round'],
+    'pork': ['pork', 'bacon', 'pork chop', 'ham', 'pork loin', 'pork belly', 'sausage', 'pork tenderloin', 'pulled pork', 'ribs', 'chorizo', 'prosciutto'],
+    'turkey': ['turkey', 'turkey breast', 'ground turkey', 'turkey bacon', 'turkey mince'],
+    'fish': ['fish', 'salmon', 'tuna', 'cod', 'tilapia', 'white fish', 'sea bass', 'halibut', 'mahi mahi', 'trout', 'sardines', 'mackerel', 'anchovies', 'swordfish', 'haddock', 'snapper'],
+    'seafood': ['shrimp', 'prawns', 'crab', 'lobster', 'scallops', 'mussels', 'clams', 'oysters', 'calamari', 'squid', 'octopus'],
+    'eggs': ['eggs', 'egg', 'egg whites', 'omelette', 'frittata'],
+    'dairy': ['greek yogurt', 'cottage cheese', 'cheese', 'milk', 'whey protein', 'cream', 'butter', 'yogurt'],
+    'lamb': ['lamb', 'lamb chops', 'lamb leg', 'lamb shank', 'ground lamb', 'lamb shoulder'],
+}
+TEMPLATE_POOLS = {"vegan": ["vegan"], "vegetarian": ["vegetarian", "vegan"], "keto": ["keto"],
+                  "carnivore": ["carnivore"], "paleo": ["paleo"], "high_protein": ["high_protein", "balanced"],
+                  "balanced": ["balanced", "high_protein", "vegetarian", "vegan", "paleo"]}
+DIET_INSTRUCTIONS = {
+    "keto": "STRICT KETO: total carbs at or under the carb target. No grains, sugar, bread, pasta, rice, potatoes, "
+            "legumes or fruit (small amounts of berries only). High fat from butter, olive oil, avocado, cheese, fatty meats.",
+    "carnivore": "CARNIVORE: ONLY meat, fish, eggs, butter/ghee/tallow, cheese, salt. NO plants at all.",
+    "paleo": "PALEO: no grains (incl. oats, rice, corn), no dairy (ghee is fine), no legumes (incl. peanuts, soy), "
+             "no refined sugar. Sweet potato instead of grains.",
+    "vegan": "VEGAN: no animal products whatsoever (no meat, fish, eggs, dairy, honey). Every meal needs a high-protein "
+             "base: seitan, tempeh, extra firm tofu, edamame, pea protein powder, lentils or beans.",
+    "vegetarian": "VEGETARIAN: no meat or fish. Eggs and dairy are fine. Build protein from eggs, Greek yogurt, "
+                  "cottage cheese, tofu, tempeh and legumes.",
+    "high_protein": "HIGH PROTEIN: lean proteins at every meal, but STILL hit the carb target from rice, oats, potatoes, fruit.",
+}
+STYLE_FOOD_IDEAS = {
+    'keto': 'ribeye, salmon, eggs, bacon, avocado, butter, heavy cream, cheese, macadamia nuts, leafy greens, broccoli, cauliflower.',
+    'vegan': 'tempeh, seitan, extra firm tofu, black beans, lentils, quinoa, chickpeas, edamame, nuts, seeds, pea protein powder.',
+    'vegetarian': 'eggs, greek yogurt, cottage cheese, tempeh, legumes, quinoa, sweet potato, brown rice.',
+    'paleo': 'lean beef, salmon, chicken, sweet potato, almond flour, coconut oil, berries, green vegetables.',
+    'carnivore': 'beef (ribeye/sirloin/mince), chicken thighs, salmon, bacon, eggs, butter.',
+    'high_protein': 'chicken breast, turkey, tuna, egg whites, greek yogurt, cottage cheese, lean beef, whey protein, plus oats, rice, potatoes and fruit for carbs.',
+    'balanced': 'a rich variety: lean proteins, complex carbs (rice, oats, sweet potato), healthy fats, diverse vegetables.',
+    'whole_foods': 'only whole, unprocessed ingredients: vegetables, legumes, lean proteins, whole grains.',
+}
+ALLERGY_SPECIFICS = {
+    'gluten': 'NO wheat, barley, rye, oats (any), spelt, seitan, pasta, noodles, couscous, bulgur, orzo, bread, bagels, naan, granola, soy sauce (use tamari).',
+    'dairy': 'NO milk, cheese (incl. parmesan, mozzarella, ricotta, halloumi, paneer), yogurt, skyr, kefir, butter, ghee, cream, whey, casein.',
+    'lactose': 'NO milk, cheese, yogurt, skyr, kefir, butter, ghee, cream, whey, casein.',
+    'nuts': 'NO almonds, cashews, walnuts, pecans, pistachios, brazil nuts, hazelnuts, macadamia, peanuts, nut butters, nut milks, pesto.',
+    'eggs': 'NO eggs in any form, no mayonnaise or aioli.',
+    'soy': 'NO tofu, tempeh, edamame, soy sauce, tamari, soy milk, miso.',
+    'shellfish': 'NO shrimp, prawns, crab, lobster, scallops, oysters, mussels, clams, squid.',
+    'fish': 'NO fish of any kind, no fish sauce.',
 }
 
-def calculate_ingredient_macros(ingredient_str):
-    """Calculate macros from ingredient string like '250g sweet potato' or '3 large eggs'"""
-    import re
-    ingredient_str = ingredient_str.lower().strip()
-    
-    # Standard unit conversions to grams
-    UNIT_TO_GRAMS = {
-        # Weight units
-        'g': 1, 'gram': 1, 'grams': 1,
-        'kg': 1000, 'oz': 28.35, 'lb': 453.6,
-        # Volume units (approximate)
-        'ml': 1, 'cup': 240, 'cups': 240,
-        'tbsp': 14, 'tablespoon': 14, 'tablespoons': 14,
-        'tsp': 5, 'teaspoon': 5, 'teaspoons': 5,
-        # Count units for common items
-        'large': 1, 'medium': 1, 'small': 1,
-        'whole': 1, 'slice': 1, 'slices': 1,
-        'piece': 1, 'pieces': 1, 'serving': 1, 'scoop': 1,
-    }
-    
-    # Weight per item for count-based ingredients (in grams).
-    # Egg weight: UK/AU "Large" grade eggs are ~58g shelled (USDA "large" spec
-    # is 50g but that's actually medium-large; real large eggs at retail weigh
-    # ~55–63g). 58g reflects two-large-eggs = ~116g which matches real cartons.
-    ITEM_WEIGHTS = {
-        'egg': 58, 'eggs': 58, 'large egg': 58, 'whole egg': 58,
-        'banana': 120, 'bananas': 120,
-        'apple': 180, 'apples': 180,
-        'orange': 130, 'oranges': 130,
-        'slice bread': 30, 'slice of bread': 30,
-        'chicken breast': 175, 'breast': 175,
-        'steak': 225,
-        # Small aromatics — 1 clove/piece ≈ 3-5g, NOT 100g
-        'garlic': 4, 'garlic clove': 4, 'garlic cloves': 4,
-        'ginger': 5, 'ginger piece': 5,
-        'shallot': 20,
-        # Fruits (medium size)
-        'lime': 67, 'limes': 67, 'lemon': 58, 'lemons': 58,
-        'tomato': 120, 'tomatoes': 120, 'cherry tomato': 17, 'cherry tomatoes': 17,
-        'avocado': 200,
-        'peach': 150, 'nectarine': 140, 'plum': 85,
-        'kiwi': 70, 'fig': 50, 'date': 24,
-        # Vegetables (medium size)
-        'onion': 110, 'large onion': 150, 'medium onion': 110, 'small onion': 75,
-        'bell pepper': 120, 'pepper': 120, 'jalapeno': 14, 'chili': 15,
-        'mushroom': 90, 'large mushroom': 120,
-        'carrot': 80, 'medium carrot': 80, 'large carrot': 120,
-        'zucchini': 196,  # one medium zucchini
-        'potato': 180, 'sweet potato': 130, 'medium potato': 180,
-    }
-    
-    # Try pattern: "food (Xg)" like "chicken breast (200g)"
-    pattern_parens = re.match(r'(.+?)\s*\((\d+(?:\.\d+)?)\s*(g|gram|grams|ml)?\)', ingredient_str)
-    # Try pattern: "Xg food" or "X g food" - REQUIRES a unit
-    pattern_with_unit = re.match(r'(\d+(?:\.\d+)?)\s*(g|gram|grams|kg|oz|lb|ml|cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons)\s+(.+)', ingredient_str)
-    # Try pattern: "X modifier food" (count-based like "3 large eggs", "3 whole eggs")
-    pattern_count_modifier = re.match(r'(\d+(?:\.\d+)?)\s+(large|medium|small|whole|slice|slices|piece|pieces|serving|scoop)\s+(.+)', ingredient_str)
-    # Try pattern: "X food" (count-based like "3 eggs", "2 bananas")
-    pattern_count_simple = re.match(r'(\d+(?:\.\d+)?)\s+([a-z]+.*)', ingredient_str)
-    
-    amount = 0
-    food_name = ""
-    is_count_based = False
-    
-    if pattern_parens:  # "chicken breast (200g)"
-        food_name = pattern_parens.group(1).strip()
-        amount = float(pattern_parens.group(2))
-        unit = pattern_parens.group(3) or 'g'
-        if unit in UNIT_TO_GRAMS:
-            amount *= UNIT_TO_GRAMS[unit]
-    elif pattern_with_unit:  # "200g chicken breast"
-        amount = float(pattern_with_unit.group(1))
-        unit = pattern_with_unit.group(2)
-        food_name = pattern_with_unit.group(3).strip()
-        if unit in UNIT_TO_GRAMS:
-            amount *= UNIT_TO_GRAMS[unit]
-    elif pattern_count_modifier:  # "3 large eggs" or "3 whole eggs"
-        amount = float(pattern_count_modifier.group(1))
-        modifier = pattern_count_modifier.group(2)
-        food_name = pattern_count_modifier.group(3).strip()
-        is_count_based = True
-        # Combine modifier with food name for lookup
-        food_name = f"{modifier} {food_name}"
-    elif pattern_count_simple:  # "3 eggs"
-        amount = float(pattern_count_simple.group(1))
-        food_name = pattern_count_simple.group(2).strip()
-        is_count_based = True
+
+def _style_key(eating_style: str) -> str:
+    return eating_style if eating_style in TEMPLATES_BY_STYLE else "balanced"
+
+
+def diet_macro_targets(eating_style: str, cal, pro, carb, fat) -> dict:
+    """Keto/carnivore keep the user's calories but use the diet's own split."""
+    if eating_style == 'keto':
+        fat = round(cal * 0.72 / 9)
+        carb = min(30, round(cal * 0.05 / 4))
+        pro = round((cal - fat * 9 - carb * 4) / 4)
+    elif eating_style == 'carnivore':
+        fat = round(cal * 0.70 / 9)
+        carb = 5
+        pro = round((cal - fat * 9 - carb * 4) / 4)
+    return {"calories": cal, "protein": pro, "carbs": carb, "fats": fat}
+
+
+def _avoid_terms(foods_to_avoid: str) -> list:
+    terms = [f.strip().lower() for f in (foods_to_avoid or "").split(",") if f.strip()]
+    for t in list(terms):
+        if t in PROTEIN_GROUPS:
+            terms.extend(PROTEIN_GROUPS[t])
+    return list(dict.fromkeys(terms))
+
+
+def _parse_json_obj(content: str):
+    text = (content or "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("no JSON object in AI response")
+    return json.loads(text[start:end + 1])
+
+
+def _food_list_text(rules: FoodRules) -> str:
+    rows = []
+    for name in prompt_food_names(rules):
+        c, p, cb, f = INGREDIENT_MACROS[name]
+        rows.append(f"{name} {c:g}/{p:g}/{cb:g}/{f:g}")
+    return "; ".join(rows)
+
+
+def _prohibitions_text(allergies, foods_to_avoid) -> str:
+    lines = [f"  - {a.upper()}: {ALLERGY_SPECIFICS.get(a.lower(), f'NO {a} in any form.')}" for a in allergies]
+    if foods_to_avoid and foods_to_avoid.strip():
+        lines.append(f"  - FOODS TO AVOID: {foods_to_avoid.upper()}")
+    return "\n".join(lines) if lines else "  - None"
+
+
+_INGREDIENT_RULES = """INGREDIENT RULES (critical):
+- Every ingredient is an object {"food": "<exact name from FOOD LIST>", "grams": <number>}.
+- GRAMS ONLY. Never cups, ml, scoops, slices or counts: 2 eggs -> 116g eggs, a scoop of whey -> 30g whey protein,
+  15ml honey -> 21g honey, 2 rice cakes -> 18g rice cakes.
+- Meat, fish, rice, pasta, grains and legumes are COOKED weights. Oats are DRY weight ("rolled oats").
+- Pick grams so the meal lands near its target using the per-100g values (kcal/protein/carbs/fat).
+  Protein, carbs and fat come from EVERY food (grains, legumes, dairy and bread add protein too) —
+  add them all up and do NOT overshoot the protein or calorie target.
+  Do NOT output any calorie or macro numbers — they are calculated from your foods and grams.
+- Beef mince must be "beef mince 95/5" (extra lean/premium/5-star), "beef mince 90/10" (lean) or "beef mince 80/20" (regular/fatty).
+- Instructions: 2-3 short steps, never mention gram amounts."""
+
+
+async def _ai_plan_drafts(eating_style, plan_name, targets, rules, allergies, request):
+    """One Sonnet call for the full 3-day plan. Returns (days, plan_title) where
+    days = [ {meal_type: (draft, problems)} ×3 ], or (None, None) on failure."""
+    per_meal = {mt: meal_targets(targets, mt, MEAL_TYPES) for mt in MEAL_TYPES}
+    per_meal_txt = "\n".join(
+        f"  {mt.capitalize()}: ~{round(t['calories'])} kcal | {round(t['protein'])}g P | {round(t['carbs'])}g C | {round(t['fats'])}g F"
+        for mt, t in per_meal.items())
+    fat_pct = targets["fats"] * 9 / targets["calories"] * 100 if targets["calories"] else 30
+    protein_guidance = ("Prefer LEAN proteins (chicken breast, turkey breast, white fish, egg whites); minimise added fats."
+                        if fat_pct < 25 else
+                        "Use fattier proteins (ribeye, chicken thighs, salmon, beef mince 80/20, whole eggs) and added fats."
+                        if fat_pct > 40 else
+                        "Balance lean and moderate-fat proteins (sirloin, chicken, salmon, beef mince 90/10, whole eggs).")
+    if request.preferred_foods and request.preferred_foods.strip():
+        foods_section = (f"PREFERRED FOODS: {request.preferred_foods}. EVERY preferred food must appear at least once on EVERY day "
+                         "where it fits the diet, using the closest FOOD LIST name. Respect the exact variant the user names "
+                         "(e.g. 'fatty beef mince' = beef mince 80/20, 'extra lean' = beef mince 95/5).")
     else:
-        return None
-    
-    # Clean food name
-    food_name = re.sub(r'\s+', ' ', food_name).strip()
-    # Remove common descriptors
-    for desc in ['grilled', 'baked', 'fried', 'steamed', 'roasted', 'boiled', 'cooked', 'raw', 'fresh', 'dried', 'mixed']:
-        food_name = food_name.replace(desc, '').strip()
-    
-    # Find matching ingredient in database
-    best_match = None
-    best_score = 0
-    
-    for key in INGREDIENT_MACROS.keys():
-        score = 0
-        # Exact match
-        if key == food_name or food_name == key:
-            score = 100
-        # Key is in food name (e.g., "egg" in "eggs")
-        elif key in food_name:
-            score = 80 - len(food_name) + len(key)
-        # Food name is in key
-        elif food_name in key:
-            score = 70 - len(key) + len(food_name)
-        else:
-            # Word-level matching
-            food_words = set(food_name.split())
-            key_words = set(key.split())
-            common = food_words & key_words
-            if common:
-                score = len(common) * 30
-        
-        if score > best_score:
-            best_score = score
-            best_match = key
-    
-    if best_match and best_score >= 20:
-        cal, pro, carb, fat = INGREDIENT_MACROS[best_match]
-        
-        # For count-based ingredients, convert to grams
-        if is_count_based:
-            # Check if we have a weight for this item
-            item_weight = None
-            for item_key, weight in ITEM_WEIGHTS.items():
-                if item_key in food_name or food_name in item_key or best_match in item_key or item_key in best_match:
-                    item_weight = weight
-                    break
-            
-            if item_weight:
-                amount = amount * item_weight  # Convert count to grams
-            else:
-                # Default assumption for unknown count items
-                amount = amount * 100  # Assume 100g per item
-        
-        multiplier = amount / 100  # database is per 100g
-        return {
-            "calories": round(cal * multiplier),
-            "protein": round(pro * multiplier, 1),
-            "carbs": round(carb * multiplier, 1),
-            "fats": round(fat * multiplier, 1)
-        }
-    
-    # If no match found, log it for debugging
-    logger.warning(f"Could not find ingredient match for: '{ingredient_str}' (parsed as: '{food_name}')")
+        foods_section = f"No preferred foods given — choose elite, nutritionist-approved foods. Ideas: {STYLE_FOOD_IDEAS.get(eating_style, STYLE_FOOD_IDEAS['balanced'])}"
+    prompt = f"""You are an ELITE sports nutritionist. Create a fully personalised 3-day meal plan: breakfast, lunch, dinner and snack every day.
+
+DIET STYLE: {eating_style.upper().replace('_', ' ')}
+{DIET_INSTRUCTIONS.get(eating_style, '')}
+
+DAILY TARGETS: {targets['calories']} kcal | {targets['protein']}g protein | {targets['carbs']}g carbs | {targets['fats']}g fat
+PER-MEAL TARGETS:
+{per_meal_txt}
+
+ABSOLUTE PROHIBITIONS — never include these, not even as a garnish:
+{_prohibitions_text(allergies, request.foods_to_avoid)}
+
+{foods_section}
+{protein_guidance}
+
+FOOD LIST (name kcal/protein/carbs/fat per 100g) — use ONLY these exact names:
+{_food_list_text(rules)}
+
+{_INGREDIENT_RULES}
+- All 3 days must have completely different meals with appealing, descriptive names.
+
+Return ONLY this JSON (no markdown):
+{{"name": "<plan name>", "meal_days": [
+  {{"day": "Day 1", "meals": [
+    {{"meal_type": "breakfast", "name": "<meal name>", "ingredients": [{{"food": "<food name>", "grams": <number>}}], "instructions": "<steps>", "prep_time_minutes": <number>}},
+    {{"meal_type": "lunch", ...same structure}}, {{"meal_type": "dinner", ...}}, {{"meal_type": "snack", ...}}
+  ]}},
+  {{"day": "Day 2", "meals": [...]}},
+  {{"day": "Day 3", "meals": [...]}}
+]}}"""
+    try:
+        content = await call_claude_sonnet(
+            system_message="You are an elite nutritionist. You choose foods and gram amounts only; "
+                           "nutrition numbers are calculated by code. Never use a prohibited food.",
+            user_message=prompt, temperature=0.4, max_tokens=7000)
+        data = _parse_json_obj(content)
+    except Exception as e:
+        logger.error(f"AI meal plan generation error: {e}")
+        return None, None
+    days = []
+    for d in (data.get("meal_days") or [])[:3]:
+        by_type = {}
+        for m in d.get("meals") or []:
+            mt = str(m.get("meal_type", "")).lower().strip()
+            if mt not in MEAL_TYPES or mt in by_type:
+                continue
+            by_type[mt] = _draft_with_problems(m, mt, rules)
+        days.append(by_type)
+    if not days:
+        return None, None
+    return days, data.get("name")
+
+
+def _draft_with_problems(m: dict, meal_type: str, rules: FoodRules):
+    items, unknown = items_from_raw(m.get("ingredients"))
+    big_unknown = [u for u in unknown if not (u[1] and u[1] <= 10)]
+    if unknown:
+        logger.info(f"Meal '{m.get('name')}': unresolved ingredients {unknown}")
+    draft = make_draft(m.get("name"), meal_type, items, m.get("instructions"), m.get("prep_time_minutes"))
+    problems = rules.violations(draft["name"], items, draft["instructions"])
+    problems += [f"unknown:{u[0]}" for u in big_unknown]
+    if not items:
+        problems.append("no ingredients")
+    return draft, problems
+
+
+async def _ai_single_meal(meal_type, rules, target, eating_style, allergies, foods_to_avoid, avoid_names, notes="", attempts=3):
+    """Generate ONE rule-compliant meal (grams only). Retries with feedback
+    when a banned or unknown food appears. Returns a draft or None."""
+    feedback = ""
+    for attempt in range(attempts):
+        prompt = f"""Create ONE {meal_type} for a {eating_style.replace('_', ' ')} meal plan.
+TARGET for this meal: ~{round(target['calories'])} kcal | {round(target['protein'])}g protein | {round(target['carbs'])}g carbs | {round(target['fats'])}g fat
+{DIET_INSTRUCTIONS.get(eating_style, '')}
+{notes}
+
+ABSOLUTE PROHIBITIONS — never include these, not even as a garnish:
+{_prohibitions_text(allergies, foods_to_avoid)}
+
+Do not reuse any of these meal names: {', '.join(sorted(set(avoid_names))) or 'none'}
+
+FOOD LIST (name kcal/protein/carbs/fat per 100g) — use ONLY these exact names:
+{_food_list_text(rules)}
+
+{_INGREDIENT_RULES}
+{feedback}
+Return ONLY this JSON: {{"name": "<meal name>", "meal_type": "{meal_type}", "ingredients": [{{"food": "<food name>", "grams": <number>}}], "instructions": "<steps>", "prep_time_minutes": <number>}}"""
+        try:
+            content = await call_claude_haiku(
+                system_message="You are a precision nutritionist. You choose foods and gram amounts only; "
+                               "nutrition numbers are calculated by code. Never use a prohibited food.",
+                user_message=prompt, temperature=0.5, max_tokens=900)
+            data = _parse_json_obj(content)
+        except Exception as e:
+            logger.warning(f"Single-meal attempt {attempt + 1} failed: {e}")
+            continue
+        draft, problems = _draft_with_problems(data, meal_type, rules)
+        if not problems:
+            return draft
+        logger.warning(f"Single-meal attempt {attempt + 1} rejected '{draft['name']}': {problems}")
+        feedback = (f"Your previous answer '{draft['name']}' was REJECTED because of: {', '.join(problems)}. "
+                    "Create a completely different meal using only allowed FOOD LIST names.")
     return None
 
-# ==================== ALLERGEN SYNONYM EXPANSION & BANNED-FOOD MATCHING ====================
-ALLERGEN_SYNONYMS = {
-    "gluten": ["wheat", "flour", "bread", "pasta", "barley", "rye", "couscous", "semolina", "cracker"],
-    "nuts": ["almond", "cashew", "peanut", "walnut", "pecan", "hazelnut", "pistachio", "macadamia", "brazil nut", "nut butter", "nut milk"],
-    "soy": ["tofu", "tempeh", "edamame", "soy sauce", "miso"],
-    "lactose": ["milk", "cheese", "yogurt", "cream", "butter", "whey", "casein"],
-    "dairy": ["milk", "cheese", "yogurt", "cream", "butter", "whey", "casein"],
-    "eggs": ["egg", "mayonnaise", "mayo", "aioli"],
-    "shellfish": ["prawn", "shrimp", "crab", "lobster", "oyster", "mussel", "scallop"],
-}
+
+def _template_replacement(style_key, meal_type, rules, used_names):
+    for st in TEMPLATE_POOLS.get(style_key, ["balanced"]):
+        for day in TEMPLATES_BY_STYLE[st].values():
+            tpl = day.get(meal_type)
+            if not tpl or tpl["name"] in used_names:
+                continue
+            d = template_draft(meal_type, tpl)
+            if not rules.violations(d["name"], d["items"], d["instructions"]):
+                return d
+    return None
 
 
-def _stem_word(w: str) -> str:
-    """Very light stemmer: singular/plural match both ways (mushrooms <-> mushroom)."""
-    w = w.lower()
-    if len(w) > 3 and w.endswith("s"):
-        return w[:-1]
-    return w
-
-
-def _words_match(a: str, b: str) -> bool:
-    sa, sb = _stem_word(a), _stem_word(b)
-    if sa == sb:
-        return True
-    # prefix match for stem variants like tomato/tomatoes -> tomato/tomatoe
-    if len(sa) >= 4 and len(sb) >= 4 and (sa.startswith(sb) or sb.startswith(sa)):
-        return True
-    return False
-
-
-def expand_banned_terms(banned_list):
-    """Expand banned terms with allergen synonyms/derivatives (nuts -> almond, cashew...)."""
-    expanded = []
-    for term in banned_list or []:
-        t = str(term).lower().strip()
-        if not t:
-            continue
-        if t not in expanded:
-            expanded.append(t)
-        syns = ALLERGEN_SYNONYMS.get(t)
-        if syns is None:
-            # try stem/plural variants of the key ("nut" -> "nuts", "egg" -> "eggs")
-            syns = ALLERGEN_SYNONYMS.get(t + "s") or ALLERGEN_SYNONYMS.get(_stem_word(t)) or ALLERGEN_SYNONYMS.get(_stem_word(t) + "s")
-        if syns:
-            for s in syns:
-                if s not in expanded:
-                    expanded.append(s)
-    return expanded
-
-
-def contains_banned_food(text: str, banned_term: str) -> bool:
-    """Word-stem matching of a banned term (single word or phrase) inside text.
-    'mushrooms' catches 'mushroom' and vice versa. Ignores 'gluten-free' style mentions."""
-    t = (text or "").lower()
-    bt = (banned_term or "").lower().strip()
-    if not t or not bt:
-        return False
-    # Avoid false positives: "gluten-free" should not match banned "gluten"
-    for variant in (bt, _stem_word(bt), bt + "s"):
-        t = t.replace(f"{variant}-free", "").replace(f"{variant} free", "")
-    tokens = re.findall(r"[a-z]+", t)
-    phrase = re.findall(r"[a-z]+", bt)
-    if not phrase:
-        return False
-    n = len(phrase)
-    for i in range(len(tokens) - n + 1):
-        if all(_words_match(tokens[i + j], phrase[j]) for j in range(n)):
-            return True
-    return False
-
-
-def scrub_banned_mentions(text: str, banned_terms) -> str:
-    """Remove mentions of banned terms (with stem/plural variants) from prose text
-    like meal names and instructions. Multi-word phrases are removed as a whole."""
-    if not text:
-        return text
-    for b in banned_terms:
-        words = re.findall(r"[a-z]+", str(b).lower())
-        if not words:
-            continue
-        pattern = r"\b" + r"[\s-]+".join(rf"{re.escape(_stem_word(w))}[a-z]*" for w in words) + r"\b"
-        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s{2,}", " ", text)
-    text = re.sub(r"\s+([,.;])", r"\1", text)
-    return text.strip(" ,-–&")
-
-
-def strip_banned_and_recompute(meal: dict, banned_terms) -> list:
-    """Remove ingredients containing banned terms, then recompute the meal's macros
-    from the remaining ingredients via the ingredient database. Returns removed ingredients."""
-    ingredients = meal.get("ingredients", [])
-    removed = [ing for ing in ingredients if any(contains_banned_food(str(ing), b) for b in banned_terms)]
-    if not removed:
-        return []
-    meal["ingredients"] = [ing for ing in ingredients if ing not in removed]
-    total_cal = total_pro = total_carb = total_fat = 0.0
-    matched_any = False
-    for ing in meal["ingredients"]:
-        m = calculate_ingredient_macros(str(ing))
-        if m:
-            matched_any = True
-            total_cal += m["calories"]
-            total_pro += m["protein"]
-            total_carb += m["carbs"]
-            total_fat += m["fats"]
-    if matched_any:
-        meal["calories"] = round(total_cal)
-        meal["protein"] = round(total_pro, 1)
-        meal["carbs"] = round(total_carb, 1)
-        meal["fats"] = round(total_fat, 1)
-    return removed
-
+async def _replacement_meal(meal_type, rules, target, eating_style, allergies, foods_to_avoid, used_names, use_ai=True, notes=""):
+    """A NEW meal for a slot whose meal broke the rules: AI → template → safe meal."""
+    draft = None
+    if use_ai:
+        draft = await _ai_single_meal(meal_type, rules, target, eating_style, allergies, foods_to_avoid, used_names, notes)
+    if draft is None:
+        draft = _template_replacement(_style_key(eating_style), meal_type, rules, used_names)
+    if draft is None:
+        draft = build_safe_meal(meal_type, rules)
+    used_names.add(draft["name"])
+    return draft
 
 
 @api_router.post("/mealplans/generate", response_model=MealPlan)
 async def generate_meal_plan(request: MealPlanGenerateRequest):
-    """Generate meal plan using DIET-SPECIFIC templates scaled to user's targets"""
+    """Generate a 3-day meal plan. The AI picks foods + grams; code checks every
+    meal against allergies/avoid list/diet, tunes portions to the targets and
+    calculates every displayed number from the listed ingredients."""
     profile = await db.profiles.find_one({"id": request.user_id})
     if not profile or not profile.get("calculated_macros"):
         raise HTTPException(status_code=404, detail="User profile with macros not found. Please set up your profile first.")
-    
+
     # ── Monthly generation limit (mirrors workout programs: cost + adherence) ──
     MEAL_PLAN_MONTHLY_LIMIT = 4
     if not is_admin(profile.get("email", "")):
@@ -5744,7 +5344,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
                     "limit": MEAL_PLAN_MONTHLY_LIMIT,
                 },
             )
-    
+
     macros = profile["calculated_macros"]
     # Honour the user's manual calorie adjustment (Macro Targets screen) so the
     # plan is built for the same daily target the food log displays.
@@ -5754,1926 +5354,79 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     target_pro = macros['protein']
     target_carb = max(0, macros['carbs'] + round(manual_cal_adj / 4))
     target_fat = macros['fats']
-    
-    eating_style = request.food_preferences.lower()
-    
-    # Diet-specific template selection
-    # For Keto/Carnivore/Paleo: Override to high protein/fat, minimal carbs
-    # Each template: {ingredient: (grams, cal, protein, carbs, fats)}
-    
-    # ===== KETO TEMPLATES (Very low carb, high fat) =====
-    KETO_TEMPLATES = {
-        "day1": {
-            "breakfast": {
-                "name": "Keto Egg & Bacon Plate",
-                "ingredients": {
-                    "eggs": (150, 216, 18, 1, 15),
-                    "bacon": (60, 258, 12, 0, 24),
-                    "avocado": (100, 160, 2, 9, 15),
-                    "butter": (15, 107, 0, 0, 12),
-                },
-                "instructions": "Fry eggs in butter, crisp bacon, serve with fresh avocado slices",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Grilled Salmon with Greens",
-                "ingredients": {
-                    "salmon": (200, 416, 40, 0, 26),
-                    "olive oil": (20, 177, 0, 0, 20),
-                    "spinach": (100, 23, 3, 4, 0),
-                    "cheese": (30, 121, 8, 0, 10),
-                },
-                "instructions": "Grill salmon, serve on bed of sautéed spinach with melted cheese",
-                "prep_time": 20
-            },
-            "dinner": {
-                "name": "Ribeye Steak with Asparagus",
-                "ingredients": {
-                    "ribeye steak": (250, 625, 50, 0, 46),
-                    "asparagus": (150, 30, 3, 6, 0),
-                    "butter": (20, 143, 0, 0, 16),
-                },
-                "instructions": "Pan-sear ribeye to preference, serve with butter-grilled asparagus",
-                "prep_time": 25
-            },
-            "snack": {
-                "name": "Cheese & Nut Plate",
-                "ingredients": {
-                    "cheddar cheese": (50, 201, 12, 1, 17),
-                    "macadamia nuts": (30, 216, 2, 4, 23),
-                },
-                "instructions": "Arrange cheese slices with macadamia nuts",
-                "prep_time": 5
-            }
-        },
-        "day2": {
-            "breakfast": {
-                "name": "Keto Omelette",
-                "ingredients": {
-                    "eggs": (200, 288, 24, 1, 20),
-                    "cheese": (40, 161, 10, 1, 13),
-                    "mushrooms": (50, 11, 2, 2, 0),
-                    "butter": (15, 107, 0, 0, 12),
-                },
-                "instructions": "Make fluffy omelette with cheese and sautéed mushrooms",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Chicken Thighs with Caesar Salad",
-                "ingredients": {
-                    "chicken thighs": (200, 418, 52, 0, 22),
-                    "romaine lettuce": (100, 17, 1, 3, 0),
-                    "parmesan": (30, 121, 11, 1, 8),
-                    "olive oil": (20, 177, 0, 0, 20),
-                },
-                "instructions": "Grill chicken thighs, serve over romaine with parmesan and olive oil dressing",
-                "prep_time": 25
-            },
-            "dinner": {
-                "name": "Bunless Burger with Cheese",
-                "ingredients": {
-                    "ground beef 80% lean": (200, 508, 52, 0, 34),
-                    "cheese": (40, 161, 10, 1, 13),
-                    "avocado": (80, 128, 2, 7, 12),
-                    "lettuce wrap": (50, 8, 1, 2, 0),
-                },
-                "instructions": "Form patty, grill to preference, top with cheese and avocado in lettuce wrap",
-                "prep_time": 20
-            },
-            "snack": {
-                "name": "Cream Cheese Celery",
-                "ingredients": {
-                    "cream cheese": (60, 199, 3, 2, 20),
-                    "celery": (100, 16, 1, 3, 0),
-                    "pecans": (20, 139, 2, 3, 14),
-                },
-                "instructions": "Fill celery stalks with cream cheese, top with pecans",
-                "prep_time": 5
-            }
-        },
-        "day3": {
-            "breakfast": {
-                "name": "Smoked Salmon & Eggs",
-                "ingredients": {
-                    "smoked salmon": (100, 117, 23, 0, 2),
-                    "eggs": (150, 216, 18, 1, 15),
-                    "cream cheese": (40, 133, 2, 1, 13),
-                    "capers": (10, 2, 0, 0, 0),
-                },
-                "instructions": "Scramble eggs, serve with smoked salmon, cream cheese, and capers",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Tuna Salad Avocado Boats",
-                "ingredients": {
-                    "tuna": (150, 174, 39, 0, 1),
-                    "avocado": (200, 320, 4, 18, 30),
-                    "mayonnaise": (30, 203, 0, 0, 22),
-                    "celery": (30, 5, 0, 1, 0),
-                },
-                "instructions": "Mix tuna with mayo and celery, serve in halved avocados",
-                "prep_time": 10
-            },
-            "dinner": {
-                "name": "Pork Chops with Broccoli",
-                "ingredients": {
-                    "pork chops": (200, 330, 50, 0, 14),
-                    "broccoli": (150, 51, 4, 11, 1),
-                    "butter": (25, 179, 0, 0, 20),
-                    "garlic": (5, 7, 0, 2, 0),
-                },
-                "instructions": "Pan-fry pork chops in butter with garlic, serve with steamed broccoli",
-                "prep_time": 25
-            },
-            "snack": {
-                "name": "String Cheese & Almonds",
-                "ingredients": {
-                    "mozzarella string cheese": (56, 160, 14, 2, 10),
-                    "almonds": (30, 174, 6, 6, 15),
-                },
-                "instructions": "Simple snack plate",
-                "prep_time": 2
-            }
-        }
-    }
-    
-    # ===== CARNIVORE TEMPLATES (Meat only, zero carbs) =====
-    CARNIVORE_TEMPLATES = {
-        "day1": {
-            "breakfast": {
-                "name": "Steak and Eggs",
-                "ingredients": {
-                    "ribeye steak": (200, 500, 40, 0, 37),
-                    "eggs": (150, 216, 18, 1, 15),
-                    "butter": (20, 143, 0, 0, 16),
-                },
-                "instructions": "Pan-sear steak in butter, fry eggs to preference",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Ground Beef Patties",
-                "ingredients": {
-                    "ground beef 80% lean": (300, 762, 78, 0, 51),
-                    "butter": (15, 107, 0, 0, 12),
-                    "salt": (2, 0, 0, 0, 0),
-                },
-                "instructions": "Form patties, cook in butter, season with salt",
-                "prep_time": 15
-            },
-            "dinner": {
-                "name": "Roasted Chicken Thighs",
-                "ingredients": {
-                    "chicken thighs": (350, 731, 91, 0, 39),
-                    "chicken fat": (20, 180, 0, 0, 20),
-                },
-                "instructions": "Roast chicken thighs with rendered fat until crispy",
-                "prep_time": 40
-            },
-            "snack": {
-                "name": "Beef Jerky",
-                "ingredients": {
-                    "beef jerky": (50, 116, 23, 3, 1),
-                    "pork rinds": (30, 154, 17, 0, 9),
-                },
-                "instructions": "Simple meat-based snack",
-                "prep_time": 0
-            }
-        },
-        "day2": {
-            "breakfast": {
-                "name": "Bacon and Eggs Feast",
-                "ingredients": {
-                    "bacon": (100, 430, 20, 0, 40),
-                    "eggs": (200, 288, 24, 1, 20),
-                    "butter": (10, 72, 0, 0, 8),
-                },
-                "instructions": "Crisp bacon, scramble eggs in bacon fat and butter",
-                "prep_time": 20
-            },
-            "lunch": {
-                "name": "Lamb Chops",
-                "ingredients": {
-                    "lamb chops": (300, 639, 60, 0, 45),
-                    "butter": (15, 107, 0, 0, 12),
-                },
-                "instructions": "Pan-sear lamb chops in butter to medium-rare",
-                "prep_time": 20
-            },
-            "dinner": {
-                "name": "Prime Rib Roast",
-                "ingredients": {
-                    "prime rib": (350, 875, 70, 0, 66),
-                    "beef tallow": (15, 135, 0, 0, 15),
-                },
-                "instructions": "Roast prime rib with beef tallow coating",
-                "prep_time": 90
-            },
-            "snack": {
-                "name": "Sardines",
-                "ingredients": {
-                    "sardines in oil": (100, 208, 25, 0, 11),
-                },
-                "instructions": "Eat straight from the can",
-                "prep_time": 0
-            }
-        },
-        "day3": {
-            "breakfast": {
-                "name": "Sausage and Eggs",
-                "ingredients": {
-                    "pork sausage": (150, 420, 18, 0, 39),
-                    "eggs": (150, 216, 18, 1, 15),
-                    "butter": (15, 107, 0, 0, 12),
-                },
-                "instructions": "Pan-fry sausages, cook eggs in remaining fat",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Bison Burgers",
-                "ingredients": {
-                    "ground bison": (300, 486, 66, 0, 24),
-                    "beef tallow": (20, 180, 0, 0, 20),
-                },
-                "instructions": "Form patties, cook in beef tallow",
-                "prep_time": 15
-            },
-            "dinner": {
-                "name": "Salmon Steaks",
-                "ingredients": {
-                    "salmon steaks": (300, 624, 60, 0, 39),
-                    "butter": (25, 179, 0, 0, 20),
-                },
-                "instructions": "Pan-sear salmon steaks in butter",
-                "prep_time": 20
-            },
-            "snack": {
-                "name": "Bone Broth",
-                "ingredients": {
-                    "bone broth": (400, 52, 12, 0, 0),
-                    "butter": (15, 107, 0, 0, 12),
-                },
-                "instructions": "Heat bone broth, add butter for fat",
-                "prep_time": 5
-            }
-        }
-    }
-    
-    # ===== PALEO TEMPLATES (No grains/dairy, whole foods) =====
-    PALEO_TEMPLATES = {
-        "day1": {
-            "breakfast": {
-                "name": "Sweet Potato Hash with Eggs",
-                "ingredients": {
-                    "sweet potato": (150, 135, 3, 32, 0),
-                    "eggs": (150, 216, 18, 1, 15),
-                    "coconut oil": (15, 130, 0, 0, 14),
-                    "bell peppers": (50, 16, 1, 3, 0),
-                },
-                "instructions": "Cube and fry sweet potato in coconut oil, add peppers, top with eggs",
-                "prep_time": 20
-            },
-            "lunch": {
-                "name": "Grilled Chicken with Roasted Vegetables",
-                "ingredients": {
-                    "chicken breast": (200, 330, 62, 0, 7),
-                    "zucchini": (100, 17, 1, 3, 0),
-                    "carrots": (80, 33, 1, 8, 0),
-                    "olive oil": (20, 177, 0, 0, 20),
-                },
-                "instructions": "Grill chicken, roast vegetables with olive oil",
-                "prep_time": 30
-            },
-            "dinner": {
-                "name": "Grass-Fed Steak with Salad",
-                "ingredients": {
-                    "sirloin steak": (220, 396, 55, 0, 19),
-                    "mixed greens": (100, 20, 2, 3, 0),
-                    "avocado": (100, 160, 2, 9, 15),
-                    "olive oil": (15, 133, 0, 0, 15),
-                },
-                "instructions": "Grill steak, serve with fresh salad and avocado",
-                "prep_time": 25
-            },
-            "snack": {
-                "name": "Fruit and Nuts",
-                "ingredients": {
-                    "apple": (150, 78, 0, 21, 0),
-                    "almonds": (30, 174, 6, 6, 15),
-                    "walnuts": (20, 131, 3, 3, 13),
-                },
-                "instructions": "Simple paleo snack plate",
-                "prep_time": 2
-            }
-        },
-        "day2": {
-            "breakfast": {
-                "name": "Banana Egg Pancakes",
-                "ingredients": {
-                    "banana": (150, 134, 2, 35, 0),
-                    "eggs": (150, 216, 18, 1, 15),
-                    "almond butter": (30, 184, 7, 6, 17),
-                    "coconut oil": (10, 87, 0, 0, 10),
-                },
-                "instructions": "Blend banana and eggs, cook as pancakes, top with almond butter",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Turkey Lettuce Wraps",
-                "ingredients": {
-                    "ground turkey": (200, 340, 42, 0, 18),
-                    "lettuce": (80, 10, 1, 2, 0),
-                    "tomato": (80, 14, 1, 3, 0),
-                    "avocado": (80, 128, 2, 7, 12),
-                },
-                "instructions": "Cook seasoned turkey, serve in lettuce cups with toppings",
-                "prep_time": 20
-            },
-            "dinner": {
-                "name": "Baked Salmon with Asparagus",
-                "ingredients": {
-                    "salmon": (200, 416, 40, 0, 26),
-                    "asparagus": (150, 30, 3, 6, 0),
-                    "lemon": (30, 9, 0, 3, 0),
-                    "olive oil": (15, 133, 0, 0, 15),
-                },
-                "instructions": "Bake salmon with lemon, roast asparagus in olive oil",
-                "prep_time": 25
-            },
-            "snack": {
-                "name": "Berries and Coconut",
-                "ingredients": {
-                    "mixed berries": (150, 68, 1, 17, 0),
-                    "coconut flakes": (30, 187, 2, 6, 18),
-                },
-                "instructions": "Mix berries with unsweetened coconut flakes",
-                "prep_time": 2
-            }
-        },
-        "day3": {
-            "breakfast": {
-                "name": "Veggie Omelette",
-                "ingredients": {
-                    "eggs": (200, 288, 24, 1, 20),
-                    "spinach": (50, 12, 1, 2, 0),
-                    "tomato": (50, 9, 0, 2, 0),
-                    "coconut oil": (15, 130, 0, 0, 14),
-                    "avocado": (80, 128, 2, 7, 12),
-                },
-                "instructions": "Make omelette with veggies, serve with avocado",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Shrimp Stir Fry",
-                "ingredients": {
-                    "shrimp": (200, 198, 48, 0, 1),
-                    "broccoli": (100, 34, 3, 7, 0),
-                    "bell pepper": (80, 25, 1, 5, 0),
-                    "coconut aminos": (15, 15, 0, 3, 0),
-                    "coconut oil": (15, 130, 0, 0, 14),
-                },
-                "instructions": "Stir fry shrimp and vegetables in coconut oil with coconut aminos",
-                "prep_time": 20
-            },
-            "dinner": {
-                "name": "Pork Tenderloin with Sweet Potato",
-                "ingredients": {
-                    "pork tenderloin": (200, 290, 50, 0, 10),
-                    "sweet potato": (200, 180, 4, 42, 0),
-                    "olive oil": (15, 133, 0, 0, 15),
-                    "rosemary": (2, 1, 0, 0, 0),
-                },
-                "instructions": "Roast pork with rosemary, bake sweet potato",
-                "prep_time": 35
-            },
-            "snack": {
-                "name": "Guacamole with Veggies",
-                "ingredients": {
-                    "avocado": (100, 160, 2, 9, 15),
-                    "cucumber": (100, 15, 1, 4, 0),
-                    "carrots": (50, 21, 0, 5, 0),
-                },
-                "instructions": "Mash avocado for guac, serve with veggie sticks",
-                "prep_time": 5
-            }
-        }
-    }
-    
-    # ===== VEGAN TEMPLATES =====
-    # ACCURATE USDA-verified macros per ingredient (grams, calories, protein, carbs, fat)
-    # Protein sources: Tofu firm=17g/100g, Tempeh=20g/100g, Seitan=75g/100g, Lentils=9g/100g cooked
-    # Edamame=11g/100g, Chickpeas=9g/100g cooked, Pea protein=80g/100g
-    VEGAN_TEMPLATES = {
-        "day1": {
-            "breakfast": {
-                "name": "High Protein Tofu Scramble",
-                "ingredients": {
-                    "extra firm tofu": (250, 213, 22, 5, 11),  # 8.8g protein per 100g (accurate USDA data)
-                    "edamame": (100, 121, 11, 9, 5),  # 11g protein per 100g
-                    "spinach": (50, 12, 1, 2, 0),
-                    "nutritional yeast": (20, 60, 8, 5, 0),  # 8g protein per 20g
-                    "olive oil": (10, 88, 0, 0, 10),
-                },
-                "instructions": "Crumble and sauté tofu with edamame and spinach, finish with nutritional yeast",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Seitan & Quinoa Power Bowl",
-                "ingredients": {
-                    "seitan": (150, 188, 38, 6, 2),  # 25g protein per 100g (vital wheat gluten based)
-                    "quinoa": (150, 180, 7, 32, 3),  # 4.4g protein per 100g cooked
-                    "chickpeas": (100, 164, 9, 27, 3),  # 9g protein per 100g cooked
-                    "tahini": (20, 119, 3, 4, 11),
-                    "kale": (60, 29, 2, 5, 1),
-                },
-                "instructions": "Sear seitan, serve over quinoa with roasted chickpeas, kale, and tahini drizzle",
-                "prep_time": 25
-            },
-            "dinner": {
-                "name": "Tempeh Lentil Curry",
-                "ingredients": {
-                    "tempeh": (200, 384, 40, 16, 22),  # 20g protein per 100g
-                    "red lentils": (100, 116, 9, 20, 1),  # 9g protein per 100g cooked
-                    "brown rice": (150, 168, 4, 36, 1),
-                    "coconut milk light": (80, 60, 1, 2, 5),
-                    "spinach": (50, 12, 1, 2, 0),
-                },
-                "instructions": "Cube tempeh, simmer with lentils and coconut milk, serve over rice with spinach",
-                "prep_time": 35
-            },
-            "snack": {
-                "name": "Protein Edamame Bowl",
-                "ingredients": {
-                    "edamame": (150, 182, 17, 14, 8),  # High protein snack
-                    "pumpkin seeds": (25, 143, 7, 4, 12),  # 29g protein per 100g
-                    "sea salt": (1, 0, 0, 0, 0),
-                },
-                "instructions": "Steam edamame, sprinkle with pumpkin seeds and sea salt",
-                "prep_time": 5
-            }
-        },
-        "day2": {
-            "breakfast": {
-                "name": "Protein Oat Bowl",
-                "ingredients": {
-                    "oats": (60, 225, 8, 41, 4),
-                    "pea protein powder": (30, 120, 24, 2, 1),  # 80g protein per 100g
-                    "soy milk": (200, 80, 7, 4, 4),  # 3.5g protein per 100g
-                    "peanut butter": (25, 147, 7, 5, 13),
-                    "chia seeds": (15, 73, 2, 6, 5),
-                },
-                "instructions": "Cook oats with soy milk, stir in protein powder and peanut butter, top with chia",
-                "prep_time": 10
-            },
-            "lunch": {
-                "name": "Black Bean Tempeh Tacos",
-                "ingredients": {
-                    "tempeh": (150, 288, 30, 12, 17),
-                    "black beans": (150, 198, 14, 36, 1),  # 9g protein per 100g cooked
-                    "corn tortillas": (60, 130, 3, 27, 2),
-                    "avocado": (75, 120, 2, 7, 11),
-                    "salsa": (60, 20, 1, 4, 0),
-                },
-                "instructions": "Crumble tempeh, warm with black beans, serve in tortillas with avocado and salsa",
-                "prep_time": 20
-            },
-            "dinner": {
-                "name": "Seitan Stir Fry",
-                "ingredients": {
-                    "seitan": (200, 250, 50, 8, 3),  # 25g protein per 100g
-                    "brown rice": (150, 168, 4, 36, 1),
-                    "broccoli": (120, 41, 4, 8, 0),
-                    "bell pepper": (80, 25, 1, 5, 0),
-                    "soy sauce": (15, 9, 1, 1, 0),
-                    "sesame oil": (10, 88, 0, 0, 10),
-                },
-                "instructions": "Slice seitan, stir fry with vegetables and soy sauce, serve over rice",
-                "prep_time": 25
-            },
-            "snack": {
-                "name": "Soy Yogurt with Seeds",
-                "ingredients": {
-                    "soy yogurt": (200, 120, 10, 12, 5),  # 5g protein per 100g
-                    "hemp seeds": (25, 139, 8, 2, 12),  # 32g protein per 100g
-                    "almonds": (20, 116, 4, 4, 10),
-                },
-                "instructions": "Top soy yogurt with hemp seeds and almonds",
-                "prep_time": 3
-            }
-        },
-        "day3": {
-            "breakfast": {
-                "name": "High Protein Smoothie Bowl",
-                "ingredients": {
-                    "silken tofu": (200, 110, 10, 4, 6),  # 5g protein per 100g (blends smooth)
-                    "pea protein powder": (35, 140, 28, 2, 1),
-                    "banana": (100, 89, 1, 23, 0),
-                    "peanut butter": (30, 176, 8, 6, 15),
-                    "soy milk": (100, 40, 4, 2, 2),
-                },
-                "instructions": "Blend silken tofu with protein powder, banana, and soy milk until smooth, top with peanut butter",
-                "prep_time": 10
-            },
-            "lunch": {
-                "name": "Lentil Falafel Plate",
-                "ingredients": {
-                    "lentils": (150, 174, 14, 30, 1),  # 9g protein per 100g cooked
-                    "falafel": (120, 266, 10, 25, 14),
-                    "hummus": (80, 133, 6, 11, 8),  # 8g protein per 100g
-                    "whole wheat pita": (60, 165, 5, 33, 1),
-                    "cucumber": (60, 9, 0, 2, 0),
-                },
-                "instructions": "Serve lentils with falafel, hummus, pita bread, and fresh cucumber",
-                "prep_time": 20
-            },
-            "dinner": {
-                "name": "Tofu & Tempeh Vegetable Pasta",
-                "ingredients": {
-                    "extra firm tofu": (150, 216, 26, 5, 12),
-                    "tempeh": (100, 192, 20, 8, 11),
-                    "whole wheat pasta": (120, 149, 6, 30, 1),
-                    "tomato sauce": (100, 29, 1, 6, 0),
-                    "nutritional yeast": (15, 45, 6, 4, 0),
-                    "olive oil": (10, 88, 0, 0, 10),
-                },
-                "instructions": "Cube tofu and tempeh, pan fry, toss with pasta and tomato sauce, finish with nutritional yeast",
-                "prep_time": 30
-            },
-            "snack": {
-                "name": "Roasted Chickpea Snack",
-                "ingredients": {
-                    "chickpeas": (150, 246, 14, 41, 4),
-                    "pumpkin seeds": (20, 115, 6, 3, 10),
-                    "olive oil": (5, 44, 0, 0, 5),
-                },
-                "instructions": "Roast chickpeas with olive oil until crispy, mix with pumpkin seeds",
-                "prep_time": 25
-            }
-        }
-    }
-    
-    # ===== VEGETARIAN TEMPLATES =====
-    VEGETARIAN_TEMPLATES = {
-        "day1": {
-            "breakfast": {
-                "name": "Greek Yogurt Parfait",
-                "ingredients": {
-                    "greek yogurt": (250, 148, 25, 10, 1),
-                    "granola": (40, 176, 4, 29, 6),
-                    "berries": (100, 45, 1, 11, 0),
-                    "honey": (15, 46, 0, 12, 0),
-                },
-                "instructions": "Layer yogurt with granola, berries, and honey drizzle",
-                "prep_time": 5
-            },
-            "lunch": {
-                "name": "Caprese Panini",
-                "ingredients": {
-                    "mozzarella": (100, 257, 25, 3, 16),
-                    "ciabatta bread": (80, 200, 7, 38, 2),
-                    "tomato": (100, 18, 1, 4, 0),
-                    "pesto": (20, 106, 2, 1, 10),
-                    "olive oil": (10, 88, 0, 0, 10),
-                },
-                "instructions": "Layer mozzarella and tomato with pesto on bread, grill until melted",
-                "prep_time": 15
-            },
-            "dinner": {
-                "name": "Vegetable Stir Fry with Tofu",
-                "ingredients": {
-                    "tofu": (200, 288, 34, 6, 16),
-                    "brown rice": (200, 224, 5, 48, 2),
-                    "broccoli": (100, 34, 3, 7, 0),
-                    "bell pepper": (80, 25, 1, 5, 0),
-                    "soy sauce": (15, 9, 1, 1, 0),
-                    "sesame oil": (10, 88, 0, 0, 10),
-                },
-                "instructions": "Crisp tofu, stir fry with vegetables, serve over rice",
-                "prep_time": 25
-            },
-            "snack": {
-                "name": "Cottage Cheese & Fruit",
-                "ingredients": {
-                    "cottage cheese": (150, 126, 17, 6, 4),
-                    "peach": (150, 59, 1, 14, 0),
-                },
-                "instructions": "Top cottage cheese with sliced peach",
-                "prep_time": 3
-            }
-        },
-        "day2": {
-            "breakfast": {
-                "name": "Veggie Omelette",
-                "ingredients": {
-                    "eggs": (150, 216, 18, 1, 15),
-                    "cheese": (30, 121, 8, 0, 10),
-                    "spinach": (50, 12, 1, 2, 0),
-                    "mushrooms": (50, 11, 2, 2, 0),
-                    "butter": (10, 72, 0, 0, 8),
-                },
-                "instructions": "Make fluffy omelette with veggies and cheese",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Quinoa Salad Bowl",
-                "ingredients": {
-                    "quinoa": (200, 240, 9, 42, 4),
-                    "feta cheese": (50, 132, 7, 2, 11),
-                    "cucumber": (100, 15, 1, 4, 0),
-                    "tomato": (100, 18, 1, 4, 0),
-                    "olive oil": (15, 133, 0, 0, 15),
-                },
-                "instructions": "Toss cooked quinoa with vegetables and feta",
-                "prep_time": 25
-            },
-            "dinner": {
-                "name": "Eggplant Parmesan",
-                "ingredients": {
-                    "eggplant": (200, 50, 2, 12, 0),
-                    "mozzarella": (80, 206, 20, 2, 13),
-                    "parmesan": (30, 121, 11, 1, 8),
-                    "marinara sauce": (100, 65, 2, 10, 2),
-                    "olive oil": (15, 133, 0, 0, 15),
-                },
-                "instructions": "Bread and bake eggplant, top with sauce and cheese",
-                "prep_time": 40
-            },
-            "snack": {
-                "name": "Cheese and Crackers",
-                "ingredients": {
-                    "cheddar cheese": (40, 161, 10, 1, 13),
-                    "whole grain crackers": (30, 120, 3, 19, 4),
-                },
-                "instructions": "Simple snack plate",
-                "prep_time": 2
-            }
-        },
-        "day3": {
-            "breakfast": {
-                "name": "Avocado Toast with Eggs",
-                "ingredients": {
-                    "whole wheat bread": (60, 162, 8, 28, 2),
-                    "avocado": (100, 160, 2, 9, 15),
-                    "eggs": (100, 144, 12, 1, 10),
-                    "olive oil": (5, 44, 0, 0, 5),
-                },
-                "instructions": "Toast bread, top with mashed avocado and poached eggs",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Lentil Soup with Bread",
-                "ingredients": {
-                    "lentils": (150, 174, 14, 30, 1),
-                    "carrots": (50, 21, 0, 5, 0),
-                    "celery": (30, 5, 0, 1, 0),
-                    "crusty bread": (60, 156, 5, 30, 1),
-                    "olive oil": (15, 133, 0, 0, 15),
-                },
-                "instructions": "Simmer lentils with vegetables, serve with bread",
-                "prep_time": 35
-            },
-            "dinner": {
-                "name": "Mushroom Risotto",
-                "ingredients": {
-                    "arborio rice": (150, 525, 10, 115, 1),
-                    "mushrooms": (150, 33, 5, 5, 1),
-                    "parmesan": (40, 161, 14, 1, 11),
-                    "butter": (20, 143, 0, 0, 16),
-                    "vegetable broth": (200, 10, 0, 2, 0),
-                },
-                "instructions": "Cook risotto with mushrooms, finish with butter and parmesan",
-                "prep_time": 30
-            },
-            "snack": {
-                "name": "Hummus and Pita",
-                "ingredients": {
-                    "hummus": (80, 133, 6, 11, 8),
-                    "pita bread": (40, 106, 4, 21, 1),
-                },
-                "instructions": "Serve hummus with warm pita triangles",
-                "prep_time": 3
-            }
-        }
-    }
-    
-    # ===== HIGH PROTEIN TEMPLATES =====
-    HIGH_PROTEIN_TEMPLATES = {
-        "day1": {
-            "breakfast": {
-                "name": "Protein Oatmeal",
-                "ingredients": {
-                    "oats": (50, 188, 6, 34, 3),
-                    "whey protein": (30, 120, 24, 3, 1),
-                    "milk": (200, 84, 7, 10, 2),
-                    "banana": (80, 71, 1, 18, 0),
-                },
-                "instructions": "Cook oats with milk, stir in protein powder, top with banana",
-                "prep_time": 10
-            },
-            "lunch": {
-                "name": "Double Chicken Breast",
-                "ingredients": {
-                    "chicken breast": (250, 413, 78, 0, 9),
-                    "brown rice": (150, 168, 4, 36, 1),
-                    "broccoli": (100, 34, 3, 7, 0),
-                    "olive oil": (10, 88, 0, 0, 10),
-                },
-                "instructions": "Grill extra-large chicken breast, serve with rice and broccoli",
-                "prep_time": 25
-            },
-            "dinner": {
-                "name": "Lean Steak with Potato",
-                "ingredients": {
-                    "sirloin steak": (250, 450, 63, 0, 22),
-                    "white potato": (200, 186, 5, 42, 0),
-                    "asparagus": (100, 20, 2, 4, 0),
-                    "olive oil": (10, 88, 0, 0, 10),
-                },
-                "instructions": "Grill lean steak, bake potato, roast asparagus",
-                "prep_time": 30
-            },
-            "snack": {
-                "name": "Protein Shake",
-                "ingredients": {
-                    "whey protein": (40, 160, 32, 4, 1),
-                    "milk": (300, 126, 11, 15, 3),
-                    "banana": (100, 89, 1, 23, 0),
-                },
-                "instructions": "Blend protein with milk and banana",
-                "prep_time": 5
-            }
-        },
-        "day2": {
-            "breakfast": {
-                "name": "Egg White Scramble",
-                "ingredients": {
-                    "egg whites": (200, 104, 22, 1, 0),
-                    "whole eggs": (100, 144, 12, 1, 10),
-                    "turkey bacon": (50, 90, 10, 0, 5),
-                    "whole wheat toast": (40, 108, 5, 19, 1),
-                },
-                "instructions": "Scramble egg whites with whole eggs, serve with turkey bacon and toast",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Tuna Steak Salad",
-                "ingredients": {
-                    "tuna steak": (200, 232, 52, 0, 2),
-                    "mixed greens": (100, 20, 2, 3, 0),
-                    "quinoa": (100, 120, 4, 21, 2),
-                    "olive oil": (15, 133, 0, 0, 15),
-                },
-                "instructions": "Sear tuna steak, serve over greens and quinoa",
-                "prep_time": 20
-            },
-            "dinner": {
-                "name": "Turkey Meatballs with Pasta",
-                "ingredients": {
-                    "ground turkey": (250, 425, 53, 0, 23),
-                    "whole wheat pasta": (150, 186, 8, 38, 1),
-                    "marinara": (100, 65, 2, 10, 2),
-                    "parmesan": (20, 81, 7, 1, 5),
-                },
-                "instructions": "Form and bake turkey meatballs, serve over pasta with sauce",
-                "prep_time": 35
-            },
-            "snack": {
-                "name": "Greek Yogurt Protein Bowl",
-                "ingredients": {
-                    "greek yogurt": (250, 148, 25, 10, 1),
-                    "whey protein": (15, 60, 12, 2, 0),
-                    "almonds": (20, 116, 4, 4, 10),
-                },
-                "instructions": "Mix protein into yogurt, top with almonds",
-                "prep_time": 5
-            }
-        },
-        "day3": {
-            "breakfast": {
-                "name": "Cottage Cheese Pancakes",
-                "ingredients": {
-                    "cottage cheese": (200, 168, 22, 8, 5),
-                    "eggs": (100, 144, 12, 1, 10),
-                    "oats": (30, 113, 4, 20, 2),
-                    "berries": (80, 36, 1, 9, 0),
-                },
-                "instructions": "Blend cottage cheese with eggs and oats, cook as pancakes, top with berries",
-                "prep_time": 20
-            },
-            "lunch": {
-                "name": "Salmon Power Bowl",
-                "ingredients": {
-                    "salmon": (200, 416, 40, 0, 26),
-                    "brown rice": (150, 168, 4, 36, 1),
-                    "edamame": (80, 100, 9, 8, 4),
-                    "cucumber": (60, 9, 0, 2, 0),
-                },
-                "instructions": "Bake salmon, serve over rice with edamame and cucumber",
-                "prep_time": 25
-            },
-            "dinner": {
-                "name": "Chicken & Egg Fried Rice",
-                "ingredients": {
-                    "chicken breast": (180, 297, 56, 0, 6),
-                    "eggs": (100, 144, 12, 1, 10),
-                    "brown rice": (200, 224, 5, 48, 2),
-                    "vegetables": (100, 30, 2, 6, 0),
-                    "soy sauce": (10, 6, 1, 1, 0),
-                },
-                "instructions": "Stir fry chicken and eggs with rice and vegetables",
-                "prep_time": 25
-            },
-            "snack": {
-                "name": "Protein Cottage Cheese",
-                "ingredients": {
-                    "cottage cheese": (200, 168, 22, 8, 5),
-                    "pineapple": (100, 50, 1, 13, 0),
-                },
-                "instructions": "Top cottage cheese with pineapple chunks",
-                "prep_time": 3
-            }
-        }
-    }
-    
-    # ===== BALANCED / WHOLE FOODS TEMPLATES =====
-    BALANCED_TEMPLATES = {
-        "day1": {
-            "breakfast": {
-                "name": "Oatmeal Power Bowl",
-                "ingredients": {
-                    "oats (dry)": (50, 188, 6, 34, 3),
-                    "milk": (200, 84, 7, 10, 2),
-                    "banana": (100, 89, 1, 23, 0),
-                    "almonds": (25, 145, 5, 5, 13),
-                },
-                "instructions": "Cook oats with milk, top with sliced banana and almonds",
-                "prep_time": 10
-            },
-            "lunch": {
-                "name": "Grilled Chicken & Rice Bowl", 
-                "ingredients": {
-                    "chicken breast": (180, 297, 56, 0, 6),
-                    "brown rice (cooked)": (200, 224, 5, 48, 2),
-                    "broccoli": (100, 34, 3, 7, 0),
-                    "olive oil": (14, 124, 0, 0, 14),
-                },
-                "instructions": "Grill seasoned chicken breast, serve over brown rice with steamed broccoli drizzled with olive oil",
-                "prep_time": 25
-            },
-            "dinner": {
-                "name": "Baked Salmon & Sweet Potato",
-                "ingredients": {
-                    "salmon": (180, 374, 36, 0, 23),
-                    "sweet potato": (200, 180, 4, 42, 0),
-                    "asparagus": (100, 20, 2, 4, 0),
-                    "olive oil": (14, 124, 0, 0, 14),
-                },
-                "instructions": "Bake salmon fillet, roast sweet potato and asparagus with olive oil at 400°F for 25 minutes",
-                "prep_time": 30
-            },
-            "snack": {
-                "name": "Protein Yogurt Bowl",
-                "ingredients": {
-                    "greek yogurt": (200, 118, 20, 8, 1),
-                    "berries": (100, 45, 1, 11, 0),
-                    "whey protein": (30, 120, 24, 3, 1),
-                },
-                "instructions": "Mix protein powder into Greek yogurt, top with fresh berries",
-                "prep_time": 5
-            }
-        },
-        "day2": {
-            "breakfast": {
-                "name": "Scrambled Eggs with Toast",
-                "ingredients": {
-                    "egg": (150, 216, 18, 1, 15),
-                    "whole wheat bread": (60, 162, 8, 28, 2),
-                    "butter": (10, 72, 0, 0, 8),
-                    "orange": (150, 71, 1, 18, 0),
-                },
-                "instructions": "Scramble eggs in butter, serve with toasted bread and fresh orange segments",
-                "prep_time": 15
-            },
-            "lunch": {
-                "name": "Turkey Rice Bowl",
-                "ingredients": {
-                    "ground turkey": (200, 340, 42, 0, 18),
-                    "white rice (cooked)": (200, 260, 5, 56, 1),
-                    "spinach": (100, 23, 3, 4, 0),
-                    "olive oil": (14, 124, 0, 0, 14),
-                },
-                "instructions": "Cook seasoned ground turkey, serve over rice with sautéed spinach",
-                "prep_time": 20
-            },
-            "dinner": {
-                "name": "Grilled Tilapia with Quinoa",
-                "ingredients": {
-                    "tilapia": (200, 256, 52, 0, 5),
-                    "quinoa (cooked)": (200, 240, 9, 42, 4),
-                    "zucchini": (150, 26, 2, 5, 0),
-                    "olive oil": (14, 124, 0, 0, 14),
-                },
-                "instructions": "Grill tilapia, serve with fluffy quinoa and roasted zucchini",
-                "prep_time": 25
-            },
-            "snack": {
-                "name": "Cottage Cheese & Fruit",
-                "ingredients": {
-                    "cottage cheese": (200, 168, 22, 8, 5),
-                    "apple": (150, 78, 0, 21, 0),
-                    "walnuts": (20, 131, 3, 3, 13),
-                },
-                "instructions": "Top cottage cheese with diced apple and crushed walnuts",
-                "prep_time": 5
-            }
-        },
-        "day3": {
-            "breakfast": {
-                "name": "Protein Smoothie Bowl",
-                "ingredients": {
-                    "whey protein": (30, 120, 24, 3, 1),
-                    "banana": (150, 134, 2, 35, 0),
-                    "milk": (200, 84, 7, 10, 2),
-                    "peanut butter": (30, 176, 8, 6, 15),
-                },
-                "instructions": "Blend protein powder, banana, milk into thick smoothie, top with peanut butter drizzle",
-                "prep_time": 10
-            },
-            "lunch": {
-                "name": "Beef & Potato Bowl",
-                "ingredients": {
-                    "ground beef 90% lean": (180, 317, 47, 0, 14),
-                    "white potato": (250, 233, 6, 53, 0),
-                    "bell pepper": (100, 31, 1, 6, 0),
-                    "olive oil": (14, 124, 0, 0, 14),
-                },
-                "instructions": "Brown ground beef with spices, serve over roasted potato cubes with sautéed peppers",
-                "prep_time": 25
-            },
-            "dinner": {
-                "name": "Shrimp Stir Fry",
-                "ingredients": {
-                    "shrimp": (200, 198, 48, 0, 1),
-                    "brown rice (cooked)": (200, 224, 5, 48, 2),
-                    "mixed vegetables": (150, 50, 3, 10, 0),
-                    "olive oil": (20, 177, 0, 0, 20),
-                },
-                "instructions": "Stir fry shrimp with vegetables in olive oil, serve over brown rice",
-                "prep_time": 20
-            },
-            "snack": {
-                "name": "Greek Yogurt Parfait",
-                "ingredients": {
-                    "greek yogurt": (200, 118, 20, 8, 1),
-                    "berries": (100, 45, 1, 11, 0),
-                    "almonds": (25, 145, 5, 5, 13),
-                },
-                "instructions": "Layer Greek yogurt with berries and crushed almonds",
-                "prep_time": 5
-            }
-        }
-    }
-    
-    # Select templates based on eating style
-    if eating_style in ['keto']:
-        MEAL_TEMPLATES = KETO_TEMPLATES
-        plan_name = "Keto"
-    elif eating_style in ['carnivore']:
-        MEAL_TEMPLATES = CARNIVORE_TEMPLATES
-        plan_name = "Carnivore"
-    elif eating_style in ['paleo']:
-        MEAL_TEMPLATES = PALEO_TEMPLATES
-        plan_name = "Paleo"
-    elif eating_style in ['vegan']:
-        MEAL_TEMPLATES = VEGAN_TEMPLATES
-        plan_name = "Vegan"
-    elif eating_style in ['vegetarian']:
-        MEAL_TEMPLATES = VEGETARIAN_TEMPLATES
-        plan_name = "Vegetarian"
-    elif eating_style in ['high_protein']:
-        MEAL_TEMPLATES = HIGH_PROTEIN_TEMPLATES
-        plan_name = "High Protein"
-    else:  # balanced, whole_foods, none, or any other
-        MEAL_TEMPLATES = BALANCED_TEMPLATES
-        plan_name = "Balanced"
-    
-    # ALWAYS use AI generation for world-class personalized meal plans
-    # Templates are only used as fallback if AI fails
-    logger.info(f"Using AI generation | style={eating_style} | preferred={request.preferred_foods} | avoid={request.foods_to_avoid} | allergies={request.allergies}")
-    if True:
-        
-        # For keto/carnivore: override macro targets with diet-appropriate values
-        # User's profile targets are based on general fitness goals, but keto needs 70%+ fat, <5% carbs
-        ai_target_cal = target_cal
-        if eating_style == 'keto':
-            ai_target_fat = round(target_cal * 0.72 / 9)    # 72% of calories from fat
-            ai_target_carb = min(30, round(target_cal * 0.05 / 4))  # 5% calories, max 30g carbs
-            ai_target_pro = round((target_cal - ai_target_fat * 9 - ai_target_carb * 4) / 4)  # remaining from protein
-        elif eating_style == 'carnivore':
-            ai_target_fat = round(target_cal * 0.70 / 9)    # 70% fat
-            ai_target_carb = 5                               # near-zero carbs
-            ai_target_pro = round((target_cal - ai_target_fat * 9 - ai_target_carb * 4) / 4)
-        else:
-            # All other diets: use the user's profile macro targets
-            ai_target_fat = target_fat
-            ai_target_carb = target_carb
-            ai_target_pro = target_pro
-        
-        # Calculate exact per-meal targets using diet-adjusted macros
-        breakfast_cal = round(ai_target_cal * 0.25)
-        breakfast_pro = round(ai_target_pro * 0.25)
-        breakfast_carb = round(ai_target_carb * 0.25)
-        breakfast_fat = round(ai_target_fat * 0.25)
-        
-        lunch_cal = round(ai_target_cal * 0.30)
-        lunch_pro = round(ai_target_pro * 0.30)
-        lunch_carb = round(ai_target_carb * 0.30)
-        lunch_fat = round(ai_target_fat * 0.30)
-        
-        dinner_cal = round(ai_target_cal * 0.35)
-        dinner_pro = round(ai_target_pro * 0.35)
-        dinner_carb = round(ai_target_carb * 0.35)
-        dinner_fat = round(ai_target_fat * 0.35)
-        
-        snack_cal = ai_target_cal - breakfast_cal - lunch_cal - dinner_cal
-        snack_pro = ai_target_pro - breakfast_pro - lunch_pro - dinner_pro
-        snack_carb = ai_target_carb - breakfast_carb - lunch_carb - dinner_carb
-        snack_fat = ai_target_fat - breakfast_fat - lunch_fat - dinner_fat
-        
-        # Determine if user needs lean or moderate-fat proteins based on their fat target
-        fat_pct = (ai_target_fat * 9 / ai_target_cal) * 100 if ai_target_cal > 0 else 30
-        
-        if fat_pct < 25:
-            protein_guidance = "Use LEAN proteins only: chicken breast, turkey breast, sirloin steak, eye of round, tilapia, cod, egg whites. Minimize added fats."
-        elif fat_pct > 40:
-            protein_guidance = "Use fattier proteins: ribeye steak, chicken thighs, salmon, 80/20 ground beef, whole eggs. Add fats with butter, olive oil, avocado."
-        else:
-            protein_guidance = "Use moderate-fat proteins: sirloin steak, chicken breast or thighs, salmon, 90/10 ground beef, whole eggs. Balance lean and fatty options."
-        
-        # Build diet-specific instructions
-        diet_instructions = ""
-        if eating_style == 'keto':
-            diet_instructions = """STRICT KETO REQUIREMENTS:
-- TOTAL DAILY CARBS MUST BE 20-50g (ideally under 30g)
-- Each meal should have MAX 10-15g net carbs
-- NO grains, NO sugar, NO bread, NO pasta, NO rice, NO potatoes, NO starchy vegetables
-- NO fruit except small amounts of berries
-- HIGH FAT: Use butter, olive oil, avocado, coconut oil, cheese, fatty meats
-- MODERATE PROTEIN: Fatty fish, eggs, bacon, beef, pork belly, chicken thighs
-- ALLOWED CARBS: Leafy greens, broccoli, cauliflower, zucchini, asparagus, mushrooms
-- Every meal MUST be high in fat (70-80% of calories from fat)"""
-        elif eating_style == 'carnivore':
-            diet_instructions = "CARNIVORE: ONLY meat, fish, eggs, butter. NO plants. Zero carbs."
-        elif eating_style == 'paleo':
-            diet_instructions = "PALEO: NO grains, NO dairy, NO legumes. Use sweet potatoes instead of white potatoes."
-        elif eating_style == 'vegan':
-            diet_instructions = f"""VEGAN: NO animal products whatsoever.
-HIGH-PROTEIN VEGAN RULE: Every meal MUST have a HIGH-PROTEIN base ingredient:
-  - Breakfast: tofu scramble (100g tofu = 8g P) OR protein powder (30g = 20-25g P) OR seitan
-  - Lunch: tempeh ({round(ai_target_pro * 0.30 / 0.189)}g = {round(ai_target_pro * 0.30)}g P) OR seitan (25g P per 100g) OR high-protein tofu
-  - Dinner: seitan ({round(ai_target_pro * 0.35 / 0.25)}g = {round(ai_target_pro * 0.35)}g P) OR tempeh OR firm tofu
-  - Snack: vegan protein powder (20-25g P per 30g) OR hemp seeds (31g P per 100g)
-IMPORTANT: Do NOT rely solely on lentils/chickpeas for protein — they are high-carb too.
-Protein sources per 100g: seitan=25g | tempeh=19g | edamame=11g | firm tofu=8g | hemp seeds=31g"""
-        elif eating_style == 'vegetarian':
-            diet_instructions = "VEGETARIAN: NO meat/fish. Use eggs, dairy, tofu for protein."
-        
-        allergies_str = ', '.join(request.allergies) if request.allergies else 'None'
-        avoid_str = request.foods_to_avoid if request.foods_to_avoid else 'None'
-        
-        # Build stronger avoid instructions
-        avoid_instructions = ""
-        banned_foods_list = []
-        if request.foods_to_avoid and request.foods_to_avoid.strip():
-            banned_foods_list = [f.strip().lower() for f in request.foods_to_avoid.split(',') if f.strip()]
-            avoid_instructions = f"""
-🚫 ABSOLUTELY FORBIDDEN FOODS (DO NOT USE UNDER ANY CIRCUMSTANCES):
-{request.foods_to_avoid.upper()}
 
-This is a HARD REQUIREMENT. If you include ANY of these foods, the meal plan is INVALID.
-Find alternative protein/carb/fat sources that are NOT on this list."""
-        
-        if request.allergies:
-            for allergy in request.allergies:
-                banned_foods_list.append(allergy.lower())
-            avoid_instructions += f"""
-🚫 ALLERGENS TO AVOID:
-{', '.join(request.allergies).upper()}"""
-        
-        # Calculate macro percentages to guide AI (use diet-adjusted targets)
-        protein_pct = round((ai_target_pro * 4 / ai_target_cal) * 100) if ai_target_cal > 0 else 30
-        carb_pct = round((ai_target_carb * 4 / ai_target_cal) * 100) if ai_target_cal > 0 else 40
-        fat_pct = round((ai_target_fat * 9 / ai_target_cal) * 100) if ai_target_cal > 0 else 30
-        
-        # Build protein alternatives based on what's banned
-        # Group related foods together so banning "chicken" removes all chicken types
-        PROTEIN_GROUPS = {
-            'chicken': ['chicken breast', 'chicken thigh', 'chicken', 'grilled chicken', 'rotisserie chicken'],
-            'beef': ['beef', 'sirloin', 'ribeye', 'ground beef', 'steak', 'beef mince'],
-            'pork': ['pork', 'bacon', 'pork chop', 'ham'],
-            'turkey': ['turkey', 'turkey breast', 'ground turkey'],
-            'fish': ['fish', 'salmon', 'tuna', 'cod', 'tilapia', 'white fish'],
-            'seafood': ['shrimp', 'prawns', 'crab', 'lobster', 'scallops'],
-            'eggs': ['eggs', 'egg', 'egg whites', 'whole eggs'],
-            'dairy': ['greek yogurt', 'cottage cheese', 'cheese', 'milk', 'whey protein'],
-            'plant': ['tofu', 'tempeh', 'seitan', 'legumes', 'beans', 'lentils'],
-            'lamb': ['lamb', 'lamb chops']
-        }
-        
-        # Find which protein groups to exclude
-        excluded_groups = set()
-        for banned in banned_foods_list:
-            banned_lower = banned.lower().strip()
-            for group_name, group_foods in PROTEIN_GROUPS.items():
-                # Check if banned food matches the group or any food in the group
-                if banned_lower == group_name or any(banned_lower in food or food in banned_lower for food in group_foods):
-                    excluded_groups.add(group_name)
-        
-        # Build allowed protein sources
-        protein_alternatives = []
-        for group_name, group_foods in PROTEIN_GROUPS.items():
-            if group_name not in excluded_groups:
-                protein_alternatives.append(group_foods[0])  # Add primary food from each allowed group
-        
-        # Log what's being excluded for debugging
-        logger.info(f"Foods to avoid: {request.foods_to_avoid}")
-        logger.info(f"Banned foods list: {banned_foods_list}")
-        logger.info(f"Excluded protein groups: {excluded_groups}")
-        logger.info(f"Allowed protein sources: {protein_alternatives}")
-        
-        protein_guidance_for_prompt = ""
-        if protein_alternatives:
-            protein_guidance_for_prompt = f"ALLOWED PROTEIN SOURCES ONLY: {', '.join(protein_alternatives)}"
-        
-        # Build explicit DO NOT USE list
-        do_not_use_list = []
-        for group in excluded_groups:
-            do_not_use_list.extend(PROTEIN_GROUPS.get(group, []))
-        do_not_use_str = f"DO NOT USE: {', '.join(do_not_use_list).upper()}" if do_not_use_list else ""
-        
-        # Calculate approximate grams of each macro source needed per meal
-        # Build allergy-specific prohibition block
-        allergy_specifics = {
-            'gluten': 'NO wheat, barley, rye, oats (ALL oats — even "gluten-free" labelled oats), spelt, seitan, regular pasta, bread, flour. Use tamari not soy sauce. Use rice, quinoa, sweet potato instead of grains.',
-            'dairy': 'NO milk, cheese, yogurt, butter, cream, whey, casein. Use plant-based alternatives.',
-            'nuts': 'NO almonds, cashews, walnuts, pecans, pistachios, brazil nuts, hazelnuts, macadamia. Seeds (sunflower, pumpkin) OK.',
-            'eggs': 'NO eggs in any form — fried, scrambled, boiled, baked.',
-            'soy': 'NO tofu, tempeh, soy sauce, edamame, soy milk, miso.',
-            'shellfish': 'NO shrimp, crab, lobster, scallops, oysters, mussels, clams.',
-            'fish': 'NO salmon, tuna, cod, tilapia, bass or any fish species.',
-            'peanuts': 'NO peanuts or peanut butter in any form.',
-        }
-        allergy_lines = []
-        for allergy in (request.allergies or []):
-            spec = allergy_specifics.get(allergy.lower(), f'NO {allergy} in any form.')
-            allergy_lines.append(f"  - {allergy.upper()}: {spec}")
-        allergy_block = '\n'.join(allergy_lines) if allergy_lines else '  - None'
+    eating_style = (request.food_preferences or "balanced").lower()
+    style_key = _style_key(eating_style)
+    plan_name = PLAN_NAMES[style_key]
+    targets = diet_macro_targets(eating_style, target_cal, target_pro, target_carb, target_fat)
+    allergies = [a for a in (request.allergies or []) if a and a.lower() != "none"]
+    rules = FoodRules(allergies, _avoid_terms(request.foods_to_avoid), eating_style)
+    logger.info(f"Meal plan | style={eating_style} | targets={targets} | preferred={request.preferred_foods} "
+                f"| avoid={request.foods_to_avoid} | allergies={allergies}")
 
-        # Foods section — personalised whether or not user typed preferred foods
-        preferred_daily_rule = ""
-        if request.preferred_foods and request.preferred_foods.strip():
-            preferred_daily_rule = (
-                f"\n8. EVERY preferred food ({request.preferred_foods}) MUST appear in at least one meal "
-                "on EVERY day — no day may skip any of them"
-            )
-            foods_section = (
-                f"INCORPORATE THESE PREFERRED FOODS: {request.preferred_foods}\n"
-                "Every preferred food MUST appear in the plan at least once per day where it fits the diet style.\n"
-                "⚠️ PREFERRED FOODS OVERRIDE THE EXAMPLE FOODS in the quantities guide below: when a preferred "
-                "food is a protein (e.g. beef mince), use it IN PLACE of the example protein (chicken/tuna/yogurt) "
-                "in as many meals as sensible — recompute the grams from the macro reference table so the meal "
-                "still hits its protein and fat targets. Do the same for preferred carbs.\n"
-                "⚠️ RESPECT THE EXACT VARIANT the user names — 'fatty' or 'regular' beef mince means regular mince "
-                "(250cal 26P 17F per 100g cooked); 'extra lean', 'premium' or '5 star' means the 5% variant (153cal 25P 6F). NEVER substitute "
-                "a leaner or fattier variant than the user asked for. If their variant is high-fat and the fat budget "
-                "is tight, fit it by using ZERO added oils/fats elsewhere and moderating the portion size — never by "
-                "swapping their chosen variant.\n"
-                "Supplement with complementary whole foods to hit macro targets."
-            )
-        else:
-            style_food_ideas = {
-                'keto': 'Use: ribeye, salmon, eggs, bacon, avocado, butter, cream, brie, macadamia nuts, leafy greens, broccoli, cauliflower.',
-                'vegan': 'Use: tempeh, tofu, black beans, lentils, quinoa, chickpeas, edamame, nuts, seeds, plant-based protein powder.',
-                'vegetarian': 'Use: eggs, greek yogurt, cottage cheese, tempeh, legumes, quinoa, sweet potato, brown rice.',
-                'paleo': 'Use: lean beef, salmon, chicken, sweet potato, almond flour, coconut oil, berries, green vegetables.',
-                'carnivore': 'Use ONLY: beef (ribeye/sirloin/ground), chicken thighs, salmon, bacon, eggs, butter. Zero carbs.',
-                'high_protein': f'Use: chicken breast, turkey, tuna, egg whites, greek yogurt, cottage cheese, lean beef, whey protein. IMPORTANT: Still include {ai_target_carb}g carbs from: oats, rice, sweet potato, fruit. This is high PROTEIN, not low carb!',
-                'balanced': 'Use a rich variety: lean proteins, complex carbs (rice, oats, sweet potato), healthy fats, diverse vegetables.',
-                'whole_foods': 'Use only whole, unprocessed ingredients. No packaged foods. Rich variety of vegetables, legumes, lean proteins.',
-            }
-            style_hint = style_food_ideas.get(eating_style, style_food_ideas['balanced'])
-            foods_section = f"No preferred foods specified — choose ELITE, nutritionist-approved foods for a {eating_style.replace('_', ' ')} diet.\n{style_hint}"
+    ai_days, ai_title = await _ai_plan_drafts(eating_style, plan_name, targets, rules, allergies, request)
+    use_ai = ai_days is not None
+    if not use_ai:
+        logger.info("Falling back to template-based generation")
+    templates = TEMPLATES_BY_STYLE[style_key]
 
-        # Calculate fat percentage to guide lean vs rich protein choices
-        fat_is_strict = ai_target_fat < (ai_target_cal * 0.33 / 9)  # Less than 33% fat calories = strict
+    # Assemble 3 days × 4 slots; every slot that breaks a rule gets a NEW meal.
+    day_slots, used_names, repairs = [], set(), []
+    for di in range(3):
+        slots = {}
+        for mt in MEAL_TYPES:
+            if use_ai:
+                draft, problems = (ai_days[di].get(mt) if di < len(ai_days) else None) or (None, ["missing"])
+            else:
+                draft = template_draft(mt, templates[f"day{di + 1}"][mt])
+                problems = rules.violations(draft["name"], draft["items"], draft["instructions"])
+            if draft is not None and not problems:
+                used_names.add(draft["name"])
+            else:
+                logger.warning(f"Day {di + 1} {mt}: replacing meal ({problems})")
+                repairs.append((di, mt))
+            slots[mt] = draft if not problems else None
+        day_slots.append(slots)
 
-        fat_guidance = ""
-        if fat_is_strict:
-            fat_guidance = f"""FAT BUDGET: {ai_target_fat}g/day ({fat_pct:.0f}% of calories) — STRICT.
-⚠️ COUNT FAT FROM EVERY SOURCE — protein foods have fat too:
-  Whole egg (58g each) = 6.4g fat | Salmon 100g = 13g fat | Ribeye 100g = 15g fat
-  Chicken breast 100g = 3.6g fat | Turkey breast = 1g | Cod/Tuna/Shrimp ≈ 0.5-1g
-RULE: Fat in each meal = fat from protein + fat from added oils/nuts/dairy — TOTAL must stay ≤ meal fat target.
-- PREFER zero-fat proteins (chicken breast, turkey, tuna, shrimp, cod, egg WHITES, cottage cheese)
-- LIMIT whole eggs: max {round(ai_target_fat * 0.2 / 6.4):.0f} eggs total per day (each egg = 6.4g fat)
-- Added oil: if using whole eggs or salmon, use ZERO added oil
-- NO avocado >30g/day, NO full-fat cheese, NO nuts if fat budget is tight"""
-        else:
-            fat_guidance = f"Fat target: {ai_target_fat}g/day ({fat_pct:.0f}%). Healthy fats from natural sources welcome — count fat from ALL ingredients."
+    async def _repair(di, mt):
+        day_slots[di][mt] = await _replacement_meal(
+            mt, rules, meal_targets(targets, mt, MEAL_TYPES), eating_style, allergies,
+            request.foods_to_avoid, used_names, use_ai=use_ai)
+    if repairs:
+        await asyncio.gather(*[_repair(di, mt) for di, mt in repairs])
 
-        # Pre-calculate exact ingredient quantities needed per meal for accurate macro targeting
-        def grams_for_macro(target_macro_g, food_density):
-            """How many grams of food needed to hit a macro target"""
-            return round(target_macro_g / food_density * 100) if food_density > 0 else 0
-
-        # Protein quantities (per meal)
-        b_pro_chicken = grams_for_macro(breakfast_pro, 31)
-        b_pro_eggs    = round(breakfast_pro / 6.5)  # number of eggs
-        l_pro_chicken = grams_for_macro(lunch_pro, 31)
-        l_pro_beef    = grams_for_macro(lunch_pro, 26)
-        d_pro_chicken = grams_for_macro(dinner_pro, 31)
-        d_pro_beef    = grams_for_macro(dinner_pro, 26)
-        s_pro_yogurt  = grams_for_macro(snack_pro, 10)
-
-        # Carb quantities (per meal)
-        b_carb_rice   = grams_for_macro(breakfast_carb, 28)
-        b_carb_potato = grams_for_macro(breakfast_carb, 20)
-        l_carb_rice   = grams_for_macro(lunch_carb, 28)
-        l_carb_potato = grams_for_macro(lunch_carb, 20)
-        d_carb_rice   = grams_for_macro(dinner_carb, 28)
-        d_carb_potato = grams_for_macro(dinner_carb, 20)
-
-        # Fat per meal (g)
-        b_fat_oil_ml  = round(breakfast_fat / 14 * 10)  # ml of olive oil
-        l_fat_oil_ml  = round(lunch_fat / 14 * 10)
-        d_fat_oil_ml  = round(dinner_fat / 14 * 10)
-
-        prompt = f"""You are an ELITE sports nutritionist. Create a world-class, fully personalised 3-day meal plan.
-
-DIET STYLE: {eating_style.upper().replace('_', ' ')}
-{diet_instructions}
-
-DAILY MACRO TARGETS — hit these precisely:
-{ai_target_cal} cal | {ai_target_pro}g protein ({protein_pct}%) | {ai_target_carb}g carbs ({carb_pct}%) | {ai_target_fat}g fat ({fat_pct}%)
-
-ABSOLUTE PROHIBITIONS — NEVER include these:
-{allergy_block}
-{avoid_instructions if avoid_instructions else ''}
-{do_not_use_str if do_not_use_str else ''}
-
-{fat_guidance}
-
-{foods_section}
-
-{protein_guidance_for_prompt}
-{protein_guidance}
-
-MACRO REFERENCE (per 100g cooked unless noted — USDA FoodData Central):
-Chicken breast: 165cal 31P 0C 3.6F | Turkey breast: 135cal 30P 0C 1F | Tuna (canned in water): 116cal 25.5P 0C 0.8F
-Beef sirloin (broiled): 212cal 27P 0C 10.6F | Extra-lean beef mince 5% (cooked): 171cal 26.5P 0C 6.9F | Lean beef mince 10% (cooked): 217cal 26.6P 0C 11.7F | Fatty beef mince 20% (cooked): 272cal 25.8P 0C 18.2F | Shrimp: 99cal 24P 0.2C 0.3F | Cod: 105cal 23P 0C 0.9F
-Salmon (Atlantic, farmed): 206cal 22P 0C 12.4F | Egg whites (100g): 52cal 11P 0.7C 0.2F | Whole egg (58g ea): 90cal 7.5P 0.6C 6.4F
-Tofu firm: 144cal 17P 3C 8F | Tempeh: 192cal 20P 8C 11F | Greek yogurt 0%: 59cal 10P 4C 0.4F
-Cottage cheese: 84cal 11P 4C 2.5F | White rice cooked: 130cal 2.7P 28C 0.3F | Brown rice cooked: 123cal 2.7P 25.6C 1F
-Sweet potato: 86cal 1.6P 20C 0.1F | Quinoa cooked: 120cal 4.4P 21C 1.9F | Oats dry: 389cal 17P 66C 7F | Pasta cooked: 158cal 5.8P 30.9C 0.9F
-Banana (120g): 107cal 1.3P 27.6C 0.4F | Avocado (50g): 80cal 1P 4.5C 7.5F | Olive oil (10ml): 88cal 0P 0C 10F
-
-EXACT QUANTITIES TO HIT EACH MEAL TARGET:
-⚠️ CRITICAL: The fat values below are TOTAL fat — count fat from proteins + oils + all ingredients combined.
-
-Breakfast ({breakfast_cal}cal | {breakfast_pro}g P | {breakfast_carb}g C | {breakfast_fat}g F total):
-  Protein: {b_pro_chicken}g chicken breast (only 4g fat) OR use egg whites if fat is tight
-  Note: 1 whole egg ≈ 6.4g fat — if using eggs, count their fat against {breakfast_fat}g budget
-  Carbs: {b_carb_rice}g cooked rice OR {b_carb_potato}g sweet potato
-  Max added fat (oil/butter): {breakfast_fat}g minus fat already in your protein choice
-
-Lunch ({lunch_cal}cal | {lunch_pro}g P | {lunch_carb}g C | {lunch_fat}g F total):
-  Protein: {l_pro_chicken}g chicken breast (4g fat) OR {l_pro_beef}g tuna/turkey
-  Note: salmon 100g = 13g fat — account for this in {lunch_fat}g total budget
-  Carbs: {l_carb_rice}g cooked rice OR {l_carb_potato}g sweet potato
-  Max added fat: {lunch_fat}g minus fat from your protein choice
-
-Dinner ({dinner_cal}cal | {dinner_pro}g P | {dinner_carb}g C | {dinner_fat}g F total):
-  Protein: {d_pro_chicken}g chicken OR {d_pro_beef}g lean beef/fish — steak has 11g fat/100g so only {round(dinner_fat/0.11)}g steak max before adding oil
-  Carbs: {d_carb_rice}g cooked rice OR {d_carb_potato}g sweet potato
-  Max added fat: {dinner_fat}g minus fat from your protein choice
-
-Snack ({snack_cal}cal | {snack_pro}g P | {snack_carb}g C | {snack_fat}g F total):
-  Protein: {s_pro_yogurt}g Greek yogurt OR equivalent | Keep total fat ≤{snack_fat}g
-
-ELITE STANDARDS:
-1. All 3 days MUST have completely different meals — zero repetition
-2. Use the EXACT gram amounts from the quantities guide above
-3. Give each meal an appealing, descriptive name (e.g. "Herb-Marinated Chicken with Jasmine Rice & Broccolini")
-4. Instructions: concise 2-3 step cooking method. NEVER mention specific gram or ml amounts in instructions — all quantities are already listed in the ingredients field. Write "add olive oil" NOT "add 15g olive oil".
-5. Calculate ACCURATE macros from the actual ingredient weights you use
-6. All meat, fish and grain quantities are COOKED weights — never raw
-7. Whenever beef mince / ground beef is an ingredient, append its lean-to-fat ratio in parentheses after the name: extra lean, premium or 5-star → "(95/5)", lean → "(90/10)", regular or fatty → "(80/20)" — e.g. "200g extra lean beef mince (95/5)"{preferred_daily_rule}
-
-Return ONLY this JSON (no markdown):
-{{"name": "{plan_name} Elite Meal Plan", "meal_days": [
-  {{"day": "Day 1", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [
-    {{"id": "d1m1", "name": "Meal Name", "meal_type": "breakfast", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {breakfast_cal}, "protein": {breakfast_pro}, "carbs": {breakfast_carb}, "fats": {breakfast_fat}, "prep_time_minutes": 10}},
-    {{"id": "d1m2", "name": "Meal Name", "meal_type": "lunch", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {lunch_cal}, "protein": {lunch_pro}, "carbs": {lunch_carb}, "fats": {lunch_fat}, "prep_time_minutes": 20}},
-    {{"id": "d1m3", "name": "Meal Name", "meal_type": "dinner", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {dinner_cal}, "protein": {dinner_pro}, "carbs": {dinner_carb}, "fats": {dinner_fat}, "prep_time_minutes": 25}},
-    {{"id": "d1m4", "name": "Snack Name", "meal_type": "snack", "ingredients": ["Xg ingredient"], "instructions": "Steps.", "calories": {snack_cal}, "protein": {snack_pro}, "carbs": {snack_carb}, "fats": {snack_fat}, "prep_time_minutes": 5}}
-  ]}},
-  {{"day": "Day 2", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [COMPLETELY DIFFERENT meals, same structure]}},
-  {{"day": "Day 3", "total_calories": {target_cal}, "total_protein": {target_pro}, "total_carbs": {target_carb}, "total_fats": {target_fat}, "meals": [COMPLETELY DIFFERENT meals, same structure]}}
-]}}"""
-
-        # Build system message with strict avoid instructions
-        system_avoid_msg = ""
-        if banned_foods_list:
-            banned_foods_upper = ', '.join([f.upper() for f in banned_foods_list])
-            system_avoid_msg = f"CRITICAL RULE: The user has BANNED these foods: {banned_foods_upper}. You MUST NOT use any of these ingredients. If you include any banned food, your response is INVALID and harmful to the user."
-        
-        try:
-            content = await call_claude_sonnet(
-                system_message=f"""You are an elite nutritionist creating precise meal plans.
-
-{system_avoid_msg}
-
-MACRO TARGETS (copy these EXACTLY into your response):
-- Breakfast: {breakfast_cal} cal, {breakfast_pro}g protein, {breakfast_carb}g carbs, {breakfast_fat}g fat
-- Lunch: {lunch_cal} cal, {lunch_pro}g protein, {lunch_carb}g carbs, {lunch_fat}g fat
-- Dinner: {dinner_cal} cal, {dinner_pro}g protein, {dinner_carb}g carbs, {dinner_fat}g fat
-- Snack: {snack_cal} cal, {snack_pro}g protein, {snack_carb}g carbs, {snack_fat}g fat
-
-You MUST use these exact numbers in each meal's calorie/protein/carbs/fats fields.""",
-                user_message=prompt,
-                temperature=0.3,
-                max_tokens=4000
-            )
-            
-            content = content.strip() if content else ""
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-            content = content.strip()
-            
-            meal_data = json.loads(content)
-            
-            
-            # POST-PROCESSING: Iteratively adjust ingredient quantities to get close to targets
-            # Since ingredients have fixed macro ratios, we can only get approximate matches
-            
-            for day in meal_data.get("meal_days", []):
-                # Calculate current day macros from ingredients
-                # Uses AI's stated values as fallback when ingredient DB match is incomplete
-                def recalc_day_macros(day_data):
-                    total_cal, total_pro, total_carb, total_fat = 0, 0, 0, 0
-                    for meal in day_data.get("meals", []):
-                        ai_cal = meal.get("calories", 0)
-                        ai_pro = meal.get("protein", 0)
-                        ai_carb = meal.get("carbs", 0)
-                        ai_fat = meal.get("fats", 0)
-                        meal_cal, meal_pro, meal_carb, meal_fat = 0, 0, 0, 0
-                        for ing in meal.get("ingredients", []):
-                            macros = calculate_ingredient_macros(ing)
-                            if macros:
-                                meal_cal += macros["calories"]
-                                meal_pro += macros["protein"]
-                                meal_carb += macros["carbs"]
-                                meal_fat += macros["fats"]
-                        # If DB only matched < 60% of AI's stated calories, supplement with AI values
-                        # This handles ingredients like 'lamb chops', 'granola', exotic items not in DB
-                        if ai_cal > 0 and meal_cal < ai_cal * 0.6:
-                            coverage = meal_cal / ai_cal if ai_cal > 0 else 0
-                            unmatched_ratio = 1 - coverage
-                            meal_cal  += ai_cal  * unmatched_ratio
-                            meal_pro  += ai_pro  * unmatched_ratio
-                            meal_carb += ai_carb * unmatched_ratio
-                            meal_fat  += ai_fat  * unmatched_ratio
-                        meal["calories"] = round(meal_cal)
-                        meal["protein"] = round(meal_pro, 1)
-                        meal["carbs"] = round(meal_carb, 1)
-                        meal["fats"] = round(meal_fat, 1)
-                        total_cal += meal_cal
-                        total_pro += meal_pro
-                        total_carb += meal_carb
-                        total_fat += meal_fat
-                    return total_cal, total_pro, total_carb, total_fat
-                
-                # POST-PROCESSING: Multi-stage macro correction
-                # Diet-type flags to control which stages apply
-                _is_low_carb_ai = eating_style in ['keto', 'carnivore']  # These need high fat, low carbs — don't override
-                _is_plant_based_ai = eating_style in ['vegan', 'vegetarian']
-                
-                # Stage 1: Initial calorie-based scale
-                current_cal, current_pro, current_carb, current_fat = recalc_day_macros(day)
-                
-                if current_cal > 0:
-                    cal_scale = target_cal / current_cal
-                    cal_scale = max(0.6, min(1.5, cal_scale))
-                else:
-                    cal_scale = 1.0
-                
-                def scale_ingredient_str(ing_str, scale_factor):
-                    """Scale an ingredient's quantity by scale_factor"""
-                    import re as _re
-                    scale_factor = max(0.5, min(2.5, scale_factor))
-                    m = _re.match(r'^(\d+(?:\.\d+)?)\s*(g|ml|kg|oz)\s+(.+)$', ing_str, _re.IGNORECASE)
-                    if m:
-                        new_amt = round(float(m.group(1)) * scale_factor)
-                        return f"{new_amt}{m.group(2)} {m.group(3)}"
-                    m = _re.match(r'^(\d+(?:\.\d+)?)\s+(large|medium|small|whole)\s+(.+)$', ing_str, _re.IGNORECASE)
-                    if m:
-                        new_cnt = max(1, round(float(m.group(1)) * scale_factor))
-                        return f"{new_cnt} {m.group(2)} {m.group(3)}"
-                    m = _re.match(r'^(\d+(?:\.\d+)?)\s+(.+)$', ing_str, _re.IGNORECASE)
-                    if m:
-                        new_cnt = max(1, round(float(m.group(1)) * scale_factor))
-                        return f"{new_cnt} {m.group(2)}"
-                    return ing_str
-                
-                def scale_ingredients_by_type(day_data, keywords, scale, skip_keywords=None):
-                    """Scale only ingredients matching keywords"""
-                    skip_keywords = skip_keywords or []
-                    for meal in day_data.get("meals", []):
-                        new_ings = []
-                        for ing in meal.get("ingredients", []):
-                            ing_lower = ing.lower()
-                            is_target = any(k in ing_lower for k in keywords)
-                            is_skip = any(k in ing_lower for k in skip_keywords)
-                            if is_target and not is_skip:
-                                new_ings.append(scale_ingredient_str(ing, scale))
-                            else:
-                                new_ings.append(ing)
-                        meal["ingredients"] = new_ings
-                
-                # Define carb & fat keywords once — reused in Stage 2 and Stage 4
-                CARB_KEYWORDS = ['rice', 'sweet potato', 'potato', 'oat', 'quinoa', 'bread', 'pasta',
-                                  'banana', 'apple', 'fruit', 'bean', 'lentil', 'chickpea', 'corn',
-                                  'tortilla', 'noodle', 'couscous', 'barley', 'bulgur', 'mango', 'berry',
-                                  'orange', 'grape', 'pear', 'pineapple', 'wrap', 'roll', 'pita']
-                FAT_ONLY_SKIP_IN_CARBS = ['peanut butter', 'almond butter', 'coconut oil', 'olive oil', 'avocado oil']
-
-                # Stage 1: Scale all by calories
-                for meal in day.get("meals", []):
-                    meal["ingredients"] = [scale_ingredient_str(ing, cal_scale) for ing in meal.get("ingredients", [])]
-                
-                # Stage 1.5: Protein correction — scale PURE protein ingredients to hit target
-                # Use only primarily-protein foods (NOT legumes which are carb-dominant)
-                after_cal_cal, after_cal_pro, after_cal_carb, after_cal_fat = recalc_day_macros(day)
-                # Only primarily-protein sources (not dual-purpose foods like legumes/quinoa)
-                pure_protein_keywords = [
-                    'chicken', 'turkey', 'beef', 'steak', 'fish', 'tuna', 'salmon', 'shrimp', 'pork',
-                    'egg', 'tofu', 'tempeh', 'seitan', 'protein powder', 'pea protein',
-                    'greek yogurt', 'cottage cheese', 'hemp seed', 'soy yogurt', 'soy milk',
-                    'ground beef', 'ground turkey', 'cod', 'tilapia', 'halibut', 'snapper'
-                ]
-                # Skip carb-dominant and fat-dominant foods during protein scaling
-                non_protein_skip = ['rice', 'oat', 'potato', 'pasta', 'bread', 'banana', 'tortilla',
-                                     'pita', 'barley', 'mango', 'apple', 'oil', 'butter', 'avocado']
-                if after_cal_pro > 0:
-                    pro_scale = target_pro / after_cal_pro
-                    pro_scale = max(0.70, min(1.50, pro_scale))  # Up to 50% increase for vegan protein gaps
-                    if abs(pro_scale - 1.0) > 0.03:
-                        scale_ingredients_by_type(day, pure_protein_keywords, pro_scale, skip_keywords=non_protein_skip)
-                
-                # Stage 2: Carb correction — skip for keto/carnivore (intentionally low carb)
-                if not _is_low_carb_ai:
-                    after_pro_cal, after_pro_pro, after_pro_carb, after_pro_fat = recalc_day_macros(day)
-                    if after_pro_carb > 0:
-                        carb_scale = target_carb / after_pro_carb
-                        # Allow up to 3x scaling — high_protein AI sometimes skimps on carbs
-                        carb_scale = max(0.5, min(3.0, carb_scale))
-                        if abs(carb_scale - 1.0) > 0.04:
-                            scale_ingredients_by_type(day, CARB_KEYWORDS, carb_scale, skip_keywords=FAT_ONLY_SKIP_IN_CARBS)
-                
-                # Stage 3: Fat correction — skip for keto/carnivore (these need high fat — don't override)
-                if not _is_low_carb_ai:
-                    after_carb_cal, after_carb_pro, after_carb_carb, after_carb_fat = recalc_day_macros(day)
-                    fat_keywords = ['oil', 'butter', 'avocado', 'almond butter', 'peanut butter', 'nuts',
-                                     'cheese', 'cream', 'coconut', 'ghee', 'lard', 'mayo', 'tahini',
-                                     'walnuts', 'almonds', 'cashews', 'pecans', 'seeds', 'flaxseed',
-                                     'egg', 'salmon', 'bacon', 'ribeye', 'lamb', 'duck', 'pork belly']
-                    # Only skip truly lean proteins from fat scaling
-                    lean_protein_skip = ['chicken breast', 'turkey breast', 'cod', 'tilapia', 'tuna',
-                                          'shrimp', 'egg white', 'cottage cheese', 'tofu', 'tempeh',
-                                          'seitan', 'ground turkey', 'white fish']
-                    if after_carb_fat > 0:
-                        fat_scale = target_fat / after_carb_fat
-                        fat_scale = max(0.4, min(2.5, fat_scale))
-                        if abs(fat_scale - 1.0) > 0.04:
-                            scale_ingredients_by_type(day, fat_keywords, fat_scale, skip_keywords=lean_protein_skip)
-                
-                # Stage 4: Last-meal balance — guarantee EXACT daily totals for non-keto diets
-                # After Stages 1-3, the first 3 meals are approximately scaled.
-                # The last meal (snack) absorbs any remaining gap to guarantee exact day totals.
-                if not _is_low_carb_ai:
-                    meals = day.get("meals", [])
-                    if len(meals) >= 2:
-                        # Recalculate all meals from ingredients to get fresh, accurate totals
-                        recalc_day_macros(day)
-                        
-                        first_meals = meals[:-1]  # All meals except the last (snack)
-                        first_cal  = sum(m.get("calories", 0) for m in first_meals)
-                        first_pro  = sum(float(m.get("protein", 0)) for m in first_meals)
-                        first_carb = sum(float(m.get("carbs", 0)) for m in first_meals)
-                        first_fat  = sum(float(m.get("fats", 0)) for m in first_meals)
-                        
-                        last_meal = meals[-1]
-                        
-                        # Compute exactly what the last meal needs to produce
-                        needed_cal  = max(80, target_cal  - first_cal)
-                        needed_pro  = max(3,  target_pro  - first_pro)
-                        needed_carb = max(3,  target_carb - first_carb)
-                        needed_fat  = max(1,  target_fat  - first_fat)
-                        
-                        # Scale last meal's ingredient amounts proportionally by calorie ratio
-                        # This keeps portion sizes realistic while hitting the needed total
-                        cur_last_cal = max(1, last_meal.get("calories", 1))
-                        last_scale = max(0.3, min(3.0, needed_cal / cur_last_cal))
-                        if abs(last_scale - 1.0) > 0.05:
-                            last_meal["ingredients"] = [
-                                scale_ingredient_str(ing, last_scale)
-                                for ing in last_meal.get("ingredients", [])
-                            ]
-                        
-                        # Recalculate ALL meal macros from actual ingredient amounts (honest values)
-                        # This ensures ingredient quantities always match the displayed macros.
-                        # Stages 1-3 got us close to targets; last meal was scaled to close the gap.
-                        # Now we report what the ingredients actually give, not forced targets.
-                        final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
-                        day["total_calories"] = round(final_cal)
-                        day["total_protein"]  = round(final_pro)
-                        day["total_carbs"]    = round(final_carb)
-                        day["total_fats"]     = round(final_fat)
-                    else:
-                        # Fewer than 2 meals — just recalculate normally
-                        final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
-                        day["total_calories"] = round(final_cal)
-                        day["total_protein"]  = round(final_pro)
-                        day["total_carbs"]    = round(final_carb)
-                        day["total_fats"]     = round(final_fat)
-                else:
-                    # Keto/Carnivore: recalculate honestly from ingredients (no forced targets)
-                    final_cal, final_pro, final_carb, final_fat = recalc_day_macros(day)
-                    day["total_calories"] = round(final_cal)
-                    day["total_protein"]  = round(final_pro)
-                    day["total_carbs"]    = round(final_carb)
-                    day["total_fats"]     = round(final_fat)
-            
-                # ==================================================================
-                # Stage 5: Final macro calibration — GUARANTEE EXACT daily targets
-                # After Stages 1-4 produced honest ingredient-level values (typically
-                # within ±1-8% of targets), this step applies a small proportional
-                # correction (<= ±20%) to each meal so that day totals are PERFECT.
-                # Ingredient amounts are also scaled proportionally to stay
-                # consistent with the displayed macro numbers.
-                # Keto/Carnivore are intentionally exempt — they use diet-appropriate
-                # macro splits, not the user's profile targets.
-                # ==================================================================
-                if not _is_low_carb_ai:
-                    actual_cal  = float(day.get("total_calories", 0))
-                    actual_pro  = float(day.get("total_protein",  0))
-                    actual_carb = float(day.get("total_carbs",    0))
-                    actual_fat  = float(day.get("total_fats",     0))
-                    s5_meals = day.get("meals", [])
-
-                    if actual_cal > 0 and len(s5_meals) > 0:
-                        # Compute per-macro scale factors, capped at ±20%
-                        cal_adj  = max(0.80, min(1.20, target_cal  / actual_cal))  if actual_cal  > 0 else 1.0
-                        pro_adj  = max(0.80, min(1.20, target_pro  / actual_pro))  if actual_pro  > 0 else 1.0
-                        carb_adj = max(0.80, min(1.20, target_carb / actual_carb)) if actual_carb > 0 else 1.0
-                        fat_adj  = max(0.80, min(1.20, target_fat  / actual_fat))  if actual_fat  > 0 else 1.0
-
-                        for meal in s5_meals:
-                            # Scale ingredient gram amounts proportionally by calorie factor
-                            if abs(cal_adj - 1.0) > 0.005:
-                                meal["ingredients"] = [
-                                    scale_ingredient_str(ing, cal_adj)
-                                    for ing in meal.get("ingredients", [])
-                                ]
-                            # Apply per-macro scale to displayed values
-                            meal["calories"] = round(meal.get("calories", 0) * cal_adj)
-                            meal["protein"]  = round(float(meal.get("protein", 0))  * pro_adj,  1)
-                            meal["carbs"]    = round(float(meal.get("carbs",   0))  * carb_adj, 1)
-                            meal["fats"]     = round(float(meal.get("fats",    0))  * fat_adj,  1)
-
-                        # Honest day totals — the true sum of the calibrated meals.
-                        # After per-meal calibration these land close to target; the
-                        # user must always see numbers that match the meals they eat.
-                        day["total_calories"] = round(sum(float(m.get("calories", 0)) for m in s5_meals))
-                        day["total_protein"]  = round(sum(float(m.get("protein", 0)) for m in s5_meals), 1)
-                        day["total_carbs"]    = round(sum(float(m.get("carbs", 0)) for m in s5_meals), 1)
-                        day["total_fats"]     = round(sum(float(m.get("fats", 0)) for m in s5_meals), 1)
-                        logger.info(
-                            f"Stage 5 calibration: "
-                            f"{round(actual_cal)}→{target_cal} cal, "
-                            f"{round(actual_pro)}→{target_pro}g P, "
-                            f"{round(actual_carb)}→{target_carb}g C, "
-                            f"{round(actual_fat)}→{target_fat}g F"
-                        )
-            
-            # POST-VALIDATION: Check if any banned foods appear in the meal plan
-            # Expanded matching: allergen synonyms + word-stem (singular/plural both ways)
-            if banned_foods_list:
-                expanded_banned = expand_banned_terms(banned_foods_list)
-                for day in meal_data.get("meal_days", []):
-                    day_stripped = False
-                    for meal in day.get("meals", []):
-                        meal_name_lower = meal.get("name", "").lower()
-                        ingredients_str = " ".join(meal.get("ingredients", [])).lower()
-                        hits = [b for b in expanded_banned
-                                if contains_banned_food(meal_name_lower, b) or contains_banned_food(ingredients_str, b)]
-                        if hits:
-                            logger.warning(f"BANNED FOOD DETECTED: {hits} found in meal '{meal.get('name')}' - stripping and recomputing macros")
-                            removed = strip_banned_and_recompute(meal, hits)
-                            if removed:
-                                day_stripped = True
-                                logger.warning(f"Stripped ingredients: {removed}")
-                            # Scrub banned mentions from the meal name and instructions
-                            scrubbed_name = scrub_banned_mentions(meal.get("name", ""), hits)
-                            meal["name"] = scrubbed_name if scrubbed_name else "Custom Protein Meal"
-                            meal["instructions"] = scrub_banned_mentions(meal.get("instructions", ""), hits)
-                    if day_stripped:
-                        # Keep day totals honest after stripping
-                        day["total_calories"] = round(sum(m.get("calories", 0) or 0 for m in day.get("meals", [])))
-                        day["total_protein"] = round(sum(m.get("protein", 0) or 0 for m in day.get("meals", [])), 1)
-                        day["total_carbs"] = round(sum(m.get("carbs", 0) or 0 for m in day.get("meals", [])), 1)
-                        day["total_fats"] = round(sum(m.get("fats", 0) or 0 for m in day.get("meals", [])), 1)
-            
-            meal_plan = MealPlan(
-                user_id=request.user_id,
-                name=meal_data.get("name", f"{plan_name} Custom Meal Plan"),
-                food_preferences=request.food_preferences,
-                preferred_foods=request.preferred_foods,
-                foods_to_avoid=request.foods_to_avoid,
-                supplements=request.supplements,
-                supplements_custom=request.supplements_custom,
-                allergies=request.allergies,
-                target_calories=target_cal,
-                target_protein=target_pro,
-                target_carbs=target_carb,
-                target_fats=target_fat,
-                meal_days=[MealDay(**day) for day in meal_data.get("meal_days", [])]
-            )
-            
-            await db.mealplans.insert_one(meal_plan.model_dump())
-            await db.meal_generation_events.insert_one({
-                "user_id": request.user_id,
-                "created_at": datetime.utcnow(),
-            })
-            return meal_plan
-            
-        except Exception as e:
-            logger.error(f"AI meal plan generation error: {e}")
-            # Fall back to template-based generation
-            logger.info("Falling back to template-based generation")
-    
-    # Template-based generation (when no preferred foods specified)
-    # Calculate base totals for template (before scaling)
-    def calc_day_totals(day_template):
-        totals = {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}
-        for meal_type, meal in day_template.items():
-            for ing_name, (g, cal, pro, carb, fat) in meal["ingredients"].items():
-                totals["calories"] += cal
-                totals["protein"] += pro
-                totals["carbs"] += carb
-                totals["fats"] += fat
-        return totals
-    
-    # Scale a day's meals to hit target calories
-    def scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb_diet=False, is_plant_based_diet=False):
-        """
-        Accurately scales template ingredients to hit user's daily macro targets.
-        Uses ingredient-level scaling so displayed macros always match actual ingredient amounts.
-        - Step 1: Scale all ingredients proportionally to hit calorie target
-        - Step 2: Scale protein-rich ingredients to hit protein target
-        - Step 3: Scale carb-rich ingredients to hit carb target (skip for keto/carnivore)
-        - Step 4: Scale fat-rich ingredients to hit fat target
-        - Step 5: Build meals and calculate macros from actual ingredient amounts (honest, no inflation)
-        """
-        import copy as _copy
-
-        # Ingredient keyword categories for targeted scaling
-        PROTEIN_KEYWORDS = [
-            'chicken', 'beef', 'turkey', 'fish', 'salmon', 'tuna', 'shrimp', 'pork',
-            'egg', 'tofu', 'tempeh', 'seitan', 'lentil', 'protein powder', 'pea protein',
-            'greek yogurt', 'cottage cheese', 'edamame', 'chickpea', 'black bean',
-            'kidney bean', 'ground beef', 'steak', 'hemp seed', 'soy yogurt', 'soy milk',
-            'milk', 'quinoa', 'smoked salmon', 'ribeye', 'lamb', 'bison', 'venison'
-        ]
-        CARB_KEYWORDS = [
-            'rice', 'oat', 'potato', 'sweet potato', 'pasta', 'bread', 'pita', 'tortilla',
-            'banana', 'corn', 'barley', 'couscous', 'noodle', 'wrap', 'cereal', 'granola',
-            'fruit', 'berry', 'apple', 'mango', 'orange', 'grape', 'lentil', 'chickpea',
-            'black bean', 'kidney bean', 'falafel', 'hummus', 'cracker'
-        ]
-        # Fat-rich keywords — avoid scaling pure-protein foods as fat sources
-        FAT_KEYWORDS = [
-            'oil', 'butter', 'avocado', 'nut', 'almond', 'peanut', 'cashew',
-            'pecan', 'walnut', 'macadamia', 'cheese', 'cream', 'coconut', 'ghee',
-            'mayo', 'tahini', 'seed', 'bacon', 'lard', 'pesto', 'heavy cream'
-        ]
-        # These are mainly protein — skip them when scaling fat sources
-        FAT_SKIP_PROTEINS = [
-            'chicken', 'beef', 'turkey', 'salmon', 'fish', 'tuna', 'tofu', 'tempeh',
-            'seitan', 'egg', 'yogurt', 'cottage', 'shrimp', 'pork', 'steak', 'ground beef'
-        ]
-
-        def _totals(tmpl):
-            t = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
-            for meal in tmpl.values():
-                for _g, cal, pro, carb, fat in meal["ingredients"].values():
-                    t["calories"] += cal
-                    t["protein"] += pro
-                    t["carbs"] += carb
-                    t["fats"] += fat
-            return t
-
-        def _scale_all(tmpl, factor):
-            """Scale every ingredient by factor (calorie-based initial scaling)."""
-            f = max(0.3, min(3.0, factor))
-            new = {}
-            for mt, meal in tmpl.items():
-                new_ings = {
-                    n: (round(g * f), round(c * f), round(p * f, 1), round(cb * f, 1), round(ft * f, 1))
-                    for n, (g, c, p, cb, ft) in meal["ingredients"].items()
-                }
-                new[mt] = {**meal, "ingredients": new_ings}
-            return new
-
-        def _scale_by_keywords(tmpl, keywords, factor, skip=None):
-            """Scale only ingredients whose names match keywords, while skipping skip-keywords."""
-            skip = skip or []
-            f = max(0.3, min(3.0, factor))
-            new = {}
-            for mt, meal in tmpl.items():
-                new_ings = {}
-                for n, (g, c, p, cb, ft) in meal["ingredients"].items():
-                    nl = n.lower()
-                    is_target = any(k in nl for k in keywords)
-                    is_skip = any(k in nl for k in skip)
-                    if is_target and not is_skip and abs(f - 1.0) > 0.03:
-                        new_ings[n] = (round(g * f), round(c * f), round(p * f, 1), round(cb * f, 1), round(ft * f, 1))
-                    else:
-                        new_ings[n] = (g, c, p, cb, ft)
-                new[mt] = {**meal, "ingredients": new_ings}
-            return new
-
-        # Work on a deep copy to preserve original templates
-        working = _copy.deepcopy(day_template)
-
-        # STEP 1 — Calorie scaling: scale all ingredients proportionally to hit calorie target
-        base = _totals(working)
-        if base["calories"] > 0:
-            cal_scale = target_cal / base["calories"]
-            working = _scale_all(working, cal_scale)
-
-        # STEP 2 — Protein scaling: adjust protein-rich ingredient amounts to hit protein target
-        t = _totals(working)
-        if t["protein"] > 0:
-            pro_scale = target_pro / t["protein"]
-            # Limit to ±50% adjustment to keep portions realistic
-            pro_scale = max(0.5, min(1.5, pro_scale))
-            working = _scale_by_keywords(working, PROTEIN_KEYWORDS, pro_scale)
-
-        # STEP 3 — Carb scaling: adjust carb-rich ingredient amounts to hit carb target
-        # Skip for keto/carnivore (low carb is intentional for those diets)
-        if not is_low_carb_diet:
-            t = _totals(working)
-            if t["carbs"] > 0:
-                carb_scale = target_carb / t["carbs"]
-                carb_scale = max(0.5, min(2.0, carb_scale))
-                working = _scale_by_keywords(working, CARB_KEYWORDS, carb_scale, skip=FAT_KEYWORDS)
-
-        # STEP 4 — Fat scaling: adjust fat-rich ingredient amounts to hit fat target
-        t = _totals(working)
-        if t["fats"] > 0:
-            fat_scale = target_fat / t["fats"]
-            fat_scale = max(0.4, min(2.0, fat_scale))
-            working = _scale_by_keywords(working, FAT_KEYWORDS, fat_scale, skip=FAT_SKIP_PROTEINS)
-
-        # STEP 5 — Build output meals with macros calculated from ACTUAL ingredient amounts
-        # This ensures the displayed macros are always honest and match ingredient quantities
-        scaled_meals = []
-        day_totals = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
-        meal_idx = 1
-
-        for meal_type, meal in working.items():
-            meal_macros = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
-            scaled_ingredients = []
-
-            for ing_name, (g, cal, pro, carb, fat) in meal["ingredients"].items():
-                scaled_ingredients.append(f"{g}g {ing_name}")
-                meal_macros["calories"] += cal
-                meal_macros["protein"] += pro
-                meal_macros["carbs"] += carb
-                meal_macros["fats"] += fat
-
-            scaled_meals.append({
-                "id": f"meal{meal_idx}",
-                "name": meal["name"],
-                "meal_type": meal_type,
-                "ingredients": scaled_ingredients,
-                "instructions": meal["instructions"],
-                "calories": round(meal_macros["calories"]),
-                "protein": round(meal_macros["protein"]),
-                "carbs": round(meal_macros["carbs"]),
-                "fats": round(meal_macros["fats"]),
-                "prep_time_minutes": meal.get("prep_time", 20)
-            })
-
-            day_totals["calories"] += meal_macros["calories"]
-            day_totals["protein"] += meal_macros["protein"]
-            day_totals["carbs"] += meal_macros["carbs"]
-            day_totals["fats"] += meal_macros["fats"]
-            meal_idx += 1
-
-        # Round day totals
-        day_totals = {k: round(v) for k, v in day_totals.items()}
-        return scaled_meals, day_totals
-    
-    # Determine if this is a low-carb diet that should preserve template macros
-    is_low_carb = eating_style in ['keto', 'carnivore']
-    # Determine if this is a plant-based diet (accurate protein matters, don't inflate)
-    is_plant_based = eating_style in ['vegan', 'vegetarian']
-    
-    # Build banned foods list for template filtering
-    template_banned_foods = []
-    if request.foods_to_avoid and request.foods_to_avoid.strip():
-        template_banned_foods = [f.strip().lower() for f in request.foods_to_avoid.split(',') if f.strip()]
-    if request.allergies:
-        template_banned_foods.extend([a.lower() for a in request.allergies])
-    
-    # Generate all 3 days
     meal_days = []
-    for day_num, day_key in enumerate(["day1", "day2", "day3"], 1):
-        day_template = MEAL_TEMPLATES[day_key]
-        scaled_meals, day_totals = scale_day_to_targets(day_template, target_cal, target_pro, target_carb, target_fat, is_low_carb, is_plant_based)
-        
-        # Filter banned foods from template-based meals (rename meals + remove ingredients)
-        if template_banned_foods:
-            for meal in scaled_meals:
-                meal_name_lower = meal.get("name", "").lower()
-                # Rename meal if its name contains a banned food
-                for banned in template_banned_foods:
-                    if banned in meal_name_lower:
-                        old_name = meal["name"]
-                        meal_type = meal.get("meal_type", "meal")
-                        meal["name"] = f"{meal_type.capitalize()} - Chef's Choice"
-                        logger.info(f"Template meal renamed: '{old_name}' -> '{meal['name']}' (banned: {banned})")
-                        break
-                # Filter banned ingredients
-                meal["ingredients"] = [
-                    ing for ing in meal.get("ingredients", [])
-                    if not any(banned in ing.lower() for banned in template_banned_foods)
-                ]
-        
-        # Update meal IDs for the day
-        for i, meal in enumerate(scaled_meals):
-            meal["id"] = f"d{day_num}m{i+1}"
-        
-        meal_days.append({
-            "day": f"Day {day_num}",
-            "total_calories": round(day_totals["calories"]),
-            "total_protein": round(day_totals["protein"]),
-            "total_carbs": round(day_totals["carbs"]),
-            "total_fats": round(day_totals["fats"]),
-            "meals": scaled_meals
-        })
-        
-        logger.info(f"Day {day_num}: {round(day_totals['calories'])} cal, {round(day_totals['protein'])}g P, {round(day_totals['carbs'])}g C, {round(day_totals['fats'])}g F (target: {target_cal}/{target_pro}/{target_carb}/{target_fat})")
-    
-    # For low-carb diets, update the stored targets to reflect actual diet values
-    stored_target_carbs = target_carb
-    stored_target_fats = target_fat
-    
-    if is_low_carb:
-        # Calculate actual macros from the generated meal days
-        actual_carbs = round(sum(day["total_carbs"] for day in meal_days) / 3)
-        actual_fats = round(sum(day["total_fats"] for day in meal_days) / 3)
-        stored_target_carbs = actual_carbs
-        stored_target_fats = actual_fats
-        logger.info(f"Low-carb diet: Storing actual macros - {stored_target_carbs}g C, {stored_target_fats}g F (diet-compliant)")
-    
+    for di, slots in enumerate(day_slots):
+        drafts = [slots[mt] for mt in MEAL_TYPES]
+        balance_day(drafts, targets, rules)
+        finals = [finalize_meal(d, f"d{di + 1}m{i + 1}") for i, d in enumerate(drafts)]
+        day = build_day(f"Day {di + 1}", finals, targets)
+        meal_days.append(day)
+        logger.info(f"Day {di + 1}: {day['total_calories']} cal, {day['total_protein']}P, {day['total_carbs']}C, "
+                    f"{day['total_fats']}F (target {targets}) on_target={day['on_target']}")
+
     try:
         meal_plan = MealPlan(
             user_id=request.user_id,
-            name=f"{plan_name} 3-Day Meal Plan",
+            name=(ai_title if use_ai and ai_title else f"{plan_name} 3-Day Meal Plan"),
             food_preferences=request.food_preferences,
             preferred_foods=request.preferred_foods,
             foods_to_avoid=request.foods_to_avoid,
             supplements=request.supplements,
             supplements_custom=request.supplements_custom,
             allergies=request.allergies,
-            target_calories=target_cal,
-            target_protein=target_pro,
-            target_carbs=stored_target_carbs,
-            target_fats=stored_target_fats,
-            meal_days=[MealDay(**day) for day in meal_days]
+            target_calories=targets["calories"],
+            target_protein=targets["protein"],
+            target_carbs=targets["carbs"],
+            target_fats=targets["fats"],
+            meal_days=[MealDay(**d) for d in meal_days],
         )
-        
         await db.mealplans.insert_one(meal_plan.model_dump())
         await db.meal_generation_events.insert_one({
             "user_id": request.user_id,
             "created_at": datetime.utcnow(),
         })
         return meal_plan
-        
     except Exception as e:
         logger.error(f"Meal plan generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate meal plan: {str(e)}")
@@ -7729,316 +5482,115 @@ async def get_saved_meal_plans(user_id: str):
 
 @api_router.post("/mealplan/alternate")
 async def generate_alternate_meal(request: AlternateMealRequest):
-    """Generate an alternate meal for a specific meal in a meal plan - WORLD-CLASS ACCURACY"""
+    """Swap one meal. The new meal's numbers are calculated from its own
+    ingredients, and its portions are tuned so the day stays on target."""
     plan = await db.mealplans.find_one({"id": request.meal_plan_id})
     if not plan:
         raise HTTPException(status_code=404, detail="Meal plan not found")
-    
     try:
-        current_meal = plan["meal_days"][request.day_index]["meals"][request.meal_index]
+        day = plan["meal_days"][request.day_index]
+        current_meal = day["meals"][request.meal_index]
     except (IndexError, KeyError):
         raise HTTPException(status_code=400, detail="Invalid day or meal index")
-    
+
     profile = await db.profiles.find_one({"id": request.user_id})
     macros = profile.get("calculated_macros", {}) if profile else {}
-    
-    # Get user's daily targets from the saved meal plan (most accurate)
-    target_cal = plan.get("target_calories", macros.get("calories", 2000))
-    target_pro = plan.get("target_protein", macros.get("protein", 150))
-    target_carb = plan.get("target_carbs", macros.get("carbs", 200))
-    target_fat = plan.get("target_fats", macros.get("fats", 70))
-    
-    meal_type = current_meal.get('meal_type', 'lunch')
-    
-    # For "similar" swap, use the CURRENT meal's macros exactly
-    current_cal = current_meal.get('calories', 500)
-    current_pro = current_meal.get('protein', 40)
-    current_carb = current_meal.get('carbs', 50)
-    current_fat = current_meal.get('fats', 20)
-    
-    # Build swap-specific instructions based on preference
-    swap_instructions = {
-        "similar": f"Match the CURRENT meal's macros EXACTLY: {current_cal} cal, {current_pro}g protein, {current_carb}g carbs, {current_fat}g fats",
-        "higher_protein": f"Increase protein to ~{int(current_pro * 1.4)}g, reduce carbs to compensate. Keep calories around {current_cal}",
-        "lower_calories": f"Reduce to ~{int(current_cal * 0.75)} cal, prioritize protein (~{current_pro}g minimum)",
-        "quick_prep": f"Under 15 minutes prep. Match: ~{current_cal} cal, ~{current_pro}g protein, ~{current_carb}g carbs, ~{current_fat}g fats",
-        "vegetarian": f"100% vegetarian (no meat/fish). Match: ~{current_cal} cal, ~{current_pro}g protein using eggs, dairy, tofu, legumes",
-        "budget": f"Affordable ingredients. Match: ~{current_cal} cal, ~{current_pro}g protein, ~{current_carb}g carbs, ~{current_fat}g fats",
+    plan_targets = {
+        "calories": float(plan.get("target_calories") or macros.get("calories", 2000)),
+        "protein": float(plan.get("target_protein") or macros.get("protein", 150)),
+        "carbs": float(plan.get("target_carbs") or macros.get("carbs", 200)),
+        "fats": float(plan.get("target_fats") or macros.get("fats", 70)),
     }
-    
-    swap_instruction = swap_instructions.get(request.swap_preference, swap_instructions["similar"])
-    
-    # Get diet instructions if applicable
-    eating_style = plan.get('food_preferences', 'none').lower()
-    diet_note = ""
-    if eating_style == 'keto':
-        diet_note = "STRICT KETO DIET: This meal MUST have under 10g carbs. HIGH FAT required (use butter, olive oil, avocado, cheese). NO grains, NO sugar, NO starchy vegetables, NO fruit."
-    elif eating_style == 'carnivore':
-        diet_note = "CARNIVORE DIET: Only meat, fish, eggs, butter allowed. ZERO carbs. No plants."
-    elif eating_style == 'paleo':
-        diet_note = "PALEO DIET: No grains, dairy, or processed foods."
-    elif eating_style == 'vegan':
-        diet_note = "VEGAN DIET: No animal products whatsoever - no meat, fish, eggs, dairy, honey."
-    elif eating_style == 'vegetarian':
-        diet_note = "VEGETARIAN DIET: No meat or fish. Can use eggs and dairy."
-    
-    # ======================================================================
-    # CRITICAL: PROTEIN_GROUPS filtering - same logic as main meal generation
-    # This ensures that banning "chicken" also bans "turkey", "poultry" etc.
-    # ======================================================================
-    PROTEIN_GROUPS = {
-        'chicken': ['chicken breast', 'chicken thigh', 'chicken', 'grilled chicken', 'rotisserie chicken', 'chicken wings', 'chicken drumstick', 'chicken leg', 'fried chicken', 'baked chicken', 'poultry'],
-        'beef': ['beef', 'sirloin', 'ribeye', 'ground beef', 'steak', 'beef mince', 'brisket', 'flank steak', 'filet mignon', 'tenderloin', 'roast beef', 'corned beef'],
-        'pork': ['pork', 'bacon', 'pork chop', 'ham', 'pork loin', 'pork belly', 'sausage', 'pork tenderloin', 'pulled pork', 'ribs', 'pork ribs'],
-        'turkey': ['turkey', 'turkey breast', 'ground turkey', 'turkey bacon', 'turkey sausage', 'turkey meatballs', 'turkey deli'],
-        'fish': ['fish', 'salmon', 'tuna', 'cod', 'tilapia', 'white fish', 'sea bass', 'halibut', 'mahi mahi', 'trout', 'sardines', 'mackerel', 'anchovies', 'swordfish'],
-        'seafood': ['shrimp', 'prawns', 'crab', 'lobster', 'scallops', 'mussels', 'clams', 'oysters', 'calamari', 'squid', 'octopus'],
-        'eggs': ['eggs', 'egg', 'egg whites', 'whole eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'omelette', 'frittata'],
-        'dairy': ['greek yogurt', 'cottage cheese', 'cheese', 'milk', 'whey protein', 'cream', 'butter', 'yogurt', 'mozzarella', 'cheddar', 'parmesan', 'feta'],
-        'plant': ['tofu', 'tempeh', 'seitan', 'legumes', 'beans', 'lentils', 'chickpeas', 'edamame', 'black beans', 'kidney beans', 'pinto beans'],
-        'lamb': ['lamb', 'lamb chops', 'lamb leg', 'lamb shank', 'ground lamb', 'lamb shoulder']
-    }
-    
-    # Get foods to avoid from the saved plan
-    foods_to_avoid = plan.get('foods_to_avoid', '')
-    allergies_list = plan.get('allergies', [])
-    
-    # Build comprehensive banned foods list
-    banned_foods_list = []
-    if foods_to_avoid and foods_to_avoid.strip():
-        banned_foods_list = [f.strip().lower() for f in foods_to_avoid.split(',') if f.strip()]
-    if allergies_list:
-        for allergy in allergies_list:
-            banned_foods_list.append(allergy.lower())
-    
-    # Find which protein groups to COMPLETELY exclude
-    excluded_groups = set()
-    for banned in banned_foods_list:
-        banned_lower = banned.lower().strip()
-        for group_name, group_foods in PROTEIN_GROUPS.items():
-            # Check if banned food matches the group name or any food in the group
-            if banned_lower == group_name or any(banned_lower in food or food in banned_lower for food in group_foods):
-                excluded_groups.add(group_name)
-    
-    # Build list of ALL foods to explicitly ban (expanded from groups)
-    do_not_use_list = list(banned_foods_list)  # Start with user's original list
-    for group in excluded_groups:
-        do_not_use_list.extend(PROTEIN_GROUPS.get(group, []))
-    do_not_use_list = list(set(do_not_use_list))  # Remove duplicates
-    # Expand with allergen synonyms/derivatives (nuts -> almond..., gluten -> wheat...)
-    do_not_use_list = expand_banned_terms(do_not_use_list)
-    
-    # Build allowed protein sources (for positive guidance)
-    protein_alternatives = []
-    for group_name, group_foods in PROTEIN_GROUPS.items():
-        if group_name not in excluded_groups:
-            protein_alternatives.append(group_foods[0])  # Add primary food from each allowed group
-    
-    # Log for debugging - CRITICAL for tracking this issue
-    logger.info(f"=== MEAL REPLACEMENT REQUEST ===")
-    logger.info(f"User ID: {request.user_id}")
-    logger.info(f"Meal Plan ID: {request.meal_plan_id}")
-    logger.info(f"Foods to avoid (from plan): '{foods_to_avoid}'")
-    logger.info(f"Allergies (from plan): {allergies_list}")
-    logger.info(f"Banned foods list: {banned_foods_list}")
-    logger.info(f"Excluded protein groups: {excluded_groups}")
-    logger.info(f"All foods to ban: {do_not_use_list}")
-    logger.info(f"Allowed protein sources: {protein_alternatives}")
-    
-    # Build the avoid instructions with MAXIMUM STRICTNESS
-    avoid_instructions = ""
-    if do_not_use_list:
-        do_not_use_upper = ', '.join([f.upper() for f in do_not_use_list])
-        avoid_instructions = f"""
-🚫🚫🚫 ABSOLUTELY FORBIDDEN FOODS - DO NOT USE UNDER ANY CIRCUMSTANCES 🚫🚫🚫
-{do_not_use_upper}
+    meal_type = current_meal.get("meal_type", "lunch")
+    eating_style = (plan.get("food_preferences") or "balanced").lower()
+    allergies = [a for a in (plan.get("allergies") or []) if a and a.lower() != "none"]
+    foods_to_avoid = plan.get("foods_to_avoid") or ""
+    avoid = _avoid_terms(foods_to_avoid)
+    pref = request.swap_preference or "similar"
+    if pref == "vegetarian":
+        avoid += DIET_BANNED_TERMS["vegetarian"]
+    rules = FoodRules(allergies, avoid, eating_style)
 
-⛔ THESE FOODS ARE BANNED: {do_not_use_upper}
-⛔ If you include ANY of these foods, the meal is INVALID and will HARM THE USER.
-⛔ You MUST find alternatives that are NOT on this ban list.
-⛔ Check EVERY ingredient against this list before including it.
-
-✅ ALLOWED PROTEIN SOURCES ONLY: {', '.join(protein_alternatives) if protein_alternatives else 'Plant-based proteins, eggs, dairy'}"""
-    
-    if allergies_list:
-        avoid_instructions += f"""
-🚨 ALLERGENS (DANGEROUS): {', '.join(allergies_list).upper()}"""
-
-    # Build the main prompt with EXTREME clarity on banned foods
-    prompt = f"""Generate an alternate meal to replace this one:
-Current Meal: {current_meal.get('name')} ({meal_type})
-Current Macros: {current_cal} cal, {current_pro}g protein, {current_carb}g carbs, {current_fat}g fats
-
-{diet_note}
-{avoid_instructions}
-
-SWAP REQUIREMENT: {swap_instruction}
-
-⚠️ CRITICAL MACRO REQUIREMENTS (MUST MATCH):
-- Calories: {current_cal} (±10%)
-- Protein: {current_pro}g (±15%)
-- Carbs: {current_carb}g (±15%)
-- Fats: {current_fat}g (±15%)
-
-IMPORTANT RULES:
-1. Use SPECIFIC ingredients with gram amounts (e.g., "180g sirloin steak", not just "steak")
-2. Beef mince / ground beef must include its lean-to-fat ratio in parentheses: extra lean/premium/5-star "(95/5)", lean "(90/10)", regular/fatty "(80/20)"
-3. Create a DIFFERENT meal from "{current_meal.get('name')}"
-4. DOUBLE-CHECK every ingredient is NOT on the banned list
-5. If you cannot think of a meal without banned foods, use ONLY plant proteins/eggs/dairy
-
-Respond with valid JSON only:
-{{"id": "unique_id", "name": "Meal Name", "meal_type": "{meal_type}", "ingredients": ["180g sirloin steak", "200g brown rice", "100g broccoli"], "instructions": "How to prepare", "calories": {current_cal}, "protein": {current_pro}, "carbs": {current_carb}, "fats": {current_fat}, "prep_time_minutes": number}}"""
-
-    # Build system message with MAXIMUM strictness
-    system_avoid_msg = ""
-    if do_not_use_list:
-        banned_upper = ', '.join([f.upper() for f in do_not_use_list])
-        system_avoid_msg = f"""CRITICAL SAFETY RULE - READ THIS FIRST:
-The user has BANNED these foods and CANNOT eat them: {banned_upper}
-
-YOU MUST NOT include ANY of these ingredients in the meal:
-{banned_upper}
-
-If you include ANY banned food, the response is INVALID and will harm the user.
-Before outputting, CHECK that EVERY ingredient is NOT on the banned list.
-Use ONLY these allowed proteins: {', '.join(protein_alternatives) if protein_alternatives else 'eggs, dairy, tofu'}"""
-
-    logger.info(f"System avoid message: {system_avoid_msg[:200]}...")
-    
-    # Attempt generation with retry logic for banned food detection
-    max_attempts = 3
-    for attempt in range(max_attempts):
+    # Target = what this slot needs for the DAY to land on target (falls back
+    # to the current meal's macros if the rest of the day is far off).
+    def _f(v):
         try:
-            content = await call_claude_haiku(
-                system_message=f"""You are a precision nutritionist. Generate an alternate meal that MATCHES the current meal's macros exactly: {current_cal} cal, {current_pro}g P, {current_carb}g C, {current_fat}g F. Use specific ingredient amounts in grams.
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    others = [m for i, m in enumerate(day["meals"]) if i != request.meal_index]
+    remainder = {k: plan_targets[k] - sum(_f(m.get(k)) for m in others) for k in MACRO_KEYS}
+    current = {k: _f(current_meal.get(k)) for k in MACRO_KEYS}
+    use_remainder = all(remainder[k] >= 0 for k in MACRO_KEYS) and current["calories"] > 0 and \
+        0.5 * current["calories"] <= remainder["calories"] <= 1.6 * current["calories"]
+    base = remainder if use_remainder else current
+    target = dict(base)
+    notes = "Similar macros to the current meal but a DIFFERENT dish."
+    if pref == "higher_protein":
+        target["protein"] = base["protein"] * 1.4
+        target["carbs"] = max(0.0, base["carbs"] - (target["protein"] - base["protein"]))
+        notes = "Noticeably HIGHER in protein than the current meal, fewer carbs, similar calories."
+    elif pref == "lower_calories":
+        cut = base["calories"] * 0.25
+        ck, fk = base["carbs"] * 4, base["fats"] * 9
+        share_c = ck / (ck + fk) if (ck + fk) > 0 else 0.5
+        target["calories"] = base["calories"] * 0.75
+        target["carbs"] = max(0.0, base["carbs"] - cut * share_c / 4)
+        target["fats"] = max(0.0, base["fats"] - cut * (1 - share_c) / 9)
+        notes = "About 25% FEWER calories than the current meal while keeping the protein."
+    elif pref == "quick_prep":
+        notes = "Must take UNDER 15 minutes to prepare. Similar macros to the current meal."
+    elif pref == "vegetarian":
+        notes = "100% vegetarian — no meat or fish. Similar macros to the current meal."
+    elif pref == "budget":
+        notes = "Affordable, everyday supermarket ingredients. Similar macros to the current meal."
 
-{system_avoid_msg}""",
-                user_message=prompt,
-                temperature=0.4,
-                max_tokens=800
-            )
-            
-            content = content.strip() if content else ""
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-            content = content.strip()
-            
-            new_meal = json.loads(content)
-            new_meal["id"] = str(uuid.uuid4())
-            new_meal["meal_type"] = meal_type
-            
-            # ======================================================================
-            # POST-VALIDATION: Check for ANY banned food in the generated meal
-            # ======================================================================
-            found_banned = False
-            banned_found_list = []
-            
-            if do_not_use_list:
-                meal_name_lower = new_meal.get("name", "").lower()
-                ingredients_list = new_meal.get("ingredients", [])
-                ingredients_str = " ".join(ingredients_list).lower()
-                instructions_lower = new_meal.get("instructions", "").lower()
-                
-                # Check meal name, ingredients, and instructions
-                all_text = f"{meal_name_lower} {ingredients_str} {instructions_lower}"
-                
-                for banned in do_not_use_list:
-                    if contains_banned_food(all_text, banned):
-                        found_banned = True
-                        banned_found_list.append(banned)
-                        logger.warning(f"ATTEMPT {attempt+1}: BANNED FOOD DETECTED: '{banned}' found in generated meal '{new_meal.get('name')}'")
-            
-            if found_banned:
-                if attempt < max_attempts - 1:
-                    logger.warning(f"ATTEMPT {attempt+1}: Regenerating meal due to banned foods: {banned_found_list}")
-                    continue  # Try again
-                else:
-                    # Final attempt failed - strip the banned ingredients and recompute
-                    # the meal's macros from the remaining ingredients
-                    logger.error(f"FINAL ATTEMPT: Still found banned foods: {banned_found_list}. Stripping ingredients.")
-                    removed = strip_banned_and_recompute(new_meal, do_not_use_list)
-                    if removed:
-                        logger.warning(f"Stripped ingredients: {removed}; macros recomputed from remaining ingredients")
-                    # Scrub banned mentions from the meal name and instructions
-                    scrubbed_name = scrub_banned_mentions(new_meal.get("name", ""), banned_found_list)
-                    new_meal["name"] = scrubbed_name if scrubbed_name else "Custom Protein Meal"
-                    new_meal["instructions"] = scrub_banned_mentions(new_meal.get("instructions", ""), banned_found_list)
-            
-            # ── Macro validation: enforce the tolerances the prompt promises ──
-            def _f(v):
-                try:
-                    return float(v or 0)
-                except (TypeError, ValueError):
-                    return 0.0
-            n_cal, n_pro = _f(new_meal.get("calories")), _f(new_meal.get("protein"))
-            n_carb, n_fat = _f(new_meal.get("carbs")), _f(new_meal.get("fats"))
-            def _off(actual, target, pct, floor_g=0.0):
-                if target <= 0:
-                    return False
-                return abs(actual - target) > max(target * pct, floor_g)
-            macros_off = (
-                _off(n_cal, current_cal, 0.10)
-                or _off(n_pro, current_pro, 0.15, 5)
-                or _off(n_carb, current_carb, 0.15, 8)
-                or _off(n_fat, current_fat, 0.15, 4)
-            )
-            if macros_off and attempt < max_attempts - 1:
-                logger.warning(
-                    f"ATTEMPT {attempt+1}: macros out of tolerance "
-                    f"({n_cal}/{current_cal} cal, {n_pro}/{current_pro}g P) — regenerating"
-                )
-                continue
-            if macros_off:
-                # Final attempt: pull calories in line proportionally so the meal
-                # stays internally consistent (grams and macros scale together).
-                import re as _re_sw
-                scale = max(0.6, min(1.5, current_cal / n_cal)) if n_cal > 0 else 1.0
-                def _scale_ing(s, f):
-                    return _re_sw.sub(
-                        r"(\d+(?:\.\d+)?)\s*g\b",
-                        lambda m: f"{max(1, round(float(m.group(1)) * f))}g",
-                        s,
-                    )
-                new_meal["ingredients"] = [_scale_ing(i, scale) for i in new_meal.get("ingredients", [])]
-                new_meal["calories"] = round(n_cal * scale)
-                new_meal["protein"] = round(n_pro * scale, 1)
-                new_meal["carbs"]   = round(n_carb * scale, 1)
-                new_meal["fats"]    = round(n_fat * scale, 1)
-            # Log success
-            logger.info(f"✅ Alternate meal generated (attempt {attempt+1}): {new_meal.get('name')} - {new_meal.get('calories')} cal, {new_meal.get('protein')}g P (target: {current_cal}/{current_pro})")
-            # Save the swapped meal AND recompute the day's totals so the stored
-            # plan and the app's day summary stay consistent after a swap.
-            day = plan["meal_days"][request.day_index]
-            day["meals"][request.meal_index] = new_meal
-            day["total_calories"] = round(sum(_f(m.get("calories")) for m in day["meals"]))
-            day["total_protein"]  = round(sum(_f(m.get("protein")) for m in day["meals"]), 1)
-            day["total_carbs"]    = round(sum(_f(m.get("carbs")) for m in day["meals"]), 1)
-            day["total_fats"]     = round(sum(_f(m.get("fats")) for m in day["meals"]), 1)
-            await db.mealplans.update_one(
-                {"id": request.meal_plan_id},
-                {"$set": {"meal_days": plan["meal_days"]}}
-            )
-            return {
-                "alternate_meal": new_meal,
-                "day_totals": {
-                    "total_calories": day["total_calories"],
-                    "total_protein":  day["total_protein"],
-                    "total_carbs":    day["total_carbs"],
-                    "total_fats":     day["total_fats"],
-                },
-            }
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parse error on attempt {attempt+1}: {e}")
-            if attempt == max_attempts - 1:
-                raise HTTPException(status_code=500, detail=f"Failed to parse AI response after {max_attempts} attempts")
-        except Exception as e:
-            logger.error(f"Alternate meal generation error on attempt {attempt+1}: {e}")
-            if attempt == max_attempts - 1:
-                raise HTTPException(status_code=500, detail=f"Failed to generate alternate meal: {str(e)}")
+    used_names = {m.get("name", "") for d in plan["meal_days"] for m in d.get("meals", [])}
+    logger.info(f"=== MEAL SWAP === plan={request.meal_plan_id} day={request.day_index} meal={request.meal_index} "
+                f"pref={pref} target={ {k: round(v) for k, v in target.items()} } allergies={allergies} avoid='{foods_to_avoid}'")
+    others_items = [items_from_raw(m.get("ingredients"))[0] for m in others]
+
+    def _tune(draft) -> float:
+        """Tune the candidate's grams; returns its worst miss (≤ 1.0 = on target)."""
+        if pref in ("higher_protein", "lower_calories"):
+            # deliberately different macros: tune the new meal to its own target
+            drafts, goal, idx, shares = [draft], target, [0], {meal_type: 1.0}
+        else:
+            # tune ONLY the new meal's grams so the whole DAY lands on target;
+            # the user's other meals stay exactly as they are
+            drafts = [make_draft(m.get("name"), m.get("meal_type", "meal"), [dict(it) for it in its])
+                      for m, its in zip(others, others_items)] + [draft]
+            goal, idx, shares = plan_targets, [len(others)], None
+        if not optimise_portions(drafts, goal, adjustable=idx, shares=shares):
+            optimise_portions(drafts, goal, widen=True, adjustable=idx, shares=shares)
+        return max_deviation(drafts, goal)
+
+    # Some dishes can't fit the day however the grams are tuned (e.g. a fatty
+    # snack when the day is already at its fat limit) — try other dishes.
+    best = None
+    for n in (1, 2, 2):
+        cands = await asyncio.gather(*[_replacement_meal(meal_type, rules, target, eating_style, allergies, foods_to_avoid,
+                                                         used_names, use_ai=True, notes=notes) for _ in range(n)])
+        for cand in cands:
+            miss = _tune(cand)
+            if best is None or miss < best[1]:
+                best = (cand, miss)
+        if best[1] <= 1.0:
+            break
+        logger.info(f"Swap candidates missed the target (worst {best[1]:.2f}× tolerance) — trying other dishes")
+    draft = best[0]
+    new_meal = finalize_meal(draft, str(uuid.uuid4()))
+    if pref == "quick_prep":
+        new_meal["prep_time_minutes"] = min(new_meal["prep_time_minutes"], 15)
+
+    day["meals"][request.meal_index] = new_meal
+    totals = day_totals(day["meals"])
+    day.update(totals)
+    day["on_target"] = is_on_target(totals, plan_targets)
+    await db.mealplans.update_one({"id": request.meal_plan_id}, {"$set": {"meal_days": plan["meal_days"]}})
+    logger.info(f"✅ Swap: {new_meal['name']} — {new_meal['calories']} cal {new_meal['protein']}P "
+                f"{new_meal['carbs']}C {new_meal['fats']}F | day on_target={day['on_target']}")
+    return {"alternate_meal": new_meal, "day_totals": {**totals, "on_target": day["on_target"]}}
 
 # ==================== FAVORITE MEALS ENDPOINTS ====================
 
@@ -9255,6 +6807,13 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
             # BEST-EFFORT PATH — no structured portion. Trust the model's
             # per-serving totals, but still run Fix 7 as a safety net when
             # the model returned a per-100g block.
+            if food_data.get("calories") is None:
+                # The model found no food / readable label in the photo.
+                raise HTTPException(status_code=422, detail={
+                    "error": "no_food_detected",
+                    "message": "We couldn't recognise any food in that photo. Try a closer, well-lit "
+                               "shot of the plate or the nutrition panel — or log it manually.",
+                })
             _energy_source = str(food_data.get("energy_source") or "derived").lower()
             _guard_portion_g = _extract_portion_grams(
                 food_data.get("serving_size", ""), food_data.get("food_name", "")
@@ -9881,18 +7440,10 @@ async def search_foods(query: str, user_id: str):
     # STEP 2: Try to get API results to supplement
     api_results = []
     
-    # Try FatSecret first
-    fatsecret_results = await search_fatsecret(query, max_results=30)
-    if fatsecret_results:
-        logger.info(f"FatSecret returned {len(fatsecret_results)} results")
-        api_results = fatsecret_results
-    else:
-        # Try USDA as backup
-        logger.info("Trying USDA FoodData Central...")
-        usda_results = await search_usda(query, max_results=30)
-        if usda_results:
-            logger.info(f"USDA returned {len(usda_results)} results")
-            api_results = usda_results
+    usda_results = await search_usda(query, max_results=30)
+    if usda_results:
+        logger.info(f"USDA returned {len(usda_results)} results")
+        api_results = usda_results
     
     # STEP 3: Combine results - local first (specific items), then API results
     # Avoid duplicates by checking names

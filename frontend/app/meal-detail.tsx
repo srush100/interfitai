@@ -29,9 +29,11 @@ import api from '../src/services/api';
 // Rule of thumb applied to strings that start with "<number>g":
 //   • Meat / fish / poultry: raw = cooked × 1.33  (≈25% water loss)
 //   • Grains / rice / pasta:  raw = cooked ÷ 3.1  (dry -> boiled)
+//   • Oats are already stored as DRY weight, so they are never converted.
 //   • Everything else: leave the original string alone.
 const _RAW_MEAT_RE = /\b(chicken|beef|steak|mince|turkey|pork|lamb|bacon|ham|salmon|tuna|cod|tilapia|shrimp|prawn|fish|duck|veal|venison)\b/i;
-const _DRY_GRAIN_RE = /\b(rice|pasta|oats|oatmeal|quinoa|couscous|barley|bulgur|noodle|spaghetti|penne|farro)\b/i;
+const _DRY_GRAIN_RE = /\b(rice|pasta|quinoa|couscous|barley|bulgur|noodle|spaghetti|penne|farro)\b/i;
+const _NO_CONVERT_RE = /\b(oats?|oatmeal|porridge|rice cakes?|rice noodles|cauliflower rice|rice vinegar|rice milk)\b/i;
 // State words we might find already prepended in the meal-plan text (e.g.
 // "58g cooked basmati rice"). Strip these before injecting our own prefix so
 // we never produce "58g dry cooked basmati rice" or "200g raw cooked chicken".
@@ -58,7 +60,7 @@ function formatIngredientWithRaw(ing: string): { primary: string; hint: string |
     const rawG = Math.round(cookedG * 1.33);
     return { primary: `${rawG}g raw ${rest}`, hint: `≈${cookedG}g cooked` };
   }
-  if (_DRY_GRAIN_RE.test(rest)) {
+  if (_DRY_GRAIN_RE.test(rest) && !_NO_CONVERT_RE.test(rest)) {
     const dryG = Math.max(1, Math.round(cookedG / 3.1));
     return { primary: `${dryG}g dry ${rest}`, hint: `≈${cookedG}g cooked` };
   }
@@ -86,6 +88,27 @@ interface MealDay {
   total_protein: number;
   total_carbs: number;
   total_fats: number;
+}
+
+// A day is "On target" when calories, protein, carbs AND fat are each within
+// 5% of the plan's targets (2g slack for tiny targets, e.g. carnivore carbs) —
+// the same rule the backend uses. Numbers are never forced to match.
+function dayTargetStatus(day: MealDay, plan: MealPlan): { onTarget: boolean; text: string } {
+  const rows = [
+    { label: 'cal', unit: '', actual: day.total_calories, target: plan.target_calories, floor: 0 },
+    { label: 'P', unit: 'g', actual: day.total_protein, target: plan.target_protein, floor: 2 },
+    { label: 'C', unit: 'g', actual: day.total_carbs, target: plan.target_carbs, floor: 2 },
+    { label: 'F', unit: 'g', actual: day.total_fats, target: plan.target_fats, floor: 2 },
+  ];
+  const off = rows.filter((r) => Math.abs(r.actual - r.target) > Math.max(r.target * 0.05, r.floor));
+  if (off.length === 0) {
+    return { onTarget: true, text: `✓ On target (within 5% of ${plan.target_calories} cal • ${plan.target_protein}g P • ${plan.target_carbs}g C • ${plan.target_fats}g F)` };
+  }
+  const parts = off.map((r) => {
+    const diff = Math.round(r.actual - r.target);
+    return `${diff > 0 ? '+' : ''}${diff}${r.unit} ${r.label}`;
+  });
+  return { onTarget: false, text: `${parts.join(' • ')} vs your targets` };
 }
 
 interface MealPlan {
@@ -479,10 +502,8 @@ export default function MealDetail() {
               {currentDay.total_carbs}g C • {currentDay.total_fats}g F
             </Text>
             {!!mealPlan.target_calories && (
-              <Text style={styles.dayVsTarget}>
-                {Math.abs(currentDay.total_calories - mealPlan.target_calories) <= mealPlan.target_calories * 0.05
-                  ? `✓ On target (${mealPlan.target_calories} cal)`
-                  : `${currentDay.total_calories > mealPlan.target_calories ? '+' : ''}${currentDay.total_calories - mealPlan.target_calories} cal vs your ${mealPlan.target_calories} target`}
+              <Text style={styles.dayVsTarget} testID="day-target-status">
+                {dayTargetStatus(currentDay, mealPlan).text}
               </Text>
             )}
           </View>
@@ -634,6 +655,7 @@ export default function MealDetail() {
 
                   {/* Generate Alternate Button */}
                   <TouchableOpacity
+                    testID={`swap-meal-btn-${mealIdx}`}
                     style={styles.actionBtn}
                     onPress={() => {
                       setSwapMealTarget({ dayIndex: selectedDay, mealIndex: mealIdx });
@@ -678,6 +700,7 @@ export default function MealDetail() {
               {swapOptions.map((option) => (
                 <TouchableOpacity
                   key={option.id}
+                  testID={`swap-option-${option.id}`}
                   style={styles.swapOption}
                   onPress={() => {
                     if (swapMealTarget) {

@@ -1792,3 +1792,12 @@ agent_communication:
       - Testing agent round 2 (iteration_49.json): text-node error GONE (0 errors across login → Home mount → 2 hard reloads); motivation card still RENDERS when populated (fix didn't hide content); 10/10 route crash sweep (/subscription /body-analyzer /meal-questionnaire /workout-questionnaire /food-log /saved-meals /macro-targets /settings /grocery-list /admin); 5/5 tabs with Ionicons visible.
       - Manual sweep of the 2 screens round 2 couldn't reach (test user had no workout + was free-tier): seeded a rich workout and granted `free_access` to sdk57tester@example.com, then verified with 0 console errors — workout-detail renders the full Elite Coaching Breakdown (WHY THIS SPLIT / PROGRESSION METHOD / DELOAD PROTOCOL all visible → `!!` guards not hiding content), /food-log opens and renders macro rings + empty state, /nutrition renders, /subscription renders "You're Premium! · Complimentary access" (planLabel shows, renewsLabel correctly hidden).
       SDK 57 upgrade regression is CLOSED. Backend never touched. Rollback branch: `pre-sdk57-snapshot`.
+
+  - agent: "main"
+    message: |
+      MEAL ENGINE ACCURACY OVERHAUL + FATSECRET REMOVAL (2026-06):
+      - New backend/nutrition_engine.py: AI returns {food, grams} only; every meal/day number = grams/100 × INGREDIENT_MACROS (food_database.py). Expanded ALLERGEN_SYNONYMS (seitan, soy sauce, noodles, parmesan, mozzarella…). Templates (meal_templates.py) store grams only. Oats stored DRY.
+      - /api/mealplan/alternate: now tries up to 5 candidate dishes (1, then 2+2 in parallel) and keeps the first whose tuned grams keep the DAY within 5% of targets (fixes 4/18 swaps that previously drifted to +5.1–5.5% fat).
+      - FatSecret code + env vars removed; /api/food/search = local list + USDA FoodData Central only.
+      - scripts/verify_meal_plans.py: 9/9 runs (7 styles + 2 allergy combos) PASS — meals = ingredient sums, days within 5%, allergy/diet safe, swaps PASS. Report: /app/memory/meal_plan_verification.md
+      - NOTE: meal-plan generation has a 4/month cap per non-admin user — delete db.meal_generation_events for the test user before generating.

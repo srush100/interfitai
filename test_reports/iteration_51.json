@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 51 FULL regression after iter50 fixes: ALL review-request items PASS. Backend 8/8 core tests green (test_meal_food_review.py::TestPhotoScan + TestFoodSearch + TestFoodLog). The /food/analyze 422 fix verified: POST with a solid-colour 300x300 JPEG now returns 422 with detail.error='no_food_detected' (no more 500). Food search local+USDA returns results for chicken breast / banana / greek yogurt with no FatSecret references. Food log CRUD + daily summary totals persist. /mealplan/alternate 'similar' swap on an existing plan (d3188688-...) returns on_target=true, day totals 2708/144.4/374.1/77.4 vs targets 2759/144/372/77 (all within 5%). FRONTEND E2E on 390x844 (sdk57tester) PASS: (1) login via testIDs authenticates and lands on home; (2) /meal-detail?id=d3188688-... loads 3-day plan, day-target-status reads '✓ On target (within 5% of 2759 cal • 144g P • 372g C • 77g F)', expanding the SNACK card shows ingredients with grams (215g Mango / 5g Coconut flakes / 12g Cashews / 15g Pea protein powder for the new meal), swap-meal-btn-3 → swap-option-similar completes in <20s, snack replaced from 'Tropical Coconut Protein Bites' to 'Mango Coconut Protein Bites', day-target-status still ✓ On target afterwards; (3) /food-log Search tab for 'banana' returns results with NO 'API Error' toast (iter50 regression fixed), expanding a result and tapping Add logs it, Today tab updates to 117 EATEN / 1g P / 27g C / 0g F; (4) Manual tab form opens with Food Name/Energy/Protein/Carbs/Fats/Qty/Log Food fields; (5) Snap tab opens cleanly with Take Photo + Gallery buttons, no red-screen crash. Deprecated RN shadow*/resizeMode/pointerEvents warnings persist (pre-existing, out of scope per iter50 note).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console still warns 'shadow* style props are deprecated. Use boxShadow.' on multiple screens (login, home, food-log). Pre-existing; main agent explicitly said out of scope for this iteration."},
+      {"component": "Image.style.resizeMode / props.pointerEvents", "issue": "Console warns 'Image: style.resizeMode is deprecated. Use props.resizeMode' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. Pre-existing, out of scope this iteration."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_meal_food_review.py",
+    "/app/test_reports/pytest/iteration_51_core.xml"
+  ],
+  "action_items": [
+    "No action required for this iteration — all review-request items PASS. (Nice-to-have for a later iteration: add testIDs like food-log-search-input, food-log-add-btn-<idx>, food-log-delete-<id>, food-log-tab-<today|search|snap|manual> so the next E2E agent doesn't fall back to placeholder/text selectors.)",
+    "Nice-to-have cleanup (previously flagged, still open): migrate RN shadow* → boxShadow, Image style.resizeMode → props.resizeMode, props.pointerEvents → style.pointerEvents."
+  ],
+  "critical_code_review_comments": [
+    "The /food/analyze best-effort path (server.py ~6810) now correctly raises HTTPException(422, {error:'no_food_detected'}) when food_data['calories'] is None — this is the clean fix instead of int(None) crashing. Verified end-to-end.",
+    "meal-detail.tsx renders day-target-status with the recomputed day totals + 5% tolerance consistently with backend; before- and after-swap state both read '✓ On target', matching server-side day_totals.on_target=true.",
+    "food-log.tsx now correctly short-circuits /food/search when profile.id is missing, so a logged-out render no longer surfaces the 403 as a generic 'API Error' toast. Verified: logged-in search for banana shows results with no error toast."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_meal_food_review.py (replaced the xfail-tolerating test_food_analyze with a strict test_food_analyze_non_food_returns_422 asserting 422 + detail.error in {no_food_detected,label_unreadable})"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 core tests pass, including the previously-xfailed /food/analyze; plus live swap regression on an existing plan returned on_target=true within 5%)",
+    "frontend": "100% of the review-request E2E flows pass (login, meal-detail expand + swap + day-target-status, food-log search/add/today/manual/snap)"
+  },
+  "seed_data_creation": "Used existing plan d3188688-7c05-4e7d-876c-a7327db1f11a for user 2663e0c4-d8b9-4feb-b42a-8b055631ea25 (no new meal plan generated — stayed under the 4/month cap). Created and deleted one TEST banana food-log entry during CRUD verification; also cleaned up the UI-logged banana entry via DELETE /api/food/log/<id> at the end of the frontend run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All iter50 regressions are fixed. /food/analyze is now the strict 422 contract — any future change there must still return detail.error='no_food_detected' or 'label_unreadable' on unreadable images. Meal-detail swap flow depends on tapping the meal card header to expand before the swap-meal-btn-<idx> becomes mounted (it's inside the expandedMeal conditional). food-log still lacks testIDs — fine for now via placeholder/text selectors but a cheap win for stability. Keep using existing plan ids from GET /api/mealplans/<user_id> rather than regenerating; the 4/month cap bites fast.",
+  "rca_of_issue": "n/a — all previously-reported bugs resolved and verified in this iteration."
+}

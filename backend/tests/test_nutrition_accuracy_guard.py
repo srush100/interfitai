@@ -584,20 +584,27 @@ class TestIngredientMacrosNoDuplicates:
 
     @pytest.fixture(scope="class")
     def macros_dict_node(self):
-        source_path = "/app/backend/server.py"
+        """INGREDIENT_MACROS now lives in food_database.py: one dict literal plus
+        one INGREDIENT_MACROS.update({...}) block. Both are merged here so a key
+        declared in both places still counts as a duplicate."""
+        source_path = "/app/backend/food_database.py"
         with open(source_path, "r") as fh:
-            source = fh.read()
-        tree = ast.parse(source)
+            tree = ast.parse(fh.read())
+        merged = ast.Dict(keys=[], values=[])
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Assign)
-                and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)
-                and node.targets[0].id == "INGREDIENT_MACROS"
-                and isinstance(node.value, ast.Dict)
-            ):
-                return node.value
-        pytest.fail("INGREDIENT_MACROS dict literal not found in server.py")
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id == "INGREDIENT_MACROS" and isinstance(node.value, ast.Dict)):
+                merged.keys += node.value.keys
+                merged.values += node.value.values
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "update" and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "INGREDIENT_MACROS" and node.args and isinstance(node.args[0], ast.Dict)):
+                merged.keys += node.args[0].keys
+                merged.values += node.args[0].values
+        if not merged.keys:
+            pytest.fail("INGREDIENT_MACROS dict literal not found in food_database.py")
+        return merged
 
     def test_no_duplicate_keys_in_dict_literal(self, macros_dict_node):
         """Every INGREDIENT_MACROS key must be declared exactly once."""
