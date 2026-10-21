@@ -328,7 +328,7 @@ export default function Subscription() {
           </TouchableOpacity>
           
           <Text style={styles.trialText}>
-            3-day free trial, then {PLANS.find(p => p.id === selectedPlan)?.priceDisplay}{PLANS.find(p => p.id === selectedPlan)?.period}
+            7-day free trial, then {PLANS.find(p => p.id === selectedPlan)?.priceDisplay}{PLANS.find(p => p.id === selectedPlan)?.period}
           </Text>
           <Text style={styles.cancelText}>Cancel anytime. No commitment.</Text>
         </View>

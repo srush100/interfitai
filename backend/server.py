@@ -8340,8 +8340,8 @@ async def disconnect_device(user_id: str, device_type: str):
 # ==================== SUBSCRIPTION ENDPOINTS ====================
 
 SUBSCRIPTION_PLANS = {
-    "monthly": {"name": "Monthly", "price": 14.99, "duration_months": 1, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer"]},
-    "yearly": {"name": "Yearly", "price": 99.99, "duration_months": 12, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support", "Exclusive Content"]}
+    "monthly": {"name": "Monthly", "price": 14.99, "duration_months": 1, "trial_days": 7, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer"]},
+    "yearly": {"name": "Yearly", "price": 99.99, "duration_months": 12, "trial_days": 7, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support", "Exclusive Content"]}
 }
 
 # Stripe Price IDs - create these in Stripe Dashboard for recurring billing
@@ -8372,7 +8372,7 @@ async def check_subscription_status(user_id: str):
 
 @api_router.post("/subscription/checkout")
 async def create_checkout_session(request: PaymentRequest):
-    """Create Stripe checkout session with 3-day free trial"""
+    """Create Stripe checkout session with the plan's free trial (7 days)"""
     if request.plan_id not in SUBSCRIPTION_PLANS:
         raise HTTPException(status_code=400, detail="Invalid plan")
     
@@ -8395,7 +8395,7 @@ async def create_checkout_session(request: PaymentRequest):
                     'currency': 'usd',
                     'product_data': {
                         'name': f'InterFitAI {plan["name"]} Subscription',
-                        'description': f'3-day FREE trial, then ${plan["price"]}/{"month" if plan["duration_months"] == 1 else str(plan["duration_months"]) + " months"}'
+                        'description': f'{plan["trial_days"]}-day FREE trial, then ${plan["price"]}/{"month" if plan["duration_months"] == 1 else str(plan["duration_months"]) + " months"}'
                     },
                     'unit_amount': int(plan["price"] * 100),
                     'recurring': {
@@ -8407,7 +8407,7 @@ async def create_checkout_session(request: PaymentRequest):
             }],
             mode='subscription',
             subscription_data={
-                'trial_period_days': 3,  # 3-day free trial
+                'trial_period_days': plan["trial_days"],  # free trial (7 days)
                 'metadata': {
                     'user_id': request.user_id,
                     'plan_id': request.plan_id,
@@ -9174,7 +9174,7 @@ async def create_stripe_checkout_session(
     """
     Create a Stripe Checkout session for website subscriptions — the same two
     plans and prices as the app (SUBSCRIPTION_PLANS):
-    - Monthly: $14.99 with a 3-day free trial
+    - Monthly: $14.99 with a 7-day free trial
     - Yearly: $99.99 with a 30-day bonus (applied after payment)
     """
     if not STRIPE_SECRET_KEY:
@@ -9228,7 +9228,7 @@ async def create_stripe_checkout_session(
         
         # Configure pricing based on plan
         if plan == "monthly":
-            # Monthly with the same 3-day free trial as the app
+            # Monthly with the same free trial as the app (SUBSCRIPTION_PLANS)
             checkout_params["line_items"] = [{
                 "price_data": {
                     "currency": "usd",

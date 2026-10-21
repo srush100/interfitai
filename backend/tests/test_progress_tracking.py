@@ -351,7 +351,7 @@ def test_website_checkout_uses_app_prices(db, monkeypatch):
     monthly, yearly = made
     assert monthly["line_items"][0]["price_data"]["unit_amount"] == 1499
     assert monthly["line_items"][0]["price_data"]["recurring"] == {"interval": "month"}
-    assert monthly["subscription_data"]["trial_period_days"] == 3
+    assert monthly["subscription_data"]["trial_period_days"] == 7
     assert yearly["line_items"][0]["price_data"]["unit_amount"] == 9999
     with pytest.raises(HTTPException):
         run(server.create_stripe_checkout_session("u", "quarterly", "https://s", "https://c"))
