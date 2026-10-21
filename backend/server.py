@@ -107,8 +107,17 @@ def reset_code_email_html(code: str) -> str:
 # OpenAI configuration (kept for fallback/vision)
 openai.api_key = os.environ.get('OPENAI_API_KEY', '')
 
-# Claude Opus 4.6 via Emergent LLM Key
+# Claude via Emergent LLM Key
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+# Models — set in the environment to switch without a code change
+# (e.g. back to claude-sonnet-4-5-20250929 / claude-haiku-4-5-20251001).
+CLAUDE_SONNET_MODEL = os.environ.get('CLAUDE_SONNET_MODEL', 'claude-sonnet-5-5')
+CLAUDE_HAIKU_MODEL = os.environ.get('CLAUDE_HAIKU_MODEL', 'claude-haiku-5-5')
+# Sonnet 5.5 / Haiku 5.5 think before answering, and that thinking counts toward
+# max_tokens — extra room so long JSON answers (meal plans, programs) aren't cut off.
+SONNET_THINKING_HEADROOM = 4000
+HAIKU_THINKING_HEADROOM = 2000
 
 async def call_claude_sonnet(
     system_message: str,
@@ -118,15 +127,17 @@ async def call_claude_sonnet(
     image_base64: str = None,
     image_base64_2: str = None
 ) -> str:
-    """Call Claude Sonnet 4.5 via emergentintegrations - for complex generation tasks"""
+    """Call Claude Sonnet (5.5 by default) via emergentintegrations - for complex
+    generation and vision tasks. `temperature` is accepted for older callers but not
+    sent: Sonnet 5.5 rejects non-default sampling settings."""
     chat = (
         LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=str(uuid.uuid4()),
             system_message=system_message,
         )
-        .with_model("anthropic", "claude-sonnet-4-5-20250929")
-        .with_params(temperature=temperature, max_tokens=max_tokens, timeout=180)
+        .with_model("anthropic", CLAUDE_SONNET_MODEL)
+        .with_params(max_tokens=max_tokens + SONNET_THINKING_HEADROOM, timeout=240)
     )
     file_contents = []
     if image_base64:
@@ -153,15 +164,17 @@ async def call_claude_haiku(
     max_tokens: int = 1000,
     image_base64: str = None
 ) -> str:
-    """Call Claude Haiku 4.5 via emergentintegrations - for fast, lightweight tasks"""
+    """Call Claude Haiku (5.5 by default) via emergentintegrations - for fast,
+    lightweight tasks. `temperature` is accepted for older callers but not sent:
+    Haiku 5.5 rejects non-default sampling settings."""
     chat = (
         LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=str(uuid.uuid4()),
             system_message=system_message,
         )
-        .with_model("anthropic", "claude-haiku-4-5-20251001")
-        .with_params(temperature=temperature, max_tokens=max_tokens, timeout=60)
+        .with_model("anthropic", CLAUDE_HAIKU_MODEL)
+        .with_params(max_tokens=max_tokens + HAIKU_THINKING_HEADROOM, timeout=90)
     )
     file_contents = []
     if image_base64:
@@ -8117,8 +8130,8 @@ async def chat_with_ai(request: ChatRequest):
                 system_message="",
                 initial_messages=initial_messages,
             )
-            .with_model("anthropic", "claude-haiku-4-5-20251001")
-            .with_params(temperature=0.5, max_tokens=1000, timeout=60)
+            .with_model("anthropic", CLAUDE_HAIKU_MODEL)
+            .with_params(max_tokens=1000 + HAIKU_THINKING_HEADROOM, timeout=90)
         )
         ai_response = await chat.send_message(UserMessage(text=message))
     except Exception as e:
