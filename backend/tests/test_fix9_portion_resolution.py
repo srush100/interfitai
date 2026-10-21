@@ -39,7 +39,22 @@ from pymongo import MongoClient
 
 sys.path.insert(0, "/app/backend")
 import server  # noqa: E402
-from server import app, resolve_portion_g  # noqa: E402
+from server import app  # noqa: E402
+# The portion maths moved from server.py into nutrition_engine (the shared
+# calculator) — same inputs, same expected grams.
+from nutrition_engine import parse_portions, portion_grams  # noqa: E402
+
+
+def resolve_portion_g(text, key=None, serving_size_g=None, units_per_serving=None, unit_name=None):
+    specs = parse_portions(text)
+    if not specs:
+        return None
+    return portion_grams(specs[0], key, serving_g=serving_size_g, unit_name=unit_name,
+                         units_per_serving=units_per_serving, label=True)
+
+
+def parse_portion_text(text):
+    return [(s["amount"], s["unit"], s["food"]) for s in parse_portions(text)]
 
 _sync_client = MongoClient(os.environ["MONGO_URL"])
 _sync_db = _sync_client[os.environ.get("DB_NAME", "test_database")]
@@ -105,58 +120,36 @@ class TestResolvePortionG:
     """Direct unit tests on the pure resolver — no HTTP round trip."""
 
     def test_grams_direct(self):
-        g, src, _ = resolve_portion_g(200, "grams", 104, 2, "egg", None)
-        assert g == 200 and src == "grams"
+        assert resolve_portion_g("200 grams", "eggs", 104, 2, "egg") == 200
 
     def test_grams_singular_alias(self):
         for u in ("g", "gram", "grams", "gm", "gms", "ml", "milliliters"):
-            g, src, _ = resolve_portion_g(100, u, 50, None, None, None)
-            assert g == 100 and src == "grams", f"unit={u}"
+            assert resolve_portion_g(f"100 {u}", None, 50) == 100, f"unit={u}"
 
     def test_servings_scales_by_label(self):
-        g, src, _ = resolve_portion_g(2, "servings", 160, None, None, None)
-        assert g == 320 and src == "servings"
+        assert resolve_portion_g("2 servings", None, 160) == 320
 
     def test_servings_no_label_returns_none(self):
-        g, src, _ = resolve_portion_g(2, "servings", None, None, None, None)
-        assert g is None and src == "servings_no_label"
+        assert resolve_portion_g("2 servings", None, None) is None
 
     def test_count_label_wins_over_fallback(self):
         # User's exact scenario: 4 eggs on a "2 eggs per serving, 104g" label
-        # Label per-unit = 104/2 = 52g. Fallback table has egg=58g. Label wins.
-        g, src, dbg = resolve_portion_g(4, "count", 104, 2, "egg", None)
+        # Label per-unit = 104/2 = 52g. The database egg is 58g. Label wins.
+        g = resolve_portion_g("4 eggs", "eggs", 104, 2, "egg")
         assert g == 208.0, f"expected 208g, got {g}"
-        assert src == "count_label"
-        assert dbg["per_unit_g"] == 52.0
 
     def test_count_2_eggs(self):
-        g, src, _ = resolve_portion_g(2, "count", 104, 2, "egg", None)
-        assert g == 104.0
-        assert src == "count_label"
+        assert resolve_portion_g("2 eggs", "eggs", 104, 2, "egg") == 104.0
 
     def test_count_fallback_when_no_units_per_serving(self):
-        # Label lacks units_per_serving → fall back to _ITEM_FALLBACK_WEIGHTS_G
-        g, src, dbg = resolve_portion_g(3, "egg", None, None, "egg", None)
-        assert g == 3 * 58  # fallback egg = 58g
-        assert src == "count_fallback"
-        assert dbg["fallback_per_unit_g"] == 58
+        # Label lacks units_per_serving → the food's own unit weight (egg = 58g)
+        assert resolve_portion_g("3 eggs", "eggs", None, None, "egg") == 3 * 58
 
     def test_count_unresolved_when_unknown_unit(self):
-        g, src, _ = resolve_portion_g(3, "count", None, None, "mystery_widget", None)
-        assert g is None and src == "unresolved"
-
-    def test_legacy_portion_g_when_no_amount(self):
-        g, src, _ = resolve_portion_g(None, None, 104, 2, "egg", legacy_portion_g=250)
-        assert g == 250.0 and src == "legacy"
-
-    def test_amount_wins_over_legacy(self):
-        # New API takes precedence over legacy portion_g if both provided
-        g, src, _ = resolve_portion_g(4, "count", 104, 2, "egg", legacy_portion_g=999)
-        assert g == 208.0 and src == "count_label"
+        assert resolve_portion_g("3 mystery_widget", None, None, None, None) is None
 
     def test_none_when_nothing_given(self):
-        g, src, _ = resolve_portion_g(None, None, 104, 2, "egg", None)
-        assert g is None and src == "none"
+        assert resolve_portion_g("", "eggs", 104, 2, "egg") is None
 
 
 # ─── End-to-end HTTP tests — user's regression checklist ─────────────────
@@ -349,63 +342,76 @@ async def test_legacy_portion_g_still_works(client, paid_user, monkeypatch):
     assert 118 <= b["calories"] <= 130
 
 
+@pytest.mark.asyncio
+async def test_amount_wins_over_legacy(client, paid_user, monkeypatch):
+    # The structured amount takes precedence over legacy portion_g if both are sent
+    monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(EGG_CARTON_LABEL))
+    r = await client.post("/api/food/analyze", json={
+        "user_id": paid_user, "image_base64": TEST_IMAGE, "meal_type": "breakfast",
+        "portion_amount": 4, "portion_unit": "count", "portion_g": 999, "preview": True,
+    })
+    assert r.status_code == 200
+    b = r.json()
+    assert b["portion_g_applied"] == 208 and b["portion_source"] == "count_label"
+
+
 
 # ─── Natural-language `portion_text` end-to-end ─────────────────────────
 
 class TestParsePortionText:
-    """Direct unit tests on the free-text parser."""
+    """Direct unit tests on the free-text parser — (amount, unit, food)."""
 
     def test_basic_number_and_unit(self):
-        from server import parse_portion_text as p
-        assert p("200 grams") == (200.0, "grams")
-        assert p("200g") == (200.0, "grams")
-        assert p("200 g") == (200.0, "grams")
-        assert p("4 eggs") == (4.0, "egg")
-        assert p("4 egg") == (4.0, "egg")
-        assert p("1 slice") == (1.0, "slice")
-        assert p("3 slices") == (3.0, "slice")
-        assert p("2 servings") == (2.0, "servings")
-        assert p("1 serving") == (1.0, "servings")
+        p = parse_portion_text
+        assert p("200 grams") == [(200.0, "g", "")]
+        assert p("200g") == [(200.0, "g", "")]
+        assert p("200 g") == [(200.0, "g", "")]
+        assert p("4 eggs") == [(4.0, "count", "eggs")]
+        assert p("4 egg") == [(4.0, "count", "egg")]
+        assert p("1 slice") == [(1.0, "slice", "")]
+        assert p("3 slices") == [(3.0, "slice", "")]
+        assert p("2 servings") == [(2.0, "serving", "")]
+        assert p("1 serving") == [(1.0, "serving", "")]
 
     def test_word_numbers(self):
-        from server import parse_portion_text as p
-        assert p("one serving") == (1.0, "servings")
-        assert p("two eggs") == (2.0, "egg")
-        assert p("half a serving") == (0.5, "servings")
-        assert p("an egg") == (1.0, "egg")
-        assert p("a serving") == (1.0, "servings")
+        p = parse_portion_text
+        assert p("one serving") == [(1.0, "serving", "")]
+        assert p("two eggs") == [(2.0, "count", "eggs")]
+        assert p("half a serving") == [(0.5, "serving", "")]
+        assert p("an egg") == [(1.0, "count", "egg")]
+        assert p("a serving") == [(1.0, "serving", "")]
 
     def test_unit_conversions(self):
-        from server import parse_portion_text as p
-        assert p("1 kg") == (1000.0, "grams")
-        assert p("2 kg") == (2000.0, "grams")
-        assert p("250 ml") == (250.0, "grams")  # 1:1 for label scaling
-        assert p("1 l") == (1000.0, "grams")
+        p = parse_portion_text
+        assert p("1 kg") == [(1000.0, "g", "")]
+        assert p("2 kg") == [(2000.0, "g", "")]
+        assert p("250 ml") == [(250.0, "ml", "")]  # 1:1 for label scaling
+        assert resolve_portion_g("250 ml", None) == 250
+        assert p("1 l") == [(1000.0, "ml", "")]
         # ounces / pounds
-        amt, unit = p("1 oz")
-        assert unit == "grams" and abs(amt - 28.35) < 0.1
-        amt, unit = p("1 lb")
-        assert unit == "grams" and abs(amt - 453.6) < 0.5
+        (amt, unit, _), = p("1 oz")
+        assert unit == "g" and abs(amt - 28.35) < 0.1
+        (amt, unit, _), = p("1 lb")
+        assert unit == "g" and abs(amt - 453.6) < 0.5
 
     def test_bare_number_defaults_to_grams(self):
-        from server import parse_portion_text as p
-        assert p("200") == (200.0, "grams")
-        assert p("150.5") == (150.5, "grams")
+        p = parse_portion_text
+        assert p("200") == [(200.0, "g", "")]
+        assert p("150.5") == [(150.5, "g", "")]
 
     def test_of_x_suffix_stripped(self):
-        from server import parse_portion_text as p
-        assert p("3 slices of bread") == (3.0, "slice")
-        assert p("2 cups of rice") == (2.0, "cup")
+        p = parse_portion_text
+        assert p("3 slices of bread") == [(3.0, "slice", "bread")]
+        assert p("2 cups of rice") == [(2.0, "cup", "rice")]
 
     def test_empty_or_gibberish(self):
-        from server import parse_portion_text as p
-        assert p("") == (None, None)
-        assert p("gibberish") == (None, None)
-        assert p("no numbers here") == (None, None)
+        p = parse_portion_text
+        assert p("") == []
+        assert p("gibberish") == []
+        assert p("no numbers here") == []
 
     def test_zero_or_negative_rejected(self):
-        from server import parse_portion_text as p
-        assert p("0 grams") == (None, None)
+        assert parse_portion_text("0 grams") == []
 
 
 # ─── User's exact regression: "4 eggs" via portion_text ──────────────────
@@ -507,18 +513,18 @@ async def test_meat_two_servings_via_text(client, paid_user, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_gibberish_portion_text_fails_visibly(client, paid_user, monkeypatch):
-    """Non-parseable text → 422 portion_unresolvable with a friendly message."""
+async def test_text_without_an_amount_never_breaks_the_scan(client, paid_user, monkeypatch):
+    """Changed by request: text with no amount ('banana pancake') is a hint for
+    the AI, not a reason to fail — the scan logs one label serving."""
     monkeypatch.setattr(server, "call_claude_sonnet", _mock_factory(EGG_CARTON_LABEL))
     r = await client.post("/api/food/analyze", json={
         "user_id": paid_user, "image_base64": TEST_IMAGE,
         "meal_type": "breakfast",
         "portion_text": "banana pancake", "preview": True,
     })
-    assert r.status_code == 422
-    d = r.json().get("detail", {})
-    assert d.get("error") == "portion_unresolvable"
-    assert "portion" in d.get("message", "").lower() or "description" in d.get("message", "").lower()
+    assert r.status_code == 200, r.text[:300]
+    b = r.json()
+    assert b["portion_g_applied"] == 104 and b["calories"] == 149
 
 
 @pytest.mark.asyncio

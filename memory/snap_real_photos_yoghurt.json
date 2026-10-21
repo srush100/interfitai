@@ -1,0 +1,266 @@
+[
+ {
+  "description": "",
+  "expected": {
+   "grams": 180,
+   "meaning": "1 serving",
+   "calories": 101,
+   "protein": 16.4,
+   "carbs": 7.7,
+   "fats": 0.2
+  },
+  "logged": {
+   "status": 200,
+   "food_name": "Natural Yogurt",
+   "serving_size": "180g",
+   "portion_g_applied": 180.0,
+   "calories": 101,
+   "protein": 16.38,
+   "carbs": 7.74,
+   "fats": 0.18,
+   "summary": "Label: 56 cal/100g \u00b7 your portion: 1 serving = 180g",
+   "label_per_100g": {
+    "calories": 56,
+    "protein": 9.1,
+    "carbs": 4.3,
+    "fats": 0.1
+   },
+   "label_serving_size_g": 180.0,
+   "label_package_g": 900.0,
+   "portion_source": "serving_default",
+   "detail": null,
+   "seconds": 8.2
+  }
+ },
+ {
+  "description": "200g",
+  "expected": {
+   "grams": 200,
+   "meaning": "200g",
+   "calories": 112,
+   "protein": 18.2,
+   "carbs": 8.6,
+   "fats": 0.2
+  },
+  "logged": {
+   "status": 200,
+   "food_name": "Natural Yogurt",
+   "serving_size": "200g",
+   "portion_g_applied": 200.0,
+   "calories": 112,
+   "protein": 18.2,
+   "carbs": 8.6,
+   "fats": 0.2,
+   "summary": "Label: 56 cal/100g \u00b7 your portion: 200g",
+   "label_per_100g": {
+    "calories": 56,
+    "protein": 9.1,
+    "carbs": 4.3,
+    "fats": 0.1
+   },
+   "label_serving_size_g": 180.0,
+   "label_package_g": 900.0,
+   "portion_source": "grams",
+   "detail": null,
+   "seconds": 6.7
+  }
+ },
+ {
+  "description": "half",
+  "expected": {
+   "grams": 90,
+   "meaning": "half a serving",
+   "calories": 50,
+   "protein": 8.2,
+   "carbs": 3.9,
+   "fats": 0.1
+  },
+  "logged": {
+   "status": 200,
+   "food_name": "Natural Yogurt",
+   "serving_size": "90g",
+   "portion_g_applied": 90.0,
+   "calories": 50,
+   "protein": 8.19,
+   "carbs": 3.87,
+   "fats": 0.09,
+   "summary": "Label: 56 cal/100g \u00b7 your portion: half = 90g",
+   "label_per_100g": {
+    "calories": 56,
+    "protein": 9.1,
+    "carbs": 4.3,
+    "fats": 0.1
+   },
+   "label_serving_size_g": 180.0,
+   "label_package_g": 900.0,
+   "portion_source": "servings",
+   "detail": null,
+   "seconds": 8.9
+  }
+ },
+ {
+  "description": "1/2 serving",
+  "expected": {
+   "grams": 90,
+   "meaning": "half a serving",
+   "calories": 50,
+   "protein": 8.2,
+   "carbs": 3.9,
+   "fats": 0.1
+  },
+  "logged": {
+   "status": 200,
+   "food_name": "Natural Yogurt",
+   "serving_size": "90g",
+   "portion_g_applied": 90.0,
+   "calories": 50,
+   "protein": 8.19,
+   "carbs": 3.87,
+   "fats": 0.09,
+   "summary": "Label: 56 cal/100g \u00b7 your portion: 0.5 serving = 90g",
+   "label_per_100g": {
+    "calories": 56,
+    "protein": 9.1,
+    "carbs": 4.3,
+    "fats": 0.1
+   },
+   "label_serving_size_g": 180.0,
+   "label_package_g": 900.0,
+   "portion_source": "servings",
+   "detail": null,
+   "seconds": 6.4
+  }
+ },
+ {
+  "description": "about 300g",
+  "expected": {
+   "grams": 300,
+   "meaning": "300g",
+   "calories": 168,
+   "protein": 27.3,
+   "carbs": 12.9,
+   "fats": 0.3
+  },
+  "logged": {
+   "status": 200,
+   "food_name": "Natural Yogurt",
+   "serving_size": "300g",
+   "portion_g_applied": 300.0,
+   "calories": 168,
+   "protein": 27.3,
+   "carbs": 12.9,
+   "fats": 0.3,
+   "summary": "Label: 56 cal/100g \u00b7 your portion: 300g",
+   "label_per_100g": {
+    "calories": 56,
+    "protein": 9.1,
+    "carbs": 4.3,
+    "fats": 0.1
+   },
+   "label_serving_size_g": 180.0,
+   "label_package_g": 900.0,
+   "portion_source": "grams",
+   "detail": null,
+   "seconds": 8.3
+  }
+ },
+ {
+  "description": "the whole pack",
+  "expected": {
+   "grams": 900,
+   "meaning": "the whole 900g tub",
+   "calories": 504,
+   "protein": 81.9,
+   "carbs": 38.7,
+   "fats": 0.9
+  },
+  "logged": {
+   "status": 200,
+   "food_name": "Natural Yogurt",
+   "serving_size": "900g",
+   "portion_g_applied": 900.0,
+   "calories": 504,
+   "protein": 81.9,
+   "carbs": 38.7,
+   "fats": 0.9,
+   "summary": "Label: 56 cal/100g \u00b7 your portion: the whole pack = 900g",
+   "label_per_100g": {
+    "calories": 56,
+    "protein": 9.1,
+    "carbs": 4.3,
+    "fats": 0.1
+   },
+   "label_serving_size_g": 180.0,
+   "label_package_g": 900.0,
+   "portion_source": "pack",
+   "detail": null,
+   "seconds": 8.5
+  }
+ },
+ {
+  "description": "no dressing",
+  "expected": {
+   "grams": 180,
+   "meaning": "1 serving",
+   "calories": 101,
+   "protein": 16.4,
+   "carbs": 7.7,
+   "fats": 0.2
+  },
+  "logged": {
+   "status": 200,
+   "food_name": "Natural Yogurt",
+   "serving_size": "180g",
+   "portion_g_applied": 180.0,
+   "calories": 101,
+   "protein": 16.38,
+   "carbs": 7.74,
+   "fats": 0.18,
+   "summary": "Label: 56 cal/100g \u00b7 your portion: 1 serving = 180g",
+   "label_per_100g": {
+    "calories": 56,
+    "protein": 9.1,
+    "carbs": 4.3,
+    "fats": 0.1
+   },
+   "label_serving_size_g": 180.0,
+   "label_package_g": 900.0,
+   "portion_source": "serving_default",
+   "detail": null,
+   "seconds": 5.9
+  }
+ },
+ {
+  "description": "1 cup",
+  "expected": {
+   "grams": 245,
+   "meaning": "1 cup of yoghurt (245g)",
+   "calories": 137,
+   "protein": 22.3,
+   "carbs": 10.5,
+   "fats": 0.2
+  },
+  "logged": {
+   "status": 200,
+   "food_name": "Natural Yogurt",
+   "serving_size": "245g",
+   "portion_g_applied": 245.0,
+   "calories": 137,
+   "protein": 22.3,
+   "carbs": 10.54,
+   "fats": 0.25,
+   "summary": "Label: 56 cal/100g \u00b7 your portion: 1 cup = 245g",
+   "label_per_100g": {
+    "calories": 56,
+    "protein": 9.1,
+    "carbs": 4.3,
+    "fats": 0.1
+   },
+   "label_serving_size_g": 180.0,
+   "label_package_g": 900.0,
+   "portion_source": "count_fallback",
+   "detail": null,
+   "seconds": 7.7
+  }
+ }
+]

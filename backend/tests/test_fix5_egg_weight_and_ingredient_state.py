@@ -29,7 +29,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 sys.path.insert(0, "/app/backend")
 from nutrition_engine import calculate_ingredient_macros  # noqa: E402
-from server import _extract_portion_grams  # noqa: E402
+from nutrition_engine import grams_in_text as _extract_portion_grams  # noqa: E402
 
 # Match the pattern used by test_nutrition_accuracy_guard.py to keep both
 # suites runnable together — falls back to the preview URL from frontend/.env

@@ -296,22 +296,27 @@ def calculate_ingredient_macros(ingredient_str):
     return macros_for(key, grams)
 
 
-def format_ingredient(label: str, grams: float, key: str = None) -> str:
-    """'245g Sweet potato', or for whole-unit foods '2 large eggs (116g)' /
-    '2 slices sourdough bread (60g)'. Both forms parse back to the same grams."""
-    g = round(grams, 1)
-    g_txt = str(int(g)) if float(g).is_integer() else f"{g}"
+def unit_text(label: str, grams: float, key: str = None):
+    """'2 large eggs' / '3 slices sourdough bread' when `grams` is a whole number
+    of a whole-unit food's units, else None."""
     unit = UNIT_FOODS.get(key)
     if unit:
         n = grams / unit[0]
         if n >= 1 and abs(n - round(n)) < 1e-6:
             n = int(round(n))
             if unit[1] is None:
-                what = f"slice{'s' if n != 1 else ''} {label.lower()}"
-            else:
-                what = unit[1] if n == 1 else unit[2]
-            return f"{n} {what} ({g_txt}g)"
-    return f"{g_txt}g {label}"
+                return f"{n} slice{'s' if n != 1 else ''} {label.lower()}"
+            return f"{n} {unit[1] if n == 1 else unit[2]}"
+    return None
+
+
+def format_ingredient(label: str, grams: float, key: str = None) -> str:
+    """'245g Sweet potato', or for whole-unit foods '2 large eggs (116g)' /
+    '2 slices sourdough bread (60g)'. Both forms parse back to the same grams."""
+    g = round(grams, 1)
+    g_txt = str(int(g)) if float(g).is_integer() else f"{g}"
+    units = unit_text(label, grams, key)
+    return f"{units} ({g_txt}g)" if units else f"{g_txt}g {label}"
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1036,3 +1041,368 @@ def build_safe_meal(meal_type: str, rules: FoodRules, exclude_names=()) -> dict:
     parts = [k.title() for k, _ in picks[:3] if k]
     name = " with ".join([parts[0], " & ".join(parts[1:])]) if len(parts) > 1 else (parts[0] if parts else meal_type.title())
     return make_draft(name, meal_type, items, "Cook the protein, prepare the sides and serve together.", 20)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# 6. SNAP FOOD — the user's description → grams; plated meals → items
+# ════════════════════════════════════════════════════════════════════════════
+# Words that mark a branded / prepared product: per-food weights ("1 cup of
+# rice") never apply to it, and single-food references never stand in for it.
+COMPOSITE_INDICATORS = {
+    "meal", "ready", "readymade", "ready-made", "microwave", "microwaveable",
+    "frozen", "pack", "packet", "bar", "bars", "shake", "shakes", "drink",
+    "smoothie", "sauce", "curry", "stir", "fry", "burrito", "wrap", "pizza",
+    "burger", "sandwich", "roll", "pasta bake", "casserole", "soup", "stew",
+    "salad", "bowl", "protein bar", "protein shake", "protein powder",
+    "supplement", "muesli", "granola", "cereal", "yogurt drink",
+    # Brand tokens common in AU / global packaged foods
+    "youfoodz", "my muscle chef", "lite n easy", "weight watchers",
+    "healthy choice", "mccain", "birds eye", "sunrice", "kelloggs",
+    "nestle", "sanitarium", "vitasoy", "so good",
+}
+
+
+def is_composite_name(name: str) -> bool:
+    low = (name or "").lower()
+    return any(re.search(rf"\b{re.escape(kw)}\b", low) for kw in COMPOSITE_INDICATORS)
+
+
+def resolve_food_loose(name: str):
+    """resolve_food, or — for short names like 'sourdough' — the database food
+    whose name contains every word typed (fewest extra words wins)."""
+    key = resolve_food(name)
+    if key:
+        return key
+    stems = {_stem(x) for x in _tokens(name)} - {"large", "medium", "small", "fresh", "plain"}
+    if not stems:
+        return None
+    hits = [k for k, kst in _KEY_STEMS.items() if k not in _RESOLVER_SKIP and stems <= kst]
+    return min(hits, key=lambda k: (len(_KEY_STEMS[k]) - len(stems), k not in _PROMPT_PREFER, len(k))) if hits else None
+
+
+def grams_in_text(text: str, food_name: str = "") -> float:
+    """Grams stated in a serving description ('104g (2 eggs)', '250ml',
+    '2 large eggs', '1 cup' of `food_name`); 0 when it can't be worked out."""
+    s = _normalise_amount_text(str(text or "").lower())
+    m = re.search(rf"{_NUM}\s*(kg|g|grams?|ml|l)\b", s)
+    if m:
+        return float(m.group(1)) * (1000 if m.group(2) in ("kg", "l") else 1)
+    parsed = parse_ingredient(s) or (parse_ingredient(f"{s} {food_name}") if s and food_name else None)
+    return float(parsed[1]) if parsed else 0.0
+
+
+_PACK_WORDS = ("pack", "packet", "bag", "tub", "bar", "container", "box", "tin", "can", "bottle", "punnet",
+               "carton", "jar", "pouch", "tray", "sachet", "pot", "tube", "package", "meal")
+_UNIT_WORDS = {
+    **{w: ("g", 1) for w in ("g", "gm", "gms", "gr", "gram", "grams")},
+    **{w: ("g", 1000) for w in ("kg", "kgs", "kilo", "kilos", "kilogram", "kilograms")},
+    **{w: ("g", 28.35) for w in ("oz", "ounce", "ounces")},
+    **{w: ("g", 453.6) for w in ("lb", "lbs", "pound", "pounds")},
+    **{w: ("ml", 1) for w in ("ml", "millilitre", "millilitres", "milliliter", "milliliters")},
+    **{w: ("ml", 1000) for w in ("l", "litre", "litres", "liter", "liters")},
+    **{w: ("serving", 1) for w in ("serving", "servings", "serve", "serves", "portion", "portions", "srv")},
+    **{w: ("pack", 1) for w in _PACK_WORDS + tuple(p + "s" for p in _PACK_WORDS) + ("boxes", "pouches")},
+    **{w: ("cup", 1) for w in ("cup", "cups")},
+    **{w: ("tbsp", 1) for w in ("tbsp", "tbsps", "tablespoon", "tablespoons")},
+    **{w: ("tsp", 1) for w in ("tsp", "tsps", "teaspoon", "teaspoons")},
+    **{w: ("slice", 1) for w in ("slice", "slices")},
+    **{w: ("piece", 1) for w in ("piece", "pieces", "pc", "pcs")},
+    **{w: ("handful", 1) for w in ("handful", "handfuls")},
+    **{w: ("bowl", 1) for w in ("bowl", "bowls", "bowlful")},
+    **{w: ("scoop", 1) for w in ("scoop", "scoops")},
+}
+_WORD_AMOUNTS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+                 "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "dozen": 12,
+                 "half": 0.5, "quarter": 0.25, "third": 1 / 3}
+_FILLER_RE = re.compile(r"~|≈|\b(?:about|approx\.?|approximately|around|roughly|maybe|nearly|almost|just|"
+                        r"i\s+ate|i\s+had|i've\s+had|ate|had|eaten)\b")
+_WHOLE_PACK_RE = re.compile(rf"\b(?:the\s+)?(?:whole|entire|full|complete)\s+(?:the\s+)?(?:{'|'.join(_PACK_WORDS)}|thing)\b"
+                            rf"|\ball\s+of\s+(?:it|the\s+(?:{'|'.join(_PACK_WORDS)}))\b|\bthe\s+lot\b")
+_SIZE_WORDS = ("small", "medium", "large", "extra large", "jumbo")
+_HANDFUL_WEIGHTS = [({"almond", "walnut", "cashew", "peanut", "nut", "pecan", "hazelnut", "pistachio", "macadamia"}, 30),
+                    ({"seed"}, 20), ({"berry", "blueberry", "strawberry", "raspberry", "blackberry", "grape", "cherry"}, 75),
+                    ({"spinach", "arugula", "rocket", "lettuce", "green", "kale", "romaine"}, 25),
+                    ({"raisin", "sultana", "cranberry", "date", "apricot"}, 30),
+                    ({"chip", "crisp", "popcorn", "pretzel", "cracker"}, 25), ({"granola", "muesli", "cereal", "oat"}, 30),
+                    ({"chocolate"}, 30)]
+_BOWL_WEIGHTS = [({"oatmeal", "porridge"}, 250), ({"rice", "quinoa", "couscous"}, 250), ({"pasta", "spaghetti", "noodle"}, 300),
+                 ({"granola", "muesli", "cereal", "oat"}, 50), ({"soup", "stew", "curry", "chili", "broth", "ramen"}, 400),
+                 ({"salad", "lettuce", "spinach", "green"}, 150), ({"yogurt", "skyr"}, 200), ({"berry", "fruit"}, 150),
+                 ({"popcorn"}, 30)]
+_SCOOP_WEIGHTS = [({"protein", "whey", "powder", "casein"}, 30), ({"ice", "gelato"}, 65)]
+
+
+def _normalise_portion_text(text: str) -> str:
+    s = re.sub(r"\s+", " ", str(text or "").lower()).strip()
+    s = _FILLER_RE.sub(" ", s)
+    s = re.sub(r"\bthree\s+quarters?\b", "0.75", s)
+    s = re.sub(r"\btwo\s+thirds?\b", "0.667", s)
+    s = re.sub(r"\b(\d+(?:\.\d+)?|one|two|three|four|five)\s+and\s+a\s+half\b",
+               lambda m: str(float(_WORD_AMOUNTS.get(m.group(1), m.group(1))) + 0.5), s)
+    s = re.sub(r"\ba\s+(half|quarter|third)\b", r"\1", s)
+    for u, d in _UNICODE_FRACTIONS.items():
+        s = re.sub(rf"(\d)\s*{u}", lambda m, d=d: str(float(m.group(1)) + float(d)), s)
+        s = s.replace(u, " 0" + d)
+    s = re.sub(r"\b(\d+)\s+([1-7])/([2348])\b", lambda m: str(int(m.group(1)) + int(m.group(2)) / int(m.group(3))), s)
+    s = re.sub(r"(?<![\d/])\b([1-7])/([2348])\b(?![\d/])",
+               lambda m: str(int(m.group(1)) / int(m.group(2))) if int(m.group(1)) < int(m.group(2)) else m.group(0), s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _strip_articles(s: str) -> str:
+    return re.sub(r"^(?:(?:of|a|an|the|my)\s+)+", "", s.strip()).strip(" .,!?")
+
+
+def _parse_segment(seg: str):
+    s = seg.strip(" .,!?")
+    if not s:
+        return None
+    if _WHOLE_PACK_RE.search(s):
+        return {"amount": 1.0, "unit": "pack", "food": "", "text": seg.strip()}
+    # an explicit weight anywhere wins: "chicken 200g", "300 grams"
+    m = re.search(r"(?<![-\d.])(\d+(?:\.\d+)?)\s*(kg|kgs|g|gm|gms|gr|grams?|oz|ounces?|lbs?|pounds?|ml|millilit(?:re|er)s?|l|lit(?:re|er)s?)\b", s)
+    if m:
+        if float(m.group(1)) <= 0:
+            return None
+        unit, mult = _UNIT_WORDS[m.group(2)]
+        food = _strip_articles(re.sub(r"^\s*of\s+", "", (s[:m.start()] + " " + s[m.end():]).strip()))
+        return {"amount": float(m.group(1)) * mult, "unit": unit, "food": food, "text": seg.strip()}
+    m = re.match(rf"^(\d+(?:\.\d+)?|\.\d+|{'|'.join(_WORD_AMOUNTS)})\b\s*(.*)$", s)
+    if not m:
+        return None
+    word = m.group(1)
+    amount = float(_WORD_AMOUNTS.get(word, word) if word in _WORD_AMOUNTS else word)
+    if amount <= 0:
+        return None
+    rest = _strip_articles(m.group(2))
+    if word in ("a", "an") and not rest:
+        return None
+    if not rest:
+        # "300" → grams; "half" / "one" → servings
+        return {"amount": amount, "unit": "g" if word[0].isdigit() or word[0] == "." else "serving",
+                "food": "", "text": seg.strip()}
+    first, _, tail = rest.partition(" ")
+    if first in _UNIT_WORDS:
+        unit, mult = _UNIT_WORDS[first]
+        return {"amount": amount * mult, "unit": unit, "food": _strip_articles(tail), "text": seg.strip()}
+    if word in ("a", "an") and first not in ("egg", "eggs"):
+        # "a little oil", "an extra egg"? — a correction for the AI, not an amount
+        if resolve_food_loose(rest) is None:
+            return None
+    return {"amount": amount, "unit": "count", "food": rest, "text": seg.strip()}
+
+
+def parse_portions(text: str) -> list:
+    """Amounts the user typed, one per item: '4 eggs and 3 pieces of sourdough'
+    → [{amount 4, unit count, food eggs}, {amount 3, unit piece, food sourdough}].
+    Text without an amount ('no dressing', 'grilled not fried') gives [] — it is
+    a correction for the AI, never a reason to fail."""
+    s = _normalise_portion_text(text)
+    if not s:
+        return []
+    out = []
+    for seg in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b|\bwith\b|\balso\b)\s*", s):
+        spec = _parse_segment(seg)
+        if spec:
+            out.append(spec)
+    return out
+
+
+# Words that describe a food rather than name it ("fried eggs", "fresh sourdough").
+_DESCRIPTIVE = {"large", "medium", "small", "jumbo", "extra", "fresh", "plain", "fried", "boiled", "poached",
+                "scrambled", "grilled", "toasted", "raw", "cooked", "baked", "roasted", "steamed", "sliced",
+                "chopped", "diced", "whole", "organic", "free", "range", "homemade", "natural"}
+
+
+def _food_stems(text: str) -> set:
+    return {_stem(x) for x in _tokens(text)} - _DESCRIPTIVE
+
+
+def resolve_food_typed(name: str):
+    """For foods the USER typed: the database food only when it accounts for
+    every word typed — 'unicorn steak' or 'chicken nuggets' are reported as
+    not found instead of being guessed as steak / chicken."""
+    key = resolve_food_loose(name)
+    return key if key and _food_stems(name) <= _KEY_STEMS[key] else None
+
+
+def food_matches(food_text: str, key: str = None, name: str = "") -> bool:
+    """Does what the user typed ('eggs', 'sourdough') refer to this food?"""
+    fs = _food_stems(food_text)
+    if not fs:
+        return False
+    ks = _food_stems(f"{key or ''} {name or ''}")
+    return bool(ks) and (fs <= ks or (key is not None and _KEY_STEMS.get(key, frozenset()) and _KEY_STEMS[key] <= fs))
+
+
+def portion_grams(spec, key=None, *, serving_g=None, unit_name=None, units_per_serving=None, pack_g=None,
+                  label=False):
+    """Grams for one stated amount, or None when it can't be worked out.
+    Label reference points win (serving size, the label's own unit, pack size);
+    otherwise the food's own weights — never one weight for every food."""
+    a, u, food = spec["amount"], spec["unit"], spec.get("food") or ""
+    if u == "g":
+        return a
+    if u == "ml":
+        return a if label or not key else a * _lookup_by_tokens(key, _DENSITY, 1.0)
+    if u == "serving":
+        return a * serving_g if serving_g else None
+    noun = (food.split()[-1] if food else "") if u == "count" else u
+    if unit_name and noun and serving_g and units_per_serving and \
+            _stem(noun) == _stem(str(unit_name).lower().split()[-1]):
+        return a * serving_g / units_per_serving          # the label's own unit ("egg")
+    if u == "pack":
+        return a * pack_g if pack_g else None
+    if not key:
+        return None
+    if u in ("cup", "tbsp", "tsp"):
+        cup = _lookup_by_tokens(key, _CUP_WEIGHTS)
+        return a * cup / {"cup": 1, "tbsp": 16, "tsp": 48}[u] if cup else None
+    if u == "slice":
+        per = unit_grams(key) or _lookup_by_tokens(key, _SLICE_WEIGHTS)
+    elif u == "handful":
+        per = _lookup_by_tokens(key, _HANDFUL_WEIGHTS)
+    elif u == "bowl":
+        per = _lookup_by_tokens(key, _BOWL_WEIGHTS)
+    elif u == "scoop":
+        per = _lookup_by_tokens(key, _SCOOP_WEIGHTS)
+    else:  # "4 eggs", "3 pieces of sourdough" — the food's own unit weight
+        if u == "count" and not food_matches(food, key):
+            return None
+        size = next((w for w in _SIZE_WORDS if re.search(rf"\b{w}\b", food)), None)
+        per = unit_grams(key) if key in UNIT_FOODS and not size else _item_weight(key, size)
+    return a * per if per else None
+
+
+def _round_g(g: float):
+    g = round(float(g), 1)
+    return int(g) if g.is_integer() else g
+
+
+def snap_item(name: str, grams: float, key: str = None, per_100g: dict = None, whole_units: bool = False):
+    """One item of a plated meal: database macros for its grams. Foods that
+    aren't in the database keep the AI's per-100g estimate (flagged).
+    Returns None when the food can't be found and has no estimate."""
+    key = key or resolve_food_loose(name)
+    if grams is None or grams <= 0:
+        return None
+    if key:
+        u = unit_grams(key)
+        if whole_units and u:
+            grams = max(1, round(grams / u)) * u       # AI's eggs / slices → whole units
+        m = macros_for(key, grams)
+        source = "database"
+    elif isinstance(per_100g, dict) and float(per_100g.get("calories") or 0) > 0:
+        f = grams / 100.0
+        m = {"calories": round(float(per_100g.get("calories") or 0) * f),
+             "protein": round(float(per_100g.get("protein") or 0) * f, 1),
+             "carbs": round(float(per_100g.get("carbs") or 0) * f, 1),
+             "fats": round(float(per_100g.get("fats") or 0) * f, 1)}
+        source = "estimate"
+    else:
+        return None
+    label = (name or key).strip()
+    label = label[:1].upper() + label[1:]
+    return {"name": label, "key": key, "grams": _round_g(grams),
+            "display": unit_text(label, grams, key) or label, "per_100g": None if key else per_100g,
+            "source": source, **m}
+
+
+def plate_totals(items) -> dict:
+    return {"calories": int(sum(i["calories"] for i in items)),
+            "protein": round(sum(i["protein"] for i in items), 1),
+            "carbs": round(sum(i["carbs"] for i in items), 1),
+            "fats": round(sum(i["fats"] for i in items), 1),
+            "grams": _round_g(sum(float(i["grams"]) for i in items))}
+
+
+def _resize(it, grams):
+    return snap_item(it["name"], grams, it["key"], it.get("per_100g"))
+
+
+def build_plate(raw_items, specs, qty: int = 1):
+    """Plated meal: the AI's {food, grams} items + amounts the user typed →
+    items with database macros. Typed amounts replace the AI's estimate for the
+    matching item (or add the item); a typed amount with no food ('200g',
+    'half', '1 cup') resizes the whole plate. Returns (items, problems)."""
+    items = []
+    for r in raw_items or []:
+        try:
+            g = float(r.get("grams") or 0)
+        except (TypeError, ValueError):
+            continue
+        it = snap_item(str(r.get("food") or ""), g, per_100g=r.get("per_100g"), whole_units=True)
+        if it:
+            items.append(it)
+        else:
+            logger.warning(f"Snap item '{r.get('food')}' not in the food database and no estimate — skipped")
+    problems = []
+    plate_specs = [s for s in specs if not s["food"]]
+    food_specs = [s for s in specs if s["food"]]
+    if plate_specs and items:
+        s, total = plate_specs[0], sum(float(i["grams"]) for i in items)
+        if s["unit"] in ("g", "ml"):
+            factor = s["amount"] / total
+        elif s["unit"] in ("serving", "pack"):
+            factor = s["amount"]
+        else:  # "1 cup" / "1 bowl" of the dish — the plate's own weight per cup
+            per = [(float(i["grams"]), portion_grams({**s, "amount": 1}, i["key"])) for i in items if i["key"]]
+            per = [(g, w) for g, w in per if w]
+            factor = (s["amount"] * sum(g * w for g, w in per) / sum(g for g, _ in per)) / total if per else None
+            if factor is None:
+                problems.append(f"Couldn't work out '{s['text']}' for this meal — try grams, e.g. '300g'.")
+        if factor:
+            items = [i for i in (_resize(i, float(i["grams"]) * factor) for i in items) if i]
+    for s in food_specs:
+        match = next((i for i in items if food_matches(s["food"], i["key"], i["name"])), None)
+        key = match["key"] if match else resolve_food_typed(s["food"])
+        if not match and not key:
+            problems.append(f"Couldn't find '{s['food']}' in the food database.")
+            continue
+        g = portion_grams(s, key)
+        if g is None:
+            problems.append(f"Couldn't work out '{s['text']}' — try grams, e.g. '100g {s['food']}'.")
+            continue
+        if match:
+            new = _resize(match, g)
+            if new:
+                items[items.index(match)] = new
+            else:
+                items.remove(match)
+        else:
+            new = snap_item(s["food"], g, key)
+            if new:
+                items.append(new)
+    if qty and qty > 1:
+        items = [_resize(i, float(i["grams"]) * qty) for i in items]
+    return [i for i in items if i], problems
+
+
+def snap_item_from_text(text: str, key: str = None, name: str = None, per_100g: dict = None):
+    """Edit an item's amount ('150g', '3 eggs') or add a new item by name
+    ('30g cheddar', '1 tbsp olive oil', 'banana'). Returns (item, error)."""
+    specs = parse_portions(text)
+    spec = specs[0] if specs else None
+    if key or per_100g:  # editing an existing item
+        if not spec:
+            return None, "Type an amount, e.g. 150g."
+        g = portion_grams(spec, key) if key else (spec["amount"] if spec["unit"] in ("g", "ml") else None)
+        if g is None:
+            return None, f"Couldn't work out '{text.strip()}' for {name or key} — try grams, e.g. 150g."
+        return snap_item(name or key, g, key, per_100g), None
+    if spec and not spec["food"]:
+        return None, f"Add the food's name too, e.g. '{text.strip()} chicken breast'."
+    food = spec["food"] if spec else _strip_articles(_normalise_portion_text(text))
+    key = resolve_food_typed(food)
+    if not key:
+        return None, f"Couldn't find '{food or text.strip()}' in the food database."
+    if spec:
+        g = portion_grams(spec, key)
+    else:
+        g = unit_grams(key) or _item_weight(key)
+        if not g:
+            return None, f"Add an amount, e.g. '100g {food}'."
+    if g is None:
+        return None, f"Couldn't work out '{text.strip()}' — try grams, e.g. '100g {food}'."
+    return snap_item(food, g, key), None
+

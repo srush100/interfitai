@@ -1,0 +1,185 @@
+[
+ {
+  "description": "4 eggs and 3 pieces of sourdough",
+  "logged": {
+   "status": 200,
+   "food_name": "Fried Eggs on Sourdough with Hot Sauce",
+   "portion_g_applied": 347,
+   "calories": 677,
+   "protein": 40.0,
+   "carbs": 49.6,
+   "fats": 35.9,
+   "items": [
+    {
+     "name": "Eggs",
+     "key": "eggs",
+     "grams": 232,
+     "display": "4 large eggs",
+     "per_100g": null,
+     "source": "database",
+     "calories": 360,
+     "protein": 30.2,
+     "carbs": 2.6,
+     "fats": 25.5
+    },
+    {
+     "name": "Sourdough bread",
+     "key": "sourdough bread",
+     "grams": 90,
+     "display": "3 slices sourdough bread",
+     "per_100g": null,
+     "source": "database",
+     "calories": 243,
+     "protein": 9.6,
+     "carbs": 46.7,
+     "fats": 2.2
+    },
+    {
+     "name": "Butter",
+     "key": "butter",
+     "grams": 10,
+     "display": "Butter",
+     "per_100g": null,
+     "source": "database",
+     "calories": 72,
+     "protein": 0.1,
+     "carbs": 0.0,
+     "fats": 8.1
+    },
+    {
+     "name": "Hot sauce",
+     "key": "hot sauce",
+     "grams": 15,
+     "display": "Hot sauce",
+     "per_100g": null,
+     "source": "database",
+     "calories": 2,
+     "protein": 0.1,
+     "carbs": 0.3,
+     "fats": 0.1
+    }
+   ],
+   "portion_debug": {
+    "specs": [
+     {
+      "amount": 4.0,
+      "unit": "count",
+      "food": "eggs",
+      "text": "4 eggs"
+     },
+     {
+      "amount": 3.0,
+      "unit": "piece",
+      "food": "sourdough",
+      "text": "3 pieces of sourdough"
+     }
+    ],
+    "ai_items": [
+     {
+      "food": "eggs",
+      "grams": 232
+     },
+     {
+      "food": "sourdough bread",
+      "grams": 90
+     },
+     {
+      "food": "butter",
+      "grams": 10
+     },
+     {
+      "food": "hot sauce",
+      "grams": 15
+     }
+    ]
+   },
+   "detail": null,
+   "seconds": 8.7
+  }
+ },
+ {
+  "description": "",
+  "logged": {
+   "status": 200,
+   "food_name": "Fried Eggs on Toast with Hot Sauce",
+   "portion_g_applied": 289,
+   "calories": 566,
+   "protein": 31.8,
+   "carbs": 39.1,
+   "fats": 30.4,
+   "items": [
+    {
+     "name": "Eggs",
+     "key": "eggs",
+     "grams": 174,
+     "display": "3 large eggs",
+     "per_100g": null,
+     "source": "database",
+     "calories": 270,
+     "protein": 22.6,
+     "carbs": 1.9,
+     "fats": 19.1
+    },
+    {
+     "name": "Whole wheat bread",
+     "key": "whole wheat bread",
+     "grams": 90,
+     "display": "3 slices whole wheat bread",
+     "per_100g": null,
+     "source": "database",
+     "calories": 222,
+     "protein": 9.0,
+     "carbs": 36.9,
+     "fats": 3.1
+    },
+    {
+     "name": "Butter",
+     "key": "butter",
+     "grams": 10,
+     "display": "Butter",
+     "per_100g": null,
+     "source": "database",
+     "calories": 72,
+     "protein": 0.1,
+     "carbs": 0.0,
+     "fats": 8.1
+    },
+    {
+     "name": "Hot sauce",
+     "key": "hot sauce",
+     "grams": 15,
+     "display": "Hot sauce",
+     "per_100g": null,
+     "source": "database",
+     "calories": 2,
+     "protein": 0.1,
+     "carbs": 0.3,
+     "fats": 0.1
+    }
+   ],
+   "portion_debug": {
+    "specs": [],
+    "ai_items": [
+     {
+      "food": "eggs",
+      "grams": 174
+     },
+     {
+      "food": "whole wheat bread",
+      "grams": 90
+     },
+     {
+      "food": "butter",
+      "grams": 10
+     },
+     {
+      "food": "hot sauce",
+      "grams": 15
+     }
+    ]
+   },
+   "detail": null,
+   "seconds": 6.9
+  }
+ }
+]

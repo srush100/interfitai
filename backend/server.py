@@ -3158,20 +3158,24 @@ class FoodImageAnalyzeRequest(BaseModel):
     user_id: str
     image_base64: str
     meal_type: str = "snack"
-    additional_context: Optional[str] = None  # e.g., "no dressing", "large size"
-    # Legacy: pre-computed grams. Kept for backward compat.
-    portion_g: Optional[float] = None
-    # Preferred: free-text natural-language portion. Backend parses and
-    # resolves via the label. Examples: "200 grams", "4 eggs", "2 servings",
-    # "1 slice", "3 chicken tenders".
+    # The description box: corrections for the AI ("no dressing") and/or the
+    # amount eaten ("200g", "half", "4 eggs and 3 slices sourdough").
+    additional_context: Optional[str] = None
+    # Still accepted from older app builds and API clients — worked out by the
+    # same parser: the typed text, a structured amount, or grams.
     portion_text: Optional[str] = None
-    # Alternative: pre-parsed portion (amount + unit). Used by tests / API
-    # clients that already have structured input; frontend now sends
-    # `portion_text` only.
     portion_amount: Optional[float] = None
-    portion_unit: Optional[str] = None  # "grams" | "servings" | "count"
+    portion_unit: Optional[str] = None  # "grams" | "servings" | "count" | a unit noun ("egg")
+    portion_g: Optional[float] = None
     quantity: int = 1
     preview: bool = False  # True = analyze only, don't log — user reviews first
+
+
+class SnapItemRequest(BaseModel):
+    text: str                          # "150g", "3 eggs", "30g cheddar"
+    key: Optional[str] = None          # editing: the item's database food
+    name: Optional[str] = None
+    per_100g: Optional[dict] = None    # editing an estimated (non-database) item
 
 # Chat Models
 class ChatMessage(BaseModel):
@@ -5041,6 +5045,8 @@ from nutrition_engine import (  # noqa: E402
     DIET_BANNED_TERMS, FoodRules, MACRO_KEYS, balance_day, build_day, build_safe_meal,
     day_totals, finalize_meal, is_on_target, items_from_raw, make_draft, max_deviation, meal_targets, reconcile_instructions,
     optimise_portions, prompt_food_names, template_draft,
+    build_plate, grams_in_text, is_composite_name, parse_portions, plate_totals, portion_grams, resolve_food,
+    snap_item_from_text,
 )
 from meal_templates import TEMPLATES_BY_STYLE  # noqa: E402
 
@@ -5674,27 +5680,6 @@ async def toggle_food_log_favorite(log_id: str):
 # ------------------------------------------------------------------------
 import re as _nutre
 
-_REFERENCE_FOOD_ALIASES = {
-    # Map common freeform names to their INGREDIENT_MACROS canonical key.
-    "eggs": "egg", "whole eggs": "egg", "large eggs": "egg",
-    "egg whites": "egg white",
-    "chicken": "chicken breast",
-    "beef mince": "beef mince", "ground beef": "ground beef",
-    "extra lean beef mince": "extra lean beef mince",
-    "extra lean ground beef": "extra lean beef mince",
-    "5% beef mince": "extra lean beef mince",
-    "95/5 beef": "extra lean beef mince",
-    "steak": "sirloin steak",
-    "rice": "white rice",
-    "pasta": "pasta",
-    "oats": "oats",
-    "oatmeal": "oats",
-    "milk": "milk",
-    "butter": "butter",
-    "olive oil": "olive oil",
-    "cheese": "cheddar cheese",
-}
-
 def _norm_food_name(name: str) -> str:
     """Lowercase, strip parenthetical qualifiers, remove common state words.
     Enough to match 'Beef Mince, 5% (raw, 100g)' against 'beef mince'."""
@@ -5751,45 +5736,13 @@ def _is_physically_plausible_per_100g(per_100g: dict) -> tuple[bool, str]:
 
 
 def _lookup_reference(food_name: str):
-    """Return (cal, p, c, f) per 100g if the food matches an entry in
-    INGREDIENT_MACROS, else None. Uses fuzzy substring matching so
-    'Organic Extra Lean Beef Mince 5%' still hits 'extra lean beef mince'.
-
-    IMPORTANT: If the food name looks branded / composite / prepared
-    (anything containing a `_COMPOSITE_INDICATORS` token, or with too many
-    unrelated qualifiers), we return None instead of a wrong single-
-    ingredient match. This is what protects "Youfoodz Chicken Teriyaki"
-    from being force-matched to plain chicken breast."""
-    if not food_name:
+    """Return (cal, p, c, f) per 100g when the food is a single database food,
+    else None. Branded / composite / prepared names ("Youfoodz Chicken
+    Teriyaki") return None instead of a wrong single-ingredient match."""
+    if not food_name or is_composite_name(food_name):
         return None
-    # Composite / branded product? The single-ingredient reference table is
-    # not a valid substitute for it, so we refuse to guess.
-    lower = food_name.lower()
-    for kw in _COMPOSITE_INDICATORS:
-        if _nutre.search(rf"\b{_nutre.escape(kw)}\b", lower):
-            return None
-    normalized = _norm_food_name(food_name)
-    if not normalized:
-        return None
-    # 1. alias table
-    if normalized in _REFERENCE_FOOD_ALIASES:
-        key = _REFERENCE_FOOD_ALIASES[normalized]
-        if key in INGREDIENT_MACROS:
-            return INGREDIENT_MACROS[key]
-    # 2. exact hit
-    if normalized in INGREDIENT_MACROS:
-        return INGREDIENT_MACROS[normalized]
-    # 3. longest substring match — prefer longer keys so 'extra lean beef mince'
-    # beats plain 'beef' when both are present in the string.
-    best_key = None
-    for key in INGREDIENT_MACROS:
-        if len(key) < 4:
-            continue
-        if key in normalized and (best_key is None or len(key) > len(best_key)):
-            best_key = key
-    if best_key:
-        return INGREDIENT_MACROS[best_key]
-    return None
+    key = resolve_food(_norm_food_name(food_name))
+    return INGREDIENT_MACROS[key] if key else None
 
 # ── Composite-product safety guard ─────────────────────────────────────
 # The reference table (INGREDIENT_MACROS) contains SINGLE INGREDIENT whole
@@ -5831,23 +5784,6 @@ _SAFE_FALLBACK_FOODS = {
     "olive oil",
 }
 
-# Words that flag a food name as branded / composite / prepared — even if
-# some tokens match a whole food, presence of any of these keywords means
-# we MUST NOT substitute a reference value.
-_COMPOSITE_INDICATORS = {
-    "meal", "ready", "readymade", "ready-made", "microwave", "microwaveable",
-    "frozen", "pack", "packet", "bar", "bars", "shake", "shakes", "drink",
-    "smoothie", "sauce", "curry", "stir", "fry", "burrito", "wrap", "pizza",
-    "burger", "sandwich", "roll", "pasta bake", "casserole", "soup", "stew",
-    "salad", "bowl", "protein bar", "protein shake", "protein powder",
-    "supplement", "muesli", "granola", "cereal", "yogurt drink",
-    # Brand tokens common in AU / global packaged foods
-    "youfoodz", "my muscle chef", "lite n easy", "weight watchers",
-    "healthy choice", "mccain", "birds eye", "sunrice", "kelloggs",
-    "nestle", "sanitarium", "vitasoy", "so good",
-}
-
-
 def _is_safe_reference_fallback(food_name: str) -> bool:
     """Return True only when the food name is an unambiguous single-ingredient
     whole food that is safe to substitute a reference value for.
@@ -5858,228 +5794,12 @@ def _is_safe_reference_fallback(food_name: str) -> bool:
          (no substring / fuzzy match — that's exactly how the Youfoodz-vs-
          chicken-breast confusion happened).
     """
-    if not food_name:
+    if not food_name or is_composite_name(food_name):
         return False
-    lower = food_name.lower()
-    for kw in _COMPOSITE_INDICATORS:
-        # word-boundary match to avoid false positives (e.g. "peppermint"
-        # matching "pepper mint" — but here everything is a full word anyway)
-        if _nutre.search(rf"\b{_nutre.escape(kw)}\b", lower):
-            return False
     n = _norm_food_name(food_name)
     if not n:
         return False
     return n in _SAFE_FALLBACK_FOODS
-
-def _extract_portion_grams(serving_size: str, food_name: str = "") -> float:
-    """Best-effort estimate of the portion mass in grams from a serving_size
-    string like '100g', '2x 1 serving', '1 cup', or '2 large eggs'. Used only
-    for plausibility bounds — never for macro maths."""
-    if not serving_size:
-        return 0.0
-    s = serving_size.lower()
-    # Explicit grams
-    m = _nutre.search(r"(\d+(?:\.\d+)?)\s*g\b", s)
-    if m:
-        return float(m.group(1))
-    # A count of countable items (eggs, slices, pieces) — rough per-unit mass
-    per_unit = {"egg": 58, "eggs": 58, "slice": 25, "slices": 25, "piece": 40, "pieces": 40,
-                "cup": 240, "tbsp": 15, "tsp": 5, "oz": 28}
-    m = _nutre.search(r"(\d+(?:\.\d+)?)\s*(egg|eggs|slice|slices|piece|pieces|cup|tbsp|tsp|oz)\b", s)
-    if m:
-        return float(m.group(1)) * per_unit.get(m.group(2), 0)
-    return 0.0
-
-# ─── Fix 9: deterministic portion resolution ────────────────────────────
-# Fallback per-unit weights used ONLY when the label doesn't state
-# `units_per_serving`. When the label does state it (e.g. "Edible Portion of
-# 2 Eggs, 104g"), the label ALWAYS wins — the per-unit weight is
-# serving_size_g / units_per_serving = 52g, even if this table says 58g.
-_ITEM_FALLBACK_WEIGHTS_G = {
-    "egg": 58, "eggs": 58,
-    "slice": 25, "slices": 25,
-    "piece": 40, "pieces": 40,
-    "biscuit": 15, "biscuits": 15, "cookie": 15, "cookies": 15,
-    "cracker": 3,  "crackers": 3,
-    "chicken tender": 30, "chicken tenders": 30,
-    "sausage": 60, "sausages": 60,
-    "fillet": 120, "fillets": 120,
-    "patty": 100, "patties": 100,
-    "meatball": 20, "meatballs": 20,
-    "nugget": 20, "nuggets": 20,
-    "bar": 40, "bars": 40,
-    "cup": 240, "tbsp": 15, "tsp": 5, "oz": 28,
-}
-
-def resolve_portion_g(
-    portion_amount: float | None,
-    portion_unit: str | None,
-    serving_size_g: float | None,
-    units_per_serving: float | None,
-    unit_name: str | None,
-    legacy_portion_g: float | None = None,
-) -> tuple[float | None, str, dict]:
-    """Deterministically convert a user-stated portion (amount + unit) into
-    grams using the label's own reference points.
-
-    Three shapes the user can state their portion in:
-      1. Grams:    portion_amount=200, portion_unit='grams'    → 200
-      2. Servings: portion_amount=2,   portion_unit='servings' → 2 × serving_size_g
-      3. Count:    portion_amount=4,   portion_unit='count'    → (4 / units_per_serving) × serving_size_g
-         Falls back to _ITEM_FALLBACK_WEIGHTS_G[unit_name] only if the label
-         didn't state units_per_serving.
-
-    Returns (portion_g, source_tag, debug) — source_tag is one of
-    "grams" / "servings" / "count_label" / "count_fallback" / "legacy" / "none".
-    """
-    debug: dict = {
-        "portion_amount": portion_amount,
-        "portion_unit": portion_unit,
-        "serving_size_g": serving_size_g,
-        "units_per_serving": units_per_serving,
-        "unit_name": unit_name,
-    }
-
-    # 0. Legacy: caller already resolved to grams. Preserve for backward compat.
-    if (portion_amount is None or portion_amount <= 0) and legacy_portion_g and legacy_portion_g > 0:
-        return float(legacy_portion_g), "legacy", debug
-
-    if portion_amount is None or portion_amount <= 0:
-        return None, "none", debug
-
-    amt = float(portion_amount)
-    u = (portion_unit or "grams").lower().strip()
-
-    # 1. Grams (or ml — treated 1:1 for label-scaling purposes)
-    if u in ("g", "gram", "grams", "gm", "gms", "ml", "milliliter", "milliliters"):
-        return amt, "grams", debug
-
-    # 2. Servings — needs serving_size_g from the label
-    if u in ("serving", "servings", "srv"):
-        if serving_size_g and serving_size_g > 0:
-            return amt * float(serving_size_g), "servings", debug
-        return None, "servings_no_label", debug
-
-    # 3. Count of units (eggs, slices, pieces, bars, …)
-    #    Label wins: units_per_serving + serving_size_g → per-unit grams.
-    if serving_size_g and serving_size_g > 0 and units_per_serving and units_per_serving > 0:
-        per_unit_g = float(serving_size_g) / float(units_per_serving)
-        return amt * per_unit_g, "count_label", {**debug, "per_unit_g": round(per_unit_g, 2)}
-
-    #    No label info → per-item fallback table (rough averages).
-    #    Try the model's unit_name first, then the user's portion_unit token.
-    for token in (unit_name, portion_unit):
-        if not token:
-            continue
-        key = token.lower().strip().rstrip("s")
-        # Also match the plural form for robustness
-        for candidate in (key, key + "s"):
-            if candidate in _ITEM_FALLBACK_WEIGHTS_G:
-                return (
-                    amt * float(_ITEM_FALLBACK_WEIGHTS_G[candidate]),
-                    "count_fallback",
-                    {**debug, "fallback_per_unit_g": _ITEM_FALLBACK_WEIGHTS_G[candidate]},
-                )
-
-    # 4. Unresolvable — caller can raise 422 or use best-effort path.
-    return None, "unresolved", debug
-
-
-# ── Fix 9b: natural-language portion parser ─────────────────────────────
-# One text field on the UI. User types anything: "200 grams", "4 eggs",
-# "2 servings", "1 slice", "3 chicken tenders", "half a serving", "1.5 cups".
-# We normalise + tokenise, then hand off to resolve_portion_g.
-
-_PARSE_UNIT_GRAMS = {"g", "gm", "gms", "gram", "grams"}
-_PARSE_UNIT_ML    = {"ml", "milliliter", "millilitre", "milliliters", "millilitres"}
-_PARSE_UNIT_KG    = {"kg", "kgs", "kilo", "kilos", "kilogram", "kilograms"}
-_PARSE_UNIT_L     = {"l", "liter", "litre", "liters", "litres"}
-_PARSE_UNIT_OZ    = {"oz", "ounce", "ounces"}
-_PARSE_UNIT_LB    = {"lb", "lbs", "pound", "pounds"}
-_PARSE_UNIT_SERVING = {"serving", "servings", "srv", "srvs", "portion", "portions"}
-
-_PARSE_WORD_NUMBERS = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
-    "a": 1, "an": 1,
-    "half": 0.5, "quarter": 0.25, "third": 1 / 3,
-}
-
-
-def parse_portion_text(text: str) -> tuple[float | None, str | None]:
-    """Turn free-text like "4 eggs" / "200 grams" / "1 slice" / "2 servings"
-    into (amount, unit_token). unit_token is one of:
-      • "grams"           — user gave mass; use directly
-      • "servings"        — multiply by label serving_size_g
-      • a bare noun like "egg" / "slice" / "bar" — count of items; the resolver
-        prefers the label's units_per_serving, else _ITEM_FALLBACK_WEIGHTS_G
-
-    Returns (None, None) if no usable portion is found — caller falls to
-    the best-effort path.
-    """
-    if not text or not text.strip():
-        return None, None
-    s = _nutre.sub(r"\s+", " ", text.lower().strip())
-    # Strip "of X" tails ("4 slices of bread" → "4 slices")
-    s = _nutre.sub(r"\s+of\s+.*$", "", s)
-    s = s.rstrip(".,;:!?")
-
-    # Try numeric prefix first
-    m = _nutre.match(r"([\d]+(?:\.\d+)?|\.\d+)\s*(.*)$", s)
-    amount: float | None = None
-    rest: str = s
-    if m:
-        try:
-            amount = float(m.group(1))
-            rest = m.group(2).strip()
-        except ValueError:
-            amount = None
-
-    # Word-number prefix fallback: "one serving", "half a cup", "two eggs"
-    if amount is None:
-        tokens = s.split()
-        if tokens and tokens[0] in _PARSE_WORD_NUMBERS:
-            amount = float(_PARSE_WORD_NUMBERS[tokens[0]])
-            rest = " ".join(tokens[1:]).strip()
-        else:
-            return None, None
-
-    # Strip filler articles ("a"/"an"/"the") so "half a serving" → "serving"
-    rest = _nutre.sub(r"^(a|an|the)\s+", "", rest).strip()
-
-    if amount <= 0:
-        return None, None
-
-    # ── Classify the tail ──────────────────────────────────────────────
-    if not rest:
-        # Bare number → grams (safest default; matches label per-100g scaling)
-        return amount, "grams"
-
-    first_word = rest.split()[0].rstrip(".,;:")
-    first_word_sing = first_word.rstrip("s")
-
-    # Mass / volume units → normalised to grams
-    if first_word in _PARSE_UNIT_GRAMS or first_word_sing in _PARSE_UNIT_GRAMS:
-        return amount, "grams"
-    if first_word in _PARSE_UNIT_ML or first_word_sing in _PARSE_UNIT_ML:
-        return amount, "grams"  # ml treated 1:1 for label scaling
-    if first_word in _PARSE_UNIT_KG or first_word_sing in _PARSE_UNIT_KG:
-        return amount * 1000.0, "grams"
-    if first_word in _PARSE_UNIT_L or first_word_sing in _PARSE_UNIT_L:
-        return amount * 1000.0, "grams"
-    if first_word in _PARSE_UNIT_OZ or first_word_sing in _PARSE_UNIT_OZ:
-        return amount * 28.35, "grams"
-    if first_word in _PARSE_UNIT_LB or first_word_sing in _PARSE_UNIT_LB:
-        return amount * 453.6, "grams"
-
-    # Servings
-    if first_word in _PARSE_UNIT_SERVING or first_word_sing in _PARSE_UNIT_SERVING:
-        return amount, "servings"
-
-    # Otherwise treat as count of a specific unit; hand the raw noun
-    # (singular) to resolve_portion_g, which will try label first, then the
-    # _ITEM_FALLBACK_WEIGHTS_G table.
-    return amount, first_word_sing
 
 def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = None) -> tuple[dict, list[str]]:
     """Guardrail applied to every food entry before it's saved / returned.
@@ -6178,108 +5898,6 @@ def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = N
 
     return entry, warnings
 
-def enforce_portion_scaling(
-    entry: dict,
-    per_100g: dict | None,
-    portion_g: float | None,
-    energy_source: str = "derived",
-) -> tuple[dict, list[str]]:
-    """DETERMINISTIC portion-scaling guard for label scans (Fix 7).
-
-    When the AI has read a nutrition panel it should return both the per-100g
-    (or per-100ml) column AND the final macros scaled to the user's portion.
-    Historically the model sometimes copies the per-serving row verbatim
-    without scaling, producing a 20–40% under- or over-count.
-
-    This helper computes `expected = per_100g × (portion_g / 100)` for every
-    macro and overwrites any actual value that's more than 10% off. It is a
-    hard maths check with no retry — prompt reinforcement alone doesn't beat
-    stochastic misreads. Every correction is logged with the product name and
-    both values so the real-world failure rate is measurable from logs.
-
-    Args:
-        entry: mutable dict with keys calories/protein/carbs/fats (mass or
-            "*_g" variants are also honoured).
-        per_100g: dict with the same macro keys giving per-100g values, or
-            None when the label had no per-100g column.
-        portion_g: numeric portion mass in grams (or ml for liquids).
-        energy_source: "label" if the AI transcribed a printed energy row —
-            in that case calories get a wider (12%) tolerance to accommodate
-            legitimate food-specific-Atwater deltas from the 4/4/9 sum.
-
-    Returns (entry, warnings). Never raises.
-    """
-    warnings: list[str] = []
-    if not isinstance(entry, dict) or not isinstance(per_100g, dict):
-        return entry, warnings
-    if not portion_g or portion_g <= 0:
-        return entry, warnings
-
-    def _f(d, key, default=0.0):
-        # Support both plain and *_g suffixes for interoperability
-        for k in (key, f"{key}_g"):
-            if k in d:
-                try:
-                    return float(d[k] or 0)
-                except (TypeError, ValueError):
-                    return float(default)
-        return float(default)
-
-    fname = entry.get("food_name") or entry.get("name") or "unknown"
-    ratio = portion_g / 100.0
-
-    # Reject nonsense per-100g values (e.g. all zeros, or macros>100 which is
-    # impossible per-100g) before using them as ground truth.
-    p100_cal = _f(per_100g, "calories")
-    p100_p   = _f(per_100g, "protein")
-    p100_c   = _f(per_100g, "carbs")
-    p100_f   = _f(per_100g, "fats")
-    if p100_cal <= 0 and p100_p <= 0 and p100_c <= 0 and p100_f <= 0:
-        return entry, warnings
-    if p100_p > 100 or p100_c > 100 or p100_f > 100:
-        logger.warning(
-            f"[nutrition-guard] portion_scaling_skip food='{fname}' per_100g impossible ({p100_p}/{p100_c}/{p100_f})"
-        )
-        return entry, warnings
-
-    # Compute expected scaled values from the per-100g reference
-    expected = {
-        "calories": p100_cal * ratio,
-        "protein":  p100_p   * ratio,
-        "carbs":    p100_c   * ratio,
-        "fats":     p100_f   * ratio,
-    }
-    # Widen calorie tolerance when the AI reports the energy row was
-    # transcribed from the label (Atwater deltas ≈ 2–8% are legitimate).
-    cal_tol = 0.12 if energy_source == "label" else 0.10
-    tolerances = {"calories": cal_tol, "protein": 0.10, "carbs": 0.10, "fats": 0.10}
-
-    def _canon(key):
-        # Prefer the canonical key, else the *_g variant
-        return key if key in entry else (f"{key}_g" if f"{key}_g" in entry else key)
-
-    corrections = {}
-    for macro, exp in expected.items():
-        canon = _canon(macro)
-        actual = _f(entry, macro)
-        denom = max(exp, 0.5)  # avoid divide-by-tiny for near-zero macros
-        gap = abs(actual - exp) / denom
-        if gap > tolerances[macro]:
-            corrections[canon] = (actual, exp)
-            # calories are stored as int elsewhere in the app
-            entry[canon] = int(round(exp)) if macro == "calories" else round(exp, 2)
-
-    if corrections:
-        details = " | ".join(f"{k}: {a:.1f} → {e:.1f}" for k, (a, e) in corrections.items())
-        warnings.append(
-            f"portion_scaling food='{fname}' portion={portion_g:.0f}g "
-            f"per_100g={{cal:{p100_cal},p:{p100_p},c:{p100_c},f:{p100_f}}} "
-            f"corrections: {details}"
-        )
-        for w in warnings:
-            logger.warning(f"[nutrition-guard] {w}")
-    return entry, warnings
-
 def derive_per_100g(entry: dict, serving_g: float | None) -> dict | None:
     """Derive a per-100g reference from a per-serving entry + known serving mass.
 
@@ -6345,6 +5963,50 @@ def detect_hallucination(per_100g: dict, food_name: str) -> tuple[bool, dict | N
     max_div = max(divs)
     return (max_div > 1.0), ref, max_div
 
+def _round_portion(g: float):
+    g = round(float(g), 1)
+    return int(g) if g.is_integer() else g
+
+
+async def _log_plated_meal(request, food_data: dict, raw_items: list, specs: list, qty: int):
+    """Plated meal with no label: every part is calculated from its grams with
+    the same nutrition engine the meal plans use. Typed amounts ('4 eggs',
+    '3 pieces of sourdough') replace the AI's estimate for that item."""
+    items, problems = build_plate(raw_items, specs, qty)
+    if problems:
+        raise HTTPException(status_code=422, detail={
+            "error": "portion_unresolvable", "message": " ".join(problems),
+            "food_name_guess": food_data.get("food_name"),
+        })
+    if not items:
+        raise HTTPException(status_code=422, detail={
+            "error": "no_food_detected",
+            "message": "We couldn't recognise any food in that photo. Try a closer, well-lit shot of the plate "
+                       "or the nutrition panel — or log it manually.",
+        })
+    tot = plate_totals(items)
+    logger.info(f"[snap-plate] '{food_data.get('food_name')}' specs={specs} → "
+                f"{[(i['display'], i['grams'], i['calories']) for i in items]} total={tot}")
+    food_entry = FoodEntry(
+        user_id=request.user_id,
+        food_name=food_data.get("food_name") or "Meal",
+        serving_size=f"{tot['grams']}g",
+        calories=tot["calories"], protein=tot["protein"], carbs=tot["carbs"], fats=tot["fats"],
+        meal_type=request.meal_type,
+        logged_date=datetime.now().strftime("%Y-%m-%d"),
+        image_base64=request.image_base64[:100] + "...",
+    )
+    if not request.preview:
+        await db.food_logs.insert_one(food_entry.model_dump())
+    result = food_entry.model_dump()
+    result.update({
+        "items": items, "summary": None, "label_per_100g": None, "portion_g_applied": tot["grams"],
+        "per_100g_source": "items", "hallucination_fallback": False, "portion_source": "plate",
+        "portion_debug": {"specs": specs, "ai_items": raw_items},
+    })
+    return result
+
+
 @api_router.post("/food/analyze")
 async def analyze_food_image(request: FoodImageAnalyzeRequest):
     """Analyze food image using OpenAI Vision to identify food and estimate nutrition"""
@@ -6358,34 +6020,23 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         if not request.image_base64 or len(request.image_base64) < 100:
             raise HTTPException(status_code=400, detail="Invalid image data")
         
-        # Build the user prompt with optional context
+        # The description goes to the AI as a hint about WHAT is in the photo
+        # ("no dressing", "grilled not fried", "4 eggs and 3 slices sourdough").
+        # Amounts are worked out in code from the same text (parse_portions).
+        description = (request.additional_context or request.portion_text or "").strip()
         user_prompt = (
             "Analyze this food image and return nutritional information as JSON. "
-            "Your job is to identify the food and read its per-100g values from the label "
-            "(or estimate them from visual cues if no label is visible). "
-            "DO NOT compute the user's portion — the app will apply portion scaling "
-            "deterministically. Just return accurate per-100g values."
+            "If a nutrition label is visible, read its per-100g values; if not, list each part of "
+            "the meal with its estimated grams. DO NOT compute the user's portion — the app does that."
         )
-        if request.additional_context:
-            user_prompt += f"\n\nAdditional context from user: {request.additional_context}"
-        # Portion hint — purely informational for the AI. We do not ask it to
-        # scale. `resolve_portion_g` will convert the user's stated portion to
-        # grams deterministically after we have the label's serving_size_g and
-        # units_per_serving.
-        if request.portion_amount and request.portion_amount > 0:
-            _u = (request.portion_unit or "grams").lower()
+        if description:
             user_prompt += (
-                f"\n\nThe user is measuring {request.portion_amount:g} {_u} of this food. "
-                "You do NOT need to scale to that portion — return per-100g values plus the "
-                "label's own serving_size_g / units_per_serving / unit_name, and the app "
-                "will convert."
+                f"\n\nThe user's description: \"{description}\". Use it to adjust what you identify "
+                "(e.g. 'no dressing' → leave the dressing out, 'grilled not fried' → no frying oil, "
+                "'extra cheese' → more cheese). If it names foods (e.g. '4 eggs and 3 slices sourdough'), "
+                "make sure every named food is one of the items."
             )
-        elif request.portion_g:
-            user_prompt += (
-                f"\n\nThe user is measuring {request.portion_g:.0f}g of this food, but you "
-                "do NOT need to scale to that portion — return per-100g values only and the "
-                "app will scale."
-            )
+        food_list = ", ".join(prompt_food_names())
 
         vision_prompt = """You are an expert nutritionist analysing a food photo. Your only job is to identify the food and return accurate PER-100G nutrition values plus the label's own portion reference points — the app applies portion scaling itself.
 
@@ -6406,15 +6057,21 @@ F. PORTION REFERENCE POINTS — you MUST also return these three fields so the a
    • `serving_size_g` — the numeric grams of ONE serving as printed on the label (e.g. label says "Serving size: 104g" → 104; label says "Serving size: 40g (2 biscuits)" → 40).
    • `units_per_serving` — how many countable items make up one serving, as stated on the label (e.g. "Edible Portion of 2 Eggs" → 2; "2 biscuits per serving" → 2; "1 slice" → 1). If the label does NOT state a countable item, return null.
    • `unit_name` — the singular noun for one item (e.g. "egg", "biscuit", "slice", "piece", "bar", "cookie"). If not applicable, return null.
+   • `servings_per_package` — "Servings per package" as printed (e.g. 4), else null.
+   • `package_size_g` — the pack's net weight/volume in grams or ml as printed (e.g. "Net 500g" → 500; "12 eggs, 700g" → 700), else null.
+   • If the label prints no serving size and the pack is a single serve, set `serving_size_g` to the pack's net weight.
    • DO NOT COMPUTE the total portion. Never multiply. Just report what the label prints.
+   • Set `label_visible: true`.
 
 ═══════════════════════════════════════════════════════════════════════
-WHEN NO LABEL IS VISIBLE (restaurant plate, prepared food, produce, etc.):
+WHEN NO LABEL IS VISIBLE (plated meal, restaurant plate, home cooking, produce, etc.):
 
-1. Identify the primary food item(s).
-2. Estimate reasonable per-100g values based on general nutrition knowledge for that food.
-3. Also return a `serving_size_g` (best-guess grams of the visible portion). Set `units_per_serving` and `unit_name` to null unless the food is naturally countable (eggs, apples).
-4. Set `energy_source: "derived"` and `per_100g_source: "estimated"`.
+1. Set `label_visible: false`.
+2. List EVERY part of the meal in `items` as {"food": "<name>", "grams": <estimated grams>} — e.g. eggs, toast, the frying oil or butter, sauces, dressings, cheese. Never blend the plate into one food.
+3. `food` must be the closest name from this FOOD LIST: """ + food_list + """
+   Only if nothing on the list fits, use your own name and add "per_100g": {"calories", "protein", "carbs", "fats"}.
+4. Estimate grams from what you see (a large egg ≈ 58g, a slice of sourdough ≈ 30g, a tablespoon of oil ≈ 14g). Count whole eggs and slices.
+5. Set `food_name` to a short name for the whole meal, `energy_source: "derived"`, and leave `per_100g` and the top-level calories/protein/carbs/fats null — the app calculates them from the items.
 
 ═══════════════════════════════════════════════════════════════════════
 QUALITY GATES — do this before responding:
@@ -6435,16 +6092,23 @@ Respond with ONLY valid JSON, no other text. Exact schema:
   "calories": 149, "protein": 12.7, "carbs": 1.4, "fats": 10.3,
   "fiber": 0, "sugar": 0.4, "sodium": 140,
   "energy_source": "label",
+  "servings_per_package": 6,
+  "package_size_g": 624,
+  "label_visible": true,
+  "items": null,
   "confidence": "high",
   "reasoning": "label per-100g col: 143cal/12.2P/1.3C/9.9F; per-serving 104g = 2 eggs (52g/egg)."
 }
 
-The `calories/protein/carbs/fats` top-level fields describe ONE label serving as a sanity anchor. The app uses `per_100g` × resolved_portion_g / 100 as the source of truth for what gets logged. NEVER multiply anything yourself."""
+Plated meal (no label) example:
+{"food_name": "Fried Eggs on Sourdough", "label_visible": false, "items": [{"food": "eggs", "grams": 232}, {"food": "sourdough bread", "grams": 90}, {"food": "olive oil", "grams": 7}], "per_100g": null, "calories": null, "protein": null, "carbs": null, "fats": null, "energy_source": "derived", "confidence": "high", "reasoning": "4 fried eggs, 3 slices sourdough, a little oil"}
+
+For labels, the `calories/protein/carbs/fats` top-level fields describe ONE label serving as a sanity anchor. The app uses `per_100g` × resolved_portion_g / 100 as the source of truth for what gets logged. NEVER multiply anything yourself."""
         content = await call_claude_sonnet(
             system_message=vision_prompt,
             user_message=user_prompt,
             temperature=0.2,
-            max_tokens=500,
+            max_tokens=1000,
             image_base64=request.image_base64
         )
         logger.info(f"Food analysis raw response length: {len(content) if content else 0}")
@@ -6484,6 +6148,25 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
             else:
                 raise HTTPException(status_code=500, detail="Failed to parse food analysis. Please try with a clearer image.")
 
+        qty = request.quantity if request.quantity > 0 else 1
+        legacy_grams = False
+        if request.portion_amount and request.portion_amount > 0:
+            unit = (request.portion_unit or "grams").strip().lower()
+            if unit == "count":
+                unit = food_data.get("unit_name") or "unit"
+            specs = parse_portions(f"{request.portion_amount:g} {unit}")
+        elif (request.portion_text or "").strip():
+            specs = parse_portions(request.portion_text)
+        elif description:
+            specs = parse_portions(description)
+        elif request.portion_g and request.portion_g > 0:
+            specs, legacy_grams = parse_portions(f"{request.portion_g:g}g"), True
+        else:
+            specs = []
+        raw_items = food_data.get("items") if isinstance(food_data.get("items"), list) else []
+        if raw_items and not food_data.get("label_visible"):
+            return await _log_plated_meal(request, food_data, raw_items, specs, qty)
+
         # Low-confidence bail-out — only fail visibly when the model reports
         # low confidence AND its per-100g values are ALSO physically
         # implausible. If the model was cautious but the numbers themselves
@@ -6492,7 +6175,7 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
         if str(food_data.get("confidence", "high")).lower() == "low":
             _low_p100 = food_data.get("per_100g") if isinstance(food_data.get("per_100g"), dict) else None
             if not _low_p100:
-                _low_p100 = derive_per_100g(food_data, _extract_portion_grams(
+                _low_p100 = derive_per_100g(food_data, grams_in_text(
                     food_data.get("serving_size", ""), food_data.get("food_name", "")))
             _low_ok, _low_reason = _is_physically_plausible_per_100g(_low_p100 or {})
             if not _low_ok:
@@ -6516,7 +6199,7 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
         # trips this every time). A pointless retry costs ~4s of Claude
         # latency per scan — the user's #1 complaint is speed.
         try:
-            portion_g_for_check = _extract_portion_grams(food_data.get("serving_size", ""),
+            portion_g_for_check = grams_in_text(food_data.get("serving_size", ""),
                                                         food_data.get("food_name", ""))
             _, first_warnings = sanitize_food_entry(dict(food_data), portion_g=portion_g_for_check)
             # Only truly-actionable warnings warrant a retry.
@@ -6534,7 +6217,7 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                         "calories ≈ P*4 + C*4 + F*9 and that macro mass does not exceed portion mass."
                     ),
                     temperature=0.0,
-                    max_tokens=600,
+                    max_tokens=1000,
                     image_base64=request.image_base64
                 )
                 rc = (retry_raw or "").strip()
@@ -6542,7 +6225,7 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                 m = _re2.search(r"\{[\s\S]+\}", rc)
                 if m:
                     retry_data = json.loads(m.group(0))
-                    retry_portion_g = _extract_portion_grams(retry_data.get("serving_size", ""),
+                    retry_portion_g = grams_in_text(retry_data.get("serving_size", ""),
                                                              retry_data.get("food_name", ""))
                     _, retry_warnings = sanitize_food_entry(dict(retry_data),
                                                             portion_g=retry_portion_g)
@@ -6552,81 +6235,26 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
         except Exception as _ve:
             logger.warning(f"Food analysis consistency check skipped: {_ve}")
 
-        qty = request.quantity if request.quantity > 0 else 1
         food_name_raw = food_data.get("food_name", "Unknown Food")
 
-        # ── STRUCTURED PORTION PATH (deterministic) ──────────────────────
-        # The model returns per-100g PLUS the label's own reference points
-        # (serving_size_g, units_per_serving, unit_name). The APP then
-        # converts the user's stated portion (amount + unit) into grams —
-        # the model NEVER multiplies. This is what makes "4 eggs" become
-        # exactly (4 / label's units_per_serving) × serving_size_g instead
-        # of a 58g/egg guess that overrides a 52g/egg label.
-        #
-        # Order of precedence for `serving_size_g`:
-        #   1. explicit `serving_size_g` numeric field (new schema)
-        #   2. `_extract_portion_grams(serving_size)` on the legacy string
-        try:
-            _label_serving_g = float(food_data.get("serving_size_g") or 0)
-        except (TypeError, ValueError):
-            _label_serving_g = 0.0
-        if _label_serving_g <= 0:
-            _label_serving_g = _extract_portion_grams(
-                food_data.get("serving_size", ""), food_data.get("food_name", "")
-            )
-        try:
-            _label_units_per_serving = float(food_data.get("units_per_serving") or 0) or None
-        except (TypeError, ValueError):
-            _label_units_per_serving = None
+        # The label's own reference points — the code converts the user's
+        # amount with them; the model NEVER multiplies.
+        def _num(v):
+            try:
+                return float(v or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        _label_serving_g = _num(food_data.get("serving_size_g")) or grams_in_text(
+            food_data.get("serving_size", ""), food_name_raw)
+        _label_units_per_serving = _num(food_data.get("units_per_serving")) or None
         _label_unit_name = food_data.get("unit_name") or None
-
-        user_portion_g, _portion_source, _portion_debug = None, "none", {}
-        # 1) Explicit structured input from API clients / tests
-        if request.portion_amount and request.portion_amount > 0:
-            user_portion_g, _portion_source, _portion_debug = resolve_portion_g(
-                portion_amount=request.portion_amount,
-                portion_unit=request.portion_unit,
-                serving_size_g=_label_serving_g if _label_serving_g > 0 else None,
-                units_per_serving=_label_units_per_serving,
-                unit_name=_label_unit_name,
-                legacy_portion_g=request.portion_g,
-            )
-        # 2) Natural-language portion text — the primary path from the app UI.
-        #    Parse "4 eggs" / "200 grams" / "1 serving" / "2 slices" / …
-        elif request.portion_text and request.portion_text.strip():
-            parsed_amt, parsed_unit = parse_portion_text(request.portion_text)
-            if parsed_amt and parsed_unit:
-                user_portion_g, _portion_source, _portion_debug = resolve_portion_g(
-                    portion_amount=parsed_amt,
-                    portion_unit=parsed_unit,
-                    serving_size_g=_label_serving_g if _label_serving_g > 0 else None,
-                    units_per_serving=_label_units_per_serving,
-                    unit_name=_label_unit_name,
-                    legacy_portion_g=None,
-                )
-                _portion_debug = {**_portion_debug, "raw_text": request.portion_text,
-                                  "parsed_amount": parsed_amt, "parsed_unit": parsed_unit}
-            else:
-                # Unparseable text (e.g. gibberish, empty after normalisation)
-                _portion_source = "text_unparseable"
-                _portion_debug = {"raw_text": request.portion_text}
-        # 3) Legacy pre-grams field
-        elif request.portion_g and request.portion_g > 0:
-            user_portion_g, _portion_source, _portion_debug = resolve_portion_g(
-                portion_amount=None, portion_unit=None,
-                serving_size_g=None, units_per_serving=None, unit_name=None,
-                legacy_portion_g=request.portion_g,
-            )
-
-        if _portion_source != "none":
-            logger.info(
-                f"[portion-resolve] source={_portion_source} → portion_g={user_portion_g} "
-                f"debug={_portion_debug}"
-            )
+        _pack_g = _num(food_data.get("package_size_g"))
+        if _pack_g <= 0 and _num(food_data.get("servings_per_package")) > 0 and _label_serving_g > 0:
+            _pack_g = _num(food_data.get("servings_per_package")) * _label_serving_g
 
         # Extract or derive per_100g
         _per_100g_model = food_data.get("per_100g") if isinstance(food_data.get("per_100g"), dict) else None
-        _model_serving_g = _extract_portion_grams(food_data.get("serving_size", ""),
+        _model_serving_g = grams_in_text(food_data.get("serving_size", ""),
                                                   food_data.get("food_name", ""))
         if _label_serving_g and _label_serving_g > 0:
             _model_serving_g = _label_serving_g  # explicit numeric wins over parsed string
@@ -6677,7 +6305,7 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                         system_message=vision_prompt,
                         user_message=f"{user_prompt}\n\n{ref_hint}",
                         temperature=0.0,
-                        max_tokens=600,
+                        max_tokens=1000,
                         image_base64=request.image_base64
                     )
                     rc2 = (retry_h or "").strip()
@@ -6687,7 +6315,7 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
                         rd = json.loads(m2.group(0))
                         rd_p100 = rd.get("per_100g") if isinstance(rd.get("per_100g"), dict) else None
                         if not rd_p100:
-                            rd_p100 = derive_per_100g(rd, _extract_portion_grams(
+                            rd_p100 = derive_per_100g(rd, grams_in_text(
                                 rd.get("serving_size", ""), rd.get("food_name", "")))
                         # Retry passes if it becomes physically plausible OR the
                         # divergence relaxes below hallucination threshold.
@@ -6750,93 +6378,91 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
             except Exception:
                 pass
 
-        if user_portion_g is not None:
-            # STRUCTURED PATH — code owns the arithmetic.
-            if not _per_100g:
-                # No per-100g could be established → fail visibly rather than
-                # silently return invented numbers. The user explicitly asked
-                # for label-based scaling; without a legible label we can't
-                # provide it honestly.
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "error": "label_unreadable",
-                        "message": "Couldn't read that label clearly. Try a closer, well-lit photo of the nutrition panel, or enter the food manually.",
-                    },
-                )
+        # A per-100g block that is still impossible (or all zeros) is never used
+        # to scale: use the label's per-serving column instead, else nothing.
+        if _per_100g and _per_100g_source != "reference_fallback" and (
+                not _is_physically_plausible_per_100g(_per_100g)[0]
+                or not any(_num(_per_100g.get(k)) > 0 for k in ("calories", "protein", "carbs", "fats"))):
+            _derived = derive_per_100g(food_data, _model_serving_g)
+            _usable = bool(_derived) and _is_physically_plausible_per_100g(_derived)[0]
+            logger.warning(f"[nutrition-guard] unusable_per_100g food='{food_name_raw}' per_100g={_per_100g} "
+                           f"→ {'per-serving column ' + str(_derived) if _usable else 'not used'}")
+            _per_100g, _per_100g_source = (_derived, "derived_from_serving") if _usable else (None, None)
+
+        spec = specs[0] if specs else None
+        product_key = None if is_composite_name(food_name_raw) else resolve_food(food_name_raw)
+        if spec:
+            user_portion_g = portion_grams(
+                spec, product_key, serving_g=_label_serving_g or None, unit_name=_label_unit_name,
+                units_per_serving=_label_units_per_serving, pack_g=_pack_g or None, label=True)
+            if user_portion_g is None:
+                logger.warning(f"[portion-resolve] unresolved food='{food_name_raw}' spec={spec}")
+                raise HTTPException(status_code=422, detail={
+                    "error": "portion_unresolvable",
+                    "message": (f"Couldn't work out \"{spec['text']}\" for {food_name_raw}. Try grams "
+                                "(\"200g\"), servings (\"1 serving\", \"half\") or \"the whole pack\"."),
+                    "food_name_guess": food_name_raw,
+                })
+            _portion_label = f"{_round_portion(user_portion_g)}g" if spec["unit"] == "g" else \
+                f"{spec['text']} = {_round_portion(user_portion_g)}g"
+        else:
+            # Nothing typed → one label serving (or the whole single-serve pack).
+            user_portion_g = _label_serving_g or _pack_g or None
+            _portion_label = (f"1 serving = {_round_portion(user_portion_g)}g" if _label_serving_g else
+                              f"whole pack = {_round_portion(user_portion_g)}g" if _pack_g else None)
+        if not spec:
+            _portion_source = "serving_default"
+        elif legacy_grams:
+            _portion_source = "legacy"
+        else:
+            _portion_source = {"g": "grams", "ml": "grams", "serving": "servings", "pack": "pack"}.get(spec["unit"]) or (
+                "count_label" if portion_grams(spec, None, serving_g=_label_serving_g or None, unit_name=_label_unit_name,
+                                               units_per_serving=_label_units_per_serving, label=True) is not None
+                else "count_fallback" if spec["unit"] == "count" else spec["unit"])
+        _portion_debug = {"spec": spec, "serving_size_g": _label_serving_g or None, "pack_g": _pack_g or None,
+                          "units_per_serving": _label_units_per_serving, "unit_name": _label_unit_name}
+        logger.info(f"[portion-resolve] source={_portion_source} → portion_g={user_portion_g} debug={_portion_debug}")
+
+        _summary = None
+        if user_portion_g and _per_100g:
             r = user_portion_g / 100.0
-            final_cal = _per_100g["calories"] * r * qty
-            final_p   = _per_100g["protein"]  * r * qty
-            final_c   = _per_100g["carbs"]    * r * qty
-            final_f   = _per_100g["fats"]     * r * qty
             _scaled = {
                 "food_name": food_name_raw,
                 "serving_size": f"{int(user_portion_g)}g" if qty == 1 else f"{qty}× {int(user_portion_g)}g",
-                "calories": int(round(final_cal)),
-                "protein": round(final_p, 2),
-                "carbs":   round(final_c, 2),
-                "fats":    round(final_f, 2),
+                "calories": int(round(_per_100g["calories"] * r * qty)),
+                "protein": round(_per_100g["protein"] * r * qty, 2),
+                "carbs":   round(_per_100g["carbs"] * r * qty, 2),
+                "fats":    round(_per_100g["fats"] * r * qty, 2),
                 "energy_source": "label" if _per_100g_source in ("label", "retry_label") else "derived",
             }
             _portion_applied = user_portion_g * qty
-        elif (
-            (request.portion_amount and request.portion_amount > 0)
-            or (request.portion_text and request.portion_text.strip())
-        ) and _portion_source in ("servings_no_label", "unresolved", "text_unparseable"):
-            # User gave "2 servings" / "4 eggs" / free text but we couldn't
-            # resolve it (label lacks the required reference, or the text
-            # didn't parse). Fail visibly instead of silently under-scaling.
-            logger.warning(
-                f"[portion-resolve] unresolved_portion food='{food_name_raw}' "
-                f"source={_portion_source} debug={_portion_debug}"
-            )
-            msg = (
-                "Couldn't work out the portion size from your description. Try a "
-                "phrase like \"200 grams\", \"4 eggs\", or \"1 serving\" — or a "
-                "clearer photo of the nutrition panel."
-                if _portion_source == "text_unparseable"
-                else "Couldn't work out the portion size from that label. Try a "
-                     "clearer photo of the nutrition panel (including the serving-"
-                     "size line), enter the portion in grams, or log it manually."
-            )
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": "portion_unresolvable",
-                    "message": msg,
-                    "food_name_guess": food_name_raw,
-                    "portion_source": _portion_source,
-                },
-            )
+            _summary = (f"{'Label' if _per_100g_source in ('label', 'retry_label', 'derived_from_serving') else 'Estimate'}: "
+                        f"{round(_per_100g['calories'])} cal/100g · your portion: "
+                        f"{(str(qty) + ' × ') if qty > 1 else ''}{_portion_label}")
+        elif spec or food_data.get("calories") is None:
+            # An amount was typed but there's no readable label to scale, or
+            # nothing was recognised at all — fail visibly, never invent.
+            raise HTTPException(status_code=422, detail={
+                "error": "label_unreadable" if food_data.get("calories") is not None else "no_food_detected",
+                "message": ("Couldn't read that label clearly. Try a closer, well-lit photo of the nutrition "
+                            "panel, or enter the food manually." if food_data.get("calories") is not None else
+                            "We couldn't recognise any food in that photo. Try a closer, well-lit shot of the "
+                            "plate or the nutrition panel — or log it manually."),
+                "food_name_guess": food_name_raw,
+            })
         else:
-            # BEST-EFFORT PATH — no structured portion. Trust the model's
-            # per-serving totals, but still run Fix 7 as a safety net when
-            # the model returned a per-100g block.
-            if food_data.get("calories") is None:
-                # The model found no food / readable label in the photo.
-                raise HTTPException(status_code=422, detail={
-                    "error": "no_food_detected",
-                    "message": "We couldn't recognise any food in that photo. Try a closer, well-lit "
-                               "shot of the plate or the nutrition panel — or log it manually.",
-                })
-            _energy_source = str(food_data.get("energy_source") or "derived").lower()
-            _guard_portion_g = _extract_portion_grams(
-                food_data.get("serving_size", ""), food_data.get("food_name", "")
-            )
-            if _per_100g and _guard_portion_g > 0:
-                enforce_portion_scaling(
-                    food_data, _per_100g, _guard_portion_g, energy_source=_energy_source
-                )
+            # No serving size on the label and nothing typed: the model's own
+            # per-serving reading is the best we have.
             _scaled = {
                 "food_name": food_name_raw,
                 "serving_size": food_data.get("serving_size", "1 serving"),
-                "calories": int(food_data.get("calories", 0)) * qty,
-                "protein": float(food_data.get("protein", 0)) * qty,
-                "carbs":   float(food_data.get("carbs", 0)) * qty,
-                "fats":    float(food_data.get("fats", 0)) * qty,
-                "energy_source": _energy_source,
+                "calories": int(_num(food_data.get("calories"))) * qty,
+                "protein": _num(food_data.get("protein")) * qty,
+                "carbs":   _num(food_data.get("carbs")) * qty,
+                "fats":    _num(food_data.get("fats")) * qty,
+                "energy_source": str(food_data.get("energy_source") or "derived").lower(),
             }
-            _portion_applied = _guard_portion_g * qty if _guard_portion_g else None
+            _portion_applied = None
 
         # Final sanitize — last-line safety net (never hurts; usually a no-op
         # after the deterministic path).
@@ -6874,8 +6500,11 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
         result["label_serving_size_g"] = _label_serving_g or None
         result["label_units_per_serving"] = _label_units_per_serving
         result["label_unit_name"] = _label_unit_name
+        result["label_package_g"] = _pack_g or None
         result["portion_source"] = _portion_source
         result["portion_debug"] = _portion_debug
+        result["summary"] = _summary
+        result["items"] = None
         return result
 
     except HTTPException:
@@ -6885,6 +6514,17 @@ The `calories/protein/carbs/fats` top-level fields describe ONE label serving as
         if "invalid" in str(e).lower() or "image" in str(e).lower():
             raise HTTPException(status_code=400, detail="Invalid image format. Please use a valid JPEG or PNG image.")
         raise HTTPException(status_code=500, detail=f"Failed to analyze food: {str(e)}")
+
+@api_router.post("/food/item")
+async def snap_food_item(request: SnapItemRequest):
+    """Edit one item of a snapped plate ('150g', '3 eggs') or add one by name
+    ('30g cheddar', '1 tbsp olive oil'). Same food database and calculator as
+    meal plans; an unknown food is reported, never guessed."""
+    item, error = snap_item_from_text(request.text, request.key, request.name, request.per_100g)
+    if error:
+        raise HTTPException(status_code=422, detail={"error": "item_unresolvable", "message": error})
+    return item
+
 
 @api_router.post("/food/log", response_model=FoodEntry)
 async def log_food(request: FoodLogRequest):
@@ -6899,7 +6539,7 @@ async def log_food(request: FoodLogRequest):
     # known reference (Fix 4). Manual entries can't be retried, so we
     # deterministically correct the calorie total in place.
     payload = request.model_dump()
-    portion_g = _extract_portion_grams(payload.get("serving_size", ""), payload.get("food_name", ""))
+    portion_g = grams_in_text(payload.get("serving_size", ""), payload.get("food_name", ""))
     sanitize_food_entry(payload, portion_g=portion_g)
     food_entry = FoodEntry(**payload)
     await db.food_logs.insert_one(food_entry.model_dump())
@@ -7471,7 +7111,7 @@ async def search_foods(query: str, user_id: str):
             "carbs":    float(_r.get("carbs", 0)),
             "fats":     float(_r.get("fats", 0)),
         }
-        _portion = _extract_portion_grams(_r.get("name", ""), _r.get("name", ""))
+        _portion = grams_in_text(_r.get("name", ""), _r.get("name", ""))
         sanitize_food_entry(_tmp, portion_g=_portion)
         if _tmp["calories"] != _r.get("calories"):
             _r["calories"] = _tmp["calories"]
@@ -7557,7 +7197,7 @@ async def ai_food_search(query: str, user_id: str):
             "carbs_g":   float(data.get("carbs_g", 0)),
             "fat_g":     float(data.get("fat_g", 0)),
         }
-        portion_g = _extract_portion_grams(data.get("serving_size", ""),
+        portion_g = grams_in_text(data.get("serving_size", ""),
                                            data.get("food_name", ""))
         sanitize_food_entry(_tmp, portion_g=portion_g)
         data["calories"] = _tmp["calories"]
@@ -7665,7 +7305,7 @@ async def web_food_search(query: str, user_id: str):
             "carbs_g":   float(data.get("carbs_g", 0)),
             "fat_g":     float(data.get("fat_g", 0)),
         }
-        portion_g = _extract_portion_grams(data.get("serving_size", ""),
+        portion_g = grams_in_text(data.get("serving_size", ""),
                                            data.get("food_name", ""))
         sanitize_food_entry(_tmp, portion_g=portion_g)
         data["calories"] = _tmp["calories"]

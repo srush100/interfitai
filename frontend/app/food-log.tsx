@@ -21,6 +21,7 @@ import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 import usePremium from '../src/hooks/usePremium';
+import SnapItemsList, { SnapItem } from '../src/components/SnapItemsList';
 
 // ── Raw-weight annotation (Fix 5) ────────────────────────────────────
 // Package labels the user photographs are ALWAYS raw / dry. So a logged
@@ -502,23 +503,34 @@ export default function FoodLog() {
   };
 
   const [photoResult, setPhotoResult] = useState<any>(null);
+  // Plated meal: an item was edited / added / removed → new totals (sums of
+  // the backend's per-item numbers).
+  const updatePhotoItems = (items: SnapItem[]) => {
+    const sum = (k: 'calories' | 'protein' | 'carbs' | 'fats') => items.reduce((a, i) => a + (Number(i[k]) || 0), 0);
+    const grams = items.reduce((a, i) => a + (Number(i.grams) || 0), 0);
+    setPhotoResult((prev: any) => ({
+      ...prev,
+      items,
+      calories: Math.round(sum('calories')),
+      protein: Math.round(sum('protein') * 10) / 10,
+      carbs: Math.round(sum('carbs') * 10) / 10,
+      fats: Math.round(sum('fats') * 10) / 10,
+      serving_size: `${Math.round(grams * 10) / 10}g`,
+    }));
+  };
   const analyzeFood = async () => {
     if (!capturedImage || !profile?.id) return;
     setAnalyzing(true);
     try {
-      // Fix 9c — one description box does it all. The user's notes are sent as
-      // BOTH `portion_text` (so parse_portion_text can extract "4 eggs" / "200
-      // grams" / "1 serving") AND `additional_context` (so the AI still sees
-      // free-form hints like "no dressing" / "large size"). If no portion is
-      // mentioned, the parser returns None and the backend falls back to
-      // per-serving best-effort — never blocks.
+      // The description box goes to the backend once: it is a hint for the
+      // AI ("no dressing") and, when it states an amount ("200g", "half",
+      // "4 eggs and 3 slices sourdough"), the portion the code works out.
       const trimmed = additionalContext.trim();
       const response = await api.post('/food/analyze', {
         user_id: profile.id,
         image_base64: capturedImage,
         meal_type: selectedMealType,
         additional_context: trimmed.length > 0 ? trimmed : undefined,
-        portion_text: trimmed.length > 0 ? trimmed : undefined,
         quantity: quantity,
         preview: true,
       });
@@ -1348,6 +1360,11 @@ export default function FoodLog() {
                       <Text style={styles.photoResultMacros}>
                         {photoResult.calories} cal • {photoResult.protein}g P • {photoResult.carbs}g C • {photoResult.fats}g F
                       </Text>
+                      {Array.isArray(photoResult.items) ? (
+                        <SnapItemsList items={photoResult.items} onChange={updatePhotoItems} />
+                      ) : !!photoResult.summary && (
+                        <Text style={styles.photoResultHint} testID="snap-summary">{photoResult.summary}</Text>
+                      )}
                     </View>
                     <TextInput
                       style={styles.contextInput}

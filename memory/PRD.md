@@ -139,6 +139,10 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 - **[Jun 2026] USDA key** read from `USDA_API_KEY` in backend/.env (user key added).
 - **[Jun 2026] Instructions ↔ ingredients check**: generation + swap prompts require every food in the instructions to be listed with grams (cooking fat listed, else "use a non-stick pan"). `nutrition_engine.reconcile_instructions` adds a missing cooking fat (butter/oil/ghee/cream…) at a small default (5g; cream 15g) if the diet allows it, otherwise the meal is regenerated; foods the steps mention are never tuned away. Check script `backend/scripts/check_instruction_foods.py` → `/app/memory/instruction_foods_check.md`: before 4/111 generated + 1/10 swapped meals had unlisted foods; after 0/120 + 0/10 (30/30 days on target).
 
+- **[Jun 2026] Snap Food on the shared calculator**: `/api/food/analyze` works out portions with `nutrition_engine.parse_portions` / `portion_grams` ("half", "1/2", "about", "~", "the whole pack" via servings_per_package × serving size, per-food cup/slice/bowl weights). The description never fails a scan unless a clear amount can't be worked out. Plated meals come back as `items` [{food, grams}] priced from `food_database.py`; `SnapItemsList.tsx` lets the user edit, remove or add items (`POST /api/food/item`). It also returns a one-line `summary` and uses max_tokens 1000. Older clients' `portion_text` / `portion_amount`+`portion_unit` / `portion_g` are still accepted. A per-100g reading that is impossible or all zeros is never used to scale.
+  - Real-photo check (`backend/scripts/snap_real_photos.py` → `/app/memory/snap_real_photos_*.json`): the yoghurt tub matched all 8 descriptions exactly. Fried eggs on sourdough with "4 eggs and 3 pieces of sourdough" gave 4 eggs 232g + 3 slices sourdough 90g + butter 10g (AI estimate) + hot sauce 2 cal = 677 cal. With butter edited to 3g it gave 626 cal / 39.9P / 49.5C / 30.1F (user expected ~625/40/49/30).
+  - Tests: test_snap_food, test_fix5/7/8/9 → 154 passed, 1 xfail (pre-existing).
+
 ## Backlog (Prioritized)
 ### P0 — Critical
 - (none)

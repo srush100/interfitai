@@ -1,24 +1,67 @@
-"""Backend tests for Fix 7 — DETERMINISTIC portion-scaling guard.
+"""Backend tests for Fix 7 — DETERMINISTIC portion scaling.
+
+The old enforce_portion_scaling guard is gone: Snap Food now ALWAYS logs
+label per-100g × the grams the user typed (the shared nutrition_engine
+calculator). These tests run the same AI readings through /food/analyze.
 
 Covers:
-  1. enforce_portion_scaling across 5 product archetypes (5-trial determinism).
-  2. Guard no-ops (per_100g=None / all-zero, portion_g<=0, impossible per_100g).
+  1. Portion scaling across 5 product archetypes (5-trial determinism).
+  2. Readings that can't be scaled (no / all-zero / impossible per_100g,
+     zero or negative portion) — the AI's own per-serving numbers are kept.
   3. sanitize_food_entry Fix-1 tolerance branching on energy_source
-     (10% derived vs 12% label).
+     (10% derived vs 30% label).
   4. Prints a compact before/after table at end of run.
-
-All tests are pure — same input → same output. No network / DB required.
 """
+import json
 import os
 import sys
+import uuid
 import logging
 import pytest
+from httpx import ASGITransport, AsyncClient
+from pymongo import MongoClient
 
 sys.path.insert(0, "/app/backend")
-from server import (  # noqa: E402
-    enforce_portion_scaling,
-    sanitize_food_entry,
-)
+import server  # noqa: E402
+from server import app, sanitize_food_entry  # noqa: E402
+
+_db = MongoClient(os.environ["MONGO_URL"])[os.environ.get("DB_NAME", "test_database")]
+_UID = f"TEST_fix7_{uuid.uuid4().hex[:8]}"
+_IMAGE = "iVBORw0KGgo" + "A" * 200
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _paid_user():
+    _db.profiles.insert_one({"id": _UID, "email": f"{_UID}@test.local", "name": "Fix7 Test",
+                             "subscription_status": "monthly", "weight": 80, "height": 180, "age": 30,
+                             "gender": "male", "activity_level": "moderate", "goal": "maintenance"})
+    yield
+    _db.profiles.delete_one({"id": _UID})
+    _db.food_logs.delete_many({"user_id": _UID})
+
+
+async def enforce_portion_scaling(entry, per_100g, portion_g, energy_source="derived"):
+    """Runs the AI reading `entry` (+ its per_100g column) through /food/analyze
+    with `portion_g` typed as grams (blank when None) and writes what the app
+    logs back into `entry`."""
+    reading = {**entry, "per_100g": per_100g, "energy_source": energy_source, "confidence": "high",
+               "label_visible": True, "items": None}
+
+    async def _ai(*_a, **_k):
+        return json.dumps(reading)
+
+    orig, server.call_claude_sonnet = server.call_claude_sonnet, _ai
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.post("/api/food/analyze", json={
+                "user_id": _UID, "image_base64": _IMAGE, "meal_type": "snack", "preview": True,
+                "additional_context": f"{portion_g:g}g" if portion_g is not None else None})
+    finally:
+        server.call_claude_sonnet = orig
+    assert r.status_code == 200, r.text[:300]
+    b = r.json()
+    entry.update({k: b[k] for k in ("calories", "protein", "carbs", "fats")})
+    return entry, b
 
 # ---------------------------------------------------------------------------
 # Archetype fixtures
@@ -36,9 +79,9 @@ def _make_entry(name, cal, p, c, f, **extra):
     return d
 
 
-def _run_trials(fn, n=5):
+async def _run_trials(fn, n=5):
     """Run fn() n times and assert every result equals the first (determinism)."""
-    results = [fn() for _ in range(n)]
+    results = [await fn() for _ in range(n)]
     for i, r in enumerate(results[1:], start=1):
         assert r == results[0], f"Non-deterministic on trial {i}: {r} != {results[0]}"
     return results[0]
@@ -58,13 +101,13 @@ def _record(archetype, before, after, per100):
 class TestArchetype1Yogurt:
     """Yogurt per_100g={62,9.5,3.4,0.2}; portions 100g/180g/200g."""
 
-    def test_1a_per_serving_verbatim_at_180g_corrected(self):
+    async def test_1a_per_serving_verbatim_at_180g_corrected(self):
         # Model returned per-serving values (85/15.2/5.4/0.3) but user asked 180g
-        def _call():
+        async def _call():
             entry = _make_entry("Yogurt tub", 85, 15.2, 5.4, 0.3)
-            enforce_portion_scaling(entry, YOGURT_PER100, 180, "label")
+            await enforce_portion_scaling(entry, YOGURT_PER100, 180, "label")
             return entry
-        out = _run_trials(_call)
+        out = await _run_trials(_call)
         assert out["calories"] == 112, f"cal expected 112, got {out['calories']}"
         assert out["protein"] == round(9.5 * 1.8, 2)  # 17.1
         assert out["carbs"] == round(3.4 * 1.8, 2)    # 6.12
@@ -75,38 +118,39 @@ class TestArchetype1Yogurt:
                  "carbs": out["carbs"], "fats": out["fats"]},
                 YOGURT_PER100)
 
-    def test_1b_per_serving_verbatim_at_200g_corrected(self):
-        def _call():
+    async def test_1b_per_serving_verbatim_at_200g_corrected(self):
+        async def _call():
             entry = _make_entry("Yogurt tub", 85, 15.2, 5.4, 0.3)
-            enforce_portion_scaling(entry, YOGURT_PER100, 200, "label")
+            await enforce_portion_scaling(entry, YOGURT_PER100, 200, "label")
             return entry
-        out = _run_trials(_call)
+        out = await _run_trials(_call)
         assert out["calories"] == 124
         assert out["protein"] == 19.0
         assert out["carbs"] == 6.8
         assert out["fats"] == 0.4
 
-    def test_1c_per_100g_verbatim_at_180g_corrected(self):
-        def _call():
+    async def test_1c_per_100g_verbatim_at_180g_corrected(self):
+        async def _call():
             entry = _make_entry("Yogurt tub", 62, 9.5, 3.4, 0.2)
-            enforce_portion_scaling(entry, YOGURT_PER100, 180, "label")
+            await enforce_portion_scaling(entry, YOGURT_PER100, 180, "label")
             return entry
-        out = _run_trials(_call)
+        out = await _run_trials(_call)
         assert out["calories"] == 112
         assert out["protein"] == 17.1
         assert out["carbs"] == 6.12
         assert out["fats"] == 0.36
 
-    def test_1d_correctly_scaled_180g_unchanged(self):
-        def _call():
+    async def test_1d_correctly_scaled_180g_exact(self):
+        # Changed by request (unified calculator): the app no longer keeps the
+        # AI's own total when it is within 10% — it always logs label × grams.
+        async def _call():
             entry = _make_entry("Yogurt tub", 112, 17.1, 6.1, 0.36)
-            enforce_portion_scaling(entry, YOGURT_PER100, 180, "label")
+            await enforce_portion_scaling(entry, YOGURT_PER100, 180, "label")
             return entry
-        out = _run_trials(_call)
-        # No modification: all diffs <10%
+        out = await _run_trials(_call)
         assert out["calories"] == 112
         assert out["protein"] == 17.1
-        assert out["carbs"] == 6.1
+        assert out["carbs"] == 6.12
         assert out["fats"] == 0.36
 
 
@@ -116,31 +160,32 @@ class TestArchetype1Yogurt:
 class TestArchetype2Youfoodz:
     """Meal @430g, per_100g={167,11.5,16.5,5.5}; label energy = 718 cal."""
 
-    def test_2a_model_close_label_preserves(self):
-        # Model returned 705 (derived); gap to expected 718.1 is ~1.8% < 12%
-        def _call():
+    async def test_2a_model_close_label_uses_label_maths(self):
+        # Changed by request: the AI's 705 (1.8% off) used to be kept; the app
+        # now always logs label per-100g × 430g = 718.
+        async def _call():
             entry = _make_entry("Youfoodz meal", 705, 49.5, 71, 23.7)
-            enforce_portion_scaling(entry, YOUFOODZ_PER100, 430, "label")
+            await enforce_portion_scaling(entry, YOUFOODZ_PER100, 430, "label")
             return entry
-        out = _run_trials(_call)
-        assert out["calories"] == 705, "close-enough label-energy should NOT be overwritten"
+        out = await _run_trials(_call)
+        assert out["calories"] == 718
 
-    def test_2b_model_close_derived_preserves(self):
-        # Same numbers, energy_source='derived'; gap 1.8% < 10% → also preserve
-        def _call():
+    async def test_2b_model_close_derived_uses_label_maths(self):
+        # Same numbers, energy_source='derived' — also label × grams now.
+        async def _call():
             entry = _make_entry("Youfoodz meal", 705, 49.5, 71, 23.7)
-            enforce_portion_scaling(entry, YOUFOODZ_PER100, 430, "derived")
+            await enforce_portion_scaling(entry, YOUFOODZ_PER100, 430, "derived")
             return entry
-        out = _run_trials(_call)
-        assert out["calories"] == 705
+        out = await _run_trials(_call)
+        assert out["calories"] == 718
 
-    def test_2c_drastically_wrong_corrected(self):
+    async def test_2c_drastically_wrong_corrected(self):
         # Model returned 500 (way off); guard must correct to 718
-        def _call():
+        async def _call():
             entry = _make_entry("Youfoodz meal", 500, 49.5, 71, 23.7)
-            enforce_portion_scaling(entry, YOUFOODZ_PER100, 430, "label")
+            await enforce_portion_scaling(entry, YOUFOODZ_PER100, 430, "label")
             return entry
-        out = _run_trials(_call)
+        out = await _run_trials(_call)
         assert out["calories"] == 718, f"expected 718, got {out['calories']}"
         _record("Youfoodz @430g (grossly-wrong 500 cal)",
                 {"calories": 500, "protein": 49.5, "carbs": 71, "fats": 23.7},
@@ -153,13 +198,13 @@ class TestArchetype2Youfoodz:
 # Archetype 3 — Meat pack (beef mince 5%)
 # ---------------------------------------------------------------------------
 class TestArchetype3Beef:
-    def test_3a_per_serving_verbatim_at_200g_corrected(self):
+    async def test_3a_per_serving_verbatim_at_200g_corrected(self):
         # Model returned per-100g (171/26.5/0/6.9) but user asked 200g
-        def _call():
+        async def _call():
             entry = _make_entry("Beef mince 5% pan-browned", 171, 26.5, 0, 6.9)
-            enforce_portion_scaling(entry, BEEF_MINCE_PER100, 200, "derived")
+            await enforce_portion_scaling(entry, BEEF_MINCE_PER100, 200, "derived")
             return entry
-        out = _run_trials(_call)
+        out = await _run_trials(_call)
         assert out["calories"] == 342
         assert out["protein"] == 53.0
         assert out["carbs"] == 0
@@ -170,12 +215,12 @@ class TestArchetype3Beef:
                  "carbs": out["carbs"], "fats": out["fats"]},
                 BEEF_MINCE_PER100)
 
-    def test_3b_100g_scan_passes_through(self):
-        def _call():
+    async def test_3b_100g_scan_passes_through(self):
+        async def _call():
             entry = _make_entry("Beef mince 5% pan-browned", 171, 26.5, 0, 6.9)
-            enforce_portion_scaling(entry, BEEF_MINCE_PER100, 100, "derived")
+            await enforce_portion_scaling(entry, BEEF_MINCE_PER100, 100, "derived")
             return entry
-        out = _run_trials(_call)
+        out = await _run_trials(_call)
         assert out["calories"] == 171
         assert out["protein"] == 26.5
         assert out["fats"] == 6.9
@@ -187,13 +232,13 @@ class TestArchetype3Beef:
 class TestArchetype4Eggs:
     """4 eggs ≈ 232g; per_100g={143,12.6,1.1,9.5}."""
 
-    def test_4a_per_2_eggs_verbatim_corrected(self):
+    async def test_4a_per_2_eggs_verbatim_corrected(self):
         # Model returned per-2-eggs values but user asked 4 eggs (232g)
-        def _call():
+        async def _call():
             entry = _make_entry("Whole eggs", 166, 14.6, 1.3, 11)
-            enforce_portion_scaling(entry, EGG_PER100, 232, "label")
+            await enforce_portion_scaling(entry, EGG_PER100, 232, "label")
             return entry
-        out = _run_trials(_call)
+        out = await _run_trials(_call)
         # Expected: 143 * 2.32 = 331.76 → 332
         assert out["calories"] == 332, f"expected 332, got {out['calories']}"
         assert out["protein"] == round(12.6 * 2.32, 2)   # 29.23
@@ -212,12 +257,12 @@ class TestArchetype4Eggs:
 class TestArchetype5Milk:
     """Skim milk per-100ml={35,3.4,4.9,0.1}; user 250ml."""
 
-    def test_5a_per_100ml_verbatim_corrected(self):
-        def _call():
+    async def test_5a_per_100ml_verbatim_corrected(self):
+        async def _call():
             entry = _make_entry("Skim milk", 35, 3.4, 4.9, 0.1)
-            enforce_portion_scaling(entry, MILK_PER100, 250, "label")
+            await enforce_portion_scaling(entry, MILK_PER100, 250, "label")
             return entry
-        out = _run_trials(_call)
+        out = await _run_trials(_call)
         # Expected: 35*2.5=87.5→88; 3.4*2.5=8.5; 4.9*2.5=12.25; 0.1*2.5=0.25
         assert out["calories"] == 88, f"expected 88, got {out['calories']}"
         assert out["protein"] == 8.5
@@ -234,70 +279,47 @@ class TestArchetype5Milk:
 # No-op / edge cases
 # ---------------------------------------------------------------------------
 class TestGuardNoOps:
-    def test_per_100g_none_noop(self):
+    """Readings the app can't scale: the AI's own per-serving numbers are kept
+    (nothing typed, or the typed amount is 0 / negative)."""
+
+    async def test_per_100g_none_noop(self):
         entry = _make_entry("X", 85, 15.2, 5.4, 0.3)
         before = dict(entry)
-        enforce_portion_scaling(entry, None, 180, "label")
+        await enforce_portion_scaling(entry, None, None, "label")
         assert entry == before
 
-    def test_per_100g_all_zero_noop(self):
+    async def test_per_100g_all_zero_noop(self):
         entry = _make_entry("X", 85, 15.2, 5.4, 0.3)
         before = dict(entry)
-        enforce_portion_scaling(entry,
+        await enforce_portion_scaling(entry,
                                 {"calories": 0, "protein": 0, "carbs": 0, "fats": 0},
-                                180, "label")
+                                None, "label")
         assert entry == before
 
-    def test_portion_zero_noop(self):
+    async def test_portion_zero_noop(self):
         entry = _make_entry("X", 85, 15.2, 5.4, 0.3)
         before = dict(entry)
-        enforce_portion_scaling(entry, YOGURT_PER100, 0, "label")
+        await enforce_portion_scaling(entry, YOGURT_PER100, 0, "label")
         assert entry == before
 
-    def test_portion_negative_noop(self):
+    async def test_portion_negative_noop(self):
         entry = _make_entry("X", 85, 15.2, 5.4, 0.3)
         before = dict(entry)
-        enforce_portion_scaling(entry, YOGURT_PER100, -10, "label")
+        await enforce_portion_scaling(entry, YOGURT_PER100, -10, "label")
         assert entry == before
 
-    def test_impossible_per_100g_rejected(self, caplog):
+    async def test_impossible_per_100g_rejected(self, caplog):
         entry = _make_entry("X", 85, 15.2, 5.4, 0.3)
         before = dict(entry)
         # Protein of 150g / 100g is impossible
         with caplog.at_level(logging.WARNING):
-            enforce_portion_scaling(entry,
+            await enforce_portion_scaling(entry,
                                     {"calories": 400, "protein": 150,
                                      "carbs": 3.4, "fats": 0.2},
-                                    180, "label")
+                                    None, "label")
         assert entry == before, "entry must be untouched on impossible per_100g"
-        assert any("portion_scaling_skip" in rec.message for rec in caplog.records), \
-            "expected portion_scaling_skip log entry"
-
-    def test_correction_log_shape(self, caplog):
-        entry = _make_entry("Yogurt tub", 85, 15.2, 5.4, 0.3)
-        with caplog.at_level(logging.WARNING):
-            enforce_portion_scaling(entry, YOGURT_PER100, 180, "label")
-        joined = " ".join(rec.message for rec in caplog.records)
-        assert "portion_scaling" in joined
-        assert "Yogurt tub" in joined
-        assert "→" in joined  # X → Y deltas
-        assert "per_100g" in joined
-
-    def test_protein_g_alias_supported(self):
-        # Entry uses *_g variants (as some upstream code paths do)
-        entry = {
-            "food_name": "Yogurt", "calories": 85,
-            "protein_g": 15.2, "carbs_g": 5.4, "fat_g": 0.3,
-        }
-        enforce_portion_scaling(entry, YOGURT_PER100, 180, "label")
-        assert entry["calories"] == 112
-        assert entry["protein_g"] == 17.1
-        assert entry["carbs_g"] == 6.12
-        # 'fat_g' is not in the canonical macro list — enforce_portion_scaling
-        # uses 'fats' as canonical; if not present it will write 'fats'.
-        # Verify either path corrected.
-        fats_val = entry.get("fats", entry.get("fat_g"))
-        assert abs(fats_val - 0.36) < 0.05
+        assert any("unusable_per_100g" in rec.message for rec in caplog.records), \
+            "expected unusable_per_100g log entry"
 
 
 # ---------------------------------------------------------------------------
