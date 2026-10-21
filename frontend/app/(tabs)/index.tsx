@@ -23,6 +23,7 @@ import api from '../../src/services/api';
 import { getHealthConnectionStatus, syncHealthData } from '../../src/services/health';
 import usePremium from '../../src/hooks/usePremium';
 import { HEALTH_INTEGRATION_ENABLED } from '../../src/config/features';
+import { localDateString } from '../../src/utils/date';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -92,7 +93,7 @@ export default function HomeScreen() {
 
       if (profile?.id) {
         // Get daily nutrition summary
-        const today = new Date().toISOString().split('T')[0];
+        const today = localDateString();
         const summaryRes = await api.get(`/food/daily-summary/${profile.id}/${today}`);
         setDailySummary(summaryRes.data);
 

@@ -14,6 +14,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { colors } from '../src/theme/colors';
 import { useUserStore } from '../src/store/userStore';
 import api from '../src/services/api';
+import { localDateString } from '../src/utils/date';
 
 interface FavoriteMeal {
   id: string;
@@ -81,7 +82,7 @@ export default function SavedMeals() {
     if (!profile?.id) return;
     
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateString();
       await api.post('/food/log', {
         user_id: profile.id,
         food_name: favorite.meal.name,

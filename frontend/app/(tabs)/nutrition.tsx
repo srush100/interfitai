@@ -16,6 +16,7 @@ import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
 import usePremium from '../../src/hooks/usePremium';
+import { localDateString } from '../../src/utils/date';
 
 interface MealPlan {
   id: string;
@@ -44,7 +45,7 @@ export default function NutritionScreen() {
     try {
       const [plansRes, summaryRes] = await Promise.all([
         api.get(`/mealplans/${profile.id}`),
-        api.get(`/food/daily-summary/${profile.id}/${new Date().toISOString().split('T')[0]}`),
+        api.get(`/food/daily-summary/${profile.id}/${localDateString()}`),
       ]);
       setMealPlans(plansRes.data);
       setDailySummary(summaryRes.data);

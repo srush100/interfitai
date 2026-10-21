@@ -12,6 +12,7 @@ import {
   Platform,
   Animated,
   Linking,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -22,6 +23,7 @@ import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 import usePremium from '../src/hooks/usePremium';
 import SnapItemsList, { SnapItem } from '../src/components/SnapItemsList';
+import { localDateString } from '../src/utils/date';
 
 // ── Raw-weight annotation (Fix 5) ────────────────────────────────────
 // Package labels the user photographs are ALWAYS raw / dry. So a logged
@@ -60,6 +62,32 @@ interface SearchResult {
   source?: string;
   source_url?: string;
   confidence?: 'high' | 'medium' | 'low';
+  serving_size?: string;            // what the numbers are for, e.g. "1 burger (219g)"
+  serving_g?: number | null;        // grams (or ml) the numbers are for, when known
+  serving_unit?: 'g' | 'ml';
+}
+
+// A typed number: accepts "1,5" and ignores junk; 0 when it isn't a number.
+function parseAmount(text: string | number | undefined | null): number {
+  const n = parseFloat(String(text ?? '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+const round1 = (n: number) => Math.round((Number(n) || 0) * 10) / 10;
+
+// What a result's numbers are for: the backend's serving_g, or a "(150g)",
+// "(250 ml)" or "(per 100g)" tag in the name. null → the numbers are for one
+// serving of unknown weight (a Big Mac, "1 cup"), so amounts are in servings.
+function servingBase(food: SearchResult): { amount: number; unit: 'g' | 'ml' } | null {
+  if (food.serving_g && food.serving_g > 0) return { amount: food.serving_g, unit: food.serving_unit || 'g' };
+  const m = food.name.match(/\((?:per\s+)?(\d+(?:\.\d+)?)\s*(g|ml)\)/i);
+  return m ? { amount: parseFloat(m[1]), unit: m[2].toLowerCase() as 'g' | 'ml' } : null;
+}
+
+// Where a logged entry's numbers came from — the server only re-checks AI estimates.
+function sourceOf(food: SearchResult): string {
+  if (food.is_ai_estimate) return 'ai';
+  return food.source === 'usda' ? 'usda' : 'database';
 }
 
 interface FavoriteMeal {
@@ -188,6 +216,18 @@ export default function FoodLog() {
     loadTodayLogs();
   }, [profile]);
 
+  // Coming back to the app on a new day → show the new day's log
+  const shownDay = useRef(localDateString());
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && localDateString() !== shownDay.current) {
+        shownDay.current = localDateString();
+        loadTodayLogs();
+      }
+    });
+    return () => sub.remove();
+  }, [profile]);
+
   useEffect(() => {
     // Load saved meals when search tab is active
     if (activeTab === 'search' && profile?.id) {
@@ -198,8 +238,9 @@ export default function FoodLog() {
   const loadTodayLogs = async () => {
     if (!profile?.id) return;
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateString();
       const response = await api.get(`/food/logs/${profile.id}?date=${today}`);
+      shownDay.current = today;
       setTodayLogs(response.data);
     } catch (error) {
       console.log('Error loading food logs:', error);
@@ -224,17 +265,18 @@ export default function FoodLog() {
   const logSavedMeal = async (meal: FavoriteMeal) => {
     if (!profile?.id) return;
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateString();
       await api.post('/food/log', {
         user_id: profile.id,
         food_name: meal.meal.name,
-        serving_size: '1 serving',
+        serving_size: (meal.meal as any).serving_size || '1 serving',
         calories: meal.meal.calories,
         protein: meal.meal.protein,
         carbs: meal.meal.carbs,
         fats: meal.meal.fats,
         meal_type: selectedMealType,
         logged_date: today,
+        source: 'saved',
       });
       Alert.alert('Success', `${meal.meal.name} logged!`);
       loadTodayLogs();
@@ -259,16 +301,20 @@ export default function FoodLog() {
   const saveSearchedFoodToFavorites = async (food: SearchResult, idx: number) => {
     if (!profile?.id) return;
     setSavingSearchFavorite(idx);
+    // The amount picked for this result, or one serving
+    const picked = selectedSearchIdx === idx
+      ? getScaledMacros(food, searchQty, customAmount)
+      : getScaledMacros(food, 1, '');
     try {
       await api.post('/food/favorite', null, {
         params: {
           user_id: profile.id,
           meal_name: food.name,
-          calories: food.calories,
-          protein: food.protein,
-          carbs: food.carbs,
-          fats: food.fats,
-          serving_size: '1 serving',
+          calories: picked.calories,
+          protein: picked.protein,
+          carbs: picked.carbs,
+          fats: picked.fats,
+          serving_size: picked.label,
         },
       });
       Alert.alert('Saved!', `${food.name} has been added to your favorites.`);
@@ -314,19 +360,26 @@ export default function FoodLog() {
     );
   };
 
+  const latestSearch = useRef('');
+  const [searchError, setSearchError] = useState('');
   const searchFood = async (query?: string) => {
     const q = (query ?? searchQuery).trim();
     if (!q || !profile?.id) return;
+    latestSearch.current = q;
     setSearching(true);
+    setSearchError('');
     setSearchResults([]);
     setAiResult(null);
     try {
       const response = await api.get(`/food/search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}`);
+      if (latestSearch.current !== q) return;   // a newer search has started
       setSearchResults(response.data);
     } catch (error) {
+      if (latestSearch.current !== q) return;
       console.log('Error searching food:', error);
+      setSearchError('Search isn\u2019t working right now. Check your connection, or try AI search or Add Manually.');
     } finally {
-      setSearching(false);
+      if (latestSearch.current === q) setSearching(false);
     }
   };
 
@@ -376,38 +429,36 @@ export default function FoodLog() {
     }
   };
 
-  // Extract serving grams from food name, e.g. "(100g)" → 100
-  const getServingGrams = (name: string): number => {
-    const m = name.match(/\((\d+)\s*g\)/i);
-    return m ? parseInt(m[1]) : 100;
-  };
-
-  const getScaledMacros = (food: SearchResult, qty: number, customGrams: string) => {
-    const grams = parseFloat(customGrams);
-    if (!isNaN(grams) && grams > 0) {
-      const scale = grams / getServingGrams(food.name);
-      return {
-        calories: Math.round(food.calories * scale),
-        protein:  Math.round(food.protein * scale * 10) / 10,
-        carbs:    Math.round(food.carbs * scale * 10) / 10,
-        fats:     Math.round(food.fats * scale * 10) / 10,
-        label:    `${grams}g`,
-      };
+  // Custom amount: grams/ml when we know what the numbers are for, otherwise
+  // a number of servings ("0.5", "1.5") — never grams of an unknown serving.
+  const getScaledMacros = (food: SearchResult, qty: number, customAmount: string) => {
+    const amount = parseAmount(customAmount);
+    const base = servingBase(food);
+    let scale = qty;
+    let label = qty === 1 ? '1 serving' : `${qty} servings`;
+    if (amount > 0) {
+      scale = base ? amount / base.amount : amount;
+      label = base ? `${amount}${base.unit}` : `${amount} serving${amount === 1 ? '' : 's'}`;
     }
     return {
-      calories: Math.round(food.calories * qty),
-      protein:  Math.round(food.protein * qty * 10) / 10,
-      carbs:    Math.round(food.carbs * qty * 10) / 10,
-      fats:     Math.round(food.fats * qty * 10) / 10,
-      label:    qty === 1 ? '1 serving' : `${qty} servings`,
+      calories: Math.round((Number(food.calories) || 0) * scale),
+      protein:  round1((Number(food.protein) || 0) * scale),
+      carbs:    round1((Number(food.carbs) || 0) * scale),
+      fats:     round1((Number(food.fats) || 0) * scale),
+      label,
     };
+  };
+
+  const customAmountLabel = (food: SearchResult) => {
+    const base = servingBase(food);
+    return base ? `or enter custom amount (${base.unit})` : 'or enter number of servings (e.g. 0.5)';
   };
 
   const logFoodWithCustom = async (food: SearchResult, qty: number, customGrams: string) => {
     if (!profile?.id) return;
     const scaled = getScaledMacros(food, qty, customGrams);
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateString();
       await api.post('/food/log', {
         user_id: profile.id,
         food_name: food.name,
@@ -418,6 +469,7 @@ export default function FoodLog() {
         fats: scaled.fats,
         meal_type: selectedMealType,
         logged_date: today,
+        source: sourceOf(food),
       });
       Alert.alert('Logged!', `${food.name} — ${scaled.calories} cal`);
       loadTodayLogs();
@@ -435,33 +487,6 @@ export default function FoodLog() {
   };
 
   const [quantity, setQuantity] = useState(1);
-
-  const logFood = async (food: SearchResult, qty: number = 1) => {
-    if (!profile?.id) return;
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      await api.post('/food/log', {
-        user_id: profile.id,
-        food_name: food.name,
-        serving_size: qty === 1 ? '1 serving' : `${qty} servings`,
-        calories: Math.round(food.calories * qty),
-        protein: Math.round(food.protein * qty * 10) / 10,
-        carbs: Math.round(food.carbs * qty * 10) / 10,
-        fats: Math.round(food.fats * qty * 10) / 10,
-        meal_type: selectedMealType,
-        logged_date: today,
-      });
-      Alert.alert('Logged!', `${qty > 1 ? `${qty}x ` : ''}${food.name} — ${Math.round(food.calories * qty)} cal`);
-      loadTodayLogs();
-      setSearchQuery('');
-      setSearchResults([]);
-      setSelectedSearchIdx(null);
-      setSearchQty(1);
-      setActiveTab('log');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to log food');
-    }
-  };
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -565,7 +590,7 @@ export default function FoodLog() {
   const logPhotoResult = async () => {
     if (!photoResult || !profile?.id) return;
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateString();
       await api.post('/food/log', {
         user_id: profile.id,
         food_name: photoResult.food_name,
@@ -576,6 +601,7 @@ export default function FoodLog() {
         fats: photoResult.fats,
         meal_type: selectedMealType,
         logged_date: today,
+        source: 'snap',
       });
       Alert.alert('Logged!', `${photoResult.food_name} — ${photoResult.calories} cal`);
       setCapturedImage(null);
@@ -594,28 +620,28 @@ export default function FoodLog() {
       Alert.alert('Required Fields', 'Please enter a food name');
       return;
     }
-    // Derive calories: if not set, auto-calc from macros
-    const rawCal = parseFloat(manualFood.calories) || 0;
-    const calFromMacros = (parseFloat(manualFood.protein)||0)*4 + (parseFloat(manualFood.carbs)||0)*4 + (parseFloat(manualFood.fats)||0)*9;
-    let finalCalories = rawCal > 0 ? rawCal : calFromMacros;
-    // Convert kJ → cal if needed
-    if (energyUnit === 'kj' && finalCalories > 0) finalCalories = Math.round(finalCalories / 4.184);
+    // Derive calories: if not set, auto-calc from macros (already in calories)
+    const p = parseAmount(manualFood.protein), c = parseAmount(manualFood.carbs), f = parseAmount(manualFood.fats);
+    const rawEnergy = parseAmount(manualFood.calories);
+    const typedCal = energyUnit === 'kj' ? rawEnergy / 4.184 : rawEnergy;   // only typed kJ is converted
+    const finalCalories = Math.round(typedCal > 0 ? typedCal : p * 4 + c * 4 + f * 9);
     if (finalCalories === 0) {
       Alert.alert('Required Fields', 'Please enter calories or at least one macro');
       return;
     }
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateString();
       await api.post('/food/log', {
         user_id: profile.id,
         food_name: manualFood.name,
         serving_size: `${quantity} serving(s)`,
         calories: Math.round(finalCalories * quantity),
-        protein: parseFloat(manualFood.protein || '0') * quantity,
-        carbs: parseFloat(manualFood.carbs || '0') * quantity,
-        fats: parseFloat(manualFood.fats || '0') * quantity,
+        protein: round1(p * quantity),
+        carbs: round1(c * quantity),
+        fats: round1(f * quantity),
         meal_type: selectedMealType,
         logged_date: today,
+        source: 'manual',
       });
       Alert.alert('Logged!', `${manualFood.name} — ${Math.round(finalCalories * quantity)} cal`);
       setManualFood({ name: '', calories: '', protein: '', carbs: '', fats: '' });
@@ -648,10 +674,10 @@ export default function FoodLog() {
 
   const totalNutrition = todayLogs.reduce(
     (acc, log) => ({
-      calories: acc.calories + log.calories,
-      protein: acc.protein + log.protein,
-      carbs: acc.carbs + log.carbs,
-      fats: acc.fats + log.fats,
+      calories: acc.calories + (Number(log.calories) || 0),
+      protein: round1(acc.protein + (Number(log.protein) || 0)),
+      carbs: round1(acc.carbs + (Number(log.carbs) || 0)),
+      fats: round1(acc.fats + (Number(log.fats) || 0)),
     }),
     { calories: 0, protein: 0, carbs: 0, fats: 0 }
   );
@@ -1113,21 +1139,21 @@ export default function FoodLog() {
                               onPress={() => logFoodWithCustom(food, searchQty, customAmount)}
                             >
                               <Text style={styles.inlineAddBtnText}>
-                                Add {customAmount ? `(${customAmount}g)` : searchQty > 1 ? `×${searchQty}` : ''}
+                                Add {parseAmount(customAmount) > 0 ? `(${scaled.label})` : searchQty > 1 ? `×${searchQty}` : ''}
                               </Text>
                             </TouchableOpacity>
                           </View>
 
                           {/* Custom gram input */}
                           <View style={styles.customAmountRow}>
-                            <Text style={styles.customAmountLabel}>or enter custom amount (g/ml)</Text>
+                            <Text style={styles.customAmountLabel}>{customAmountLabel(food)}</Text>
                             <TextInput
                               style={styles.customAmountInput}
-                              placeholder="e.g. 150"
+                              placeholder={servingBase(food) ? 'e.g. 150' : 'e.g. 1.5'}
                               placeholderTextColor={colors.textMuted}
                               value={customAmount}
                               onChangeText={setCustomAmount}
-                              keyboardType="numeric"
+                              keyboardType="decimal-pad"
                             />
                           </View>
                         </>
@@ -1175,7 +1201,7 @@ export default function FoodLog() {
             {!searching && searchQuery.trim() !== '' && searchResults.length === 0 && !aiResult && (
               <View style={styles.emptySearchState}>
                 <Ionicons name="search-outline" size={40} color={colors.textMuted} />
-                <Text style={styles.emptySearchTitle}>No results for "{searchQuery}"</Text>
+                <Text style={styles.emptySearchTitle}>{searchError || `No results for "${searchQuery}"`}</Text>
                 <TouchableOpacity
                   style={styles.aiSearchBtn}
                   onPress={searchWithAI}
@@ -1247,6 +1273,11 @@ export default function FoodLog() {
                           ? (() => { const s = getScaledMacros(aiResult, searchQty, customAmount); return `${s.calories} cal • ${s.protein}g P • ${s.carbs}g C • ${s.fats}g F`; })()
                           : `${aiResult.calories} cal • ${aiResult.protein}g P • ${aiResult.carbs}g C • ${aiResult.fats}g F`}
                       </Text>
+                      {!!aiResult.serving_size && aiResult.serving_size !== 'unknown' && (
+                        <Text style={styles.aiSourceText} numberOfLines={1}>
+                          Per {aiResult.serving_size}
+                        </Text>
+                      )}
                       {/* Low-confidence warning */}
                       {aiResult.confidence === 'low' && (
                         <Text style={styles.aiLowConfidenceWarning}>
@@ -1303,19 +1334,19 @@ export default function FoodLog() {
                           onPress={() => logFoodWithCustom(aiResult, searchQty, customAmount)}
                         >
                           <Text style={styles.inlineAddBtnText}>
-                            Add {customAmount ? `(${customAmount}g)` : searchQty > 1 ? `×${searchQty}` : ''}
+                            Add {parseAmount(customAmount) > 0 ? `(${getScaledMacros(aiResult, searchQty, customAmount).label})` : searchQty > 1 ? `×${searchQty}` : ''}
                           </Text>
                         </TouchableOpacity>
                       </View>
                       <View style={styles.customAmountRow}>
-                        <Text style={styles.customAmountLabel}>or enter custom amount (g/ml)</Text>
+                        <Text style={styles.customAmountLabel}>{customAmountLabel(aiResult)}</Text>
                         <TextInput
                           style={styles.customAmountInput}
-                          placeholder="e.g. 150"
+                          placeholder={servingBase(aiResult) ? 'e.g. 150' : 'e.g. 1.5'}
                           placeholderTextColor={colors.textMuted}
                           value={customAmount}
                           onChangeText={setCustomAmount}
-                          keyboardType="numeric"
+                          keyboardType="decimal-pad"
                         />
                       </View>
                     </>

@@ -239,27 +239,39 @@ async def search_usda(query: str, max_results: int = 50):
                 carbs = nutrients.get("Carbohydrate, by difference", 0)
                 fats = nutrients.get("Total lipid (fat)", 0)
                 
-                # Get serving size info
-                serving = food.get("servingSize", "")
-                serving_unit = food.get("servingSizeUnit", "")
-                serving_info = f"{serving}{serving_unit}" if serving and serving_unit else "per 100g"
-                
+                # Search results give nutrients per 100 g (or 100 ml) for every
+                # data type. A branded food's label serving ("45g") is shown,
+                # so its numbers are scaled to that serving to match the label.
+                base_g, unit = 100.0, "g"
+                try:
+                    serving = float(food.get("servingSize") or 0)
+                except (TypeError, ValueError):
+                    serving = 0
+                serving_unit = str(food.get("servingSizeUnit") or "").lower()
+                serving_unit = {"grm": "g", "gm": "g", "mlt": "ml", "mlit": "ml"}.get(serving_unit, serving_unit)
+                if food.get("dataType") == "Branded" and serving > 0 and serving_unit in ("g", "ml"):
+                    base_g, unit = round(serving, 1), serving_unit
+                factor = base_g / 100.0
+                base_txt = f"{int(base_g) if float(base_g).is_integer() else base_g}{unit}"
+
                 brand = food.get("brandName", "") or food.get("brandOwner", "")
                 food_name = food.get("description", "Unknown")
-                
+
                 # Clean up the name
                 if brand and brand.lower() not in food_name.lower():
                     display_name = f"{brand} - {food_name}"
                 else:
                     display_name = food_name
-                
+
                 results.append({
-                    "name": f"{display_name} ({serving_info})",
+                    "name": f"{display_name} ({base_txt})",
                     "brand": brand,
-                    "calories": round(calories, 0),
-                    "protein": round(protein, 1),
-                    "carbs": round(carbs, 1),
-                    "fats": round(fats, 1),
+                    "calories": round(calories * factor, 0),
+                    "protein": round(protein * factor, 1),
+                    "carbs": round(carbs * factor, 1),
+                    "fats": round(fats * factor, 1),
+                    "serving_g": base_g,
+                    "serving_unit": unit,
                     "food_id": str(food.get("fdcId", "")),
                     "source": "usda"
                 })
@@ -3532,6 +3544,9 @@ class FoodLogRequest(BaseModel):
     meal_type: str
     logged_date: str
     image_base64: Optional[str] = None
+    # Where the numbers came from: "database", "usda", "ai", "snap", "manual",
+    # "saved". Only AI estimates (or older apps that don't say) are corrected.
+    source: Optional[str] = None
 
 class FoodImageAnalyzeRequest(BaseModel):
     user_id: str
@@ -3544,6 +3559,7 @@ class FoodImageAnalyzeRequest(BaseModel):
     # same parser: the typed text, a structured amount, or grams.
     portion_text: Optional[str] = None
     portion_amount: Optional[float] = None
+    logged_date: Optional[str] = None   # the user's local day; server date if missing
     portion_unit: Optional[str] = None  # "grams" | "servings" | "count" | a unit noun ("egg")
     portion_g: Optional[float] = None
     quantity: int = 1
@@ -6197,7 +6213,22 @@ def _is_safe_reference_fallback(food_name: str) -> bool:
         return False
     return n in _SAFE_FALLBACK_FOODS
 
-def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = None) -> tuple[dict, list[str]]:
+# Drinks whose calories come mostly from alcohol (7 kcal/g, not in P/C/F):
+# their calories can't be checked against protein/carbs/fat.
+_ALCOHOL_RE = re.compile(
+    r"\b(beer|lager|ale|stout|ipa|pilsner|cider|wine|champagne|prosecco|sparkling wine|vodka|gin|rum|"
+    r"whisk(?:e)?y|bourbon|scotch|tequila|brandy|cognac|liqueur|sake|soju|cocktail|margarita|mojito|"
+    r"martini|negroni|daiquiri|spritz|aperol|sangria|seltzer|alcoholic|rtd|bacardi|smirnoff|jack daniel)s?\b",
+    re.I)
+
+
+def _is_alcoholic(name: str) -> bool:
+    n = name or ""
+    return bool(_ALCOHOL_RE.search(n)) and not re.search(r"\b(vinegar|non[- ]?alcoholic|alcohol[- ]free|0\.0%?|ginger)\b", n, re.I)
+
+
+def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = None,
+                        reconcile: bool = True) -> tuple[dict, list[str]]:
     """Guardrail applied to every food entry before it's saved / returned.
 
     Applies Fix 1 (deterministic calorie reconciliation), Fix 2 (physical
@@ -6233,8 +6264,15 @@ def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = N
     # Fix 8 structured-portion path was built to honour are preserved.
     is_label = str(entry.get("energy_source", "")).lower() == "label"
     _cal_tol = 0.30 if is_label else 0.10
-    derived = protein * 4 + carbs * 4 + fats * 9
-    if derived > 0:
+    fiber = _f("fiber", _f("fiber_g"))
+    # Fibre counts ~2 kcal/g, not 4 (high-fibre bars, vegetables)
+    if 0 < fiber <= carbs:
+        derived = protein * 4 + (carbs - fiber) * 4 + fiber * 2 + fats * 9
+    else:
+        derived = protein * 4 + carbs * 4 + fats * 9
+    if _is_alcoholic(fname):
+        reconcile = False   # alcohol calories aren't in protein/carbs/fat
+    if derived > 0 and reconcile:
         gap = abs(stated - derived) / max(stated, 1.0)
         if gap > _cal_tol:
             corrected = round(derived)
@@ -6389,7 +6427,7 @@ async def _log_plated_meal(request, food_data: dict, raw_items: list, specs: lis
         serving_size=f"{tot['grams']}g",
         calories=tot["calories"], protein=tot["protein"], carbs=tot["carbs"], fats=tot["fats"],
         meal_type=request.meal_type,
-        logged_date=datetime.now().strftime("%Y-%m-%d"),
+        logged_date=request.logged_date or datetime.now().strftime("%Y-%m-%d"),
         image_base64=request.image_base64[:100] + "...",
     )
     if not request.preview:
@@ -6876,7 +6914,7 @@ For labels, the `calories/protein/carbs/fats` top-level fields describe ONE labe
             sugar=float(food_data.get("sugar", 0)) * qty,
             sodium=float(food_data.get("sodium", 0)) * qty,
             meal_type=request.meal_type,
-            logged_date=datetime.now().strftime("%Y-%m-%d"),
+            logged_date=request.logged_date or datetime.now().strftime("%Y-%m-%d"),
             image_base64=request.image_base64[:100] + "..."  # Store truncated for reference
         )
 
@@ -6988,8 +7026,9 @@ async def log_food(request: FoodLogRequest):
     # known reference (Fix 4). Manual entries can't be retried, so we
     # deterministically correct the calorie total in place.
     payload = request.model_dump()
+    source = (payload.pop("source", None) or "").lower()
     portion_g = grams_in_text(payload.get("serving_size", ""), payload.get("food_name", ""))
-    sanitize_food_entry(payload, portion_g=portion_g)
+    sanitize_food_entry(payload, portion_g=portion_g, reconcile=source in ("", "ai"))
     food_entry = FoodEntry(**payload)
     await db.food_logs.insert_one(food_entry.model_dump())
     return food_entry
@@ -7561,9 +7600,9 @@ async def search_foods(query: str, user_id: str):
             "fats":     float(_r.get("fats", 0)),
         }
         _portion = grams_in_text(_r.get("name", ""), _r.get("name", ""))
-        sanitize_food_entry(_tmp, portion_g=_portion)
-        if _tmp["calories"] != _r.get("calories"):
-            _r["calories"] = _tmp["calories"]
+        # Built-in and USDA values are trusted: food-specific energy factors and
+        # fibre mean they rightly differ from 4/4/9 — warnings only, no rewrite
+        sanitize_food_entry(_tmp, portion_g=_portion, reconcile=False)
     return combined_results[:50]
 
 @api_router.get("/food/ai-search")
@@ -7651,12 +7690,17 @@ async def ai_food_search(query: str, user_id: str):
         sanitize_food_entry(_tmp, portion_g=portion_g)
         data["calories"] = _tmp["calories"]
 
+    serving_size = str(data.get("serving_size") or "")
+    serving_g = grams_in_text(serving_size, data.get("food_name", "")) or None
     return {
         "name":           data.get("food_name", query.title()),
         "calories":       round(float(data.get("calories", 0))),
         "protein":        round(float(data.get("protein_g", 0)), 1),
         "carbs":          round(float(data.get("carbs_g", 0)), 1),
         "fats":           round(float(data.get("fat_g", 0)), 1),
+        "serving_size":   serving_size,
+        "serving_g":      serving_g,
+        "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
         "is_ai_estimate": True,
         "verified":       False,
         "source":         data.get("source", "AI estimate"),
@@ -7753,18 +7797,24 @@ async def web_food_search(query: str, user_id: str):
             "protein_g": float(data.get("protein_g", 0)),
             "carbs_g":   float(data.get("carbs_g", 0)),
             "fat_g":     float(data.get("fat_g", 0)),
+            "fiber_g":   float(data.get("fiber_g", 0) or 0),
         }
         portion_g = grams_in_text(data.get("serving_size", ""),
                                            data.get("food_name", ""))
         sanitize_food_entry(_tmp, portion_g=portion_g)
         data["calories"] = _tmp["calories"]
         domain = urlparse(source_url).netloc.replace("www.", "") if source_url else "web"
+        serving_size = str(data.get("serving_size") or "")
+        serving_g = grams_in_text(serving_size, data.get("food_name", "")) or None
         return {
             "name":           data.get("food_name", query.title()),
             "calories":       round(float(data.get("calories", 0))),
             "protein":        round(float(data.get("protein_g", 0)), 1),
             "carbs":          round(float(data.get("carbs_g", 0)), 1),
             "fats":           round(float(data.get("fat_g", 0)), 1),
+            "serving_size":   serving_size,
+            "serving_g":      serving_g,
+            "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
             "is_ai_estimate": True,
             "verified":       True,
             "source":         domain,
