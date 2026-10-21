@@ -381,3 +381,34 @@ def test_changing_the_answer_updates_targets(db):
     assert db.profiles.docs[0]["calculated_macros"]["protein"] == 171
     run(server.update_profile("u", server.UserProfileUpdate(mostly_muscle=True)))
     assert db.profiles.docs[0]["calculated_macros"]["protein"] == 240
+
+
+# ── body analyzer prompt ─────────────────────────────────────────────────
+def test_body_analysis_prompt_and_retry_keep_context(db, monkeypatch):
+    db.profiles.docs.append({"id": "u", "weight": 80, "height": 180, "age": 30, "gender": "male",
+                             "goal": "weight_loss", "calorie_adjustment": -100,
+                             "calculated_macros": {"calories": 2207, "protein": 176}})
+    db.body_analyses = Coll()
+
+    async def paid(_uid):
+        return {"has_access": True}
+    monkeypatch.setattr(server, "check_subscription_access", paid)
+    calls = []
+
+    async def fake(**kw):
+        calls.append(kw)
+        if len(calls) == 1:
+            return "Sure! Here's your analysis: not json"
+        return '{"overall_assessment": "ok", "estimated_progress_score": 6, "analysis_confidence": "medium"}'
+    monkeypatch.setattr(server, "call_claude_sonnet", fake)
+
+    req = server.BodyAnalysisRequest(user_id="u", before_image_base64="b", after_image_base64="a",
+                                     time_period="3 months")
+    out = run(server.analyze_body_progress(req))
+    assert out["analysis"]["estimated_progress_score"] == 6
+    first, retry = calls
+    assert "FIRST image is BEFORE" in first["system_message"] and "Image 1 is BEFORE" in first["user_message"]
+    assert "2107 kcal, 176g protein" in first["system_message"]          # target incl. adjustment
+    assert "under 18" in first["system_message"]
+    assert retry["system_message"].startswith(first["system_message"])   # retry keeps all context
+    assert first["temperature"] == retry["temperature"] == 0.3

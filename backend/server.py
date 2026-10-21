@@ -8791,6 +8791,10 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
         if age:    ctx_lines.append(f"Age: {age}")
         ctx_lines.append(f"Gender: {gender}")
         ctx_lines.append(f"Training goal: {goal.replace('_', ' ')}")
+        m = profile.get("calculated_macros") or {}
+        if m.get("calories"):
+            cal = round(m["calories"] + (profile.get("calorie_adjustment") or 0))
+            ctx_lines.append(f"App daily targets: {cal} kcal, {round(m.get('protein', 0))}g protein")
 
         goal_framing = {
             "weight_loss":     "visible fat loss while preserving muscle",
@@ -8809,9 +8813,10 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
 
     user_context = "\n".join(ctx_lines)
 
+    body_system_prompt = None
     try:
         content = await call_claude_sonnet(
-            system_message=f"""You are a professional fitness coach and body composition expert analysing before/after progress photos.
+            system_message=(body_system_prompt := f"""You are a professional fitness coach and body composition expert analysing before/after progress photos.
 
 USER CONTEXT:
 {user_context}
@@ -8830,6 +8835,25 @@ Provide a body fat % ESTIMATE as a range (e.g. "18-21%") for each photo. Prefix 
 
 Be encouraging but HONEST. Do not inflate scores. If there is little change, say so and give specific actionable next steps.
 
+The FIRST image is BEFORE and the SECOND image is AFTER. Compare like with like (same angle,
+lighting, pump/flex); if the photos differ a lot in angle, lighting or clothing, say so and lower
+analysis_confidence.
+
+RECOMMENDATIONS: practical training, nutrition, sleep and consistency steps. If the user's app
+daily targets are given above, keep nutrition advice in line with them (e.g. "keep hitting your
+protein target") — never give a different calorie or protein number, never suggest crash diets,
+fasting protocols, supplements beyond basics, or drugs.
+
+SAFETY:
+- Describe the body neutrally and respectfully. No comments on attractiveness; no shaming words.
+- If the person appears to be under 18, do not analyse body fat or score — set
+  estimated_progress_score to 0, analysis_confidence to "low", and kindly say the analysis is
+  for adults.
+- If the photos suggest the person may be underweight or unwell, do not praise further fat loss;
+  gently encourage them to check in with a doctor or dietitian.
+- If the images are not two photos of a person's body, say so in overall_assessment, set
+  estimated_progress_score to 0 and analysis_confidence to "low".
+
 Respond with valid JSON only — no markdown fences:
 {{
     "overall_assessment": "2-3 sentence assessment calibrated to the user's goal and stats",
@@ -8841,9 +8865,10 @@ Respond with valid JSON only — no markdown fences:
     "motivation_message": "Encouraging but honest message",
     "estimated_progress_score": 8,
     "analysis_confidence": "high | medium | low"
-}}""",
-            user_message=f"Analyze these before and after progress photos taken over {request.time_period}. Provide the full JSON response per the system prompt.",
+}}"""),
+            user_message=f"Image 1 is BEFORE, image 2 is AFTER, taken {request.time_period} apart. Analyse them and return the full JSON response per the system prompt.",
             max_tokens=1200,
+            temperature=0.3,   # consistent scores for the same photos
             image_base64=request.before_image_base64,
             image_base64_2=request.after_image_base64
         )
@@ -8881,8 +8906,9 @@ Respond with valid JSON only — no markdown fences:
         # One retry with a stricter instruction
         try:
             retry_content = await call_claude_sonnet(
-                system_message="You MUST respond with valid JSON only — no markdown, no prose. Retry the body analysis.",
-                user_message=f"Re-analyze these photos and return ONLY the JSON object with fields: overall_assessment, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). Taken over {request.time_period}.",
+                system_message=(body_system_prompt or "") + "\n\nYou MUST respond with valid JSON only — no markdown, no prose.",
+                temperature=0.3,
+                user_message=f"Image 1 is BEFORE, image 2 is AFTER. Re-analyse these photos and return ONLY the JSON object with fields: overall_assessment, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). Taken over {request.time_period}.",
                 max_tokens=1000,
                 image_base64=request.before_image_base64,
                 image_base64_2=request.after_image_base64
