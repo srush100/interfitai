@@ -38,6 +38,17 @@ interface SavedNote {
   created_at: string;
 }
 
+// Replies are asked for in plain text; tidy any stray markdown (bold, headings,
+// "* " bullets) so older answers don't show raw symbols.
+function plainText(text: string): string {
+  return (text || '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/^\s*\*\s+/gm, '- ')
+    .replace(/`([^`]+)`/g, '$1');
+}
+
 export default function AskAIScreen() {
   const { profile } = useUserStore();
   const router = useRouter();
@@ -154,9 +165,11 @@ export default function AskAIScreen() {
         { ...tempUserMsg },
         response.data,
       ]);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to get response. Please try again.');
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      Alert.alert('Couldn\u2019t send', detail?.message || 'Failed to get a response. Please try again.');
       setMessages((prev) => prev.slice(0, -1));
+      setInput(userMessage);   // keep what they typed
     } finally {
       setLoading(false);
     }
@@ -608,7 +621,7 @@ export default function AskAIScreen() {
                     message.role === 'user' && styles.userMessageText,
                   ]}
                 >
-                  {message.content}
+                  {message.role === 'assistant' ? plainText(message.content) : message.content}
                 </Text>
               </View>
             ))

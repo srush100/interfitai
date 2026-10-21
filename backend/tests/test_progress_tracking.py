@@ -39,6 +39,8 @@ def _match(doc, q):
                 return False
             if "$gte" in cond and not any(v is not None and v >= cond["$gte"] for v in vals):
                 return False
+            if "$ne" in cond and cond["$ne"] in vals:
+                return False
         elif cond not in vals:
             return False
     return True
@@ -77,6 +79,9 @@ class Coll:
 
     async def insert_one(self, doc):
         self.docs.append(copy.deepcopy(doc))
+
+    async def count_documents(self, q):
+        return len([d for d in self.docs if _match(d, q)])
 
     async def update_one(self, q, upd):
         for d in self.docs:
@@ -412,3 +417,96 @@ def test_body_analysis_prompt_and_retry_keep_context(db, monkeypatch):
     assert "under 18" in first["system_message"]
     assert retry["system_message"].startswith(first["system_message"])   # retry keeps all context
     assert first["temperature"] == retry["temperature"] == 0.3
+
+
+# ── Ask AI chat ──────────────────────────────────────────────────────────
+class _FakeChat:
+    seen = []
+    fail = False
+
+    def __init__(self, api_key=None, session_id=None, system_message=None, initial_messages=None):
+        _FakeChat.seen.append(initial_messages)
+
+    def with_model(self, *a):
+        return self
+
+    def with_params(self, **k):
+        return self
+
+    async def send_message(self, msg):
+        if _FakeChat.fail:
+            raise RuntimeError("upstream budget exceeded: key sk-123")
+        return "Aim for your 176g protein target."
+
+
+@pytest.fixture
+def chat_env(db, monkeypatch):
+    db.chat_history = Coll()
+    _FakeChat.seen, _FakeChat.fail = [], False
+    monkeypatch.setattr(server, "LlmChat", _FakeChat)
+    access = {"has_access": True}
+
+    async def check(_uid):
+        return access
+    monkeypatch.setattr(server, "check_subscription_access", check)
+    db.profiles.docs.append({"id": "u", "age": 30, "gender": "male", "height": 180, "weight": 80,
+                             "activity_level": "moderate", "goal": "weight_loss", "calorie_adjustment": -100,
+                             "calculated_macros": {"calories": 2207, "protein": 176, "carbs": 239, "fats": 61}})
+    db.workouts.docs.append({"user_id": "u", "name": "Fat Loss Plan", "days_per_week": 4,
+                             "session_duration_minutes": 45, "fitness_level": "intermediate",
+                             "injuries": ["knee pain"], "created_at": datetime(2026, 10, 1)})
+    return db, access
+
+
+def _chat(text="How much protein should I eat?"):
+    return run(server.chat_with_ai(server.ChatRequest(user_id="u", message=text)))
+
+
+def test_chat_knows_the_apps_targets_and_injuries(chat_env):
+    reply = _chat()
+    system = _FakeChat.seen[0][0]["content"]
+    assert "2107 kcal, 176g protein, 214g carbs, 61g fat" in system
+    assert "knee pain" in system and "never invent different numbers" in system
+    assert "steroids" in system and "1,200 kcal" in system
+    assert reply.content.startswith("Aim for")
+
+
+def test_chat_needs_premium(chat_env):
+    _, access = chat_env
+    access["has_access"] = False
+    with pytest.raises(HTTPException) as e:
+        _chat()
+    assert e.value.status_code == 403
+
+
+def test_chat_daily_limit(chat_env):
+    db, _ = chat_env
+    for _ in range(server.CHAT_DAILY_LIMIT):
+        db.chat_history.docs.append({"user_id": "u", "role": "user", "content": "x", "created_at": datetime.utcnow()})
+    with pytest.raises(HTTPException) as e:
+        _chat()
+    assert e.value.status_code == 429
+
+
+def test_removed_messages_dont_steer_answers(chat_env):
+    db, _ = chat_env
+    db.chat_history.docs += [
+        {"user_id": "u", "role": "user", "content": "hidden question", "chat_visible": False, "created_at": datetime.utcnow()},
+        {"user_id": "u", "role": "user", "content": "visible question", "created_at": datetime.utcnow()},
+    ]
+    _chat()
+    contents = [m["content"] for m in _FakeChat.seen[0][1:]]
+    assert "visible question" in contents and "hidden question" not in contents
+
+
+def test_chat_errors_are_friendly(chat_env):
+    _FakeChat.fail = True
+    with pytest.raises(HTTPException) as e:
+        _chat()
+    assert e.value.status_code == 503 and "sk-123" not in str(e.value.detail)
+
+
+def test_chat_rejects_huge_messages(chat_env):
+    with pytest.raises(HTTPException) as e:
+        _chat("x" * 5000)
+    assert e.value.status_code == 400

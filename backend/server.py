@@ -8009,40 +8009,104 @@ async def generate_grocery_list(meal_plan_id: str, days: int = 7):
 
 # ==================== ASK INTERFITAI CHAT ENDPOINTS ====================
 
+CHAT_DAILY_LIMIT = 60          # messages per user per 24 hours
+CHAT_MAX_MESSAGE_CHARS = 2000
+
+
+async def _chat_user_context(user_id: str, profile: Optional[dict]) -> str:
+    """What the coach knows about the user: stats, the app's own daily targets,
+    and their current program (including injuries)."""
+    if not profile:
+        return ""
+    lines = []
+    for label, key, unit in (("Age", "age", ""), ("Gender", "gender", ""), ("Height", "height", " cm"),
+                             ("Weight", "weight", " kg"), ("Activity level", "activity_level", "")):
+        if profile.get(key):
+            lines.append(f"{label}: {profile[key]}{unit}")
+    if profile.get("goal"):
+        lines.append(f"Nutrition goal: {str(profile['goal']).replace('_', ' ')}")
+    if profile.get("unit_preference") == "lbs":
+        lines.append("Prefers pounds (lbs) for weights")
+    m = profile.get("calculated_macros") or {}
+    if m.get("calories"):
+        adj = profile.get("calorie_adjustment") or 0
+        lines.append(f"App daily targets: {round(m['calories'] + adj)} kcal, {round(m.get('protein', 0))}g protein, "
+                     f"{round(m.get('carbs', 0) + adj / 4)}g carbs, {round(m.get('fats', 0))}g fat")
+    program = await db.workouts.find_one({"user_id": user_id}, sort=[("created_at", -1)])
+    if program:
+        lines.append(f"Current program: {program.get('name', '')} — {program.get('days_per_week', '?')} days/week, "
+                     f"{program.get('session_duration_minutes', '?')} min sessions, level {program.get('fitness_level', '?')}")
+        if program.get("injuries"):
+            lines.append(f"Injuries / limitations: {', '.join(program['injuries'])}")
+    lines.append(f"Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}")
+    return "\n".join(lines)
+
+
+CHAT_SYSTEM_PROMPT = """You are InterFitAI, the user's AI fitness and nutrition coach inside the InterFitAI app. You help with training, exercise technique, nutrition, recovery, habits and motivation.
+
+USER:
+{context}
+
+RULES
+- Use the user's details above. When they ask about calories, protein or macros, use the APP DAILY TARGETS above — never invent different numbers. If they want to change them, tell them they can adjust calories in Profile → Daily targets.
+- Respect their injuries/limitations: suggest safe alternatives and tell them to stop anything that causes pain.
+- Evidence-based advice only. Food first. You may mention well-established basics (protein powder, creatine monohydrate, caffeine, vitamin D) with normal doses. Never recommend steroids, SARMs, prohormones, fat burners, diuretics, or any prescription drug, and never give dosing for them.
+- Never suggest crash diets, eating under 1,200 kcal (women) or 1,500 kcal (men), purging, or extreme fasting.
+- You are not a doctor. For chest pain, fainting, injuries that don't improve, pregnancy, medical conditions or medications, give general guidance only and recommend seeing a doctor or physio. If the user mentions disordered eating, self-harm or thoughts of hurting themselves, respond with care, don't give diet advice, and encourage them to contact a health professional or a local support line (e.g. Butterfly Foundation 1800 33 4673 in Australia, Lifeline 13 11 14).
+- If the user seems under 18, keep advice general and safe and encourage involving a parent, coach or doctor.
+- Stay on fitness, nutrition, health habits and using the app. Politely decline unrelated requests.
+
+STYLE
+- Friendly, direct, encouraging. Usually under 150 words unless they ask for detail or a full plan.
+- Plain text. Short paragraphs; use simple "- " bullet lines for lists. No markdown headings, bold or tables."""
+
+
 @api_router.post("/chat", response_model=ChatMessage)
 async def chat_with_ai(request: ChatRequest):
     """Chat with InterFitAI for fitness and health questions"""
+    # Paid AI feature: checked on the server, with a daily cap to control cost
+    access = await check_subscription_access(request.user_id)
+    if not access.get("has_access"):
+        raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Ask InterFitAI",
+                                                     "message": "Ask InterFitAI is a premium feature. Start your free trial to unlock it."})
+    message = (request.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail={"error": "empty_message", "message": "Type a question first."})
+    if len(message) > CHAT_MAX_MESSAGE_CHARS:
+        raise HTTPException(status_code=400, detail={"error": "message_too_long",
+                                                     "message": f"Please keep messages under {CHAT_MAX_MESSAGE_CHARS} characters."})
+    sent_today = await db.chat_history.count_documents({
+        "user_id": request.user_id, "role": "user",
+        "created_at": {"$gte": datetime.utcnow() - timedelta(hours=24)},
+    })
+    if sent_today >= CHAT_DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail={"error": "daily_limit",
+                                                     "message": "You've reached today's message limit. It resets within 24 hours."})
+
     # Get user context for personalized responses
     profile = await db.profiles.find_one({"id": request.user_id})
-    
-    # Get recent chat history
-    history = await db.chat_history.find({"user_id": request.user_id}).sort("created_at", -1).limit(10).to_list(10)
+
+    # Recent conversation the user can still see (removed messages don't steer answers)
+    history = await db.chat_history.find(
+        {"user_id": request.user_id, "chat_visible": {"$ne": False}}
+    ).sort("created_at", -1).limit(10).to_list(10)
     history.reverse()
-    
+
     messages = [
         {
             "role": "system",
-            "content": f"""You are InterFitAI, an expert AI fitness and nutrition coach. You help users with:
-- Workout advice and exercise form
-- Nutrition guidance and meal suggestions
-- Weight management strategies
-- Supplement recommendations
-- Recovery and injury prevention
-- Mental fitness and motivation
-
-{"User context: " + f"Goal: {profile.get('goal', 'general fitness')}, Weight: {profile.get('weight', 'unknown')}kg, Activity level: {profile.get('activity_level', 'moderate')}" if profile else ""}
-
-Be helpful, encouraging, and provide evidence-based advice. Keep responses concise but informative."""
+            "content": CHAT_SYSTEM_PROMPT.format(
+                context=await _chat_user_context(request.user_id, profile) or "(no profile details yet)"),
         }
     ]
-    
+
     # Add chat history
     for msg in history:
         messages.append({"role": msg["role"], "content": msg["content"]})
-    
+
     # Add current message
-    messages.append({"role": "user", "content": request.message})
-    
+    messages.append({"role": "user", "content": message})
+
     try:
         # Build initial_messages = system + history (without current user message)
         initial_messages = messages[:-1]
@@ -8054,23 +8118,23 @@ Be helpful, encouraging, and provide evidence-based advice. Keep responses conci
                 initial_messages=initial_messages,
             )
             .with_model("anthropic", "claude-haiku-4-5-20251001")
-            .with_params(temperature=0.7, max_tokens=1000)
+            .with_params(temperature=0.5, max_tokens=1000, timeout=60)
         )
-        ai_response = await chat.send_message(UserMessage(text=request.message))
-        
-        # Save user message
-        user_msg = ChatMessage(user_id=request.user_id, role="user", content=request.message)
-        await db.chat_history.insert_one(user_msg.model_dump())
-        
-        # Save AI response
-        ai_msg = ChatMessage(user_id=request.user_id, role="assistant", content=ai_response)
-        await db.chat_history.insert_one(ai_msg.model_dump())
-        
-        return ai_msg
-        
+        ai_response = await chat.send_message(UserMessage(text=message))
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+        raise HTTPException(status_code=503, detail={"error": "chat_unavailable",
+                                                     "message": "The coach couldn't answer just now. Please try again in a moment."})
+
+    # Save user message
+    user_msg = ChatMessage(user_id=request.user_id, role="user", content=message)
+    await db.chat_history.insert_one(user_msg.model_dump())
+
+    # Save AI response
+    ai_msg = ChatMessage(user_id=request.user_id, role="assistant", content=ai_response)
+    await db.chat_history.insert_one(ai_msg.model_dump())
+
+    return ai_msg
 
 @api_router.get("/chat/history/{user_id}")
 async def get_chat_history(user_id: str, limit: int = 50):
