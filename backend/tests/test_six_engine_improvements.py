@@ -368,13 +368,15 @@ class TestImprovement3FocusVolumeBoost:
 
     def test_chest_focus_primary_compound_has_5_sets(self, chest_focus_workout):
         """
-        With focus_areas=['chest'], horizontal_push (primary_compound) must have sets >= 5
-        (base 4 for build_muscle primary_compound + 1 boost = 5)
+        With focus_areas=['chest'], horizontal_push (primary_compound) gets the
+        intermediate maximum of 4 sets — the focus boost never exceeds the level's
+        own per-exercise cap (SETS_PER_EXERCISE). The chest focus shows up as an
+        extra boosted incline press instead.
         """
         days = chest_focus_workout.get("workout_days", [])
         assert len(days) == 4, f"Expected 4 days, got {len(days)}"
 
-        # upper_lower 4-day build_muscle: Day 1 = upper_push_heavy
+        # chest focus at 4 days picks Push / Pull / Legs: Day 1 = push_session
         day1_exercises = days[0].get("exercises", [])
         day1_label = days[0].get("day", "Day 1")
 
@@ -387,15 +389,15 @@ class TestImprovement3FocusVolumeBoost:
 
         assert len(day1_exercises) >= 2, f"Expected >= 2 exercises in Day 1, got {len(day1_exercises)}"
 
-        # First exercise = primary_compound (horizontal_push) → sets should be 5
+        # First exercise = primary_compound (horizontal_push) → intermediate cap of 4 sets
         first = day1_exercises[0]
         print(f"[IMP-3] First exercise: '{first.get('name')}', sets={first.get('sets')}, type={first.get('exercise_type')}")
-        assert first.get("sets", 0) >= 5, (
+        assert first.get("sets", 0) == 4, (
             f"IMPROVEMENT 3 FAILED: First exercise '{first.get('name')}' (primary_compound) "
-            f"has sets={first.get('sets')}, expected >= 5 (base=4 + boost=1). "
+            f"has sets={first.get('sets')}, expected 4 (intermediate per-exercise cap). "
             f"All exercises: {all_sets_and_types}"
         )
-        print(f"✅ [IMP-3] First exercise '{first.get('name')}' has {first.get('sets')} sets >= 5 (BOOSTED)")
+        print(f"✅ [IMP-3] First exercise '{first.get('name')}' has {first.get('sets')} sets (level cap)")
 
         # Second exercise = incline_push (secondary_compound in primary_patterns) → sets should be 4
         second = day1_exercises[1]

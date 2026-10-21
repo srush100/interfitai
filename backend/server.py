@@ -1054,7 +1054,7 @@ class EliteCoachingEngine:
             "machines":  ["Reverse Pec Deck", "Face Pull Machine"],
             "cables":    ["Cable Face Pull", "Cable Rear Delt Fly"],
             "resistance_bands":["Band Face Pull", "Band Pull-Apart"],
-            "bodyweight":["Band Pull-Apart"],
+            "bodyweight":["Prone Y-T Raise", "Reverse Snow Angel"],
         },
         "tricep_push": {
             "full_gym":  ["Cable Tricep Pushdown", "Overhead Cable Extension", "Skull Crusher"],
@@ -1081,7 +1081,7 @@ class EliteCoachingEngine:
             "dumbbells": ["Dumbbell Row", "Chest-Supported Row"],
             "machines":  ["Machine Row", "Cable Row"],
             "cables":    ["Cable Row", "Single-Arm Cable Row"],
-            "bodyweight":["Prone Y Raise", "Superman Row"],
+            "bodyweight":["Inverted Row", "Prone Y Raise", "Superman Row"],
             "kettlebells":["Kettlebell Row"],
             "resistance_bands":["Band Row", "Band Pull-Apart"],
         },
@@ -1392,6 +1392,36 @@ class EliteCoachingEngine:
             ],
             "optional_slots": [],
         },
+        # Upper A / Upper B: both days train push AND pull, so a 3-4 day
+        # Upper/Lower week hits chest, back, shoulders and arms twice.
+        "upper_a": {
+            "label": "Upper A",
+            "focus": "Chest, Back, Shoulders & Arms – Strength",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "flat pressing – chest and tricep strength"),
+                ("horizontal_pull",  "primary_compound",   "heavy row – back thickness"),
+                ("vertical_push",    "secondary_compound",  "overhead press – shoulder strength"),
+                ("vertical_pull",    "secondary_compound",  "vertical pull – lat width"),
+                ("lateral_raise",    "accessory",           "lateral delt – shoulder width"),
+                ("tricep_push",      "isolation",           "tricep isolation"),
+                ("bicep_curl",       "isolation",           "bicep isolation"),
+            ],
+            "optional_slots": [],
+        },
+        "upper_b": {
+            "label": "Upper B",
+            "focus": "Chest, Back, Shoulders & Arms – Volume",
+            "slots": [
+                ("incline_push",     "primary_compound",   "incline press – upper chest"),
+                ("vertical_pull",    "primary_compound",   "pull-up or pulldown – lat strength"),
+                ("horizontal_pull",  "secondary_compound",  "row variation – mid-back volume"),
+                ("horizontal_push",  "secondary_compound",  "press variation – chest volume"),
+                ("rear_delt",        "accessory",           "rear delt – shoulder health"),
+                ("bicep_curl",       "isolation",           "bicep curl variation"),
+                ("tricep_push",      "isolation",           "overhead tricep extension – long head"),
+            ],
+            "optional_slots": [],
+        },
         "lower_full": {
             "label": "Lower Body",
             "focus": "Quads, Hamstrings, Glutes & Calves",
@@ -1678,8 +1708,8 @@ class EliteCoachingEngine:
         },
         "upper_lower": {
             2: ["upper_full", "lower_full"],
-            3: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy"],
-            4: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus"],
+            3: ["upper_a", "lower_full", "upper_b"],
+            4: ["upper_a", "lower_quad_focus", "upper_b", "lower_hip_focus"],
             5: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_full"],
             6: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_full", "lower_full"],
         },
@@ -1893,6 +1923,25 @@ class EliteCoachingEngine:
         "l5":                   "lower_back",
         "spondylosis":          "lower_back",
         "spondylolisthesis":    "lower_back",
+        "bulging disc":         "lower_back",
+        "back pain":            "lower_back",
+        "back injury":          "lower_back",
+        "back strain":          "lower_back",
+        "back spasm":           "lower_back",
+        "back problem":         "lower_back",
+        "back issue":           "lower_back",
+        "bad back":             "lower_back",
+        "sore back":            "lower_back",
+        # pregnancy / postpartum
+        "pregnan":              "pregnancy",
+        "expecting a baby":     "pregnancy",
+        "prenatal":             "pregnancy",
+        "antenatal":            "pregnancy",
+        "trimester":            "pregnancy",
+        "postpartum":           "pregnancy",
+        "post-partum":          "pregnancy",
+        "postnatal":            "pregnancy",
+        "diastasis":            "pregnancy",
         # knee
         "runner's knee":        "knee",
         "runners knee":         "knee",
@@ -1968,8 +2017,15 @@ class EliteCoachingEngine:
 
     LIMITATION_EXCLUSIONS = {
         "lower_back":    ["Conventional Deadlift", "Sumo Deadlift", "Good Morning", "Back Squat",
-                          "T-Bar Row", "Barbell Row"],
+                          "T-Bar Row", "Barbell Row", "Romanian Deadlift", "Pendlay Row",
+                          "Front Squat", "Pause Squat", "Kettlebell Swing",
+                          "Kettlebell Swing Intervals", "Barbell Complex Intervals"],
         "knee":          ["Back Squat", "Hack Squat", "Goblet Squat", "Smith Machine Squat",
+                          "Front Squat", "Pause Squat", "Dumbbell Front Squat",
+                          "Kettlebell Goblet Squat", "Pistol Squat (assisted)", "Band Squat",
+                          "Leg Extension", "Sissy Squat", "Kettlebell Step-Up",
+                          "Box Jump", "Broad Jump", "Thruster Intervals",
+                          "Dumbbell Thruster Intervals", "Burpee Intervals",
                           "Leg Press", "Leg Press (feet high)",
                           "Barbell Bulgarian Split Squat", "Dumbbell Bulgarian Split Squat",
                           "Bulgarian Split Squat", "Smith Machine Split Squat",
@@ -1988,6 +2044,27 @@ class EliteCoachingEngine:
                           "Leg Press Calf Raise", "Bodyweight Calf Raise", "Single-Leg Calf Raise",
                           "Jump Squat", "Broad Jump"],
         "neck":          ["Barbell Back Squat", "Barbell Overhead Press"],
+        # Conservative defaults; the program also tells the user to get clearance.
+        "pregnancy":     ["Conventional Deadlift", "Sumo Deadlift", "Back Squat", "Front Squat",
+                          "Pause Squat", "Barbell Hip Thrust", "Barbell Glute Bridge",
+                          "Box Jump", "Broad Jump", "Jump Squat", "Plyo Push-Up",
+                          "Medicine Ball Slam", "Burpee Intervals", "Devil Press Intervals",
+                          "Barbell Complex Intervals", "Thruster Intervals",
+                          "Hanging Leg Raise", "V-Up", "Cable Crunch", "Ab Rollout",
+                          "Reverse Crunch", "Ab Pulldown", "Running"],
+    }
+
+    # Joint-friendly options offered first when a limitation removes the usual ones
+    LIMITATION_SUBSTITUTES = {
+        "knee": {"squat": ["Box Squat (pain-free depth)", "Spanish Squat", "Wall Sit"]},
+    }
+
+    # Fly / raise / curl style moves: fine as accessories, but never the main
+    # heavy lift of a session (they would get 5x3-5 compound prescriptions).
+    ISOLATION_MOVES = {
+        "Cable Chest Fly", "Cable Crossover", "Incline Dumbbell Fly", "High-to-Low Cable Fly",
+        "Prone Y Raise", "Superman Row", "Band Pull-Apart", "Leg Curl",
+        "Cable Glute Kickback", "Cable Hip Extension", "Band Kickback", "Band Clamshell",
     }
 
     @classmethod
@@ -2052,6 +2129,8 @@ class EliteCoachingEngine:
         "upper_pull_volume":      ["core", "back", "biceps", "shoulders", "arms"],
         # ── Upper / Lower ────────────────────────────────────────────────────
         "upper_full":             ["core", "chest", "back", "shoulders", "arms", "biceps", "triceps"],
+        "upper_a":                ["core", "chest", "back", "shoulders", "arms", "biceps", "triceps"],
+        "upper_b":                ["core", "chest", "back", "shoulders", "arms", "biceps", "triceps"],
         "upper_push_heavy":       ["core", "shoulders", "triceps", "chest", "arms"],
         "upper_pull_heavy":       ["core", "back", "biceps", "shoulders", "arms"],
         "lower_quad_focus":       ["core", "glutes", "calves", "hamstrings", "legs", "quads"],
@@ -2113,10 +2192,19 @@ class EliteCoachingEngine:
         "Hanging Leg Raise": 2, "V-Up": 2, "Single-Leg Calf Raise": 2,
         "Single-Leg Romanian Deadlift": 2, "Plank Walk": 2, "Supinated Row": 2,
         "Bench Dip": 2, "Swiss Ball Leg Curl": 2,
+        "Prone Y-T Raise": 1, "Reverse Snow Angel": 1, "Wall Sit": 1,
+        "Box Squat (pain-free depth)": 1,
         # Tier 3 — Advanced
         "Archer Push-Up": 3, "Handstand Push-Up (wall assisted)": 3,
         "Pistol Squat (assisted)": 3, "Pull-Up": 3, "Chin-Up": 3,
         "Dip": 3, "Muscle-Up Progression": 3, "Terminal Knee Extension": 3,
+    }
+
+    BEGINNER_REGRESSIONS: dict = {
+        "Pull-Up": "Negative Pull-Up (slow lowering)",
+        "Chin-Up": "Negative Chin-Up (slow lowering)",
+        "Muscle-Up Progression": "Negative Pull-Up (slow lowering)",
+        "Dip": "Bench Dip",
     }
 
     def select_split(self, days: int, goal: str, style: str, level: str,
@@ -2167,8 +2255,11 @@ class EliteCoachingEngine:
                 if days < 2:
                     return 'full_body', 'Full Body', \
                         f"Upper/Lower needs at least 2 days. Full Body recommended instead."
+                ul_sessions = self.get_session_count_for_split('upper_lower', days)
+                n_upper = sum(1 for st in ul_sessions if st.startswith('upper_'))
+                n_lower = len(ul_sessions) - n_upper
                 return 'upper_lower', 'Upper / Lower', \
-                    f"Upper/Lower selected — upper and lower body each trained {max(1, days//2)} times per week with clear structural separation between pushing, pulling, and lower body work."
+                    f"Upper/Lower selected — upper body trained {n_upper}× and lower body {n_lower}× per week."
 
             if preferred_split == 'full_body':
                 return 'full_body', 'Full Body', \
@@ -2292,7 +2383,8 @@ class EliteCoachingEngine:
         }.get(best, best), RATIONALE.get(best, '')
 
     def get_exercise_options(self, pattern: str, equipment: list, style: str,
-                              limitations: list, level: str = 'intermediate') -> list:
+                              limitations: list, level: str = 'intermediate',
+                              ex_type: str = None) -> list:
         """
         Returns suitable exercise options for a slot.
         - Calisthenics / bodyweight-only: exercises sorted by difficulty for the given level.
@@ -2344,9 +2436,23 @@ class EliteCoachingEngine:
 
         # Filter out exercises contraindicated by limitations
         excluded = set()
-        for key in self._normalize_limitations(limitations):
+        limitation_keys = self._normalize_limitations(limitations)
+        for key in limitation_keys:
             excluded.update(self.LIMITATION_EXCLUSIONS.get(key, []))
+        substitutes = []
+        for key in limitation_keys:
+            for sub in self.LIMITATION_SUBSTITUTES.get(key, {}).get(pattern, []):
+                if sub == "Spanish Squat" and is_bodyweight_context:
+                    continue   # needs a fixed band or strap
+                substitutes.append(sub)
+        if substitutes:
+            unique = substitutes + [e for e in unique if e not in substitutes]
         filtered = [e for e in unique if e not in excluded]
+        # Main lifts must be real compound movements
+        if ex_type in ('primary_compound', 'secondary_compound'):
+            compound_only = [e for e in filtered if e not in self.ISOLATION_MOVES]
+            if compound_only:
+                filtered = compound_only
         # Safe fallback: NEVER serve contraindicated exercises.
         # If all candidates are excluded, use bodyweight or any options from the same pattern.
         if filtered:
@@ -2366,6 +2472,14 @@ class EliteCoachingEngine:
             diff = self.BODYWEIGHT_DIFFICULTY
             if level == 'beginner':
                 result = sorted(result, key=lambda x: diff.get(x, 2))
+                # Drop advanced skills when easier options exist; otherwise
+                # swap in the standard beginner regression
+                easier = [x for x in result if diff.get(x, 2) <= 2]
+                if easier:
+                    result = easier
+                else:
+                    result = list(dict.fromkeys(
+                        self.BEGINNER_REGRESSIONS.get(x, x) for x in result))
             elif level == 'advanced':
                 result = sorted(result, key=lambda x: -diff.get(x, 2))
             else:  # intermediate — exclude tier-3 only from top options
@@ -2564,7 +2678,7 @@ class EliteCoachingEngine:
         """Returns (method, description)"""
         if goal == 'strength':
             return ("Linear Periodisation",
-                    "Add weight each session when you complete all sets with good form. Typically +2.5kg on upper, +5kg on lower. Deload after 4 weeks: reduce weight 40% for one week.")
+                    "Add weight each session when you complete all sets with good form. Typically +2.5kg on upper, +5kg on lower. Every 4th week is a lighter deload week (see the weekly plan).")
         elif goal == 'build_muscle':
             return ("Double Progression",
                     "Work within the prescribed rep range. Once you hit the top end of the range on ALL sets → increase load by 2.5kg next session. Stay at the bottom until you earn the top.")
@@ -2580,6 +2694,145 @@ class EliteCoachingEngine:
         else:
             return ("Progressive Overload",
                     "Add weight or reps each week. If you can complete all sets at the top of the rep range, increase load slightly next session. Focus on consistent effort.")
+
+    # Conditioning length in minutes, by session length: a finisher at the end of a
+    # lifting session vs. the main block of a dedicated conditioning session.
+    COND_MINUTES = {
+        "finisher":  {30: (5, 6),  45: (8, 10),  60: (10, 12), 75: (12, 15)},
+        "dedicated": {30: (8, 10), 45: (12, 15), 60: (15, 20), 75: (20, 25)},
+    }
+    CONDITIONING_SESSIONS = {"athletic_conditioning", "hybrid_power_conditioning",
+                             "calisthenics_conditioning"}
+    STEADY_CARDIO_OPTIONS = {
+        "gym":     ["Rowing Machine", "Stationary Bike", "Incline Treadmill Walk"],
+        "outdoor": ["Brisk Walk", "Easy Jog", "Jump Rope (easy pace)"],
+    }
+
+    def _conditioning_spec(self, goal: str, style: str, level: str, dur_bucket: int,
+                           session_type: str, coaching_note: str, equipment: list,
+                           limitations: list, injected: bool) -> dict:
+        """Conditioning slot sized to the session length, with a label that matches
+        the prescription (steady cardio vs. intervals)."""
+        base = self.GOAL_PARAMS.get(goal, self.GOAL_PARAMS['general_fitness'])['conditioning']
+        kind = 'dedicated' if session_type in self.CONDITIONING_SESSIONS else 'finisher'
+        lo, hi = self.COND_MINUTES[kind][dur_bucket]
+        note_l = coaching_note.lower()
+        if 'steady' in note_l or 'aerobic' in note_l:
+            steady = True
+        elif injected:
+            steady = 'steady' in base['reps']
+        else:
+            steady = False   # hybrid / functional / calisthenics conditioning = intervals
+
+        if steady:
+            reps = f"{lo}-{hi} min — steady pace"
+            effort = base['effort'] if 'steady' in base['reps'] else "Zone 2 — conversational pace"
+            gym = any(e in ('full_gym', 'machines', 'cables') for e in (equipment or []))
+            options = list(self.STEADY_CARDIO_OPTIONS['gym' if gym else 'outdoor'])
+            if self._normalize_limitations(limitations) & {'knee', 'ankle', 'pregnancy'}:
+                options = [o for o in options if o not in ('Easy Jog', 'Jump Rope (easy pace)')]
+            if injected:
+                coaching_note = "cardio finisher — steady pace, builds aerobic fitness"
+        else:
+            if level == 'beginner':
+                pattern = "20s hard / 40s easy, repeat"
+            elif '/' in base['reps'] and '—' in base['reps']:
+                pattern = base['reps'].split('—', 1)[1].strip()
+            else:
+                pattern = "30s hard / 30s easy, repeat"
+            reps = f"{lo}-{hi} min — {pattern}"
+            if level == 'beginner':
+                effort = "Moderate-hard — stay in control"
+            elif 'steady' in base['reps'] or 'light' in base['effort'].lower():
+                effort = "Hard but repeatable — same pace every round"
+            else:
+                effort = base['effort']
+            options = self.get_exercise_options('conditioning', equipment, style, limitations, level)
+            if injected:
+                coaching_note = "metabolic finisher — elevate heart rate, maximise calorie burn"
+        return {
+            "pattern":       "conditioning",
+            "type":          "conditioning",
+            "coaching_note": coaching_note,
+            "sets":          1,
+            "reps":          reps,
+            "rest_seconds":  0,
+            "effort":        effort,
+            "options":       options or ["Brisk Walk"],
+            "excluded":      [],
+        }
+
+    WORK_PER_SET_SEC = 40   # avg set execution + transition time
+    WARMUP_SEC = 300        # 5 min general warm-up
+    RAMP_UP_SEC = 120       # lighter warm-up sets before each main lift
+
+    @classmethod
+    def _estimate_minutes(cls, slots: list) -> float:
+        sec = cls.WARMUP_SEC
+        for s in slots:
+            if s['type'] == 'conditioning':
+                nums = re.findall(r'\d+', str(s['reps']))
+                mins = int(nums[1]) if len(nums) > 1 else (int(nums[0]) if nums else 10)
+                sec += mins * 60
+            else:
+                work = cls.WORK_PER_SET_SEC * (1.5 if 'each' in str(s['reps']) else 1)
+                sec += s['sets'] * (work + s['rest_seconds'])
+                if s['type'] == 'primary_compound':
+                    sec += cls.RAMP_UP_SEC
+        return sec / 60.0
+
+    def _fit_to_duration(self, slots: list, target_minutes: int, goal: str,
+                         primary_patterns: list) -> list:
+        """Trim a session until its estimated time is within 10% of the target.
+        Order: drop extra accessories → fewer sets on support work → main-lift rest
+        to the goal's floor → main lifts down to 3 sets → drop remaining lifts
+        (always keeping at least 2 lifts and the conditioning block)."""
+        limit = target_minutes * 1.10
+        rest_floor = self.STRENGTH_REST_FLOORS.get(goal, 60)
+
+        def over() -> bool:
+            return self._estimate_minutes(slots) > limit
+
+        def lifts() -> list:
+            return [s for s in slots if s['type'] != 'conditioning']
+
+        # 1. Drop lowest-priority accessories (non-focus first), keep at least 3 lifts
+        while over() and len(lifts()) > 3:
+            cands = [s for s in slots if s['type'] not in
+                     ('primary_compound', 'secondary_compound', 'conditioning')]
+            if not cands:
+                break
+            non_focus = [s for s in cands if s['pattern'] not in primary_patterns]
+            slots.remove((non_focus or cands)[-1])
+        # 2. Fewer sets on everything except the main lifts (minimum 2)
+        while over():
+            cands = [s for s in slots if s['type'] not in ('primary_compound', 'conditioning')
+                     and s['sets'] > 2]
+            if not cands:
+                break
+            most = max(s['sets'] for s in cands)
+            [s for s in cands if s['sets'] == most][-1]['sets'] -= 1
+        # 3. Main-lift rest down to the goal's floor
+        if over():
+            for s in slots:
+                if s['type'] == 'primary_compound' and s['rest_seconds'] > rest_floor:
+                    s['rest_seconds'] = rest_floor
+        # 4. Main lifts down to 3 sets
+        while over():
+            cands = [s for s in slots if s['type'] == 'primary_compound' and s['sets'] > 3]
+            if not cands:
+                break
+            most = max(s['sets'] for s in cands)
+            [s for s in cands if s['sets'] == most][-1]['sets'] -= 1
+        # 5. Drop remaining lifts from the end, keeping at least 2
+        while over() and len(lifts()) > 2:
+            cands = [s for s in slots if s['type'] not in ('primary_compound', 'conditioning')]
+            if not cands:
+                cands = [s for s in slots if s['type'] == 'primary_compound'][1:]
+            if not cands:
+                break
+            slots.remove(cands[-1])
+        return slots
 
     def build_blueprint(self, req) -> dict:
         """Main entry point — returns complete coaching blueprint."""
@@ -2641,7 +2894,15 @@ class EliteCoachingEngine:
             level_vol = self.VOLUME_FRAMEWORK.get(vol_key, self.VOLUME_FRAMEWORK['general_fitness'])
             budget_tuple = level_vol.get(level, level_vol.get('intermediate', {})).get(dur_bucket, (10, 16, 6))
             min_sets, max_sets, max_ex = budget_tuple
-            target_sets = (min_sets + max_sets) // 2
+
+            def _level_target(lo: int, hi: int) -> int:
+                # Beginners near the bottom of the range, advanced near the top
+                if level == 'beginner':
+                    return lo + 1
+                if level == 'advanced':
+                    return hi - 1
+                return (lo + hi) // 2
+            target_sets = _level_target(min_sets, max_sets)
 
             # ── Anti-bloat: conditioning finisher takes a slot ───────────────
             has_existing_cond = any(s[1] == 'conditioning' for s in slots)
@@ -2658,7 +2919,13 @@ class EliteCoachingEngine:
             if will_inject_cond:
                 max_ex = max(3, max_ex - 1)   # reserve one slot for finisher
                 max_sets = max(min_sets, max_sets - 2)  # reduce set budget slightly
-                target_sets = (min_sets + max_sets) // 2
+                target_sets = _level_target(min_sets, max_sets)
+
+            # Conditioning blocks are set aside so the lifting budget and the
+            # max-exercise trim can never squeeze them out; re-added after.
+            cond_slots = [s for s in slots if s[1] == 'conditioning']
+            slots = [s for s in slots if s[1] != 'conditioning']
+            lift_cap = max(2, max_ex - len(cond_slots))
 
             # ── Primary focus: prioritise slots before trimming ──────────────
             # Sort BEFORE the max_ex trim so primary focus patterns survive cuts.
@@ -2667,30 +2934,57 @@ class EliteCoachingEngine:
                 if ex_type == 'primary_compound':       return 0
                 if pattern in primary_patterns:         return 1   # primary focus survives trim
                 if ex_type == 'secondary_compound':     return 2
-                if ex_type == 'conditioning' and style in ('hybrid', 'functional'):
-                    return 2   # conditioning is core to hybrid/functional — protect from trim
                 if pattern in secondary_patterns:       return 3
                 return 4
             slots.sort(key=_slot_importance)
-            slots = slots[:max_ex]
+            slots = slots[:lift_cap]
 
-            # ── Inject missing primary focus slots (SESSION-NATIVE ONLY) ─────────
-            # Only inject a primary focus pattern if it already appears in this
-            # session archetype's natural slot list. This preserves session identity:
-            # push days stay push, pull days stay pull, leg days stay leg.
-            # If the focus cannot be expressed naturally in this session, the weekly
-            # structure (split selection) already handles the distribution.
+            # ── Inject missing primary focus slots ───────────────────────────────
+            # A focus pattern is added only where it fits the session's identity:
+            # patterns already native to the archetype, lower-body patterns on days
+            # that train legs, upper-body patterns on days that train both push and
+            # pull (push days stay push, pull days stay pull). When the day is full,
+            # the focus slot replaces the lowest-priority non-focus accessory.
             session_native = {s[0] for s in archetype['slots']}
+            LOWER_P = {'squat', 'lunge', 'hip_hinge', 'glute', 'hamstring_curl',
+                       'knee_extension', 'calf'}
+            PUSH_P  = {'horizontal_push', 'incline_push', 'vertical_push', 'lateral_raise',
+                       'tricep_push'}
+            PULL_P  = {'vertical_pull', 'horizontal_pull', 'rear_delt', 'bicep_curl'}
+            CORE_P  = {'core_stability', 'core_flexion', 'carry'}
+
+            def _fits_session(fp: str) -> bool:
+                if fp == 'conditioning':
+                    return False   # conditioning is handled separately
+                if fp in session_native:
+                    return True
+                if fp in LOWER_P:
+                    return bool(session_native & LOWER_P)
+                if fp in PUSH_P | PULL_P:
+                    return bool(session_native & PUSH_P) and bool(session_native & PULL_P)
+                return fp in CORE_P
+
             focus_slot_count = sum(1 for p, _, _ in slots if p in primary_patterns)
-            if primary_patterns and focus_slot_count < len(primary_patterns) and len(slots) < max_ex:
+            if primary_patterns and focus_slot_count < len(primary_patterns):
                 max_inject = min(2, len(primary_patterns))
                 injected = 0
                 for fp in primary_patterns:
-                    if injected >= max_inject or len(slots) >= max_ex:
+                    if injected >= max_inject:
                         break
-                    if fp not in [s[0] for s in slots] and fp in session_native:
-                        slots.append((fp, 'accessory', f'primary focus — {fp.replace("_", " ")} direct volume'))
-                        injected += 1
+                    if fp in [s[0] for s in slots] or not _fits_session(fp):
+                        continue
+                    new_slot = (fp, 'accessory', f'primary focus — {fp.replace("_", " ")} direct volume')
+                    if len(slots) < lift_cap:
+                        slots.append(new_slot)
+                    else:
+                        replaceable = [k for k, (p, t, _) in enumerate(slots)
+                                       if t in ('accessory', 'isolation', 'core')
+                                       and p not in primary_patterns
+                                       and p not in secondary_patterns]
+                        if not replaceable:
+                            break
+                        slots[replaceable[-1]] = new_slot
+                    injected += 1
 
             # ── Build slot specs with budget-aware set allocation ────────────
             excluded_exercises = set()
@@ -2699,9 +2993,14 @@ class EliteCoachingEngine:
 
             slot_specs = []
             total_sets_allocated = 0
+            # Sets may run a little past the target so later slots (arms, delts)
+            # still get 2 sets instead of being starved; the time fit trims later.
+            set_ceiling = max_sets if level == 'advanced' else min(max_sets, target_sets + 2)
 
-            for pattern, ex_type, coaching_note in slots:
-                remaining_budget = target_sets - total_sets_allocated
+            for slot_idx, (pattern, ex_type, coaching_note) in enumerate(slots):
+                # Keep 2 sets in reserve for each slot still to come
+                reserve = 2 * (len(slots) - slot_idx - 1)
+                remaining_budget = max(0, set_ceiling - total_sets_allocated - reserve)
 
                 # How many sets should this slot get?
                 base_params = goal_params.get(ex_type, goal_params.get('accessory', {}))
@@ -2710,13 +3009,21 @@ class EliteCoachingEngine:
                 base_sets   = base_params.get('sets', 3)
                 # Clamp to level range
                 ideal_sets  = max(s_min, min(s_max, base_sets))
+                # Level shapes main-lift volume: advanced +1 set, beginners -1 on 4+ set lifts
+                if ex_type in ('primary_compound', 'secondary_compound'):
+                    if level == 'advanced':
+                        ideal_sets = max(s_min, min(s_max, base_sets + 1))
+                    elif level == 'beginner' and base_sets >= 4:
+                        ideal_sets = max(s_min, min(s_max, base_sets - 1))
                 # Don't overshoot the session budget
                 if ex_type == 'primary_compound':
                     # Primary compound always gets its full ideal allocation
-                    assigned_sets = max(s_min, min(ideal_sets, max(s_min, remaining_budget)))
+                    assigned_sets = ideal_sets
+                elif set_ceiling - total_sets_allocated < 2:
+                    break   # budget spent
                 elif remaining_budget <= s_min:
-                    # Almost out of budget — give minimum or skip (use 1 as absolute floor)
-                    assigned_sets = max(1, remaining_budget)
+                    # Almost out of budget — give the 2-set minimum
+                    assigned_sets = max(2, remaining_budget)
                 else:
                     assigned_sets = min(ideal_sets, remaining_budget)
 
@@ -2748,7 +3055,8 @@ class EliteCoachingEngine:
                 else:
                     rest = _round_rest(base_rest)
 
-                options = self.get_exercise_options(pattern, equipment, style, limitations, level)
+                options = self.get_exercise_options(pattern, equipment, style, limitations,
+                                                    level, ex_type)
                 # If every option for this pattern is contraindicated by the user's
                 # limitations (e.g. all lunge variants excluded by a knee injury),
                 # skip the slot entirely rather than show a "Bodyweight Exercise"
@@ -2757,10 +3065,13 @@ class EliteCoachingEngine:
                     continue
                 # Rotate options to avoid cross-day exercise duplication
                 if len(options) > 1:
-                    # Move any already-used exercise to the back of the list
-                    fresh = [o for o in options if o not in used_primary_options]
-                    stale = [o for o in options if o in used_primary_options]
-                    options = fresh + stale
+                    # Move any already-used exercise to the back of the top 3 (the
+                    # choices the AI sees) so lower-ranked options, e.g. barbells
+                    # for beginners, never jump to the front
+                    top = options[:3]
+                    fresh = [o for o in top if o not in used_primary_options]
+                    stale = [o for o in top if o in used_primary_options]
+                    options = fresh + stale + options[3:]
 
                 slot_specs.append({
                     "pattern":       pattern,
@@ -2777,8 +3088,13 @@ class EliteCoachingEngine:
                 if options:
                     used_primary_options.add(options[0])
 
-                if ex_type != 'primary_compound' and total_sets_allocated >= target_sets:
+                if ex_type != 'primary_compound' and total_sets_allocated >= set_ceiling:
                     break
+
+            for _, _, cond_note in cond_slots:
+                slot_specs.append(self._conditioning_spec(
+                    goal, style, level, dur_bucket, session_type, cond_note,
+                    equipment, limitations, injected=False))
 
             # ── Minimum set floors ────────────────────────────────────────────
             MIN_SETS_FLOOR = {
@@ -2806,16 +3122,19 @@ class EliteCoachingEngine:
                 if (slot['pattern'] in primary_patterns
                         and primary_boost_count < max_primary_boosts
                         and slot['type'] in ('primary_compound', 'secondary_compound')):
-                    cap = 6 if slot['type'] == 'primary_compound' else 5
+                    # Never above the level's own per-exercise maximum
+                    cap = self.SETS_PER_EXERCISE.get(slot['type'], {}).get(level, (2, 4))[1]
                     boosted = min(slot['sets'] + 1, cap)
-                    if total_sets_allocated - slot['sets'] + boosted <= max_sets + focus_boost_headroom:
+                    if (boosted > slot['sets']
+                            and total_sets_allocated - slot['sets'] + boosted <= max_sets + focus_boost_headroom):
                         total_sets_allocated += (boosted - slot['sets'])
                         slot['sets'] = boosted
                         slot['coaching_note'] += ' [primary focus — elevated priority]'
                         primary_boost_count += 1
                 elif slot['pattern'] in secondary_patterns:
-                    if total_sets_allocated <= max_sets:
-                        boosted = min(slot['sets'] + 1, 4)
+                    cap = self.SETS_PER_EXERCISE.get(slot['type'], {}).get(level, (2, 4))[1]
+                    boosted = min(slot['sets'] + 1, cap)
+                    if total_sets_allocated <= max_sets and boosted > slot['sets']:
                         total_sets_allocated += (boosted - slot['sets'])
                         slot['sets'] = boosted
                         slot['coaching_note'] += ' [secondary emphasis]'
@@ -2846,11 +3165,11 @@ class EliteCoachingEngine:
                     for sp in sf_patterns:
                         if sp in already_covered or len(slot_specs) >= secondary_cap:
                             continue
-                        if sp not in session_native:   # don't inject push patterns into pull sessions, etc.
+                        if not _fits_session(sp):   # don't inject push patterns into pull sessions, etc.
                             continue
                         sec_opts = self.get_exercise_options(sp, equipment, style, limitations, level)
-                        if not sec_opts:
-                            continue
+                        if not sec_opts or sec_opts == ["Bodyweight Exercise"]:
+                            continue   # every option excluded by the user's limitations
                         sec_base = goal_params.get('accessory', {})
                         slot_specs.append({
                             "pattern":       sp,
@@ -2899,24 +3218,9 @@ class EliteCoachingEngine:
 
             # ── Conditioning finisher injection ───────────────────────────────
             if will_inject_cond:
-                cond_params  = goal_params.get(
-                    'conditioning',
-                    {"sets": 1, "reps": "10-20 min intervals", "rest": 0, "effort": "High intensity"}
-                )
-                cond_options = self.get_exercise_options(
-                    'conditioning', equipment, style, limitations, level
-                )
-                slot_specs.append({
-                    "pattern":       "conditioning",
-                    "type":          "conditioning",
-                    "coaching_note": "metabolic finisher — elevate heart rate, maximise calorie burn",
-                    "sets":          1,
-                    "reps":          cond_params.get('reps', '10-20 min'),
-                    "rest_seconds":  0,
-                    "effort":        cond_params.get('effort', 'High intensity'),
-                    "options":       cond_options,
-                    "excluded":      [],
-                })
+                slot_specs.append(self._conditioning_spec(
+                    goal, style, level, dur_bucket, session_type, "", equipment,
+                    limitations, injected=True))
 
             # ── Label consistency validation ───────────────────────────────────
             # If a session archetype labelled "Upper" picks up lower-body compounds
@@ -2980,43 +3284,20 @@ class EliteCoachingEngine:
             d['slots'] = clean_slots
 
         # ═══════════════════════════════════════════════════════════════════════
-        # TIME-ESTIMATION VALIDATION — trim sessions that exceed the target duration.
-        # Estimates: ~40s per working set (work + transitions) + rest between sets.
-        # Conditioning finishers estimated at 10 min. Warm-up: 5 min overhead.
-        # If estimated time exceeds target by >15%, trim lowest-priority slots.
+        # TIME FIT — every session must fit the user's chosen session length.
+        # Estimate: 5 min warm-up + sets × (~40s work + rest) + conditioning minutes.
         # ═══════════════════════════════════════════════════════════════════════
-        target_minutes = req.duration_minutes
-        WORK_PER_SET_SEC = 40  # avg set execution + transition time
-        WARMUP_SEC = 300       # 5 min warm-up overhead
-        COND_FINISHER_SEC = 600  # 10 min conditioning finisher estimate
-
+        dur = req.duration_minutes
+        dur_bucket = 30 if dur <= 30 else 45 if dur <= 45 else 60 if dur <= 60 else 75
         for d in day_blueprints:
-            slots = d['slots']
-            est_sec = WARMUP_SEC
-            for slot in slots:
-                if slot['type'] == 'conditioning':
-                    est_sec += COND_FINISHER_SEC
-                else:
-                    est_sec += slot['sets'] * (WORK_PER_SET_SEC + slot['rest_seconds'])
-            est_minutes = est_sec / 60.0
-            overflow_threshold = target_minutes * 1.15
-            while est_minutes > overflow_threshold and len(slots) > 3:
-                removable = [
-                    (idx, s) for idx, s in enumerate(slots)
-                    if s['type'] not in ('primary_compound', 'conditioning')
-                ]
-                if not removable:
-                    break
-                remove_idx = removable[-1][0]
-                removed = slots.pop(remove_idx)
-                est_sec = WARMUP_SEC
-                for slot in slots:
-                    if slot['type'] == 'conditioning':
-                        est_sec += COND_FINISHER_SEC
-                    else:
-                        est_sec += slot['sets'] * (WORK_PER_SET_SEC + slot['rest_seconds'])
-                est_minutes = est_sec / 60.0
-            d['slots'] = slots
+            # Well under time on a cardio-friendly goal → use the spare time for a finisher
+            if (goal in ('general_fitness', 'lose_fat', 'body_recomp')
+                    and not any(s['type'] == 'conditioning' for s in d['slots'])
+                    and self._estimate_minutes(d['slots']) < dur * 0.8):
+                d['slots'].append(self._conditioning_spec(
+                    goal, style, level, dur_bucket, d['archetype_id'], "", equipment,
+                    limitations, injected=True))
+            d['slots'] = self._fit_to_duration(d['slots'], dur, goal, primary_patterns)
 
         return {
             "split_id":          split_id,
@@ -3025,13 +3306,14 @@ class EliteCoachingEngine:
             "progression_name":  progression_name,
             "progression_desc":  progression_desc,
             "deload_timing":     {
-                "strength":             "Every 4 weeks: reduce weight 40% for 1 week, then reload heavier than before.",
-                "build_muscle":         "Every 5-6 weeks: cut working sets by 50% for 1 week — keep load, reduce volume.",
-                "lose_fat":             "Every 6-7 weeks: reduce volume 40% for 1 week while maintaining training frequency.",
-                "body_recomp":          "Every 5 weeks: reduce both load and volume by 40% — prioritise sleep and recovery.",
-                "athletic_performance": "Every 4 weeks: cut volume 50% — use deload week for skill work and mobility.",
-                "general_fitness":      "Every 6-8 weeks: reduce total volume by 30% for 1 week, stay lightly active.",
-            }.get(goal, "Every 5-6 weeks: reduce volume by 40% for 1 week to allow full recovery and super-compensation."),
+                # Matches the deload weeks in generate_weekly_progression
+                "strength":             "Weeks 4, 8 and 12: cut working sets by 50% and keep the same weight, then come back heavier.",
+                "build_muscle":         "Weeks 4, 8 and 12: cut working sets by 50% — keep the load, reduce the volume.",
+                "lose_fat":             "Weeks 4 and 8: reduce volume by 40% while keeping your training days.",
+                "body_recomp":          "Weeks 4, 8 and 12: reduce volume by about 40% and keep the load — prioritise sleep and recovery.",
+                "athletic_performance": "Weeks 4, 8 and 12: cut volume by 50% and keep the intensity — use the week for skill work and mobility.",
+                "general_fitness":      "Weeks 4 and 8: reduce sets by about 30% and stay lightly active.",
+            }.get(goal, "Weeks 4 and 8: reduce sets by about 30% and stay lightly active."),
             "weekly_structure": EliteCoachingEngine.assign_days_of_week(
                 training_labels=[f"{d['label']} — {d['focus']}" for d in day_blueprints],
                 start_day=getattr(req, 'preferred_start_day', 'Monday'),
@@ -3839,6 +4121,10 @@ async def generate_workout(request: WorkoutGenerateRequest):
             f"Style: {request.training_style.title()} | "
             f"Split: {blueprint['split_name']} | "
             f"{request.days_per_week} days/week @ {request.duration_minutes}min"
+            + (" | Pregnancy or postpartum: get clearance from your doctor or midwife first, "
+               "and stop any exercise that causes pain, dizziness or bleeding."
+               if 'pregnancy' in EliteCoachingEngine._normalize_limitations(request.injuries or [])
+               else "")
         ),
         workout_days=[WorkoutDay(**day) for day in processed_days],
     )

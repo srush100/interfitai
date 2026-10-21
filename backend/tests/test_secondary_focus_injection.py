@@ -183,11 +183,11 @@ class TestCoreInjectionFullBodySplit:
 class TestShoulderInjectionUpperLowerSplit:
     """
     4-day upper_lower split with secondary_focus_areas=['shoulders']:
-    Session types in order: upper_push_heavy, lower_quad_focus, upper_pull_heavy, lower_hip_focus
+    Session types in order: upper_a, lower_quad_focus, upper_b, lower_hip_focus
     SECONDARY_SYNERGY:
-      upper_push_heavy: ["core","shoulders","triceps","chest","arms"] → compatible ✅
+      upper_a:          ["core","chest","back","shoulders","arms","biceps","triceps"] → compatible ✅
       lower_quad_focus: ["core","glutes","calves","hamstrings","legs","quads"] → NOT ❌
-      upper_pull_heavy: ["core","back","biceps","shoulders","arms"] → compatible ✅
+      upper_b:          ["core","chest","back","shoulders","arms","biceps","triceps"] → compatible ✅
       lower_hip_focus:  ["core","quads","calves","legs","glutes"] → NOT ❌
     Expected: exactly 2 injections (upper days), 0 on lower days.
     """
@@ -294,8 +294,8 @@ class TestShoulderInjectionUpperLowerSplit:
     def test_upper_days_gain_exercise_vs_baseline(self, workout_with_shoulders, workout_without_secondary):
         """
         Each upper day with secondary injection should have +1 exercise vs baseline.
-        For upper_push_heavy: base 5 slots → with secondary 6 (rear_delt injected)
-        For upper_pull_heavy: base 6 slots → with secondary 7 (vertical_push injected)
+        Upper A already has overhead press and lateral raises, so it may only gain sets;
+        Upper B gains a shoulder exercise (lateral raise or overhead press).
         """
         days_with = workout_with_shoulders["workout_days"]
         days_without = workout_without_secondary["workout_days"]
