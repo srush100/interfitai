@@ -3648,9 +3648,8 @@ class SubscriptionInfo(BaseModel):
 
 # Subscription pricing constants
 SUBSCRIPTION_PRICES = {
-    "monthly": 9.99,
-    "quarterly": 29.99,
-    "yearly": 79.99,
+    "monthly": 14.99,
+    "yearly": 99.99,
 }
 
 # Stripe Price IDs (to be configured in Stripe Dashboard)
@@ -3698,9 +3697,16 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
     tdee = bmr * activity_multipliers.get(activity_level, 1.55)
 
     # ── Calorie target (percentage-based off TDEE) ────────────────────
+    floor_applied = False
     if goal == "weight_loss":
         calories = tdee * 0.80              # 20% deficit
         protein_per_kg = 2.2                # high — preserve LBM in deficit
+        # Safety floor: never below BMR or the usual unsupervised minimum
+        # (1,200 women / 1,500 men), and never above maintenance. Small or
+        # older people then sit near maintenance — their loss comes from activity.
+        floor = max(bmr, {"male": 1500, "female": 1200}.get(gender, 1350))
+        if calories < floor:
+            calories, floor_applied = min(floor, tdee), True
     elif goal == "muscle_building":
         calories = tdee * 1.10              # 10% surplus (lean bulk)
         protein_per_kg = 2.0                # industry standard for hypertrophy (RP/MacroFactor)
@@ -3708,11 +3714,14 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
         calories = tdee
         protein_per_kg = 1.8                # above MPS ceiling with comfortable margin
 
-    # Safety floor — never prescribe below BMR
-    calories = max(calories, bmr * 1.1)
-
     # ── Macro split: protein from bodyweight, fat at 25% of cals, rest carbs ──
-    protein_g = round(min(weight * protein_per_kg, 220))
+    # With a BMI over 30, protein is set from a healthy-weight reference (the
+    # weight at BMI 25 for their height): g/kg targets are for lean mass, and
+    # total weight would ask for far more than is needed (220g+).
+    height_m = height / 100
+    bmi = weight / (height_m ** 2) if height_m > 0 else 0
+    protein_weight = min(weight, 25 * height_m ** 2) if bmi > 30 else weight
+    protein_g = round(min(protein_weight * protein_per_kg, 220))
     fat_g     = round((calories * 0.25) / 9)    # 25% of cals from fat (hormonal minimum)
     remaining_cals = calories - (protein_g * 4) - (fat_g * 9)
     carbs_g   = round(max(remaining_cals, 0) / 4)
@@ -3724,6 +3733,7 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
         "fats":     fat_g,
         "bmr":      round(bmr),
         "tdee":     round(tdee),
+        "calorie_floor_applied": floor_applied,   # target held at the safe minimum
     }
 
 # ==================== USER PROFILE ENDPOINTS ====================
@@ -8330,9 +8340,8 @@ async def disconnect_device(user_id: str, device_type: str):
 # ==================== SUBSCRIPTION ENDPOINTS ====================
 
 SUBSCRIPTION_PLANS = {
-    "monthly": {"name": "Monthly", "price": 9.99, "duration_months": 1, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer"]},
-    "quarterly": {"name": "Quarterly", "price": 24.99, "duration_months": 3, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support"]},
-    "yearly": {"name": "Yearly", "price": 79.99, "duration_months": 12, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support", "Exclusive Content"]}
+    "monthly": {"name": "Monthly", "price": 14.99, "duration_months": 1, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer"]},
+    "yearly": {"name": "Yearly", "price": 99.99, "duration_months": 12, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support", "Exclusive Content"]}
 }
 
 # Stripe Price IDs - create these in Stripe Dashboard for recurring billing
@@ -9158,20 +9167,21 @@ async def admin_list_complimentary(admin_email: str):
 @api_router.post("/stripe/create-checkout-session")
 async def create_stripe_checkout_session(
     user_id: str,
-    plan: str,  # quarterly or yearly
+    plan: str,  # monthly or yearly
     success_url: str,
     cancel_url: str
 ):
     """
-    Create a Stripe Checkout session for website subscriptions.
-    - Quarterly: $29.99 with 7-day free trial
-    - Yearly: $79.99 with 30-day bonus (applied after payment)
+    Create a Stripe Checkout session for website subscriptions — the same two
+    plans and prices as the app (SUBSCRIPTION_PLANS):
+    - Monthly: $14.99 with a 3-day free trial
+    - Yearly: $99.99 with a 30-day bonus (applied after payment)
     """
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Stripe not configured")
     
-    if plan not in ["quarterly", "yearly"]:
-        raise HTTPException(status_code=400, detail="Invalid plan. Choose 'quarterly' or 'yearly'")
+    if plan not in ["monthly", "yearly"]:
+        raise HTTPException(status_code=400, detail="Invalid plan. Choose 'monthly' or 'yearly'")
     
     # Get user profile
     profile = await db.profiles.find_one({"id": user_id})
@@ -9217,23 +9227,23 @@ async def create_stripe_checkout_session(
         }
         
         # Configure pricing based on plan
-        if plan == "quarterly":
-            # Quarterly with 7-day free trial
+        if plan == "monthly":
+            # Monthly with the same 3-day free trial as the app
             checkout_params["line_items"] = [{
                 "price_data": {
                     "currency": "usd",
                     "product_data": {
-                        "name": "InterFitAI Premium - Quarterly",
+                        "name": "InterFitAI Premium - Monthly",
                         "description": "Full access to all InterFitAI features",
                     },
-                    "unit_amount": 2999,  # $29.99 in cents
-                    "recurring": {"interval": "month", "interval_count": 3},
+                    "unit_amount": int(round(SUBSCRIPTION_PLANS["monthly"]["price"] * 100)),  # $14.99
+                    "recurring": {"interval": "month"},
                 },
                 "quantity": 1,
             }]
             checkout_params["subscription_data"] = {
-                "trial_period_days": 7,
-                "metadata": {"user_id": user_id, "plan": "quarterly"},
+                "trial_period_days": SUBSCRIPTION_PLANS["monthly"]["trial_days"],
+                "metadata": {"user_id": user_id, "plan": "monthly"},
             }
             
         elif plan == "yearly":
@@ -9245,7 +9255,7 @@ async def create_stripe_checkout_session(
                         "name": "InterFitAI Premium - Annual",
                         "description": "Full access to all InterFitAI features + 1 bonus month",
                     },
-                    "unit_amount": 7999,  # $79.99 in cents
+                    "unit_amount": int(round(SUBSCRIPTION_PLANS["yearly"]["price"] * 100)),  # $99.99
                     "recurring": {"interval": "year"},
                 },
                 "quantity": 1,
@@ -9264,6 +9274,11 @@ async def create_stripe_checkout_session(
     except stripe.error.StripeError as e:
         logger.error(f"Stripe error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+def _stripe_plan_days(plan: str) -> int:
+    """Days of access one website payment buys (renewals add the same)."""
+    return {"yearly": 365, "quarterly": 90}.get(plan, 31)   # quarterly: older subscribers only
+
 
 @api_router.post("/stripe/webhook")
 async def handle_stripe_webhook(request: Request):
@@ -9291,7 +9306,7 @@ async def handle_stripe_webhook(request: Request):
         if event_type == "checkout.session.completed":
             # Initial subscription created
             user_id = data.get("metadata", {}).get("user_id")
-            plan = data.get("metadata", {}).get("plan", "quarterly")
+            plan = data.get("metadata", {}).get("plan", "monthly")
             subscription_id = data.get("subscription")
             
             if user_id:
@@ -9304,7 +9319,7 @@ async def handle_stripe_webhook(request: Request):
                     if apply_bonus:
                         expires_at += timedelta(days=30)  # Add 30-day bonus
                 else:
-                    expires_at = datetime.utcnow() + timedelta(days=90)  # Quarterly
+                    expires_at = datetime.utcnow() + timedelta(days=_stripe_plan_days(plan))
                 
                 # Update user subscription
                 update_data = {
@@ -9332,11 +9347,8 @@ async def handle_stripe_webhook(request: Request):
                 # Find user by subscription ID
                 profile = await db.profiles.find_one({"stripe_subscription_id": subscription_id})
                 if profile:
-                    plan = profile.get("subscription_plan", "quarterly")
-                    if plan == "yearly":
-                        expires_at = datetime.utcnow() + timedelta(days=365)
-                    else:
-                        expires_at = datetime.utcnow() + timedelta(days=90)
+                    plan = profile.get("subscription_plan", "monthly")
+                    expires_at = datetime.utcnow() + timedelta(days=_stripe_plan_days(plan))
                     
                     await db.profiles.update_one(
                         {"stripe_subscription_id": subscription_id},

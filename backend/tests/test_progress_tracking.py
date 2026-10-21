@@ -305,3 +305,58 @@ def test_delete_weight_entry(db):
     e = run(server.log_weight(server.WeightLogRequest(user_id="u", weight_kg=89, date="2026-10-21")))
     run(server.delete_weight_log(e.id, user_id="u"))
     assert db.weight_logs.docs == []
+
+
+# ── macro targets: protein for higher BMI, safe calorie floor ─────────────
+@pytest.mark.parametrize("args, protein", [
+    ((130, 175, 40, "male", "sedentary", "weight_loss"), 168),
+    ((110, 165, 35, "female", "light", "weight_loss"), 150),
+    ((115, 180, 28, "male", "moderate", "muscle_building"), 162),
+    ((80, 180, 30, "male", "moderate", "weight_loss"), 176),      # BMI under 30: unchanged
+])
+def test_protein_uses_healthy_weight_reference_above_bmi_30(args, protein):
+    assert server.calculate_macros(*args)["protein"] == protein
+
+
+@pytest.mark.parametrize("args, calories, floor", [
+    ((50, 155, 55, "female", "sedentary", "weight_loss"), 1200, True),
+    ((52, 160, 62, "female", "light", "weight_loss"), 1200, True),
+    ((58, 163, 70, "male", "sedentary", "weight_loss"), 1500, True),   # capped at maintenance (1504)
+    ((130, 175, 40, "male", "sedentary", "weight_loss"), 2199, True),  # floor = BMR, 17% deficit
+    ((80, 180, 30, "male", "moderate", "weight_loss"), 2207, False),
+    ((60, 165, 30, "female", "light", "weight_loss"), 1452, False),
+])
+def test_weight_loss_calorie_floor(args, calories, floor):
+    m = server.calculate_macros(*args)
+    assert m["calories"] == calories and m["calorie_floor_applied"] == floor
+    assert m["calories"] <= m["tdee"]
+
+
+# ── website Stripe checkout matches the app's plans ──────────────────────
+def test_website_checkout_uses_app_prices(db, monkeypatch):
+    db.profiles.docs.append({"id": "u", "email": "a@b.com", "name": "A", "stripe_customer_id": "cus_1"})
+    made = []
+
+    class Session:
+        @staticmethod
+        def create(**kw):
+            made.append(kw)
+            return type("S", (), {"url": "https://checkout", "id": "cs_1"})()
+
+    monkeypatch.setattr(server, "STRIPE_SECRET_KEY", "sk_test")
+    monkeypatch.setattr(server.stripe, "Customer", type("C", (), {"retrieve": staticmethod(lambda i: type("X", (), {"id": i})())}))
+    monkeypatch.setattr(server.stripe.checkout, "Session", Session)
+    for plan in ("monthly", "yearly"):
+        run(server.create_stripe_checkout_session("u", plan, "https://s", "https://c"))
+    monthly, yearly = made
+    assert monthly["line_items"][0]["price_data"]["unit_amount"] == 1499
+    assert monthly["line_items"][0]["price_data"]["recurring"] == {"interval": "month"}
+    assert monthly["subscription_data"]["trial_period_days"] == 3
+    assert yearly["line_items"][0]["price_data"]["unit_amount"] == 9999
+    with pytest.raises(HTTPException):
+        run(server.create_stripe_checkout_session("u", "quarterly", "https://s", "https://c"))
+
+
+def test_monthly_website_payment_buys_a_month():
+    assert server._stripe_plan_days("monthly") == 31
+    assert server._stripe_plan_days("yearly") == 365

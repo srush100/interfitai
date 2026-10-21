@@ -138,7 +138,13 @@ export default function MacroTargetsScreen() {
             </TouchableOpacity>
           </View>
 
-          {atMin && (
+          {!!macros?.calorie_floor_applied && (
+            <Text style={[styles.adjustmentBadge, { textAlign: 'center', marginBottom: 8 }]}>
+              Your target is at the safe minimum for your size, so it's close to what you burn.
+              Extra daily steps and your workouts will do most of the fat-loss work.
+            </Text>
+          )}
+          {atMin && !macros?.calorie_floor_applied && (
             <Text style={[styles.adjustmentBadge, { textAlign: 'center', marginBottom: 8 }]}>
               This is the lowest target we recommend without medical supervision.
             </Text>

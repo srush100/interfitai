@@ -19,6 +19,7 @@ interface UserProfile {
     carbs: number;
     fats: number;
     bmr: number;
+    calorie_floor_applied?: boolean | number;   // target held at the safe minimum
     tdee: number;
   } | null;
   subscription_status: string;
