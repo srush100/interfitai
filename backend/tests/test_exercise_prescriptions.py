@@ -45,3 +45,40 @@ def test_build_muscle_quad_day_core_is_not_a_plank():
         equipment=["full_gym"], days_per_week=4, duration_minutes=60, fitness_level="intermediate"))
     core = [s for d in bp["day_blueprints"] for s in d["slots"] if s["pattern"] == "core_stability"]
     assert core and all("Plank" not in s["options"][:3] for s in core)
+
+
+# ── Advanced lifters: 4 sets on main lifts, longer rest, Romanian deadlift ──
+def _bp(goal, days=5, level="advanced"):
+    return E().build_blueprint(WorkoutGenerateRequest(
+        user_id="u", goal=goal, training_style="weights", focus_areas=["full_body"],
+        equipment=["full_gym"], days_per_week=days, duration_minutes=60, fitness_level=level))
+
+
+@pytest.mark.parametrize("goal", ["build_muscle", "body_recomp", "lose_fat", "general_fitness"])
+def test_main_lifts_capped_at_4_sets(goal):
+    slots = [s for d in _bp(goal)["day_blueprints"] for s in d["slots"]]
+    assert max(s["sets"] for s in slots if s["type"] == "primary_compound") == 4
+
+
+def test_strength_keeps_5_sets():
+    slots = [s for d in _bp("strength", days=4)["day_blueprints"] for s in d["slots"]]
+    assert max(s["sets"] for s in slots if s["type"] == "primary_compound") == 5
+
+
+@pytest.mark.parametrize("goal", ["build_muscle", "body_recomp"])
+def test_main_lift_rest_is_2_30(goal):
+    slots = [s for d in _bp(goal)["day_blueprints"] for s in d["slots"]]
+    assert {s["rest_seconds"] for s in slots if s["type"] == "primary_compound"} == {150}
+
+
+def test_hip_day_leads_with_romanian_deadlift():
+    hip = next(d for d in _bp("build_muscle")["day_blueprints"] if "Hip" in d["label"])
+    hinge = next(s for s in hip["slots"] if s["pattern"] == "hip_hinge")
+    assert hinge["options"][0] == "Romanian Deadlift"
+    assert "Conventional Deadlift" not in hinge["options"][:3]
+
+
+def test_bench_press_repeats_across_the_week():
+    firsts = [s["options"][0] for d in _bp("build_muscle")["day_blueprints"] for s in d["slots"]
+              if s["type"] == "primary_compound" and s["pattern"] == "horizontal_push"]
+    assert firsts.count("Barbell Bench Press") == 2

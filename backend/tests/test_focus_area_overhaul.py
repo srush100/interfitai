@@ -1,7 +1,7 @@
 """
 Tests for InterFitAI workout engine focus area overhaul:
 - Primary focus areas drive split selection (ai_choose mode)
-- Primary focus areas get +2 sets per matching slot (sets >= 5)
+- Primary focus areas get extra sets on matching slots, up to the level's per-exercise cap
 - Secondary focus areas get [secondary emphasis] coaching_note marker
 - FOCUS_SPLIT_PREFERENCE dict drives: chest→PPL, legs→upper_lower
 
@@ -75,7 +75,7 @@ def legs_4days_response():
 
 @pytest.fixture(scope="module")
 def chest_volume_response():
-    """chest primary focus + 4 days: exercises should have sets >= 5 (primary +2 boost)"""
+    """chest primary focus + 4 days: chest exercises boosted to the intermediate cap (4 sets)"""
     payload = {
         "user_id": USER_ID,
         "goal": "build_muscle",
@@ -206,15 +206,13 @@ class TestLegs4DaysUpperLowerSplit:
         print(f"✅ [Test 2] {len(leg_exercises)} leg exercises found across days")
 
 
-# ── Test 3: Primary focus chest → +2 sets (sets >= 5) ────────────────────────
+# ── Test 3: Primary focus chest → boosted up to the level cap ────────────────
 
 class TestPrimaryFocusChestVolumeBoost:
     """
-    POST /api/workouts/generate with focus_areas=['chest'] — chest pattern slots
-    (horizontal_push) should have +2 sets vs base (sets >= 5).
-    Code path: line 2218 — boost = 2; boosted = min(slot['sets'] + 2, 6)
-    Base: intermediate build_muscle primary_compound = 4 sets → after boost = 6
-          secondary_compound = 3 sets → after boost = 5
+    POST /api/workouts/generate with focus_areas=['chest'] — chest slots get +1 set
+    but never above the level's per-exercise cap (intermediate: 4). The extra chest
+    volume comes from boosted secondary presses and added chest slots instead.
     """
 
     def test_chest_exercises_have_elevated_sets(self, chest_volume_response):
@@ -229,13 +227,14 @@ class TestPrimaryFocusChestVolumeBoost:
         assert len(chest_exercises) > 0, "No chest exercises found in workout"
         print(f"Chest exercises: {[(ex['name'], ex.get('sets')) for ex in chest_exercises]}")
 
-        # At least one chest exercise should have sets >= 5 (primary focus +2 boost)
-        high_set_exs = [ex for ex in chest_exercises if ex.get("sets", 0) >= 5]
-        assert len(high_set_exs) > 0, (
-            f"Expected >= 1 chest exercise with sets >= 5 (primary +2 boost).\n"
+        # Boosted chest work reaches the intermediate cap of 4 sets but never exceeds it
+        high_set_exs = [ex for ex in chest_exercises if ex.get("sets", 0) == 4]
+        over_cap = [ex for ex in chest_exercises if ex.get("sets", 0) > 4]
+        assert len(high_set_exs) > 0 and not over_cap, (
+            f"Expected chest exercises at the 4-set cap and none above it.\n"
             f"Got: {[(ex['name'], ex.get('sets')) for ex in chest_exercises]}"
         )
-        print(f"✅ [Test 3] {len(high_set_exs)}/{len(chest_exercises)} chest exercises have sets >= 5")
+        print(f"✅ [Test 3] {len(high_set_exs)}/{len(chest_exercises)} chest exercises at the 4-set cap")
 
     def test_all_exercises_have_minimum_sets(self, chest_volume_response):
         """No exercise should have 0 sets (MIN_SETS_FLOOR should prevent this)"""
