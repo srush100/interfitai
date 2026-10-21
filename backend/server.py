@@ -5333,6 +5333,8 @@ from nutrition_engine import (  # noqa: E402
     optimise_portions, prompt_food_names, template_draft,
     build_plate, grams_in_text, is_composite_name, parse_portions, plate_totals, portion_grams, resolve_food,
     snap_item_from_text,
+    snap_item,
+    food_matches,
 )
 from meal_templates import TEMPLATES_BY_STYLE  # noqa: E402
 
@@ -6801,12 +6803,65 @@ For labels, the `calories/protein/carbs/fats` top-level fields describe ONE labe
             raise HTTPException(status_code=400, detail="Invalid image format. Please use a valid JPEG or PNG image.")
         raise HTTPException(status_code=500, detail=f"Failed to analyze food: {str(e)}")
 
+async def usda_generic_per_100g(food: str):
+    """Per-100g macros for a plain food from USDA's generic tables (Foundation /
+    SR Legacy — not branded products), or None. Only a result whose name contains
+    every word the user typed is used; otherwise nothing is guessed."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{USDA_API_BASE}/foods/search",
+                params={"api_key": USDA_API_KEY, "query": food, "pageSize": 10,
+                        "dataType": ["Foundation", "SR Legacy"]},
+                timeout=8.0,
+            )
+        if response.status_code != 200:
+            logger.warning(f"USDA fallback error {response.status_code} for '{food}'")
+            return None
+        foods = response.json().get("foods", [])
+    except Exception as e:
+        logger.warning(f"USDA fallback exception for '{food}': {e}")
+        return None
+    for f in foods:
+        desc = f.get("description", "")
+        if not food_matches(food, name=desc):
+            continue
+        n = {}
+        for x in f.get("foodNutrients", []):
+            name, unit = x.get("nutrientName", ""), str(x.get("unitName", "")).upper()
+            if name.startswith("Energy") and unit != "KCAL":
+                continue   # kJ entries
+            n.setdefault("Energy" if name.startswith("Energy") else name, float(x.get("value") or 0))
+        p, c, fat = n.get("Protein", 0), n.get("Carbohydrate, by difference", 0), n.get("Total lipid (fat)", 0)
+        cal = n.get("Energy") or round(p * 4 + c * 4 + fat * 9)
+        if cal <= 0 and p + c + fat <= 0:
+            continue
+        return {"calories": round(cal), "protein": round(p, 1), "carbs": round(c, 1),
+                "fats": round(fat, 1), "usda_name": desc}
+    return None
+
+
 @api_router.post("/food/item")
 async def snap_food_item(request: SnapItemRequest):
     """Edit one item of a snapped plate ('150g', '3 eggs') or add one by name
     ('30g cheddar', '1 tbsp olive oil'). Same food database and calculator as
-    meal plans; an unknown food is reported, never guessed."""
+    meal plans. A food that isn't in the database is looked up in USDA's generic
+    tables (grams required); an unknown food is reported, never guessed."""
     item, error = snap_item_from_text(request.text, request.key, request.name, request.per_100g)
+    if error and not request.key and not request.per_100g and "food database" in error:
+        specs = parse_portions(request.text)
+        spec = specs[0] if specs else None
+        food = (spec["food"] if spec else request.text).strip()
+        usda = await usda_generic_per_100g(food) if food else None
+        if usda:
+            if not spec or spec["unit"] not in ("g", "ml"):
+                error = f"Found '{food}' — add the amount in grams, e.g. '50g {food}'."
+            else:
+                item = snap_item(food, spec["amount"], per_100g=usda)
+                if item:
+                    item["source"] = "usda"
+                    item["usda_name"] = usda["usda_name"]
+                    return item
     if error:
         raise HTTPException(status_code=422, detail={"error": "item_unresolvable", "message": error})
     return item
