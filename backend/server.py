@@ -2812,6 +2812,9 @@ class EliteCoachingEngine:
             "excluded":      [],
         }
 
+    # Accessories the time fit keeps while the day has only one of them
+    PROTECTED_ACCESSORIES = ('bicep_curl', 'tricep_push', 'lateral_raise')
+
     WORK_PER_SET_SEC = 40   # avg set execution + transition time
     WARMUP_SEC = 300        # 5 min general warm-up
     RAMP_UP_SEC = 120       # lighter warm-up sets before each main lift
@@ -2834,12 +2837,14 @@ class EliteCoachingEngine:
     def _fit_to_duration(self, slots: list, target_minutes: int, goal: str,
                          primary_patterns: list) -> list:
         """Trim a session until its estimated time is within 10% of the target.
-        Order: secondary lifts to 3 sets → drop extra accessories (keeping one arm
-        exercise) → fewer sets on support work → main-lift rest
+        Order: secondary lifts to 3 sets → finisher a step shorter → drop extra
+        accessories (keeping one biceps, triceps and side-delt exercise) → shortest finisher → fewer sets on support work → main-lift rest
         to the goal's floor → main lifts down to 3 sets → drop remaining lifts
         (always keeping at least 2 lifts and the conditioning block)."""
         limit = target_minutes * 1.10
-        rest_floor = self.STRENGTH_REST_FLOORS.get(goal, 60)
+        # Muscle goals keep at least 2 min on main lifts even when time is tight
+        rest_floor = max(self.STRENGTH_REST_FLOORS.get(goal, 60),
+                         120 if goal in ('build_muscle', 'body_recomp') else 0)
 
         def over() -> bool:
             return self._estimate_minutes(slots) > limit
@@ -2847,24 +2852,48 @@ class EliteCoachingEngine:
         def lifts() -> list:
             return [s for s in slots if s['type'] != 'conditioning']
 
+        def shorten_finisher(floor_minutes: int) -> bool:
+            # A finisher at the end of a lifting day can run a step shorter;
+            # dedicated conditioning days keep their full block
+            for s in slots:
+                if s['type'] != 'conditioning' or 'finisher' not in s['coaching_note']:
+                    continue
+                m = re.match(r'(\d+)-(\d+) min', str(s['reps']))
+                if not m:
+                    continue
+                steps = [(lo, hi) for lo, hi in self.COND_MINUTES['finisher'].values()
+                         if hi < int(m.group(2)) and hi >= floor_minutes]
+                if steps:
+                    lo, hi = max(steps, key=lambda x: x[1])
+                    s['reps'] = f"{lo}-{hi} min" + str(s['reps'])[m.end():]
+                    return True
+            return False
+
         # 0. Secondary lifts down to 3 sets before any exercise is dropped
         while over():
             cands = [s for s in slots if s['type'] == 'secondary_compound' and s['sets'] > 3]
             if not cands:
                 break
             cands[-1]['sets'] -= 1
+        # 0b. A finisher may lose a few minutes (not below 8-10) before any lifting goes
+        while over() and shorten_finisher(10):
+            pass
         # 1. Drop lowest-priority accessories (non-focus first), keep at least 3 lifts
-        #    and the day's last arm exercise while anything else can go
+        #    and the day's only biceps, triceps and side-delt exercises
         while over() and len(lifts()) > 3:
             cands = [s for s in slots if s['type'] not in
                      ('primary_compound', 'secondary_compound', 'conditioning')]
-            arms = [s for s in cands if s['pattern'] in ('bicep_curl', 'tricep_push')]
-            if len(arms) == 1 and len(cands) > 1:
-                cands.remove(arms[0])
+            for pat in self.PROTECTED_ACCESSORIES:
+                only = [s for s in slots if s['pattern'] == pat]
+                if len(only) == 1 and only[0] in cands:
+                    cands.remove(only[0])
             if not cands:
                 break
             non_focus = [s for s in cands if s['pattern'] not in primary_patterns]
             slots.remove((non_focus or cands)[-1])
+        # 1b. Finisher down to its shortest (5-6 min)
+        while over() and shorten_finisher(6):
+            pass
         # 2. Fewer sets on everything except the main lifts (minimum 2)
         while over():
             cands = [s for s in slots if s['type'] not in ('primary_compound', 'conditioning')
@@ -2978,7 +3007,8 @@ class EliteCoachingEngine:
                 )
             )
             if will_inject_cond:
-                max_ex = max(3, max_ex - 1)   # reserve one slot for finisher
+                # The time fit (_fit_to_duration) shortens the finisher or trims
+                # accessories if the day runs long; only the set budget eases here
                 max_sets = max(min_sets, max_sets - 2)  # reduce set budget slightly
                 target_sets = _level_target(min_sets, max_sets)
 

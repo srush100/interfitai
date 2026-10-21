@@ -82,3 +82,14 @@ def test_bench_press_repeats_across_the_week():
     firsts = [s["options"][0] for d in _bp("build_muscle")["day_blueprints"] for s in d["slots"]
               if s["type"] == "primary_compound" and s["pattern"] == "horizontal_push"]
     assert firsts.count("Barbell Bench Press") == 2
+
+
+def test_recomp_upper_days_keep_biceps_triceps_and_side_delts():
+    # Upper days with a cardio finisher still keep their arm and lateral-raise work:
+    # the finisher is shortened before those exercises are dropped
+    for d in _bp("body_recomp")["day_blueprints"]:
+        pats = {s["pattern"] for s in d["slots"]}
+        if d["archetype_id"] == "upper_full":
+            assert {"bicep_curl", "tricep_push"} <= pats
+        if any(s["type"] == "conditioning" for s in d["slots"]):
+            assert d["slots"][-1]["type"] == "conditioning"
