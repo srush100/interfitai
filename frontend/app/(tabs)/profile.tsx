@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
+import { HEALTH_INTEGRATION_ENABLED } from '../../src/config/features';
 
 const DEVICES = [
   { id: 'apple_health', name: 'Apple Health', icon: 'logo-apple' },
@@ -542,6 +543,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Health Data - Links to Settings */}
+        {HEALTH_INTEGRATION_ENABLED && (
         <TouchableOpacity
           style={styles.card}
           onPress={() => router.push('/settings')}
@@ -587,6 +589,7 @@ export default function ProfileScreen() {
             <Text style={styles.noDevicesText}>Tap to connect</Text>
           )}
         </TouchableOpacity>
+        )}
 
         {/* Settings */}
         <View style={styles.card}>

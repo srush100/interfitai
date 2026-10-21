@@ -32,6 +32,7 @@ import {
 } from '../src/services/health';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../src/services/api';
+import { HEALTH_INTEGRATION_ENABLED } from '../src/config/features';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -279,6 +280,7 @@ export default function SettingsScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Connected Devices */}
+        {HEALTH_INTEGRATION_ENABLED && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Ionicons name="heart" size={22} color={colors.primary} />
@@ -366,6 +368,7 @@ export default function SettingsScreen() {
             </View>
           )}
         </View>
+        )}
 
         {/* Workout Reminders */}
         <View style={styles.section}>

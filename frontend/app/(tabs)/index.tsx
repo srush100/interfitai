@@ -22,6 +22,7 @@ import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
 import { getHealthConnectionStatus, syncHealthData } from '../../src/services/health';
 import usePremium from '../../src/hooks/usePremium';
+import { HEALTH_INTEGRATION_ENABLED } from '../../src/config/features';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -64,7 +65,7 @@ export default function HomeScreen() {
         console.log('Auto health sync failed:', e);
       }
     };
-    autoSyncHealth();
+    if (HEALTH_INTEGRATION_ENABLED) autoSyncHealth();
   }, []);
 
   const loadData = async () => {
