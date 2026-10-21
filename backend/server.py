@@ -1156,7 +1156,8 @@ class EliteCoachingEngine:
             "bodyweight":["Single-Leg Calf Raise", "Bodyweight Calf Raise"],
         },
         "core_stability": {
-            "full_gym":  ["Plank", "Dead Bug", "Ab Rollout", "Pallof Press"],
+            "full_gym":  ["Plank", "Dead Bug", "Ab Rollout", "Pallof Press", "Cable Wood Chop"],
+            "dumbbells": ["Weighted Dead Bug", "Renegade Row"],
             "cables":    ["Pallof Press", "Cable Wood Chop", "Ab Pulldown"],
             "bodyweight":["Plank", "Dead Bug", "Bird Dog", "Side Plank"],
             "resistance_bands":["Band Pallof Press"],
@@ -2200,6 +2201,28 @@ class EliteCoachingEngine:
         "Dip": 3, "Muscle-Up Progression": 3, "Terminal Knee Extension": 3,
     }
 
+    # Exercises measured in time, distance or per side, not plain reps: the slot's
+    # rep range ("10-15") becomes a timed hold, a carry distance or "each side".
+    HOLD_EXERCISES = {"Plank": "hold", "Side Plank": "hold each side", "Wall Sit": "hold",
+                      "Hollow Hold": "hold", "L-Sit": "hold"}
+    CARRY_EXERCISES = {"Farmer's Carry", "Kettlebell Farmer's Carry", "Trap Bar Farmer's Carry",
+                       "Suitcase Carry", "Kettlebell Overhead Carry"}
+    PER_SIDE_EXERCISES = {"Dead Bug", "Weighted Dead Bug", "Renegade Row", "Bird Dog", "Pallof Press", "Band Pallof Press", "Cable Wood Chop",
+                          "Single-Leg RDL", "Single-Leg Romanian Deadlift", "Single-Leg Glute Bridge",
+                          "Single-Leg Calf Raise", "Single-Arm Cable Row", "Single-Arm Lat Pulldown"}
+    HOLD_TIMES = {"beginner": "20-30s", "intermediate": "30-45s", "advanced": "45-60s"}
+
+    @classmethod
+    def reps_for_exercise(cls, name: str, reps: str, level: str) -> str:
+        """The slot's reps, adjusted to how this exercise is measured."""
+        if name in cls.HOLD_EXERCISES:
+            return f"{cls.HOLD_TIMES.get(level, '30-45s')} {cls.HOLD_EXERCISES[name]}"
+        if name in cls.CARRY_EXERCISES:
+            return "30-40 m walk" + (" each side" if name in ("Suitcase Carry", "Kettlebell Overhead Carry") else "")
+        if name in cls.PER_SIDE_EXERCISES and 'each' not in str(reps) and 'min' not in str(reps):
+            return f"{reps} each side"
+        return reps
+
     BEGINNER_REGRESSIONS: dict = {
         "Pull-Up": "Negative Pull-Up (slow lowering)",
         "Chin-Up": "Negative Chin-Up (slow lowering)",
@@ -2488,6 +2511,14 @@ class EliteCoachingEngine:
                 tier1_2 = [x for x in result if diff.get(x, 2) <= 2]
                 tier3   = [x for x in result if diff.get(x, 2) > 2]
                 result  = tier1_2 + tier3
+
+        # Past beginner, with equipment: loaded, progressive core work comes before
+        # the plank and dead bug (a plank stops progressing once you can hold it)
+        # (beginners the other way round: learn to brace with the plank first)
+        if pattern == 'core_stability' and not is_bodyweight_context:
+            easy = [e for e in result if e in ('Plank', 'Dead Bug', 'Bird Dog', 'Side Plank')]
+            hard = [e for e in result if e not in easy]
+            result = easy + hard if level == 'beginner' else hard + easy
 
         # Beginner conditioning: Incline Walking instead of Assault Bike
         # Lower impact, easier to pace, gentler entry to conditioning.
@@ -4069,7 +4100,8 @@ async def generate_workout(request: WorkoutGenerateRequest):
             exercises_with_gifs.append({
                 "name":              chosen_name,
                 "sets":              slot_meta['sets'],
-                "reps":              slot_meta['reps'],
+                "reps":              EliteCoachingEngine.reps_for_exercise(
+                                         chosen_name, slot_meta['reps'], blueprint['level']),
                 "rest_seconds":      slot_meta['rest_seconds'],
                 "instructions":      instructions,
                 "muscle_groups":     PATTERN_MUSCLES.get(slot_meta['pattern'], ['various']),
@@ -4765,7 +4797,7 @@ async def reorder_exercises(workout_id: str, request: ReorderExercisesRequest):
 
 
 
-def _params_for_added_exercise(name: str, goal: str) -> dict:
+def _params_for_added_exercise(name: str, goal: str, level: str = 'intermediate') -> dict:
     """Goal-appropriate sets/reps/rest for a manually-added exercise.
     Classifies the exercise (conditioning / core / compound / isolation) from its
     name, then pulls the matching scheme from the program goal's GOAL_PARAMS so an
@@ -4793,7 +4825,7 @@ def _params_for_added_exercise(name: str, goal: str) -> dict:
     p = goal_params.get(ex_type) or goal_params.get('accessory') or {}
     return {
         'sets':         p.get('sets', 3),
-        'reps':         p.get('reps', '10-12'),
+        'reps':         EliteCoachingEngine.reps_for_exercise(name, p.get('reps', '10-12'), level),
         'rest_seconds': p.get('rest', 90),
         'effort':       p.get('effort', ''),
     }
@@ -4825,6 +4857,7 @@ async def add_exercise(workout_id: str, request: AddExerciseRequest):
     _added = _params_for_added_exercise(
         exercise_data.get("name", ""),
         workout.get("goal", "general_fitness"),
+        workout.get("fitness_level", "intermediate"),
     )
     exercise_data["sets"]         = _added["sets"]
     exercise_data["reps"]         = _added["reps"]
