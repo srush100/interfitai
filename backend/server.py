@@ -2355,7 +2355,9 @@ class EliteCoachingEngine:
         best = scored[0]
 
         # ── Generate contextual rationale ─────────────────────────────────────
-        focus_label = focus_key.replace('_', ' ') if focus_key else goal.replace('_', ' ')
+        # "full_body" is the no-focus default — say "every muscle group", not "full body"
+        focus_label = (focus_key.replace('_', ' ') if focus_key and focus_key != 'full_body'
+                       else 'every muscle group')
         goal_label  = goal.replace('_', ' ')
         RATIONALE = {
             'full_body': (
