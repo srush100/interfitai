@@ -13,6 +13,7 @@ interface UserProfile {
   gender: string;
   activity_level: string;
   goal: string;
+  mostly_muscle?: boolean;   // asked only when BMI is over 30
   calculated_macros: {
     calories: number;
     protein: number;

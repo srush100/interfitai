@@ -58,6 +58,7 @@ export default function ProfileScreen() {
     age: profile?.age?.toString() || '',
     goal: profile?.goal || 'muscle_building',
     activity_level: profile?.activity_level || 'moderate',
+    mostly_muscle: !!profile?.mostly_muscle,
   });
   const [saving, setSaving] = useState(false);
   const [isPedometerAvailable, setIsPedometerAvailable] = useState(false);
@@ -121,9 +122,18 @@ export default function ProfileScreen() {
       age: profile?.age?.toString() || '',
       goal: profile?.goal || 'muscle_building',
       activity_level: profile?.activity_level || 'moderate',
+      mostly_muscle: !!profile?.mostly_muscle,
     });
     setEditing(true);
   };
+
+  // Asked only when BMI is over 30: is the weight mostly muscle?
+  const editBmiOver30 = (() => {
+    const w = parseAmount(editData.weight), h = parseAmount(editData.height);
+    const kg = weightUnit === 'lbs' ? w / 2.20462 : w;
+    const cm = heightUnit === 'in' ? h * 2.54 : h;
+    return kg > 0 && cm > 0 && kg / (cm / 100) ** 2 > 30;
+  })();
 
   const formatHeight = (cm?: number) => {
     if (!cm) return '-';
@@ -255,6 +265,7 @@ export default function ProfileScreen() {
         weight: weightInKg,
         height: heightInCm,
         unit_preference: weightUnit,
+        mostly_muscle: editBmiOver30 ? editData.mostly_muscle : false,
         age,
         goal: editData.goal,
         activity_level: editData.activity_level,
@@ -425,6 +436,28 @@ export default function ProfileScreen() {
                   />
                 </View>
               </View>
+
+              {editBmiOver30 && (
+                <>
+                  <Text style={styles.editLabel}>Is your weight mostly muscle?</Text>
+                  <View style={styles.goalSelector} testID="profile-mostly-muscle">
+                    {[
+                      { value: true, label: 'Yes, muscular & lean' },
+                      { value: false, label: 'No / not sure' },
+                    ].map((o) => (
+                      <TouchableOpacity
+                        key={String(o.value)}
+                        style={[styles.goalBtn, editData.mostly_muscle === o.value && styles.goalBtnActive]}
+                        onPress={() => setEditData({ ...editData, mostly_muscle: o.value })}
+                      >
+                        <Text style={[styles.goalBtnText, editData.mostly_muscle === o.value && styles.goalBtnTextActive]}>
+                          {o.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
 
               {/* Goal Selector */}
               <Text style={styles.editLabel}>Fitness Goal</Text>

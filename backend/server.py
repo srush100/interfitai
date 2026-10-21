@@ -876,6 +876,8 @@ class UserProfile(BaseModel):
     gender: str = "male"  # male, female, other
     activity_level: str = "moderate"  # sedentary, light, moderate, active, very_active
     goal: str = "maintenance"  # weight_loss, maintenance, muscle_building
+    # Asked only when BMI is over 30: True = "my weight is mostly muscle"
+    mostly_muscle: Optional[bool] = None
     calculated_macros: Optional[Dict[str, float]] = None
     calorie_adjustment: int = 0  # Manual calorie adjustment (+/- from calculated)
     subscription_status: str = "free"  # free, monthly, quarterly, yearly
@@ -898,6 +900,7 @@ class UserProfileCreate(BaseModel):
     gender: str = "male"
     activity_level: str = "moderate"
     goal: str = "maintenance"
+    mostly_muscle: Optional[bool] = None
 
 class LoginRequest(BaseModel):
     email: str
@@ -912,6 +915,7 @@ class UserProfileUpdate(BaseModel):
     gender: Optional[str] = None
     activity_level: Optional[str] = None
     goal: Optional[str] = None
+    mostly_muscle: Optional[bool] = None
     calorie_adjustment: Optional[int] = None
     reminders_enabled: Optional[bool] = None
     motivation_enabled: Optional[bool] = None
@@ -3669,7 +3673,8 @@ STRIPE_PRICE_IDS = {
 
 # ==================== HELPER FUNCTIONS ====================
 
-def calculate_macros(weight: float, height: float, age: int, gender: str, activity_level: str, goal: str) -> Dict[str, float]:
+def calculate_macros(weight: float, height: float, age: int, gender: str, activity_level: str, goal: str,
+                     mostly_muscle: Optional[bool] = False) -> Dict[str, float]:
     """Calculate personalized macros using Mifflin-St Jeor equation.
 
     Protein is prescribed from bodyweight (g/kg) per ISSN guidelines — not as
@@ -3717,11 +3722,15 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
     # ── Macro split: protein from bodyweight, fat at 25% of cals, rest carbs ──
     # With a BMI over 30, protein is set from a healthy-weight reference (the
     # weight at BMI 25 for their height): g/kg targets are for lean mass, and
-    # total weight would ask for far more than is needed (220g+).
+    # total weight would ask for far more than is needed (220g+). Unless the
+    # user says their weight is mostly muscle — then full weight, higher cap.
     height_m = height / 100
     bmi = weight / (height_m ** 2) if height_m > 0 else 0
-    protein_weight = min(weight, 25 * height_m ** 2) if bmi > 30 else weight
-    protein_g = round(min(protein_weight * protein_per_kg, 220))
+    if bmi > 30 and mostly_muscle:
+        protein_g = round(min(weight * protein_per_kg, 260))
+    else:
+        protein_weight = min(weight, 25 * height_m ** 2) if bmi > 30 else weight
+        protein_g = round(min(protein_weight * protein_per_kg, 220))
     fat_g     = round((calories * 0.25) / 9)    # 25% of cals from fat (hormonal minimum)
     remaining_cals = calories - (protein_g * 4) - (fat_g * 9)
     carbs_g   = round(max(remaining_cals, 0) / 4)
@@ -3761,7 +3770,8 @@ async def create_profile(profile_data: UserProfileCreate):
     profile_dict["id"] = str(uuid.uuid4())
     profile_dict["calculated_macros"] = calculate_macros(
         profile_dict["weight"], profile_dict["height"], profile_dict["age"],
-        profile_dict["gender"], profile_dict["activity_level"], profile_dict["goal"]
+        profile_dict["gender"], profile_dict["activity_level"], profile_dict["goal"],
+        profile_dict.get("mostly_muscle"),
     )
     profile_dict["created_at"] = datetime.utcnow()
     profile_dict["updated_at"] = datetime.utcnow()
@@ -3804,14 +3814,15 @@ async def update_profile(user_id: str, update_data: UserProfileUpdate):
     update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
     
     # Check if we need to recalculate macros
-    macro_fields = ["weight", "height", "age", "gender", "activity_level", "goal"]
+    macro_fields = ["weight", "height", "age", "gender", "activity_level", "goal", "mostly_muscle"]
     need_recalc = any(field in update_dict for field in macro_fields)
     
     if need_recalc:
         merged = {**profile, **update_dict}
         macros = calculate_macros(
             merged["weight"], merged["height"], merged["age"],
-            merged["gender"], merged["activity_level"], merged["goal"]
+            merged["gender"], merged["activity_level"], merged["goal"],
+            merged.get("mostly_muscle"),
         )
         update_dict["calculated_macros"] = macros
     
@@ -8664,7 +8675,7 @@ async def _sync_profile_weight(user_id: str):
     try:
         update["calculated_macros"] = calculate_macros(
             avg, profile["height"], profile["age"], profile["gender"],
-            profile["activity_level"], profile["goal"])
+            profile["activity_level"], profile["goal"], profile.get("mostly_muscle"))
     except Exception as e:   # incomplete profile — keep the weight, skip targets
         logger.warning(f"Weight sync: targets not recalculated for {user_id}: {e}")
     await db.profiles.update_one({"id": user_id}, {"$set": update})

@@ -360,3 +360,24 @@ def test_website_checkout_uses_app_prices(db, monkeypatch):
 def test_monthly_website_payment_buys_a_month():
     assert server._stripe_plan_days("monthly") == 31
     assert server._stripe_plan_days("yearly") == 365
+
+
+# ── "Is your weight mostly muscle?" (asked only when BMI is over 30) ──────
+@pytest.mark.parametrize("args, muscle, protein", [
+    ((120, 185, 30, "male", "active", "muscle_building"), True, 240),    # muscular lifter: full weight
+    ((120, 185, 30, "male", "active", "muscle_building"), False, 171),   # default: healthy-weight reference
+    ((120, 185, 30, "male", "active", "weight_loss"), True, 260),        # 264 → higher cap 260
+    ((130, 175, 40, "male", "sedentary", "weight_loss"), None, 168),     # not asked / not sure
+    ((80, 180, 30, "male", "moderate", "weight_loss"), True, 176),       # BMI under 30: answer ignored
+])
+def test_mostly_muscle_protein(args, muscle, protein):
+    assert server.calculate_macros(*args, mostly_muscle=muscle)["protein"] == protein
+
+
+def test_changing_the_answer_updates_targets(db):
+    db.profiles.docs.append({"id": "u", "weight": 120, "height": 185, "age": 30, "gender": "male",
+                             "activity_level": "active", "goal": "muscle_building",
+                             "calculated_macros": server.calculate_macros(120, 185, 30, "male", "active", "muscle_building")})
+    assert db.profiles.docs[0]["calculated_macros"]["protein"] == 171
+    run(server.update_profile("u", server.UserProfileUpdate(mostly_muscle=True)))
+    assert db.profiles.docs[0]["calculated_macros"]["protein"] == 240
