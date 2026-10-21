@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
+import { cancelAllReminders } from '../services/notifications';
 
 interface UserProfile {
   id: string;
@@ -12,12 +13,14 @@ interface UserProfile {
   gender: string;
   activity_level: string;
   goal: string;
+  mostly_muscle?: boolean;   // asked only when BMI is over 30
   calculated_macros: {
     calories: number;
     protein: number;
     carbs: number;
     fats: number;
     bmr: number;
+    calorie_floor_applied?: boolean | number;   // target held at the safe minimum
     tdee: number;
   } | null;
   subscription_status: string;
@@ -145,6 +148,8 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   logout: async () => {
     try {
+      // The next person on this phone shouldn't get this user's reminders
+      await cancelAllReminders().catch(() => {});
       await AsyncStorage.removeItem('userId');
       await AsyncStorage.removeItem('@user_id');
       await AsyncStorage.setItem('isOnboarded', 'false');

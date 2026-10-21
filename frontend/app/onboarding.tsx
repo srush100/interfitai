@@ -53,6 +53,7 @@ export default function Onboarding() {
     gender: 'male',
     activity_level: 'moderate',
     goal: 'muscle_building',
+    mostly_muscle: false,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState('');
@@ -71,6 +72,13 @@ export default function Onboarding() {
     
     return { weightKg, heightCm };
   };
+
+  // Only people heavy for their height (BMI over 30) are asked whether their
+  // weight is mostly muscle — it sets how protein is calculated
+  const bmiOver30 = (() => {
+    const { weightKg, heightCm } = convertToMetric();
+    return weightKg > 0 && heightCm > 0 && weightKg / (heightCm / 100) ** 2 > 30;
+  })();
 
   const handleNext = () => {
     setFormError('');
@@ -125,6 +133,7 @@ export default function Onboarding() {
         gender: formData.gender,
         activity_level: formData.activity_level,
         goal: formData.goal,
+        mostly_muscle: bmiOver30 ? formData.mostly_muscle : undefined,
       } as any);
       router.replace('/(tabs)');
     } catch (error) {
@@ -301,6 +310,28 @@ export default function Onboarding() {
           </View>
         </View>
       </View>
+
+      {bmiOver30 && (
+        <View style={styles.inputGroup} testID="onboarding-mostly-muscle">
+          <Text style={styles.label}>Is your weight mostly muscle?</Text>
+          <View style={styles.genderContainer}>
+            {[
+              { value: true, label: 'Yes, I\u2019m muscular and fairly lean' },
+              { value: false, label: 'No / not sure' },
+            ].map((o) => (
+              <TouchableOpacity
+                key={String(o.value)}
+                style={[styles.genderBtn, formData.mostly_muscle === o.value && styles.genderBtnActive]}
+                onPress={() => setFormData({ ...formData, mostly_muscle: o.value })}
+              >
+                <Text style={[styles.genderText, formData.mostly_muscle === o.value && styles.genderTextActive]}>
+                  {o.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
     </View>
   );
 

@@ -19,6 +19,7 @@ import * as Sharing from 'expo-sharing';
 import { useUserStore } from '../src/store/userStore';
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
+import { parseAmount } from '../src/utils/numbers';
 
 // Enhancement 1 — extended interface with new optional fields
 interface AnalysisResult {
@@ -36,6 +37,12 @@ interface AnalysisResult {
 export default function BodyAnalyzer() {
   const router = useRouter();
   const { profile } = useUserStore();
+  const weightUnit: 'kg' | 'lbs' = (profile?.unit_preference as 'kg' | 'lbs') || 'kg';
+  // Typed weights are in the user's unit; the server works in kg
+  const toKg = (text: string) => {
+    const v = parseAmount(text);
+    return v > 0 ? Math.round((weightUnit === 'lbs' ? v / 2.20462 : v) * 100) / 100 : undefined;
+  };
   const [beforeImage, setBeforeImage] = useState<string | null>(null);
   const [afterImage, setAfterImage] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -237,6 +244,9 @@ export default function BodyAnalyzer() {
       }
     } catch (error) {
       console.log('Subscription check error:', error);
+      setCheckingSubscription(false);
+      Alert.alert('Couldn\u2019t check your subscription', 'Check your connection and try again.');
+      return;
     } finally {
       setCheckingSubscription(false);
     }
@@ -251,14 +261,15 @@ export default function BodyAnalyzer() {
         before_image_base64: beforeImage,
         after_image_base64: afterImage,
         time_period: calculateTimePeriod(),
-        before_weight_kg: beforeWeight ? parseFloat(beforeWeight) : undefined,
-        after_weight_kg: afterWeight ? parseFloat(afterWeight) : undefined,
+        before_weight_kg: toKg(beforeWeight),
+        after_weight_kg: toKg(afterWeight),
       });
 
       setAnalysis(response.data.analysis);
     } catch (error: any) {
       // Bug 2 — show honest 502 message from backend retry logic
-      const msg = error.response?.data?.detail || 'Failed to analyze progress';
+      const detail = error.response?.data?.detail;
+      const msg = (typeof detail === 'string' && detail) || detail?.message || 'Failed to analyze progress';
       Alert.alert('Analysis Failed', msg);
     } finally {
       setAnalyzing(false);
@@ -518,7 +529,7 @@ export default function BodyAnalyzer() {
             {/* Enhancement 4 — optional weight inputs */}
             <View style={styles.weightRow}>
               <View style={styles.weightInputWrapper}>
-                <Text style={styles.weightLabel}>Before weight (kg)</Text>
+                <Text style={styles.weightLabel}>Before weight ({weightUnit})</Text>
                 <TextInput
                   style={styles.weightInput}
                   placeholder="e.g. 85"
@@ -529,7 +540,7 @@ export default function BodyAnalyzer() {
                 />
               </View>
               <View style={styles.weightInputWrapper}>
-                <Text style={styles.weightLabel}>After weight (kg)</Text>
+                <Text style={styles.weightLabel}>After weight ({weightUnit})</Text>
                 <TextInput
                   style={styles.weightInput}
                   placeholder="e.g. 80"
@@ -635,11 +646,11 @@ export default function BodyAnalyzer() {
                   </View>
                   <Text style={styles.scoreLabel}>Progress Score</Text>
                   {/* Polish B — weight delta badge */}
-                  {!!beforeWeight && !!afterWeight && (
+                  {parseAmount(beforeWeight) > 0 && parseAmount(afterWeight) > 0 && (
                     <View style={styles.weightDeltaBadge}>
                       <Text style={styles.weightDeltaText}>
-                        {(parseFloat(afterWeight) - parseFloat(beforeWeight)) >= 0 ? '+' : ''}
-                        {(parseFloat(afterWeight) - parseFloat(beforeWeight)).toFixed(1)} kg
+                        {parseAmount(afterWeight) - parseAmount(beforeWeight) >= 0 ? '+' : ''}
+                        {(parseAmount(afterWeight) - parseAmount(beforeWeight)).toFixed(1)} {weightUnit}
                       </Text>
                     </View>
                   )}

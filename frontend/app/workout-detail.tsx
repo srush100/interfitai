@@ -28,6 +28,8 @@ import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
 import * as Haptics from 'expo-haptics';
 import { useUserStore } from '../src/store/userStore';
+import { localDateString } from '../src/utils/date';
+import { parseAmount, tzOffsetMinutes } from '../src/utils/numbers';
 
 // Get backend URL for constructing full GIF URLs
 const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 
@@ -201,6 +203,8 @@ export default function WorkoutDetail() {
   );
   const kgToDisplay = (kg: number) =>
     localUnit === 'lbs' ? Math.round(kg * 2.20462 * 10) / 10 : kg;
+  // A stored kg weight shown in the user's unit, at most 1 decimal
+  const showWeight = (kg: number) => Math.round(kgToDisplay(kg) * 10) / 10;
   const displayToKg = (val: number) =>
     localUnit === 'lbs' ? val / 2.20462 : val;  // full precision — rounded only for display
   const [workout, setWorkout] = useState<WorkoutProgram | null>(null);
@@ -235,7 +239,10 @@ export default function WorkoutDetail() {
 
   // ── Session history state ─────────────────────────────────────────────────
   const [lastSession, setLastSession] = useState<Record<number, any>>({});
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  // When the user started logging each day's session (the timer keeps running
+  // while they look at other days)
+  const sessionStarts = useRef<Record<number, number>>({});
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [completedSessionData, setCompletedSessionData] = useState<{
     volume: number;
@@ -300,17 +307,18 @@ export default function WorkoutDetail() {
     }
   };
 
-  // Update performance and auto-save
+  // Update performance and auto-save: right away when a set is ticked, and a
+  // second after typing stops, so typed weights/reps survive leaving the app
   const updatePerformance = (key: string, data: ExercisePerformance) => {
     const newPerformance = { ...performance, [key]: data };
     setPerformance(newPerformance);
-    // Start session timer on first interaction with this day
-    if (!sessionStartTime) {
-      setSessionStartTime(new Date());
-    }
-    // Auto-save when checkbox is checked
-    if (data.completed) {
+    const dayIdx = parseInt(key.split('-')[0], 10);
+    if (sessionStarts.current[dayIdx] == null) sessionStarts.current[dayIdx] = Date.now();
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (data.completed && !performance[key]?.completed) {
       savePerformance(newPerformance);
+    } else {
+      saveTimer.current = setTimeout(() => savePerformance(newPerformance), 1000);
     }
   };
 
@@ -334,8 +342,6 @@ export default function WorkoutDetail() {
   useEffect(() => {
     if (workout) {
       loadLastSession(expandedDay);
-      // Reset timer when switching days
-      setSessionStartTime(new Date());
     }
   }, [expandedDay, workout?.id]);
 
@@ -385,21 +391,31 @@ export default function WorkoutDetail() {
   // Get "last time" hint text for a specific set
   const getLastTimeHint = (dayIdx: number, exIdx: number, setIdx: number): string | null => {
     const session = lastSession[dayIdx];
-    if (!session) return null;
-    const ex = session.completed_exercises?.[exIdx];
+    if (!session || !workout) return null;
+    // Match by name so a reordered or replaced exercise never shows another's numbers
+    const name = (workout.workout_days[dayIdx]?.exercises?.[exIdx]?.name || '').toLowerCase().trim();
+    const ex = (session.completed_exercises || []).find(
+      (e: any) => (e.exercise_name || '').toLowerCase().trim() === name
+    );
     if (!ex) return null;
     const set = ex.sets?.[setIdx];
     if (!set || !set.completed) return null;
-    if (set.weight && set.reps) return `${kgToDisplay(set.weight)}${localUnit} × ${set.reps}`;
+    if (set.weight && set.reps) return `${showWeight(set.weight)}${localUnit} × ${set.reps}`;
     if (set.reps) return `${set.reps} reps`;
     return null;
   };
 
   const handleFinishWorkout = async () => {
     if (!workout || !profile?.id) return;
-    setFinishing(true);
-
     const day = workout.workout_days[expandedDay];
+    const anyDone = day.exercises.some((exercise: any, exIdx: number) =>
+      Array.from({ length: exercise.sets }, (_, setIdx) => performance[`${expandedDay}-${exIdx}-${setIdx}`]?.completed)
+        .some(Boolean));
+    if (!anyDone) {
+      Alert.alert('No sets ticked yet', 'Tick the sets you\u2019ve done, then tap Finish Workout.');
+      return;
+    }
+    setFinishing(true);
 
     // Build completed_exercises from current performance state
     const completed_exercises = day.exercises.map((exercise: any, exIdx: number) => ({
@@ -408,17 +424,20 @@ export default function WorkoutDetail() {
       sets: Array.from({ length: exercise.sets }, (_, setIdx) => {
         const key = `${expandedDay}-${exIdx}-${setIdx}`;
         const perf = performance[key] || { weight: '', reps: '', completed: false };
+        const w = parseAmount(perf.weight);
+        const r = Math.round(parseAmount(perf.reps));
         return {
           set_number: setIdx + 1,
-          weight: perf.weight ? displayToKg(parseFloat(perf.weight)) : null,
-          reps: perf.reps ? parseInt(perf.reps) : null,
+          weight: w > 0 ? Math.round(displayToKg(w) * 100) / 100 : null,
+          reps: r > 0 ? r : null,
           completed: perf.completed,
         };
       }),
     }));
 
-    const durationMinutes = sessionStartTime
-      ? Math.max(1, Math.round((Date.now() - sessionStartTime.getTime()) / 60000))
+    const started = sessionStarts.current[expandedDay];
+    const durationMinutes = started != null
+      ? Math.max(1, Math.round((Date.now() - started) / 60000))
       : null;
 
     try {
@@ -428,6 +447,8 @@ export default function WorkoutDetail() {
         day_focus: day.focus || '',
         duration_minutes: durationMinutes,
         completed_exercises,
+        local_date: localDateString(),
+        tz_offset_minutes: tzOffsetMinutes(),
       });
 
       const prs: any[] = response.data.personal_records || [];
@@ -436,7 +457,9 @@ export default function WorkoutDetail() {
       // Fetch current streak
       let currentStreak = 0;
       try {
-        const statsRes = await api.get(`/workout/stats/${profile.id}`);
+        const statsRes = await api.get(`/workout/stats/${profile.id}`, {
+          params: { tz_offset_minutes: tzOffsetMinutes() },
+        });
         currentStreak = statsRes.data.current_streak || 0;
       } catch {
         // streak is non-critical
@@ -469,10 +492,11 @@ export default function WorkoutDetail() {
       });
       setPerformance(clearedPerformance);
       savePerformance(clearedPerformance);
-      setSessionStartTime(new Date()); // reset timer for a potential second session
-    } catch (error) {
+      delete sessionStarts.current[expandedDay]; // a second session starts its own timer
+    } catch (error: any) {
       console.log('Error completing session:', error);
-      Alert.alert('Error', 'Could not save your session. Please try again.');
+      const msg = error?.response?.data?.detail?.message;
+      Alert.alert('Error', msg || 'Could not save your session. Please try again.');
     } finally {
       setFinishing(false);
     }
@@ -558,43 +582,55 @@ export default function WorkoutDetail() {
   };
 
   // Add extra set to an exercise
+  // A copy of the workout with one exercise's set count changed (state isn't
+  // touched until the server has saved it)
+  const withSets = (w: WorkoutProgram, dayIdx: number, exIdx: number, sets: number): WorkoutProgram => ({
+    ...w,
+    workout_days: w.workout_days.map((d, i) => i !== dayIdx ? d : {
+      ...d,
+      exercises: d.exercises.map((e: any, j: number) => j !== exIdx ? e : { ...e, sets }),
+    }),
+  });
+
   const addSet = async (dayIdx: number, exIdx: number) => {
     if (!workout) return;
-    const newWorkout = { ...workout };
-    const exercise = newWorkout.workout_days[dayIdx].exercises[exIdx];
-    exercise.sets += 1;
-    
+    const sets = workout.workout_days[dayIdx].exercises[exIdx].sets + 1;
     try {
       await api.patch(`/workout/${workout.id}/exercise`, {
         day_index: dayIdx,
         exercise_index: exIdx,
-        sets: exercise.sets,
+        sets,
       });
-      setWorkout(newWorkout);
+      setWorkout(withSets(workout, dayIdx, exIdx, sets));
     } catch (error) {
       Alert.alert('Error', 'Failed to add set');
     }
   };
 
-  // Remove a set from an exercise
-  const removeSet = async (dayIdx: number, exIdx: number) => {
+  // Remove the tapped set: later sets move up one, keeping what was typed
+  const removeSet = async (dayIdx: number, exIdx: number, setIdx: number) => {
     if (!workout) return;
     const exercise = workout.workout_days[dayIdx].exercises[exIdx];
     if (exercise.sets <= 1) {
       Alert.alert('Cannot Remove', 'Exercise must have at least 1 set');
       return;
     }
-    
-    const newWorkout = { ...workout };
-    newWorkout.workout_days[dayIdx].exercises[exIdx].sets -= 1;
-    
+    const sets = exercise.sets - 1;
     try {
       await api.patch(`/workout/${workout.id}/exercise`, {
         day_index: dayIdx,
         exercise_index: exIdx,
-        sets: newWorkout.workout_days[dayIdx].exercises[exIdx].sets,
+        sets,
       });
-      setWorkout(newWorkout);
+      const shifted = { ...performance };
+      for (let i = setIdx; i < exercise.sets; i++) {
+        const next = performance[`${dayIdx}-${exIdx}-${i + 1}`];
+        if (next && i + 1 < exercise.sets) shifted[`${dayIdx}-${exIdx}-${i}`] = next;
+        else delete shifted[`${dayIdx}-${exIdx}-${i}`];
+      }
+      setPerformance(shifted);
+      savePerformance(shifted);
+      setWorkout(withSets(workout, dayIdx, exIdx, sets));
     } catch (error) {
       Alert.alert('Error', 'Failed to remove set');
     }
@@ -904,6 +940,16 @@ export default function WorkoutDetail() {
       i === expandedDay ? { ...day, exercises: newExercises } : day
     );
     setWorkout({ ...workout, workout_days: updatedDays });
+    setPerformance(prev => {
+      const next: Record<string, ExercisePerformance> = {};
+      Object.entries(prev).forEach(([k, v]) => {
+        const [d, e, st] = k.split('-');
+        let ex = parseInt(e, 10);
+        if (parseInt(d, 10) === expandedDay) ex = ex === fromIdx ? toIdx : ex === toIdx ? fromIdx : ex;
+        next[`${d}-${ex}-${st}`] = v;
+      });
+      return next;
+    });
 
     try {
       const newOrder = newExercises.map((ex) =>
@@ -1000,9 +1046,14 @@ export default function WorkoutDetail() {
     if (workout.current_week_override != null) return workout.current_week_override;
     const createdAt = new Date(workout.created_at);
     const daysDiff = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
-    return Math.min(workout.weekly_progression?.length || 4, Math.floor(daysDiff / 7) + 1);
+    return Math.min(workout.weekly_progression?.length || 12, Math.floor(daysDiff / 7) + 1);
   }, [workout]);
   
+  // Completions need the profile; load them when it arrives after the workout
+  useEffect(() => {
+    if (profile?.id && id) loadWeekCompletions(id as string);
+  }, [profile?.id, id]);
+
   // ── Week completion helpers ───────────────────────────────────────────────
   const loadWeekCompletions = useCallback(async (workoutId: string) => {
     if (!profile?.id) return;
@@ -1273,7 +1324,7 @@ export default function WorkoutDetail() {
                   value={perf.reps}
                   onChangeText={(text) => updatePerformance(key, { ...perf, reps: text })}
                 />
-                <TouchableOpacity style={styles.removeSetBtn} onPress={() => removeSet(expandedDay, exIdx)}>
+                <TouchableOpacity style={styles.removeSetBtn} onPress={() => removeSet(expandedDay, exIdx, setIdx)}>
                   <Ionicons name="close-circle" size={22} color={colors.error} />
                 </TouchableOpacity>
               </View>
@@ -1381,7 +1432,7 @@ export default function WorkoutDetail() {
               <View style={styles.weekBannerTop}>
                 <View style={styles.weekBannerBadge}>
                   <Ionicons name="calendar-outline" size={13} color={colors.primary} />
-                  <Text style={styles.weekBannerBadgeText}>Week {currentWeek} of {workout.weekly_progression?.length || 4}</Text>
+                  <Text style={styles.weekBannerBadgeText}>Week {currentWeek} of {workout.weekly_progression?.length || 12}</Text>
                 </View>
                 <Text style={styles.weekBannerLabel}>{weekData?.label}</Text>
                 <Ionicons name="create-outline" size={15} color={colors.textMuted} style={{ marginLeft: 'auto' }} />
@@ -1745,8 +1796,8 @@ export default function WorkoutDetail() {
                           <Text style={styles.prExercise}>{pr.exercise_name}</Text>
                           <Text style={styles.prDetail}>
                             {pr.type === 'weight'
-                              ? `New PR! ${localUnit === 'lbs' ? kgToDisplay(pr.new_value) : pr.new_value}${localUnit}${pr.previous_value ? ` (was ${localUnit === 'lbs' ? kgToDisplay(pr.previous_value) : pr.previous_value}${localUnit})` : ' — first lift!'}`
-                              : `New reps PR! ${pr.new_value} reps (was ${pr.previous_value})`}
+                              ? `New PR! ${showWeight(pr.new_value)}${localUnit} × ${pr.reps}${pr.previous_value ? ` (was ${showWeight(pr.previous_value)}${localUnit})` : ''}`
+                              : `New reps PR! ${pr.new_value} reps${(pr as any).weight ? ` at ${showWeight((pr as any).weight)}${localUnit}` : ''} (was ${pr.previous_value})`}
                           </Text>
                         </View>
                       </View>

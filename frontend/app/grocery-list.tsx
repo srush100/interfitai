@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,12 @@ import {
   Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { colors } from '../src/theme/colors';
 import api from '../src/services/api';
+import { AISLE_ORDER, ParsedIngredient, addTo, aisleOf, parseIngredient, shoppingLine } from '../src/utils/grocery';
 
 interface MealPlan {
   id: string;
@@ -36,23 +38,6 @@ interface SelectedMeal {
   quantity: number;
 }
 
-// Grocery aggregation unit:
-//   'g'     → gram-measured, aggregate numerically, display "{amount}g {name}"
-//   'count' → any other numeric unit (e.g. "2 eggs", "1 tbsp olive oil"),
-//             aggregate numerically, display "{amount} {name}" (unit is inside {name})
-//   'none'  → bare ingredient with no leading number (e.g. "salt to taste"),
-//             display the key text only
-// 'unit' → whole-unit meal-plan items ("2 large eggs (116g)"), keyed by plural name.
-const pluralUnitName = (name: string): string =>
-  name.startsWith('slice ') ? `slices ${name.slice(6)}` : name.startsWith('slices ') || name.endsWith('s') ? name : `${name}s`;
-const singularUnitName = (name: string): string =>
-  name.startsWith('slices ') ? `slice ${name.slice(7)}` : name.replace(/s$/, '');
-
-interface GroceryEntry {
-  amount: number;
-  unit: 'g' | 'count' | 'unit' | 'none';
-}
-
 export default function GroceryListScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -61,21 +46,38 @@ export default function GroceryListScreen() {
   const [loading, setLoading] = useState(true);
   const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
   const [selectedMeals, setSelectedMeals] = useState<Map<string, SelectedMeal>>(new Map());
-  const [groceryList, setGroceryList] = useState<Map<string, GroceryEntry>>(new Map());
+  const [groceryList, setGroceryList] = useState<Map<string, ParsedIngredient>>(new Map());
   const [showGroceryList, setShowGroceryList] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (mealPlanId) {
-      loadMealPlan();
-    }
-  }, [mealPlanId]);
+  const checksKey = `@grocery_checked_${mealPlanId}`;
+
+  // Reload whenever the screen is shown (a swapped meal shows up straight away)
+  useFocusEffect(
+    useCallback(() => {
+      if (mealPlanId) loadMealPlan();
+    }, [mealPlanId])
+  );
 
   const loadMealPlan = async () => {
     setLoading(true);
     try {
       const response = await api.get(`/mealplan/${mealPlanId}`);
-      setMealPlan(response.data);
+      const plan: MealPlan = response.data;
+      setMealPlan(plan);
+      // Every meal is selected to start with; untick what you don't need
+      setSelectedMeals(prev => {
+        if (prev.size) return prev;
+        const all = new Map<string, SelectedMeal>();
+        plan.meal_days.forEach((d, di) => d.meals.forEach((_, mi) =>
+          all.set(getMealKey(di, mi), { dayIndex: di, mealIndex: mi, quantity: 1 })));
+        return all;
+      });
+      // Ticked items are remembered for this plan
+      try {
+        const saved = await AsyncStorage.getItem(checksKey);
+        if (saved) setCheckedItems(new Set(JSON.parse(saved)));
+      } catch {}
     } catch (error) {
       console.error('Failed to load meal plan:', error);
     } finally {
@@ -110,82 +112,41 @@ export default function GroceryListScreen() {
     }
   };
 
+  const selectAll = (on: boolean) => {
+    if (!mealPlan) return;
+    const next = new Map<string, SelectedMeal>();
+    if (on) mealPlan.meal_days.forEach((d, di) => d.meals.forEach((_, mi) =>
+      next.set(getMealKey(di, mi), selectedMeals.get(getMealKey(di, mi)) || { dayIndex: di, mealIndex: mi, quantity: 1 })));
+    setSelectedMeals(next);
+  };
+
   const generateGroceryList = () => {
     if (!mealPlan) return;
 
-    const ingredients = new Map<string, GroceryEntry>();
+    const ingredients = new Map<string, ParsedIngredient>();
 
     selectedMeals.forEach((selection) => {
       const { dayIndex, mealIndex, quantity } = selection;
       const meal = mealPlan.meal_days[dayIndex]?.meals[mealIndex];
       if (!meal) return;
-
-      meal.ingredients.forEach((raw) => {
-        const ing = raw.trim();
-
-        // Gram-prefix: "200g chicken", "200 g chicken" (require an explicit 'g' unit).
-        const gramsMatch = ing.match(/^(\d+(?:\.\d+)?)\s*g\s+(.+)$/i);
-        if (gramsMatch) {
-          const amt = parseFloat(gramsMatch[1]) * quantity;
-          const name = gramsMatch[2].trim();
-          const cur = ingredients.get(name);
-          if (cur && cur.unit === 'g') {
-            cur.amount += amt;
-          } else if (!cur) {
-            ingredients.set(name, { amount: amt, unit: 'g' });
-          }
-          return;
-        }
-
-        // Whole-unit items: "2 large eggs (116g)", "1 slice sourdough bread (30g)".
-        const unitMatch = ing.match(/^(\d+)\s+(.+?)\s*\(\d+(?:\.\d+)?\s*g\)$/i);
-        if (unitMatch) {
-          const amt = parseInt(unitMatch[1], 10) * quantity;
-          const name = pluralUnitName(unitMatch[2].trim().toLowerCase());
-          const cur = ingredients.get(name);
-          if (cur && cur.unit === 'unit') {
-            cur.amount += amt;
-          } else if (!cur) {
-            ingredients.set(name, { amount: amt, unit: 'unit' });
-          }
-          return;
-        }
-
-        // Any other number-prefix: "2 eggs", "1 tbsp olive oil".
-        // Key = the trailing text (unit + name) so identical units aggregate cleanly.
-        const numMatch = ing.match(/^(\d+(?:\.\d+)?)\s+(.+)$/);
-        if (numMatch) {
-          const amt = parseFloat(numMatch[1]) * quantity;
-          const rest = numMatch[2].trim();
-          const cur = ingredients.get(rest);
-          if (cur && cur.unit === 'count') {
-            cur.amount += amt;
-          } else if (!cur) {
-            ingredients.set(rest, { amount: amt, unit: 'count' });
-          }
-          return;
-        }
-
-        // No leading number at all: keep the ingredient text as-is.
-        if (!ingredients.has(ing)) {
-          ingredients.set(ing, { amount: 0, unit: 'none' });
-        }
+      meal.ingredients.forEach((line) => {
+        const item = parseIngredient(line, quantity);
+        if (item) addTo(ingredients, item);
       });
     });
 
     setGroceryList(ingredients);
     setShowGroceryList(true);
-    setCheckedItems(new Set());
   };
 
-  // Format one grocery entry for display / share. Never appends "g" to non-gram items.
-  const formatGrocery = (item: string, entry: GroceryEntry): string => {
-    if (entry.unit === 'none') return item;
-    if (entry.unit === 'unit') return `${entry.amount} ${entry.amount === 1 ? singularUnitName(item) : item}`;
-    const cleanAmt = entry.amount % 1 === 0
-      ? entry.amount.toString()
-      : entry.amount.toFixed(1);
-    return entry.unit === 'g' ? `${cleanAmt}g ${item}` : `${cleanAmt} ${item}`;
+  // Shopping list grouped by aisle, in store order
+  const groupedList = () => {
+    const groups = new Map<string, ParsedIngredient[]>();
+    groceryList.forEach((item) => {
+      const aisle = aisleOf(item.name);
+      groups.set(aisle, [...(groups.get(aisle) || []), item]);
+    });
+    return AISLE_ORDER.filter(a => groups.has(a)).map(a => ({ aisle: a, items: groups.get(a)! }));
   };
 
   const toggleCheckItem = (item: string) => {
@@ -196,14 +157,18 @@ export default function GroceryListScreen() {
       newChecked.add(item);
     }
     setCheckedItems(newChecked);
+    AsyncStorage.setItem(checksKey, JSON.stringify([...newChecked])).catch(() => {});
   };
 
   const shareList = async () => {
     let listText = `🛒 Grocery List\n\n`;
     
-    groceryList.forEach((entry, item) => {
-      const checked = checkedItems.has(item);
-      listText += `${checked ? '✅' : '○'} ${formatGrocery(item, entry)}\n`;
+    groupedList().forEach(({ aisle, items }) => {
+      listText += `${aisle}\n`;
+      items.forEach((item) => {
+        listText += `${checkedItems.has(item.key) ? '✅' : '○'} ${shoppingLine(item)}\n`;
+      });
+      listText += `\n`;
     });
     
     listText += `\nGenerated by InterFitAI`;
@@ -257,7 +222,7 @@ export default function GroceryListScreen() {
   // Show grocery list view
   if (showGroceryList) {
     const totalItems = groceryList.size;
-    const checkedCount = checkedItems.size;
+    const checkedCount = [...groceryList.keys()].filter(k => checkedItems.has(k)).length;
     
     return (
       <SafeAreaView style={styles.container}>
@@ -291,26 +256,37 @@ export default function GroceryListScreen() {
             </Text>
           </View>
           
-          {Array.from(groceryList.entries()).map(([item, entry]) => (
-            <TouchableOpacity
-              key={item}
-              style={styles.groceryItem}
-              onPress={() => toggleCheckItem(item)}
-            >
-              <View style={[styles.checkbox, checkedItems.has(item) && styles.checkboxChecked]}>
-                {checkedItems.has(item) && (
-                  <Ionicons name="checkmark" size={16} color="#000" />
-                )}
-              </View>
-              <Text style={[styles.groceryItemText, checkedItems.has(item) && styles.groceryItemChecked]}>
-                {formatGrocery(item, entry)}
-              </Text>
-            </TouchableOpacity>
+          {totalItems === 0 && (
+            <Text style={styles.summaryLabel}>No ingredients in the selected meals.</Text>
+          )}
+          {groupedList().map(({ aisle, items }) => (
+            <View key={aisle}>
+              <Text style={[styles.summaryLabel, { marginTop: 14, marginBottom: 6, fontWeight: '700' }]}>{aisle}</Text>
+              {items.map((item) => (
+                <TouchableOpacity
+                  key={item.key}
+                  style={styles.groceryItem}
+                  onPress={() => toggleCheckItem(item.key)}
+                >
+                  <View style={[styles.checkbox, checkedItems.has(item.key) && styles.checkboxChecked]}>
+                    {checkedItems.has(item.key) && (
+                      <Ionicons name="checkmark" size={16} color="#000" />
+                    )}
+                  </View>
+                  <Text style={[styles.groceryItemText, checkedItems.has(item.key) && styles.groceryItemChecked]}>
+                    {shoppingLine(item)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           ))}
           
           <View style={styles.tipContainer}>
             <Ionicons name="information-circle" size={20} color={colors.textMuted} />
-            <Text style={styles.tipText}>Tap items to check them off as you shop</Text>
+            <Text style={styles.tipText}>
+              Tap items to tick them off — ticks are saved. Rice, pasta and meat show what to buy (uncooked / raw);
+              the plan's cooked amounts are in brackets.
+            </Text>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -318,6 +294,7 @@ export default function GroceryListScreen() {
   }
 
   // Show meal selection view
+  const allSelected = selectedMeals.size >= mealPlan.meal_days.reduce((n, d) => n + d.meals.length, 0);
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -331,8 +308,13 @@ export default function GroceryListScreen() {
       <View style={styles.instructionBanner}>
         <Ionicons name="cart" size={20} color={colors.primary} />
         <Text style={styles.instructionText}>
-          Select the meals you want to shop for
+          All meals are selected — untick any you don't need
         </Text>
+        <TouchableOpacity onPress={() => selectAll(!allSelected)} hitSlop={8} testID="grocery-select-all">
+          <Text style={{ color: colors.primary, fontWeight: '600' }}>
+            {allSelected ? 'Select none' : 'Select all'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>

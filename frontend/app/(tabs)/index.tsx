@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { Pedometer } from 'expo-sensors';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -22,6 +22,9 @@ import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
 import { getHealthConnectionStatus, syncHealthData } from '../../src/services/health';
 import usePremium from '../../src/hooks/usePremium';
+import { HEALTH_INTEGRATION_ENABLED } from '../../src/config/features';
+import { localDateString } from '../../src/utils/date';
+import { tzOffsetMinutes } from '../../src/utils/numbers';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -51,8 +54,15 @@ export default function HomeScreen() {
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
 
+  // Reload whenever the dashboard comes back into view (e.g. after finishing a
+  // workout or logging food) and once the profile has loaded
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [profile?.id])
+  );
+
   useEffect(() => {
-    loadData();
     // Fix 4 — auto-sync health data on app open if connected
     const autoSyncHealth = async () => {
       try {
@@ -64,14 +74,18 @@ export default function HomeScreen() {
         console.log('Auto health sync failed:', e);
       }
     };
-    autoSyncHealth();
+    if (HEALTH_INTEGRATION_ENABLED) autoSyncHealth();
   }, []);
 
   const loadData = async () => {
+    // Each part loads on its own, so one failure doesn't hide the rest
     try {
-      // Get motivation
       const motivationRes = await api.get('/motivation');
       setMotivation(motivationRes.data.motivation);
+    } catch (error) {
+      console.log('Error loading motivation:', error);
+    }
+    try {
 
       // Get steps from device pedometer (same as profile tab)
       try {
@@ -89,22 +103,25 @@ export default function HomeScreen() {
         console.log('Pedometer not available:', stepError);
       }
 
-      if (profile?.id) {
-        // Get daily nutrition summary
-        const today = new Date().toISOString().split('T')[0];
-        const summaryRes = await api.get(`/food/daily-summary/${profile.id}/${today}`);
-        setDailySummary(summaryRes.data);
-
-        // Get workout stats (streak + weekly adherence)
-        try {
-          const statsRes = await api.get(`/workout/stats/${profile.id}`);
-          setWorkoutStats(statsRes.data);
-        } catch {
-          // non-critical
-        }
-      }
     } catch (error) {
       console.log('Error loading home data:', error);
+    }
+    if (profile?.id) {
+      try {
+        const summaryRes = await api.get(`/food/daily-summary/${profile.id}/${localDateString()}`);
+        setDailySummary(summaryRes.data);
+      } catch (error) {
+        console.log('Error loading nutrition summary:', error);
+      }
+      // Workout stats (streak + weekly adherence) in the user's own days
+      try {
+        const statsRes = await api.get(`/workout/stats/${profile.id}`, {
+          params: { tz_offset_minutes: tzOffsetMinutes() },
+        });
+        setWorkoutStats(statsRes.data);
+      } catch {
+        // non-critical
+      }
     }
   };
 
@@ -423,14 +440,19 @@ export default function HomeScreen() {
 
           {/* Workout streak + weekly progress tile */}
           {workoutStats && (
-            <View style={styles.workoutStatsTile}>
+            <TouchableOpacity
+              style={styles.workoutStatsTile}
+              onPress={() => router.push('/progress')}
+              activeOpacity={0.8}
+              testID="dashboard-progress-tile"
+            >
               <View style={styles.workoutStatItem}>
                 <View style={styles.workoutStatIcon}>
                   <Text style={styles.workoutStreakFlame}>🔥</Text>
                 </View>
                 <Text style={styles.workoutStatValue}>{workoutStats.current_streak}</Text>
                 <Text style={styles.workoutStatLabel}>
-                  {workoutStats.current_streak === 1 ? 'workout streak' : 'workout streaks'}
+                  {workoutStats.current_streak === 1 ? 'workout in a row' : 'workouts in a row'}
                 </Text>
               </View>
               <View style={styles.workoutStatDivider} />
@@ -461,7 +483,8 @@ export default function HomeScreen() {
                   </View>
                 </>
               )}
-            </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
+            </TouchableOpacity>
           )}
         </View>
 

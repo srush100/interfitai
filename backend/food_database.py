@@ -523,3 +523,86 @@ INGREDIENT_MACROS.update({
     "pea protein powder": (380, 72, 8, 5),
     "egg white protein": (380, 80, 6, 0.5),
 })
+
+# ── Common foods people type or snap (added after the snap-food review) ──────
+# Per 100g (100ml for drinks), as normally eaten. Meat and fish are cooked,
+# like the rest of this table, except the explicit "raw" entries.
+INGREDIENT_MACROS.update({
+    # Onion varieties — same values as onion
+    "brown onion": (40, 1.1, 9, 0.1),
+    "white onion": (40, 1.1, 9, 0.1),
+    "yellow onion": (40, 1.1, 9, 0.1),
+    "spanish onion": (40, 1.1, 9, 0.1),
+    "sweet onion": (40, 1.1, 9, 0.1),
+    # Sushi / Asian sides
+    "nori": (210, 41.5, 5.1, 3.7),               # dried sheets (~2.5g each)
+    "nori sheets": (210, 41.5, 5.1, 3.7),
+    "seaweed salad": (70, 1.0, 10.0, 3.0),        # wakame salad, as sold
+    "seaweed": (70, 1.0, 10.0, 3.0),              # on bowls this is usually seaweed salad
+    "wakame": (53, 3.0, 9.0, 0.6),                # rehydrated
+    "pickled ginger": (47, 0.3, 11.0, 0.2),
+    "wasabi": (270, 3.0, 40.0, 11.0),             # paste
+    "sushi rice": (157, 2.6, 36.0, 0.3),          # cooked, seasoned
+    "sweet chili sauce": (215, 0.5, 52.0, 0.5),
+    # Dips & sides
+    "tzatziki": (106, 4.0, 4.5, 8.0),
+    "guacamole": (155, 2.0, 8.0, 13.0),
+    "coleslaw": (150, 1.0, 12.0, 11.0),           # with creamy dressing
+    "croutons": (407, 11.9, 73.5, 6.6),
+    "sun dried tomatoes": (225, 5.0, 23.0, 14.0), # in oil, drained
+    "beansprouts": (30, 3, 5.9, 0.2),
+    "fresh chili": (40, 1.9, 8.8, 0.4),           # "chilli" typed alone finds this
+    "oyster mushrooms": (33, 3.3, 6.1, 0.4),
+    "water chestnuts": (97, 1.4, 23.9, 0.1),
+    "seaweed snack": (550, 12.0, 25.0, 45.0),     # roasted, seasoned with oil
+    "gnocchi": (147, 3.5, 32.0, 0.5),
+    # Meat & seafood (cooked)
+    "duck": (201, 23.5, 0, 11.2),                 # roasted, meat only
+    "duck breast": (201, 23.5, 0, 11.2),
+    "chicken wings": (290, 26.9, 0, 19.5),        # roasted, with skin
+    "chicken wing": (290, 26.9, 0, 19.5),
+    "chicken drumstick": (216, 27.0, 0, 11.2),    # roasted, with skin
+    "chicken drumsticks": (216, 27.0, 0, 11.2),
+    "drumstick": (216, 27.0, 0, 11.2),
+    "kangaroo": (130, 29.0, 0, 1.5),
+    "barramundi": (123, 25.0, 0, 2.5),
+    "squid": (102, 18.0, 3.5, 1.6),
+    "calamari": (102, 18.0, 3.5, 1.6),
+    "fried calamari": (175, 15.0, 8.0, 9.0),
+    "salt and pepper squid": (175, 15.0, 8.0, 9.0),
+    "oysters": (81, 9.5, 5.0, 2.3),
+    "oyster": (81, 9.5, 5.0, 2.3),
+    "salami": (380, 22.0, 1.5, 31.5),
+    "prosciutto": (268, 25.9, 0.3, 18.0),
+    # Raw weights — for people who weigh meat before cooking
+    "raw chicken breast": (120, 22.5, 0, 2.6),
+    "raw chicken thigh": (121, 19.7, 0, 4.1),
+    "raw turkey breast": (114, 23.7, 0, 1.5),
+    "raw salmon": (208, 20.4, 0, 13.4),
+    "raw rice": (365, 7.1, 80, 0.7),
+    "dry rice": (365, 7.1, 80, 0.7),
+    "uncooked pasta": (371, 13, 75, 1.5),
+    "raw pasta": (371, 13, 75, 1.5),
+    # Bakery & treats
+    "white bread": (265, 9, 49, 3.2),
+    "wholemeal bread": (247, 10, 41, 3.4),
+    "wholemeal toast": (247, 10, 41, 3.4),
+    "crumpet": (193, 6.0, 40.0, 1.0),
+    "crumpets": (193, 6.0, 40.0, 1.0),
+    "croissant": (406, 8.2, 45.8, 21.0),
+    "muffin": (377, 4.5, 51.0, 17.5),             # cafe-style sweet muffin
+    "banana bread": (330, 4.5, 50.0, 12.5),
+    "donut": (403, 6.0, 51.0, 19.5),
+    "doughnut": (403, 6.0, 51.0, 19.5),
+    "ice cream": (207, 3.5, 23.6, 11.0),
+    "hazelnut spread": (539, 6.3, 57.5, 30.9),
+    "nutella": (539, 6.3, 57.5, 30.9),
+    "hot chips": (312, 3.4, 41.0, 15.0),
+    "fries": (312, 3.4, 41.0, 15.0),
+    "potato chips": (545, 7.0, 53.0, 34.6),
+    "crisps": (545, 7.0, 53.0, 34.6),
+    # Drinks
+    "coconut milk drink": (20, 0.2, 1.9, 1.3),    # carton, unsweetened
+    "water": (0, 0, 0, 0),
+})
+

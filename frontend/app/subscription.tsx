@@ -61,19 +61,19 @@ const PLANS = [
   {
     id: 'monthly',
     name: 'Monthly',
-    price: 9.99,
-    priceDisplay: '$9.99',
+    price: 14.99,
+    priceDisplay: '$14.99',
     period: '/month',
     popular: false,
   },
   {
     id: 'yearly',
     name: 'Annual',
-    price: 79.99,
-    priceDisplay: '$79.99',
+    price: 99.99,
+    priceDisplay: '$99.99',
     period: '/year',
-    dailyCost: '$0.22/day',
-    savings: 'Save 33%',
+    dailyCost: '$0.27/day',
+    savings: 'Save 44%',
     popular: true,
   },
 ];
@@ -328,7 +328,7 @@ export default function Subscription() {
           </TouchableOpacity>
           
           <Text style={styles.trialText}>
-            3-day free trial, then {PLANS.find(p => p.id === selectedPlan)?.priceDisplay}{PLANS.find(p => p.id === selectedPlan)?.period}
+            7-day free trial, then {PLANS.find(p => p.id === selectedPlan)?.priceDisplay}{PLANS.find(p => p.id === selectedPlan)?.period}
           </Text>
           <Text style={styles.cancelText}>Cancel anytime. No commitment.</Text>
         </View>

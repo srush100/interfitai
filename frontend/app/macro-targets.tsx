@@ -28,6 +28,21 @@ export default function MacroTargetsScreen() {
   // Determine if user is in a muscle-building phase
   const isBulking = userGoal === 'muscle_building' || userGoal === 'build_muscle' || userGoal === 'gain_weight';
 
+  // Limits: never below the user's BMR (1,200 if unknown) and at least 50g of
+  // carbs; at most +1,000. In 50-calorie steps, like the buttons.
+  const minAdjustment = Math.ceil(Math.max(
+    -((macros?.carbs || 0) - 50) * 4,
+    Math.min(0, (macros?.bmr || 1200) - (macros?.calories || 0)),
+  ) / 50) * 50;
+  const MAX_ADJUSTMENT = 1000;
+  const setAdjustment = (value: number | ((prev: number) => number)) =>
+    setCalorieAdjustment(prev => {
+      const v = typeof value === 'function' ? value(prev) : value;
+      return Math.min(MAX_ADJUSTMENT, Math.max(minAdjustment, v));
+    });
+  const atMin = calorieAdjustment <= minAdjustment;
+  const atMax = calorieAdjustment >= MAX_ADJUSTMENT;
+
   const adjustedCalories = (macros?.calories || 0) + calorieAdjustment;
   const adjustedCarbs = Math.round((macros?.carbs || 0) + (calorieAdjustment / 4));
 
@@ -99,7 +114,8 @@ export default function MacroTargetsScreen() {
           <View style={styles.calorieAdjuster}>
             <TouchableOpacity 
               style={styles.adjustBtn}
-              onPress={() => setCalorieAdjustment(prev => prev - 50)}
+              onPress={() => setAdjustment(prev => prev - 50)}
+              disabled={atMin}
             >
               <Ionicons name="remove" size={28} color={colors.text} />
             </TouchableOpacity>
@@ -115,11 +131,24 @@ export default function MacroTargetsScreen() {
             
             <TouchableOpacity 
               style={styles.adjustBtn}
-              onPress={() => setCalorieAdjustment(prev => prev + 50)}
+              onPress={() => setAdjustment(prev => prev + 50)}
+              disabled={atMax}
             >
               <Ionicons name="add" size={28} color={colors.text} />
             </TouchableOpacity>
           </View>
+
+          {!!macros?.calorie_floor_applied && (
+            <Text style={[styles.adjustmentBadge, { textAlign: 'center', marginBottom: 8 }]}>
+              Your target is at the safe minimum for your size, so it's close to what you burn.
+              Extra daily steps and your workouts will do most of the fat-loss work.
+            </Text>
+          )}
+          {atMin && !macros?.calorie_floor_applied && (
+            <Text style={[styles.adjustmentBadge, { textAlign: 'center', marginBottom: 8 }]}>
+              This is the lowest target we recommend without medical supervision.
+            </Text>
+          )}
 
           {/* Quick Adjust Pills */}
           <View style={styles.quickAdjustRow}>
@@ -130,7 +159,7 @@ export default function MacroTargetsScreen() {
                   styles.quickAdjustBtn,
                   calorieAdjustment === adj && styles.quickAdjustBtnActive
                 ]}
-                onPress={() => setCalorieAdjustment(adj)}
+                onPress={() => setAdjustment(adj)}
               >
                 <Text style={[
                   styles.quickAdjustText,
@@ -207,7 +236,7 @@ export default function MacroTargetsScreen() {
               <>
                 <TouchableOpacity 
                   style={styles.guideOption}
-                  onPress={() => setCalorieAdjustment(200)}
+                  onPress={() => setAdjustment(200)}
                 >
                   <View style={[styles.guideIconWrap, { backgroundColor: colors.primary + '20' }]}>
                     <Ionicons name="trending-up" size={20} color={colors.primary} />
@@ -220,7 +249,7 @@ export default function MacroTargetsScreen() {
                 
                 <TouchableOpacity 
                   style={styles.guideOption}
-                  onPress={() => setCalorieAdjustment(0)}
+                  onPress={() => setAdjustment(0)}
                 >
                   <View style={[styles.guideIconWrap, { backgroundColor: '#4ECDC420' }]}>
                     <Ionicons name="checkmark-circle" size={20} color="#4ECDC4" />
@@ -233,7 +262,7 @@ export default function MacroTargetsScreen() {
                 
                 <TouchableOpacity 
                   style={styles.guideOption}
-                  onPress={() => setCalorieAdjustment(-200)}
+                  onPress={() => setAdjustment(-200)}
                 >
                   <View style={[styles.guideIconWrap, { backgroundColor: '#FF6B6B20' }]}>
                     <Ionicons name="trending-down" size={20} color="#FF6B6B" />
@@ -249,7 +278,7 @@ export default function MacroTargetsScreen() {
               <>
                 <TouchableOpacity 
                   style={styles.guideOption}
-                  onPress={() => setCalorieAdjustment(-200)}
+                  onPress={() => setAdjustment(-200)}
                 >
                   <View style={[styles.guideIconWrap, { backgroundColor: '#FF6B6B20' }]}>
                     <Ionicons name="trending-down" size={20} color="#FF6B6B" />
@@ -262,7 +291,7 @@ export default function MacroTargetsScreen() {
                 
                 <TouchableOpacity 
                   style={styles.guideOption}
-                  onPress={() => setCalorieAdjustment(0)}
+                  onPress={() => setAdjustment(0)}
                 >
                   <View style={[styles.guideIconWrap, { backgroundColor: '#4ECDC420' }]}>
                     <Ionicons name="checkmark-circle" size={20} color="#4ECDC4" />
@@ -275,7 +304,7 @@ export default function MacroTargetsScreen() {
                 
                 <TouchableOpacity 
                   style={styles.guideOption}
-                  onPress={() => setCalorieAdjustment(200)}
+                  onPress={() => setAdjustment(200)}
                 >
                   <View style={[styles.guideIconWrap, { backgroundColor: colors.primary + '20' }]}>
                     <Ionicons name="trending-up" size={20} color={colors.primary} />

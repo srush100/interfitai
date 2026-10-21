@@ -125,6 +125,11 @@ ITEM_WEIGHTS = {
     "carrot": 80, "carrots": 80, "zucchini": 196, "potato": 180, "potatoes": 180,
     "sweet potato": 130, "cucumber": 300, "almonds": 1.2, "almond": 1.2, "walnuts": 4,
     "brazil nuts": 5, "olives": 4, "falafel": 17,
+    "brown onion": 110, "white onion": 110, "yellow onion": 110, "spanish onion": 110,
+    "nori": 2.5, "nori sheets": 2.5, "croissant": 60, "muffin": 115, "crumpet": 50, "crumpets": 50,
+    "donut": 55, "doughnut": 55, "chicken wing": 30, "chicken wings": 30, "chicken drumstick": 75,
+    "chicken drumsticks": 75, "drumstick": 75, "oyster": 20, "oysters": 20,
+    "raw chicken breast": 200, "raw chicken thigh": 130,
 }
 # Foods bought and cooked as whole units: portions always end on whole units
 # and are shown as e.g. "2 large eggs (116g)".
@@ -326,27 +331,30 @@ _DAIRY = ["milk", "cheese", "yogurt", "cream", "butter", "whey", "casein", "lact
           "skyr", "parmesan", "mozzarella", "ricotta", "halloumi", "paneer", "cheddar", "feta", "brie",
           "camembert", "gouda", "mascarpone", "quark", "burrata", "custard", "labneh", "gelato",
           "curd", "queso", "pecorino", "provolone", "emmental", "creme fraiche", "tzatziki", "raita",
-          "alfredo", "bechamel", "buttermilk", "cheesecake", "milkshake"]
+          "alfredo", "bechamel", "buttermilk", "cheesecake", "milkshake", "ice cream", "croissant",
+          "nutella", "hazelnut spread", "muffin", "banana bread", "donut", "doughnut"]
 _GLUTEN = ["gluten", "wheat", "flour", "bread", "toast", "pasta", "spaghetti", "macaroni", "lasagna",
            "noodle", "ramen", "udon", "soba", "orzo", "couscous", "semolina", "bulgur", "farro", "freekeh",
            "barley", "rye", "spelt", "kamut", "durum", "seitan", "bagel", "naan", "pita", "ciabatta",
            "sourdough", "baguette", "bun", "croissant", "brioche", "muffin", "pancake", "waffle",
            "cracker", "crispbread", "crouton", "breadcrumb", "panko", "pretzel", "pastry", "pizza",
            "dumpling", "gnocchi", "tortilla", "wrap", "granola", "muesli", "cereal", "oat", "oatmeal",
-           "porridge", "soy sauce", "teriyaki", "hoisin", "malt", "beer", "cake", "cookie", "biscuit"]
+           "porridge", "soy sauce", "teriyaki", "hoisin", "malt", "beer", "cake", "cookie", "biscuit",
+           "crumpet", "donut", "doughnut", "fried calamari", "salt and pepper squid"]
 _EGGS = ["egg", "mayonnaise", "mayo", "aioli", "omelette", "omelet", "frittata", "meringue", "quiche",
-         "custard", "brioche", "hollandaise", "shakshuka"]
+         "custard", "brioche", "hollandaise", "shakshuka", "coleslaw", "muffin", "banana bread", "donut",
+         "doughnut", "croissant", "gnocchi", "ice cream"]
 _TREE_NUTS = ["almond", "cashew", "walnut", "pecan", "hazelnut", "pistachio", "macadamia", "brazil nut",
               "pine nut", "chestnut", "praline", "marzipan", "nutella", "nut butter", "nut milk", "pesto"]
 _PEANUTS = ["peanut", "groundnut", "satay"]
 _SOY = ["soy", "soybean", "tofu", "tempeh", "edamame", "miso", "tamari", "natto", "soy sauce", "teriyaki",
-        "hoisin", "tvp", "textured vegetable protein", "bean curd"]
+        "hoisin", "tvp", "textured vegetable protein", "bean curd", "seaweed salad", "seaweed snack"]
 _SHELLFISH = ["shellfish", "prawn", "shrimp", "crab", "lobster", "oyster", "mussel", "scallop", "clam",
               "crayfish", "crawfish", "langoustine", "squid", "calamari", "octopus"]
 _FISH = ["fish", "salmon", "tuna", "cod", "tilapia", "bass", "trout", "sardine", "mackerel", "anchovy",
          "halibut", "haddock", "snapper", "swordfish", "pollock", "herring", "mahi", "barramundi",
          "fish sauce", "worcestershire"]
-_SESAME = ["sesame", "tahini", "hummus", "halva"]
+_SESAME = ["sesame", "tahini", "hummus", "halva", "seaweed salad", "seaweed snack"]
 
 ALLERGEN_SYNONYMS = {
     "gluten": _GLUTEN, "wheat": _GLUTEN,
@@ -391,7 +399,8 @@ BANNED_TERM_EXEMPTIONS = {
 _MEAT = ["chicken", "beef", "pork", "lamb", "turkey", "bacon", "ham", "sausage", "steak", "mince", "veal",
          "venison", "duck", "bison", "jerky", "prosciutto", "salami", "pepperoni", "chorizo", "liver",
          "gelatin", "lard", "tallow", "bone broth", "chicken broth", "beef broth", "ribeye", "sirloin",
-         "brisket", "prime rib", "meatball", "rabbit", "eye of round", "chicken fat", "duck fat"]
+         "brisket", "prime rib", "meatball", "rabbit", "eye of round", "chicken fat", "duck fat", "kangaroo",
+         "drumstick"]
 _KETO_BANNED = ["rice", "bread", "toast", "pasta", "spaghetti", "orzo", "noodle", "oat", "oatmeal", "porridge",
                 "granola", "muesli", "cereal", "quinoa", "couscous", "bulgur", "barley", "farro", "millet",
                 "buckwheat", "potato", "plantain", "corn", "tortilla", "wrap", "bagel", "naan", "pita",
@@ -399,7 +408,9 @@ _KETO_BANNED = ["rice", "bread", "toast", "pasta", "spaghetti", "orzo", "noodle"
                 "pear", "peach", "nectarine", "plum", "kiwi", "cherries", "watermelon", "papaya", "fig",
                 "pomegranate", "grapefruit", "dates", "raisin", "dried cranberries", "honey", "maple syrup",
                 "agave", "sugar", "syrup", "jam", "juice", "ketchup", "bbq sauce", "teriyaki", "hoisin",
-                "bean", "lentil", "chickpea", "hummus", "falafel", "peas", "milk", "parsnip"]
+                "bean", "lentil", "chickpea", "hummus", "falafel", "peas", "milk", "parsnip", "gnocchi",
+                "croissant", "crumpet", "donut", "doughnut", "fries", "chips", "crouton", "ice cream",
+                "nutella", "hazelnut spread", "water chestnut", "sweet chili sauce"]
 _PALEO_BANNED = ([g for g in _GLUTEN if g not in ("soy sauce",)]
                  + ["rice", "quinoa", "corn", "millet", "buckwheat", "popcorn", "rice cake",
                     "bean", "lentil", "chickpea", "peanut", "soy", "tofu", "tempeh", "edamame", "hummus",
@@ -419,7 +430,7 @@ _ANIMAL_TOKENS = {"chicken", "beef", "steak", "sirloin", "ribeye", "rump", "minc
                   "crab", "scallop", "lobster", "mussel", "sardine", "mackerel", "trout", "halibut", "bass",
                   "haddock", "snapper", "mahi", "fish", "egg", "yolk", "butter", "ghee", "tallow", "lard",
                   "fat", "cheese", "cheddar", "parmesan", "mozzarella", "brie", "gouda", "feta", "halloumi",
-                  "cream", "broth", "salt", "chop", "thigh", "breast", "loin", "tenderloin"}
+                  "cream", "broth", "salt", "chop", "thigh", "breast", "loin", "tenderloin", "kangaroo", "barramundi", "oyster", "squid", "calamari", "prosciutto", "salami", "drumstick", "wing"}
 _PLANT_MARKERS = {"peanut", "almond", "cashew", "coconut", "nut", "seed", "sunflower", "cocoa", "apple", "bean",
                   "lettuce", "butternut", "vegan", "eggplant", "noodle", "vegetable", "plant", "pepper"}
 
@@ -586,9 +597,15 @@ _GENERIC_FAT_PICKS = {"oil": ["olive oil", "avocado oil", "coconut oil", "vegeta
                       "cream": ["heavy cream", "coconut cream"]}
 
 
+# Food names that are also cooking words ("fry until crisp", "add water")
+_NOT_MENTIONS = {"fries", "crisps", "water"}
+
+
 def _build_mention_index():
     idx = {}
     for k in list(INGREDIENT_MACROS) + ["oil", "cream"]:
+        if k in _NOT_MENTIONS:
+            continue
         seq = tuple(_stem(t) for t in _tokens(k))
         if seq:
             idx.setdefault(seq[0], {}).setdefault(seq, k)
@@ -996,7 +1013,16 @@ def meal_targets(day_targets: dict, meal_type: str, meal_types: list) -> dict:
 _PROMPT_EXCLUDE = {"protein", "seeds", "fish", "vegetables", "mixed vegetables", "greens", "beef", "chicken",
                    "pepper", "peppers", "lean beef", "extra lean beef", "steak", "cheese", "yogurt", "milk",
                    "turkey", "noodles", "ramen", "wrap", "dry pasta", "uncooked rice", "tofu", "tofu firm",
-                   "rice", "egg", "lettuce wrap"}
+                   "rice", "egg", "lettuce wrap",
+                   # added for typed / snapped foods — not meal-plan ingredients
+                   "seaweed", "seaweed snack", "wasabi", "sweet chili sauce", "coleslaw", "croutons",
+                   "fried calamari", "salt and pepper squid", "salami", "raw chicken breast",
+                   "raw chicken thigh", "raw turkey breast", "raw salmon", "raw rice", "dry rice",
+                   "uncooked pasta", "raw pasta", "crumpet", "crumpets", "croissant", "muffin",
+                   "banana bread", "donut", "doughnut", "ice cream", "hazelnut spread", "nutella",
+                   "hot chips", "fries", "potato chips", "crisps", "water", "drumstick",
+                   "chicken wing", "chicken drumsticks", "oyster", "nori sheets", "white bread",
+                   "wholemeal toast", "beansprouts", "duck breast"}
 _PROMPT_PREFER = {"eggs", "chicken breast", "greek yogurt 0%", "extra firm tofu", "beef mince 95/5",
                   "beef mince 90/10", "beef mince 80/20", "sirloin steak", "white rice", "rolled oats",
                   "whey protein", "pea protein powder", "almonds", "mozzarella cheese", "cheddar cheese",
@@ -1067,16 +1093,29 @@ def is_composite_name(name: str) -> bool:
     return any(re.search(rf"\b{re.escape(kw)}\b", low) for kw in COMPOSITE_INDICATORS)
 
 
+# Extra words that turn a food into a different food: "duck" must not become
+# duck fat, "curry" curry powder, "oysters" oyster sauce, "cake" rice cake.
+_LOOSE_BLOCK = {_stem(w) for w in (
+    "fat", "oil", "sauce", "paste", "powder", "flakes", "vinegar", "extract", "seasoning",
+    "juice", "water", "milk", "cream", "chocolate", "chips", "dried", "sour", "coconut",
+    "rice", "english", "lime", "lemon", "soy", "dressing", "spread", "butter", "ice",
+)}
+# Too vague to pick one food for — report as not found instead of guessing
+_TOO_VAGUE = {"sauce", "dressing", "cake", "curry", "soup", "sandwich", "meal"}
+
+
 def resolve_food_loose(name: str):
     """resolve_food, or — for short names like 'sourdough' — the database food
-    whose name contains every word typed (fewest extra words wins)."""
+    whose name contains every word typed (fewest extra words wins). Extra words
+    that change what the food is (fat, sauce, powder…) never count as a match."""
     key = resolve_food(name)
     if key:
         return key
     stems = {_stem(x) for x in _tokens(name)} - {"large", "medium", "small", "fresh", "plain"}
     if not stems:
         return None
-    hits = [k for k, kst in _KEY_STEMS.items() if k not in _RESOLVER_SKIP and stems <= kst]
+    hits = [k for k, kst in _KEY_STEMS.items() if k not in _RESOLVER_SKIP and stems <= kst
+            and not (kst - stems) & _LOOSE_BLOCK]
     return min(hits, key=lambda k: (len(_KEY_STEMS[k]) - len(stems), k not in _PROMPT_PREFER, len(k))) if hits else None
 
 
@@ -1222,6 +1261,8 @@ def resolve_food_typed(name: str):
     """For foods the USER typed: the database food only when it accounts for
     every word typed — 'unicorn steak' or 'chicken nuggets' are reported as
     not found instead of being guessed as steak / chicken."""
+    if _food_stems(name) <= _TOO_VAGUE:
+        return None
     key = resolve_food_loose(name)
     return key if key and _food_stems(name) <= _KEY_STEMS[key] else None
 
@@ -1320,6 +1361,11 @@ def _resize(it, grams):
     return snap_item(it["name"], grams, it["key"], it.get("per_100g"))
 
 
+# A dried spice above a few grams on a photographed plate is the fresh food.
+_FRESH_FOR_POWDER = {"onion powder": "onion", "garlic powder": "garlic", "chili powder": "fresh chili",
+                     "ginger powder": "ginger", "ground ginger": "ginger"}
+
+
 def build_plate(raw_items, specs, qty: int = 1):
     """Plated meal: the AI's {food, grams} items + amounts the user typed →
     items with database macros. Typed amounts replace the AI's estimate for the
@@ -1331,7 +1377,11 @@ def build_plate(raw_items, specs, qty: int = 1):
             g = float(r.get("grams") or 0)
         except (TypeError, ValueError):
             continue
-        it = snap_item(str(r.get("food") or ""), g, per_100g=r.get("per_100g"), whole_units=True)
+        food = str(r.get("food") or "")
+        fresh = _FRESH_FOR_POWDER.get(resolve_food_loose(food))
+        if fresh and g > 5:
+            food = fresh   # nobody eats 15g of onion powder — it's fresh onion
+        it = snap_item(food, g, per_100g=r.get("per_100g"), whole_units=True)
         if it:
             items.append(it)
         else:
@@ -1404,5 +1454,7 @@ def snap_item_from_text(text: str, key: str = None, name: str = None, per_100g: 
             return None, f"Add an amount, e.g. '100g {food}'."
     if g is None:
         return None, f"Couldn't work out '{text.strip()}' — try grams, e.g. '100g {food}'."
+    if key == "coconut milk":
+        food = f"{food} (canned)"   # the carton drink is "coconut milk drink"
     return snap_item(food, g, key), None
 

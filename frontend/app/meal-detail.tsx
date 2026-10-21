@@ -19,6 +19,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { colors } from '../src/theme/colors';
 import { useUserStore } from '../src/store/userStore';
 import api from '../src/services/api';
+import { localDateString } from '../src/utils/date';
 
 // ── Raw/cooked helper (Fix 5) ──────────────────────────────────────────
 // Meal plans specify COOKED weights (as the app has always done), but the
@@ -270,7 +271,7 @@ export default function MealDetail() {
     setLoggingMeal(mealKey);
     
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateString();
       await api.post('/food/log', {
         user_id: profile.id,
         food_name: meal.name,

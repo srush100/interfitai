@@ -107,8 +107,17 @@ def reset_code_email_html(code: str) -> str:
 # OpenAI configuration (kept for fallback/vision)
 openai.api_key = os.environ.get('OPENAI_API_KEY', '')
 
-# Claude Opus 4.6 via Emergent LLM Key
+# Claude via Emergent LLM Key
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+# Models — set in the environment to switch without a code change
+# (e.g. back to claude-sonnet-4-5-20250929 / claude-haiku-4-5-20251001).
+CLAUDE_SONNET_MODEL = os.environ.get('CLAUDE_SONNET_MODEL', 'claude-sonnet-5-5')
+CLAUDE_HAIKU_MODEL = os.environ.get('CLAUDE_HAIKU_MODEL', 'claude-haiku-5-5')
+# Sonnet 5.5 / Haiku 5.5 think before answering, and that thinking counts toward
+# max_tokens — extra room so long JSON answers (meal plans, programs) aren't cut off.
+SONNET_THINKING_HEADROOM = 4000
+HAIKU_THINKING_HEADROOM = 2000
 
 async def call_claude_sonnet(
     system_message: str,
@@ -118,15 +127,17 @@ async def call_claude_sonnet(
     image_base64: str = None,
     image_base64_2: str = None
 ) -> str:
-    """Call Claude Sonnet 4.5 via emergentintegrations - for complex generation tasks"""
+    """Call Claude Sonnet (5.5 by default) via emergentintegrations - for complex
+    generation and vision tasks. `temperature` is accepted for older callers but not
+    sent: Sonnet 5.5 rejects non-default sampling settings."""
     chat = (
         LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=str(uuid.uuid4()),
             system_message=system_message,
         )
-        .with_model("anthropic", "claude-sonnet-4-5-20250929")
-        .with_params(temperature=temperature, max_tokens=max_tokens, timeout=180)
+        .with_model("anthropic", CLAUDE_SONNET_MODEL)
+        .with_params(max_tokens=max_tokens + SONNET_THINKING_HEADROOM, timeout=240)
     )
     file_contents = []
     if image_base64:
@@ -153,15 +164,17 @@ async def call_claude_haiku(
     max_tokens: int = 1000,
     image_base64: str = None
 ) -> str:
-    """Call Claude Haiku 4.5 via emergentintegrations - for fast, lightweight tasks"""
+    """Call Claude Haiku (5.5 by default) via emergentintegrations - for fast,
+    lightweight tasks. `temperature` is accepted for older callers but not sent:
+    Haiku 5.5 rejects non-default sampling settings."""
     chat = (
         LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=str(uuid.uuid4()),
             system_message=system_message,
         )
-        .with_model("anthropic", "claude-haiku-4-5-20251001")
-        .with_params(temperature=temperature, max_tokens=max_tokens, timeout=60)
+        .with_model("anthropic", CLAUDE_HAIKU_MODEL)
+        .with_params(max_tokens=max_tokens + HAIKU_THINKING_HEADROOM, timeout=90)
     )
     file_contents = []
     if image_base64:
@@ -239,27 +252,39 @@ async def search_usda(query: str, max_results: int = 50):
                 carbs = nutrients.get("Carbohydrate, by difference", 0)
                 fats = nutrients.get("Total lipid (fat)", 0)
                 
-                # Get serving size info
-                serving = food.get("servingSize", "")
-                serving_unit = food.get("servingSizeUnit", "")
-                serving_info = f"{serving}{serving_unit}" if serving and serving_unit else "per 100g"
-                
+                # Search results give nutrients per 100 g (or 100 ml) for every
+                # data type. A branded food's label serving ("45g") is shown,
+                # so its numbers are scaled to that serving to match the label.
+                base_g, unit = 100.0, "g"
+                try:
+                    serving = float(food.get("servingSize") or 0)
+                except (TypeError, ValueError):
+                    serving = 0
+                serving_unit = str(food.get("servingSizeUnit") or "").lower()
+                serving_unit = {"grm": "g", "gm": "g", "mlt": "ml", "mlit": "ml"}.get(serving_unit, serving_unit)
+                if food.get("dataType") == "Branded" and serving > 0 and serving_unit in ("g", "ml"):
+                    base_g, unit = round(serving, 1), serving_unit
+                factor = base_g / 100.0
+                base_txt = f"{int(base_g) if float(base_g).is_integer() else base_g}{unit}"
+
                 brand = food.get("brandName", "") or food.get("brandOwner", "")
                 food_name = food.get("description", "Unknown")
-                
+
                 # Clean up the name
                 if brand and brand.lower() not in food_name.lower():
                     display_name = f"{brand} - {food_name}"
                 else:
                     display_name = food_name
-                
+
                 results.append({
-                    "name": f"{display_name} ({serving_info})",
+                    "name": f"{display_name} ({base_txt})",
                     "brand": brand,
-                    "calories": round(calories, 0),
-                    "protein": round(protein, 1),
-                    "carbs": round(carbs, 1),
-                    "fats": round(fats, 1),
+                    "calories": round(calories * factor, 0),
+                    "protein": round(protein * factor, 1),
+                    "carbs": round(carbs * factor, 1),
+                    "fats": round(fats * factor, 1),
+                    "serving_g": base_g,
+                    "serving_unit": unit,
                     "food_id": str(food.get("fdcId", "")),
                     "source": "usda"
                 })
@@ -864,6 +889,8 @@ class UserProfile(BaseModel):
     gender: str = "male"  # male, female, other
     activity_level: str = "moderate"  # sedentary, light, moderate, active, very_active
     goal: str = "maintenance"  # weight_loss, maintenance, muscle_building
+    # Asked only when BMI is over 30: True = "my weight is mostly muscle"
+    mostly_muscle: Optional[bool] = None
     calculated_macros: Optional[Dict[str, float]] = None
     calorie_adjustment: int = 0  # Manual calorie adjustment (+/- from calculated)
     subscription_status: str = "free"  # free, monthly, quarterly, yearly
@@ -886,6 +913,7 @@ class UserProfileCreate(BaseModel):
     gender: str = "male"
     activity_level: str = "moderate"
     goal: str = "maintenance"
+    mostly_muscle: Optional[bool] = None
 
 class LoginRequest(BaseModel):
     email: str
@@ -900,6 +928,7 @@ class UserProfileUpdate(BaseModel):
     gender: Optional[str] = None
     activity_level: Optional[str] = None
     goal: Optional[str] = None
+    mostly_muscle: Optional[bool] = None
     calorie_adjustment: Optional[int] = None
     reminders_enabled: Optional[bool] = None
     motivation_enabled: Optional[bool] = None
@@ -1054,7 +1083,7 @@ class EliteCoachingEngine:
             "machines":  ["Reverse Pec Deck", "Face Pull Machine"],
             "cables":    ["Cable Face Pull", "Cable Rear Delt Fly"],
             "resistance_bands":["Band Face Pull", "Band Pull-Apart"],
-            "bodyweight":["Band Pull-Apart"],
+            "bodyweight":["Prone Y-T Raise", "Reverse Snow Angel"],
         },
         "tricep_push": {
             "full_gym":  ["Cable Tricep Pushdown", "Overhead Cable Extension", "Skull Crusher"],
@@ -1081,7 +1110,7 @@ class EliteCoachingEngine:
             "dumbbells": ["Dumbbell Row", "Chest-Supported Row"],
             "machines":  ["Machine Row", "Cable Row"],
             "cables":    ["Cable Row", "Single-Arm Cable Row"],
-            "bodyweight":["Prone Y Raise", "Superman Row"],
+            "bodyweight":["Inverted Row", "Prone Y Raise", "Superman Row"],
             "kettlebells":["Kettlebell Row"],
             "resistance_bands":["Band Row", "Band Pull-Apart"],
         },
@@ -1115,7 +1144,8 @@ class EliteCoachingEngine:
             "resistance_bands":["Band Lunge"],
         },
         "hip_hinge": {
-            "full_gym":  ["Romanian Deadlift", "Conventional Deadlift", "Cable Pull-Through"],
+            "full_gym":  ["Romanian Deadlift", "Conventional Deadlift", "Cable Pull-Through",
+                          "Dumbbell Romanian Deadlift"],
             "beginner_gym": ["Dumbbell Romanian Deadlift", "Cable Pull-Through", "Leg Curl"],
             "barbells":  ["Romanian Deadlift", "Conventional Deadlift", "Sumo Deadlift"],
             "dumbbells": ["Dumbbell Romanian Deadlift", "Single-Leg RDL"],
@@ -1156,7 +1186,8 @@ class EliteCoachingEngine:
             "bodyweight":["Single-Leg Calf Raise", "Bodyweight Calf Raise"],
         },
         "core_stability": {
-            "full_gym":  ["Plank", "Dead Bug", "Ab Rollout", "Pallof Press"],
+            "full_gym":  ["Plank", "Dead Bug", "Ab Rollout", "Pallof Press", "Cable Wood Chop"],
+            "dumbbells": ["Weighted Dead Bug", "Renegade Row"],
             "cables":    ["Pallof Press", "Cable Wood Chop", "Ab Pulldown"],
             "bodyweight":["Plank", "Dead Bug", "Bird Dog", "Side Plank"],
             "resistance_bands":["Band Pallof Press"],
@@ -1389,6 +1420,36 @@ class EliteCoachingEngine:
                 ("lateral_raise",    "accessory",           "lateral delt – shoulder width"),
                 ("bicep_curl",       "isolation",           "bicep isolation"),
                 ("tricep_push",      "isolation",           "tricep isolation"),
+            ],
+            "optional_slots": [],
+        },
+        # Upper A / Upper B: both days train push AND pull, so a 3-4 day
+        # Upper/Lower week hits chest, back, shoulders and arms twice.
+        "upper_a": {
+            "label": "Upper A",
+            "focus": "Chest, Back, Shoulders & Arms – Strength",
+            "slots": [
+                ("horizontal_push",  "primary_compound",   "flat pressing – chest and tricep strength"),
+                ("horizontal_pull",  "primary_compound",   "heavy row – back thickness"),
+                ("vertical_push",    "secondary_compound",  "overhead press – shoulder strength"),
+                ("vertical_pull",    "secondary_compound",  "vertical pull – lat width"),
+                ("lateral_raise",    "accessory",           "lateral delt – shoulder width"),
+                ("tricep_push",      "isolation",           "tricep isolation"),
+                ("bicep_curl",       "isolation",           "bicep isolation"),
+            ],
+            "optional_slots": [],
+        },
+        "upper_b": {
+            "label": "Upper B",
+            "focus": "Chest, Back, Shoulders & Arms – Volume",
+            "slots": [
+                ("incline_push",     "primary_compound",   "incline press – upper chest"),
+                ("vertical_pull",    "primary_compound",   "pull-up or pulldown – lat strength"),
+                ("horizontal_pull",  "secondary_compound",  "row variation – mid-back volume"),
+                ("horizontal_push",  "secondary_compound",  "press variation – chest volume"),
+                ("rear_delt",        "accessory",           "rear delt – shoulder health"),
+                ("bicep_curl",       "isolation",           "bicep curl variation"),
+                ("tricep_push",      "isolation",           "overhead tricep extension – long head"),
             ],
             "optional_slots": [],
         },
@@ -1678,8 +1739,8 @@ class EliteCoachingEngine:
         },
         "upper_lower": {
             2: ["upper_full", "lower_full"],
-            3: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy"],
-            4: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus"],
+            3: ["upper_a", "lower_full", "upper_b"],
+            4: ["upper_a", "lower_quad_focus", "upper_b", "lower_hip_focus"],
             5: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_full"],
             6: ["upper_push_heavy", "lower_quad_focus", "upper_pull_heavy", "lower_hip_focus", "upper_full", "lower_full"],
         },
@@ -1740,8 +1801,8 @@ class EliteCoachingEngine:
         },
         "build_muscle": {
             # Hypertrophy: 90-180s compounds, 45-90s accessories
-            "primary_compound":   {"sets": 4, "reps": "6-10",       "rest": 120, "effort": "RIR 2-3"},
-            "secondary_compound": {"sets": 3, "reps": "8-12",       "rest": 90,  "effort": "RIR 2-3"},
+            "primary_compound":   {"sets": 4, "reps": "6-10",       "rest": 150, "effort": "RIR 2-3"},
+            "secondary_compound": {"sets": 3, "reps": "8-12",       "rest": 120, "effort": "RIR 2-3"},
             "accessory":          {"sets": 3, "reps": "10-15",      "rest": 75,  "effort": "RIR 1-2"},
             "isolation":          {"sets": 3, "reps": "12-15",      "rest": 60,  "effort": "RIR 1-2 — full contraction"},
             "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 90,  "effort": "RIR 2-3"},
@@ -1751,8 +1812,8 @@ class EliteCoachingEngine:
         },
         "lose_fat": {
             # Efficient: shorter rest, moderate reps — preserve muscle, maximise calorie burn
-            "primary_compound":   {"sets": 3, "reps": "8-12",       "rest": 90,  "effort": "RIR 2-3"},
-            "secondary_compound": {"sets": 3, "reps": "10-15",      "rest": 75,  "effort": "RIR 2-3"},
+            "primary_compound":   {"sets": 3, "reps": "8-12",       "rest": 120, "effort": "RIR 2-3"},
+            "secondary_compound": {"sets": 3, "reps": "10-15",      "rest": 90,  "effort": "RIR 2-3"},
             "accessory":          {"sets": 3, "reps": "12-15",      "rest": 60,  "effort": "RIR 1-2"},
             "isolation":          {"sets": 2, "reps": "15-20",      "rest": 45,  "effort": "RIR 1-2 — pump-focused"},
             "unilateral":         {"sets": 3, "reps": "12-15 each", "rest": 60,  "effort": "RIR 2-3"},
@@ -1762,8 +1823,8 @@ class EliteCoachingEngine:
         },
         "body_recomp": {
             # Balanced: build muscle + maintain efficiency
-            "primary_compound":   {"sets": 4, "reps": "6-10",       "rest": 105, "effort": "RIR 2-3"},
-            "secondary_compound": {"sets": 3, "reps": "8-12",       "rest": 90,  "effort": "RIR 2-3"},
+            "primary_compound":   {"sets": 4, "reps": "6-10",       "rest": 150, "effort": "RIR 2-3"},
+            "secondary_compound": {"sets": 3, "reps": "8-12",       "rest": 120, "effort": "RIR 2-3"},
             "accessory":          {"sets": 3, "reps": "10-15",      "rest": 60,  "effort": "RIR 2"},
             "isolation":          {"sets": 3, "reps": "12-15",      "rest": 60,  "effort": "RIR 1-2"},
             "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 75,  "effort": "RIR 2-3"},
@@ -1773,8 +1834,8 @@ class EliteCoachingEngine:
         },
         "general_fitness": {
             # Balanced and sustainable
-            "primary_compound":   {"sets": 3, "reps": "6-10",       "rest": 90,  "effort": "RPE 7 — challenging but controlled"},
-            "secondary_compound": {"sets": 3, "reps": "8-12",       "rest": 75,  "effort": "RPE 7"},
+            "primary_compound":   {"sets": 3, "reps": "6-10",       "rest": 120, "effort": "RPE 7 — challenging but controlled"},
+            "secondary_compound": {"sets": 3, "reps": "8-12",       "rest": 90,  "effort": "RPE 7"},
             "accessory":          {"sets": 2, "reps": "10-15",      "rest": 60,  "effort": "RPE 6-7"},
             "isolation":          {"sets": 2, "reps": "12-15",      "rest": 60,  "effort": "RPE 6-7"},
             "unilateral":         {"sets": 3, "reps": "10-12 each", "rest": 60,  "effort": "RPE 7"},
@@ -1893,6 +1954,25 @@ class EliteCoachingEngine:
         "l5":                   "lower_back",
         "spondylosis":          "lower_back",
         "spondylolisthesis":    "lower_back",
+        "bulging disc":         "lower_back",
+        "back pain":            "lower_back",
+        "back injury":          "lower_back",
+        "back strain":          "lower_back",
+        "back spasm":           "lower_back",
+        "back problem":         "lower_back",
+        "back issue":           "lower_back",
+        "bad back":             "lower_back",
+        "sore back":            "lower_back",
+        # pregnancy / postpartum
+        "pregnan":              "pregnancy",
+        "expecting a baby":     "pregnancy",
+        "prenatal":             "pregnancy",
+        "antenatal":            "pregnancy",
+        "trimester":            "pregnancy",
+        "postpartum":           "pregnancy",
+        "post-partum":          "pregnancy",
+        "postnatal":            "pregnancy",
+        "diastasis":            "pregnancy",
         # knee
         "runner's knee":        "knee",
         "runners knee":         "knee",
@@ -1968,8 +2048,15 @@ class EliteCoachingEngine:
 
     LIMITATION_EXCLUSIONS = {
         "lower_back":    ["Conventional Deadlift", "Sumo Deadlift", "Good Morning", "Back Squat",
-                          "T-Bar Row", "Barbell Row"],
+                          "T-Bar Row", "Barbell Row", "Romanian Deadlift", "Pendlay Row",
+                          "Front Squat", "Pause Squat", "Kettlebell Swing",
+                          "Kettlebell Swing Intervals", "Barbell Complex Intervals"],
         "knee":          ["Back Squat", "Hack Squat", "Goblet Squat", "Smith Machine Squat",
+                          "Front Squat", "Pause Squat", "Dumbbell Front Squat",
+                          "Kettlebell Goblet Squat", "Pistol Squat (assisted)", "Band Squat",
+                          "Leg Extension", "Sissy Squat", "Kettlebell Step-Up",
+                          "Box Jump", "Broad Jump", "Thruster Intervals",
+                          "Dumbbell Thruster Intervals", "Burpee Intervals",
                           "Leg Press", "Leg Press (feet high)",
                           "Barbell Bulgarian Split Squat", "Dumbbell Bulgarian Split Squat",
                           "Bulgarian Split Squat", "Smith Machine Split Squat",
@@ -1988,6 +2075,27 @@ class EliteCoachingEngine:
                           "Leg Press Calf Raise", "Bodyweight Calf Raise", "Single-Leg Calf Raise",
                           "Jump Squat", "Broad Jump"],
         "neck":          ["Barbell Back Squat", "Barbell Overhead Press"],
+        # Conservative defaults; the program also tells the user to get clearance.
+        "pregnancy":     ["Conventional Deadlift", "Sumo Deadlift", "Back Squat", "Front Squat",
+                          "Pause Squat", "Barbell Hip Thrust", "Barbell Glute Bridge",
+                          "Box Jump", "Broad Jump", "Jump Squat", "Plyo Push-Up",
+                          "Medicine Ball Slam", "Burpee Intervals", "Devil Press Intervals",
+                          "Barbell Complex Intervals", "Thruster Intervals",
+                          "Hanging Leg Raise", "V-Up", "Cable Crunch", "Ab Rollout",
+                          "Reverse Crunch", "Ab Pulldown", "Running"],
+    }
+
+    # Joint-friendly options offered first when a limitation removes the usual ones
+    LIMITATION_SUBSTITUTES = {
+        "knee": {"squat": ["Box Squat (pain-free depth)", "Spanish Squat", "Wall Sit"]},
+    }
+
+    # Fly / raise / curl style moves: fine as accessories, but never the main
+    # heavy lift of a session (they would get 5x3-5 compound prescriptions).
+    ISOLATION_MOVES = {
+        "Cable Chest Fly", "Cable Crossover", "Incline Dumbbell Fly", "High-to-Low Cable Fly",
+        "Prone Y Raise", "Superman Row", "Band Pull-Apart", "Leg Curl",
+        "Cable Glute Kickback", "Cable Hip Extension", "Band Kickback", "Band Clamshell",
     }
 
     @classmethod
@@ -2052,6 +2160,8 @@ class EliteCoachingEngine:
         "upper_pull_volume":      ["core", "back", "biceps", "shoulders", "arms"],
         # ── Upper / Lower ────────────────────────────────────────────────────
         "upper_full":             ["core", "chest", "back", "shoulders", "arms", "biceps", "triceps"],
+        "upper_a":                ["core", "chest", "back", "shoulders", "arms", "biceps", "triceps"],
+        "upper_b":                ["core", "chest", "back", "shoulders", "arms", "biceps", "triceps"],
         "upper_push_heavy":       ["core", "shoulders", "triceps", "chest", "arms"],
         "upper_pull_heavy":       ["core", "back", "biceps", "shoulders", "arms"],
         "lower_quad_focus":       ["core", "glutes", "calves", "hamstrings", "legs", "quads"],
@@ -2113,10 +2223,51 @@ class EliteCoachingEngine:
         "Hanging Leg Raise": 2, "V-Up": 2, "Single-Leg Calf Raise": 2,
         "Single-Leg Romanian Deadlift": 2, "Plank Walk": 2, "Supinated Row": 2,
         "Bench Dip": 2, "Swiss Ball Leg Curl": 2,
+        "Prone Y-T Raise": 1, "Reverse Snow Angel": 1, "Wall Sit": 1,
+        "Box Squat (pain-free depth)": 1,
         # Tier 3 — Advanced
         "Archer Push-Up": 3, "Handstand Push-Up (wall assisted)": 3,
         "Pistol Squat (assisted)": 3, "Pull-Up": 3, "Chin-Up": 3,
         "Dip": 3, "Muscle-Up Progression": 3, "Terminal Knee Extension": 3,
+    }
+
+    # Exercises measured in time, distance or per side, not plain reps: the slot's
+    # rep range ("10-15") becomes a timed hold, a carry distance or "each side".
+    HOLD_EXERCISES = {"Plank": "hold", "Side Plank": "hold each side", "Wall Sit": "hold",
+                      "Hollow Hold": "hold", "L-Sit": "hold"}
+    CARRY_EXERCISES = {"Farmer's Carry", "Kettlebell Farmer's Carry", "Trap Bar Farmer's Carry",
+                       "Suitcase Carry", "Kettlebell Overhead Carry"}
+    PER_SIDE_EXERCISES = {"Dead Bug", "Weighted Dead Bug", "Renegade Row", "Bird Dog", "Pallof Press", "Band Pallof Press", "Cable Wood Chop",
+                          "Single-Leg RDL", "Single-Leg Romanian Deadlift", "Single-Leg Glute Bridge",
+                          "Single-Leg Calf Raise", "Single-Arm Cable Row", "Single-Arm Lat Pulldown"}
+    HOLD_TIMES = {"beginner": "20-30s", "intermediate": "30-45s", "advanced": "45-60s"}
+
+    # Above 4 sets of one main lift mostly adds fatigue for muscle / recomp / fat-loss
+    # goals; extra volume goes to other exercises. Strength and athletic keep 5.
+    FIVE_SET_GOALS = {"strength", "athletic_performance"}
+
+    def _set_range(self, ex_type: str, level: str, goal: str) -> tuple:
+        s_min, s_max = self.SETS_PER_EXERCISE.get(ex_type, {}).get(level, (2, 4))
+        if ex_type == 'primary_compound' and goal not in self.FIVE_SET_GOALS:
+            s_max = min(s_max, 4)
+        return s_min, s_max
+
+    @classmethod
+    def reps_for_exercise(cls, name: str, reps: str, level: str) -> str:
+        """The slot's reps, adjusted to how this exercise is measured."""
+        if name in cls.HOLD_EXERCISES:
+            return f"{cls.HOLD_TIMES.get(level, '30-45s')} {cls.HOLD_EXERCISES[name]}"
+        if name in cls.CARRY_EXERCISES:
+            return "30-40 m walk" + (" each side" if name in ("Suitcase Carry", "Kettlebell Overhead Carry") else "")
+        if name in cls.PER_SIDE_EXERCISES and 'each' not in str(reps) and 'min' not in str(reps):
+            return f"{reps} each side"
+        return reps
+
+    BEGINNER_REGRESSIONS: dict = {
+        "Pull-Up": "Negative Pull-Up (slow lowering)",
+        "Chin-Up": "Negative Chin-Up (slow lowering)",
+        "Muscle-Up Progression": "Negative Pull-Up (slow lowering)",
+        "Dip": "Bench Dip",
     }
 
     def select_split(self, days: int, goal: str, style: str, level: str,
@@ -2167,8 +2318,11 @@ class EliteCoachingEngine:
                 if days < 2:
                     return 'full_body', 'Full Body', \
                         f"Upper/Lower needs at least 2 days. Full Body recommended instead."
+                ul_sessions = self.get_session_count_for_split('upper_lower', days)
+                n_upper = sum(1 for st in ul_sessions if st.startswith('upper_'))
+                n_lower = len(ul_sessions) - n_upper
                 return 'upper_lower', 'Upper / Lower', \
-                    f"Upper/Lower selected — upper and lower body each trained {max(1, days//2)} times per week with clear structural separation between pushing, pulling, and lower body work."
+                    f"Upper/Lower selected — upper body trained {n_upper}× and lower body {n_lower}× per week."
 
             if preferred_split == 'full_body':
                 return 'full_body', 'Full Body', \
@@ -2264,7 +2418,9 @@ class EliteCoachingEngine:
         best = scored[0]
 
         # ── Generate contextual rationale ─────────────────────────────────────
-        focus_label = focus_key.replace('_', ' ') if focus_key else goal.replace('_', ' ')
+        # "full_body" is the no-focus default — say "every muscle group", not "full body"
+        focus_label = (focus_key.replace('_', ' ') if focus_key and focus_key != 'full_body'
+                       else 'every muscle group')
         goal_label  = goal.replace('_', ' ')
         RATIONALE = {
             'full_body': (
@@ -2292,7 +2448,8 @@ class EliteCoachingEngine:
         }.get(best, best), RATIONALE.get(best, '')
 
     def get_exercise_options(self, pattern: str, equipment: list, style: str,
-                              limitations: list, level: str = 'intermediate') -> list:
+                              limitations: list, level: str = 'intermediate',
+                              ex_type: str = None, goal: str = None) -> list:
         """
         Returns suitable exercise options for a slot.
         - Calisthenics / bodyweight-only: exercises sorted by difficulty for the given level.
@@ -2344,9 +2501,23 @@ class EliteCoachingEngine:
 
         # Filter out exercises contraindicated by limitations
         excluded = set()
-        for key in self._normalize_limitations(limitations):
+        limitation_keys = self._normalize_limitations(limitations)
+        for key in limitation_keys:
             excluded.update(self.LIMITATION_EXCLUSIONS.get(key, []))
+        substitutes = []
+        for key in limitation_keys:
+            for sub in self.LIMITATION_SUBSTITUTES.get(key, {}).get(pattern, []):
+                if sub == "Spanish Squat" and is_bodyweight_context:
+                    continue   # needs a fixed band or strap
+                substitutes.append(sub)
+        if substitutes:
+            unique = substitutes + [e for e in unique if e not in substitutes]
         filtered = [e for e in unique if e not in excluded]
+        # Main lifts must be real compound movements
+        if ex_type in ('primary_compound', 'secondary_compound'):
+            compound_only = [e for e in filtered if e not in self.ISOLATION_MOVES]
+            if compound_only:
+                filtered = compound_only
         # Safe fallback: NEVER serve contraindicated exercises.
         # If all candidates are excluded, use bodyweight or any options from the same pattern.
         if filtered:
@@ -2366,12 +2537,34 @@ class EliteCoachingEngine:
             diff = self.BODYWEIGHT_DIFFICULTY
             if level == 'beginner':
                 result = sorted(result, key=lambda x: diff.get(x, 2))
+                # Drop advanced skills when easier options exist; otherwise
+                # swap in the standard beginner regression
+                easier = [x for x in result if diff.get(x, 2) <= 2]
+                if easier:
+                    result = easier
+                else:
+                    result = list(dict.fromkeys(
+                        self.BEGINNER_REGRESSIONS.get(x, x) for x in result))
             elif level == 'advanced':
                 result = sorted(result, key=lambda x: -diff.get(x, 2))
             else:  # intermediate — exclude tier-3 only from top options
                 tier1_2 = [x for x in result if diff.get(x, 2) <= 2]
                 tier3   = [x for x in result if diff.get(x, 2) > 2]
                 result  = tier1_2 + tier3
+
+        # Past beginner, with equipment: loaded, progressive core work comes before
+        # the plank and dead bug (a plank stops progressing once you can hold it)
+        # (beginners the other way round: learn to brace with the plank first)
+        if pattern == 'core_stability' and not is_bodyweight_context:
+            easy = [e for e in result if e in ('Plank', 'Dead Bug', 'Bird Dog', 'Side Plank')]
+            hard = [e for e in result if e not in easy]
+            result = easy + hard if level == 'beginner' else hard + easy
+
+        # Heavy floor deadlifts at 6-15 reps are mostly fatigue for muscle-building
+        # goals: Romanian-style hinges first, conventional/sumo for strength work
+        if pattern == 'hip_hinge' and goal and goal not in self.FIVE_SET_GOALS:
+            floor_pulls = [e for e in result if e in ('Conventional Deadlift', 'Sumo Deadlift')]
+            result = [e for e in result if e not in floor_pulls] + floor_pulls
 
         # Beginner conditioning: Incline Walking instead of Assault Bike
         # Lower impact, easier to pace, gentler entry to conditioning.
@@ -2564,7 +2757,7 @@ class EliteCoachingEngine:
         """Returns (method, description)"""
         if goal == 'strength':
             return ("Linear Periodisation",
-                    "Add weight each session when you complete all sets with good form. Typically +2.5kg on upper, +5kg on lower. Deload after 4 weeks: reduce weight 40% for one week.")
+                    "Add weight each session when you complete all sets with good form. Typically +2.5kg on upper, +5kg on lower. Every 4th week is a lighter deload week (see the weekly plan).")
         elif goal == 'build_muscle':
             return ("Double Progression",
                     "Work within the prescribed rep range. Once you hit the top end of the range on ALL sets → increase load by 2.5kg next session. Stay at the bottom until you earn the top.")
@@ -2580,6 +2773,185 @@ class EliteCoachingEngine:
         else:
             return ("Progressive Overload",
                     "Add weight or reps each week. If you can complete all sets at the top of the rep range, increase load slightly next session. Focus on consistent effort.")
+
+    # Conditioning length in minutes, by session length: a finisher at the end of a
+    # lifting session vs. the main block of a dedicated conditioning session.
+    COND_MINUTES = {
+        "finisher":  {30: (5, 6),  45: (8, 10),  60: (10, 12), 75: (12, 15)},
+        "dedicated": {30: (8, 10), 45: (12, 15), 60: (15, 20), 75: (20, 25)},
+    }
+    CONDITIONING_SESSIONS = {"athletic_conditioning", "hybrid_power_conditioning",
+                             "calisthenics_conditioning"}
+    STEADY_CARDIO_OPTIONS = {
+        "gym":     ["Rowing Machine", "Stationary Bike", "Incline Treadmill Walk"],
+        "outdoor": ["Brisk Walk", "Easy Jog", "Jump Rope (easy pace)"],
+    }
+
+    def _conditioning_spec(self, goal: str, style: str, level: str, dur_bucket: int,
+                           session_type: str, coaching_note: str, equipment: list,
+                           limitations: list, injected: bool) -> dict:
+        """Conditioning slot sized to the session length, with a label that matches
+        the prescription (steady cardio vs. intervals)."""
+        base = self.GOAL_PARAMS.get(goal, self.GOAL_PARAMS['general_fitness'])['conditioning']
+        kind = 'dedicated' if session_type in self.CONDITIONING_SESSIONS else 'finisher'
+        lo, hi = self.COND_MINUTES[kind][dur_bucket]
+        note_l = coaching_note.lower()
+        if 'steady' in note_l or 'aerobic' in note_l:
+            steady = True
+        elif injected:
+            steady = 'steady' in base['reps']
+        else:
+            steady = False   # hybrid / functional / calisthenics conditioning = intervals
+
+        if steady:
+            reps = f"{lo}-{hi} min — steady pace"
+            effort = base['effort'] if 'steady' in base['reps'] else "Zone 2 — conversational pace"
+            gym = any(e in ('full_gym', 'machines', 'cables') for e in (equipment or []))
+            options = list(self.STEADY_CARDIO_OPTIONS['gym' if gym else 'outdoor'])
+            if self._normalize_limitations(limitations) & {'knee', 'ankle', 'pregnancy'}:
+                options = [o for o in options if o not in ('Easy Jog', 'Jump Rope (easy pace)')]
+            if injected:
+                coaching_note = "cardio finisher — steady pace, builds aerobic fitness"
+        else:
+            if level == 'beginner':
+                pattern = "20s hard / 40s easy, repeat"
+            elif '/' in base['reps'] and '—' in base['reps']:
+                pattern = base['reps'].split('—', 1)[1].strip()
+            else:
+                pattern = "30s hard / 30s easy, repeat"
+            reps = f"{lo}-{hi} min — {pattern}"
+            if level == 'beginner':
+                effort = "Moderate-hard — stay in control"
+            elif 'steady' in base['reps'] or 'light' in base['effort'].lower():
+                effort = "Hard but repeatable — same pace every round"
+            else:
+                effort = base['effort']
+            options = self.get_exercise_options('conditioning', equipment, style, limitations, level)
+            if injected:
+                coaching_note = "metabolic finisher — elevate heart rate, maximise calorie burn"
+        return {
+            "pattern":       "conditioning",
+            "type":          "conditioning",
+            "coaching_note": coaching_note,
+            "sets":          1,
+            "reps":          reps,
+            "rest_seconds":  0,
+            "effort":        effort,
+            "options":       options or ["Brisk Walk"],
+            "excluded":      [],
+        }
+
+    # Accessories the time fit keeps while the day has only one of them
+    PROTECTED_ACCESSORIES = ('bicep_curl', 'tricep_push', 'lateral_raise')
+
+    WORK_PER_SET_SEC = 40   # avg set execution + transition time
+    WARMUP_SEC = 300        # 5 min general warm-up
+    RAMP_UP_SEC = 120       # lighter warm-up sets before each main lift
+
+    @classmethod
+    def _estimate_minutes(cls, slots: list) -> float:
+        sec = cls.WARMUP_SEC
+        for s in slots:
+            if s['type'] == 'conditioning':
+                nums = re.findall(r'\d+', str(s['reps']))
+                mins = int(nums[1]) if len(nums) > 1 else (int(nums[0]) if nums else 10)
+                sec += mins * 60
+            else:
+                work = cls.WORK_PER_SET_SEC * (1.5 if 'each' in str(s['reps']) else 1)
+                sec += s['sets'] * (work + s['rest_seconds'])
+                if s['type'] == 'primary_compound':
+                    sec += cls.RAMP_UP_SEC
+        return sec / 60.0
+
+    def _fit_to_duration(self, slots: list, target_minutes: int, goal: str,
+                         primary_patterns: list) -> list:
+        """Trim a session until its estimated time is within 10% of the target.
+        Order: secondary lifts to 3 sets → finisher a step shorter → drop extra
+        accessories (keeping one biceps, triceps and side-delt exercise) → shortest finisher → fewer sets on support work → main-lift rest
+        to the goal's floor → main lifts down to 3 sets → drop remaining lifts
+        (always keeping at least 2 lifts and the conditioning block)."""
+        limit = target_minutes * 1.10
+        # Muscle goals keep at least 2 min on main lifts even when time is tight
+        rest_floor = max(self.STRENGTH_REST_FLOORS.get(goal, 60),
+                         120 if goal in ('build_muscle', 'body_recomp') else 0)
+
+        def over() -> bool:
+            return self._estimate_minutes(slots) > limit
+
+        def lifts() -> list:
+            return [s for s in slots if s['type'] != 'conditioning']
+
+        def shorten_finisher(floor_minutes: int) -> bool:
+            # A finisher at the end of a lifting day can run a step shorter;
+            # dedicated conditioning days keep their full block
+            for s in slots:
+                if s['type'] != 'conditioning' or 'finisher' not in s['coaching_note']:
+                    continue
+                m = re.match(r'(\d+)-(\d+) min', str(s['reps']))
+                if not m:
+                    continue
+                steps = [(lo, hi) for lo, hi in self.COND_MINUTES['finisher'].values()
+                         if hi < int(m.group(2)) and hi >= floor_minutes]
+                if steps:
+                    lo, hi = max(steps, key=lambda x: x[1])
+                    s['reps'] = f"{lo}-{hi} min" + str(s['reps'])[m.end():]
+                    return True
+            return False
+
+        # 0. Secondary lifts down to 3 sets before any exercise is dropped
+        while over():
+            cands = [s for s in slots if s['type'] == 'secondary_compound' and s['sets'] > 3]
+            if not cands:
+                break
+            cands[-1]['sets'] -= 1
+        # 0b. A finisher may lose a few minutes (not below 8-10) before any lifting goes
+        while over() and shorten_finisher(10):
+            pass
+        # 1. Drop lowest-priority accessories (non-focus first), keep at least 3 lifts
+        #    and the day's only biceps, triceps and side-delt exercises
+        while over() and len(lifts()) > 3:
+            cands = [s for s in slots if s['type'] not in
+                     ('primary_compound', 'secondary_compound', 'conditioning')]
+            for pat in self.PROTECTED_ACCESSORIES:
+                only = [s for s in slots if s['pattern'] == pat]
+                if len(only) == 1 and only[0] in cands:
+                    cands.remove(only[0])
+            if not cands:
+                break
+            non_focus = [s for s in cands if s['pattern'] not in primary_patterns]
+            slots.remove((non_focus or cands)[-1])
+        # 1b. Finisher down to its shortest (5-6 min)
+        while over() and shorten_finisher(6):
+            pass
+        # 2. Fewer sets on everything except the main lifts (minimum 2)
+        while over():
+            cands = [s for s in slots if s['type'] not in ('primary_compound', 'conditioning')
+                     and s['sets'] > 2]
+            if not cands:
+                break
+            most = max(s['sets'] for s in cands)
+            [s for s in cands if s['sets'] == most][-1]['sets'] -= 1
+        # 3. Main-lift rest down to the goal's floor
+        if over():
+            for s in slots:
+                if s['type'] == 'primary_compound' and s['rest_seconds'] > rest_floor:
+                    s['rest_seconds'] = rest_floor
+        # 4. Main lifts down to 3 sets
+        while over():
+            cands = [s for s in slots if s['type'] == 'primary_compound' and s['sets'] > 3]
+            if not cands:
+                break
+            most = max(s['sets'] for s in cands)
+            [s for s in cands if s['sets'] == most][-1]['sets'] -= 1
+        # 5. Drop remaining lifts from the end, keeping at least 2
+        while over() and len(lifts()) > 2:
+            cands = [s for s in slots if s['type'] not in ('primary_compound', 'conditioning')]
+            if not cands:
+                cands = [s for s in slots if s['type'] == 'primary_compound'][1:]
+            if not cands:
+                break
+            slots.remove(cands[-1])
+        return slots
 
     def build_blueprint(self, req) -> dict:
         """Main entry point — returns complete coaching blueprint."""
@@ -2641,7 +3013,15 @@ class EliteCoachingEngine:
             level_vol = self.VOLUME_FRAMEWORK.get(vol_key, self.VOLUME_FRAMEWORK['general_fitness'])
             budget_tuple = level_vol.get(level, level_vol.get('intermediate', {})).get(dur_bucket, (10, 16, 6))
             min_sets, max_sets, max_ex = budget_tuple
-            target_sets = (min_sets + max_sets) // 2
+
+            def _level_target(lo: int, hi: int) -> int:
+                # Beginners near the bottom of the range, advanced near the top
+                if level == 'beginner':
+                    return lo + 1
+                if level == 'advanced':
+                    return hi - 1
+                return (lo + hi) // 2
+            target_sets = _level_target(min_sets, max_sets)
 
             # ── Anti-bloat: conditioning finisher takes a slot ───────────────
             has_existing_cond = any(s[1] == 'conditioning' for s in slots)
@@ -2656,9 +3036,16 @@ class EliteCoachingEngine:
                 )
             )
             if will_inject_cond:
-                max_ex = max(3, max_ex - 1)   # reserve one slot for finisher
+                # The time fit (_fit_to_duration) shortens the finisher or trims
+                # accessories if the day runs long; only the set budget eases here
                 max_sets = max(min_sets, max_sets - 2)  # reduce set budget slightly
-                target_sets = (min_sets + max_sets) // 2
+                target_sets = _level_target(min_sets, max_sets)
+
+            # Conditioning blocks are set aside so the lifting budget and the
+            # max-exercise trim can never squeeze them out; re-added after.
+            cond_slots = [s for s in slots if s[1] == 'conditioning']
+            slots = [s for s in slots if s[1] != 'conditioning']
+            lift_cap = max(2, max_ex - len(cond_slots))
 
             # ── Primary focus: prioritise slots before trimming ──────────────
             # Sort BEFORE the max_ex trim so primary focus patterns survive cuts.
@@ -2667,30 +3054,57 @@ class EliteCoachingEngine:
                 if ex_type == 'primary_compound':       return 0
                 if pattern in primary_patterns:         return 1   # primary focus survives trim
                 if ex_type == 'secondary_compound':     return 2
-                if ex_type == 'conditioning' and style in ('hybrid', 'functional'):
-                    return 2   # conditioning is core to hybrid/functional — protect from trim
                 if pattern in secondary_patterns:       return 3
                 return 4
             slots.sort(key=_slot_importance)
-            slots = slots[:max_ex]
+            slots = slots[:lift_cap]
 
-            # ── Inject missing primary focus slots (SESSION-NATIVE ONLY) ─────────
-            # Only inject a primary focus pattern if it already appears in this
-            # session archetype's natural slot list. This preserves session identity:
-            # push days stay push, pull days stay pull, leg days stay leg.
-            # If the focus cannot be expressed naturally in this session, the weekly
-            # structure (split selection) already handles the distribution.
+            # ── Inject missing primary focus slots ───────────────────────────────
+            # A focus pattern is added only where it fits the session's identity:
+            # patterns already native to the archetype, lower-body patterns on days
+            # that train legs, upper-body patterns on days that train both push and
+            # pull (push days stay push, pull days stay pull). When the day is full,
+            # the focus slot replaces the lowest-priority non-focus accessory.
             session_native = {s[0] for s in archetype['slots']}
+            LOWER_P = {'squat', 'lunge', 'hip_hinge', 'glute', 'hamstring_curl',
+                       'knee_extension', 'calf'}
+            PUSH_P  = {'horizontal_push', 'incline_push', 'vertical_push', 'lateral_raise',
+                       'tricep_push'}
+            PULL_P  = {'vertical_pull', 'horizontal_pull', 'rear_delt', 'bicep_curl'}
+            CORE_P  = {'core_stability', 'core_flexion', 'carry'}
+
+            def _fits_session(fp: str) -> bool:
+                if fp == 'conditioning':
+                    return False   # conditioning is handled separately
+                if fp in session_native:
+                    return True
+                if fp in LOWER_P:
+                    return bool(session_native & LOWER_P)
+                if fp in PUSH_P | PULL_P:
+                    return bool(session_native & PUSH_P) and bool(session_native & PULL_P)
+                return fp in CORE_P
+
             focus_slot_count = sum(1 for p, _, _ in slots if p in primary_patterns)
-            if primary_patterns and focus_slot_count < len(primary_patterns) and len(slots) < max_ex:
+            if primary_patterns and focus_slot_count < len(primary_patterns):
                 max_inject = min(2, len(primary_patterns))
                 injected = 0
                 for fp in primary_patterns:
-                    if injected >= max_inject or len(slots) >= max_ex:
+                    if injected >= max_inject:
                         break
-                    if fp not in [s[0] for s in slots] and fp in session_native:
-                        slots.append((fp, 'accessory', f'primary focus — {fp.replace("_", " ")} direct volume'))
-                        injected += 1
+                    if fp in [s[0] for s in slots] or not _fits_session(fp):
+                        continue
+                    new_slot = (fp, 'accessory', f'primary focus — {fp.replace("_", " ")} direct volume')
+                    if len(slots) < lift_cap:
+                        slots.append(new_slot)
+                    else:
+                        replaceable = [k for k, (p, t, _) in enumerate(slots)
+                                       if t in ('accessory', 'isolation', 'core')
+                                       and p not in primary_patterns
+                                       and p not in secondary_patterns]
+                        if not replaceable:
+                            break
+                        slots[replaceable[-1]] = new_slot
+                    injected += 1
 
             # ── Build slot specs with budget-aware set allocation ────────────
             excluded_exercises = set()
@@ -2698,25 +3112,38 @@ class EliteCoachingEngine:
                 excluded_exercises.update(self.LIMITATION_EXCLUSIONS.get(key, []))
 
             slot_specs = []
+            used_today = set()
             total_sets_allocated = 0
+            # Sets may run a little past the target so later slots (arms, delts)
+            # still get 2 sets instead of being starved; the time fit trims later.
+            set_ceiling = max_sets if level == 'advanced' else min(max_sets, target_sets + 2)
 
-            for pattern, ex_type, coaching_note in slots:
-                remaining_budget = target_sets - total_sets_allocated
+            for slot_idx, (pattern, ex_type, coaching_note) in enumerate(slots):
+                # Keep 2 sets in reserve for each slot still to come
+                reserve = 2 * (len(slots) - slot_idx - 1)
+                remaining_budget = max(0, set_ceiling - total_sets_allocated - reserve)
 
                 # How many sets should this slot get?
                 base_params = goal_params.get(ex_type, goal_params.get('accessory', {}))
-                ranges      = self.SETS_PER_EXERCISE.get(ex_type, {}).get(level, (2, 4))
-                s_min, s_max = ranges
+                s_min, s_max = self._set_range(ex_type, level, goal)
                 base_sets   = base_params.get('sets', 3)
                 # Clamp to level range
                 ideal_sets  = max(s_min, min(s_max, base_sets))
+                # Level shapes main-lift volume: advanced +1 set, beginners -1 on 4+ set lifts
+                if ex_type in ('primary_compound', 'secondary_compound'):
+                    if level == 'advanced':
+                        ideal_sets = max(s_min, min(s_max, base_sets + 1))
+                    elif level == 'beginner' and base_sets >= 4:
+                        ideal_sets = max(s_min, min(s_max, base_sets - 1))
                 # Don't overshoot the session budget
                 if ex_type == 'primary_compound':
                     # Primary compound always gets its full ideal allocation
-                    assigned_sets = max(s_min, min(ideal_sets, max(s_min, remaining_budget)))
+                    assigned_sets = ideal_sets
+                elif set_ceiling - total_sets_allocated < 2:
+                    break   # budget spent
                 elif remaining_budget <= s_min:
-                    # Almost out of budget — give minimum or skip (use 1 as absolute floor)
-                    assigned_sets = max(1, remaining_budget)
+                    # Almost out of budget — give the 2-set minimum
+                    assigned_sets = max(2, remaining_budget)
                 else:
                     assigned_sets = min(ideal_sets, remaining_budget)
 
@@ -2748,7 +3175,8 @@ class EliteCoachingEngine:
                 else:
                     rest = _round_rest(base_rest)
 
-                options = self.get_exercise_options(pattern, equipment, style, limitations, level)
+                options = self.get_exercise_options(pattern, equipment, style, limitations,
+                                                    level, ex_type, goal)
                 # If every option for this pattern is contraindicated by the user's
                 # limitations (e.g. all lunge variants excluded by a knee injury),
                 # skip the slot entirely rather than show a "Bodyweight Exercise"
@@ -2757,10 +3185,16 @@ class EliteCoachingEngine:
                     continue
                 # Rotate options to avoid cross-day exercise duplication
                 if len(options) > 1:
-                    # Move any already-used exercise to the back of the list
-                    fresh = [o for o in options if o not in used_primary_options]
-                    stale = [o for o in options if o in used_primary_options]
-                    options = fresh + stale
+                    # Move any already-used exercise to the back of the top 3 (the
+                    # choices the AI sees) so lower-ranked options, e.g. barbells
+                    # for beginners, never jump to the front. Main lifts only avoid
+                    # repeats within the same day: benching or squatting twice a
+                    # week is how a main lift progresses.
+                    used = used_today if ex_type == 'primary_compound' else used_primary_options
+                    top = options[:3]
+                    fresh = [o for o in top if o not in used]
+                    stale = [o for o in top if o in used]
+                    options = fresh + stale + options[3:]
 
                 slot_specs.append({
                     "pattern":       pattern,
@@ -2776,9 +3210,15 @@ class EliteCoachingEngine:
                 # Track the first-choice exercise to avoid repeating it cross-day
                 if options:
                     used_primary_options.add(options[0])
+                    used_today.add(options[0])
 
-                if ex_type != 'primary_compound' and total_sets_allocated >= target_sets:
+                if ex_type != 'primary_compound' and total_sets_allocated >= set_ceiling:
                     break
+
+            for _, _, cond_note in cond_slots:
+                slot_specs.append(self._conditioning_spec(
+                    goal, style, level, dur_bucket, session_type, cond_note,
+                    equipment, limitations, injected=False))
 
             # ── Minimum set floors ────────────────────────────────────────────
             MIN_SETS_FLOOR = {
@@ -2806,16 +3246,19 @@ class EliteCoachingEngine:
                 if (slot['pattern'] in primary_patterns
                         and primary_boost_count < max_primary_boosts
                         and slot['type'] in ('primary_compound', 'secondary_compound')):
-                    cap = 6 if slot['type'] == 'primary_compound' else 5
+                    # Never above the level's own per-exercise maximum
+                    cap = self._set_range(slot['type'], level, goal)[1]
                     boosted = min(slot['sets'] + 1, cap)
-                    if total_sets_allocated - slot['sets'] + boosted <= max_sets + focus_boost_headroom:
+                    if (boosted > slot['sets']
+                            and total_sets_allocated - slot['sets'] + boosted <= max_sets + focus_boost_headroom):
                         total_sets_allocated += (boosted - slot['sets'])
                         slot['sets'] = boosted
                         slot['coaching_note'] += ' [primary focus — elevated priority]'
                         primary_boost_count += 1
                 elif slot['pattern'] in secondary_patterns:
-                    if total_sets_allocated <= max_sets:
-                        boosted = min(slot['sets'] + 1, 4)
+                    cap = self._set_range(slot['type'], level, goal)[1]
+                    boosted = min(slot['sets'] + 1, cap)
+                    if total_sets_allocated <= max_sets and boosted > slot['sets']:
                         total_sets_allocated += (boosted - slot['sets'])
                         slot['sets'] = boosted
                         slot['coaching_note'] += ' [secondary emphasis]'
@@ -2846,11 +3289,12 @@ class EliteCoachingEngine:
                     for sp in sf_patterns:
                         if sp in already_covered or len(slot_specs) >= secondary_cap:
                             continue
-                        if sp not in session_native:   # don't inject push patterns into pull sessions, etc.
+                        if not _fits_session(sp):   # don't inject push patterns into pull sessions, etc.
                             continue
-                        sec_opts = self.get_exercise_options(sp, equipment, style, limitations, level)
-                        if not sec_opts:
-                            continue
+                        sec_opts = self.get_exercise_options(sp, equipment, style, limitations, level,
+                                                             'accessory', goal)
+                        if not sec_opts or sec_opts == ["Bodyweight Exercise"]:
+                            continue   # every option excluded by the user's limitations
                         sec_base = goal_params.get('accessory', {})
                         slot_specs.append({
                             "pattern":       sp,
@@ -2899,24 +3343,9 @@ class EliteCoachingEngine:
 
             # ── Conditioning finisher injection ───────────────────────────────
             if will_inject_cond:
-                cond_params  = goal_params.get(
-                    'conditioning',
-                    {"sets": 1, "reps": "10-20 min intervals", "rest": 0, "effort": "High intensity"}
-                )
-                cond_options = self.get_exercise_options(
-                    'conditioning', equipment, style, limitations, level
-                )
-                slot_specs.append({
-                    "pattern":       "conditioning",
-                    "type":          "conditioning",
-                    "coaching_note": "metabolic finisher — elevate heart rate, maximise calorie burn",
-                    "sets":          1,
-                    "reps":          cond_params.get('reps', '10-20 min'),
-                    "rest_seconds":  0,
-                    "effort":        cond_params.get('effort', 'High intensity'),
-                    "options":       cond_options,
-                    "excluded":      [],
-                })
+                slot_specs.append(self._conditioning_spec(
+                    goal, style, level, dur_bucket, session_type, "", equipment,
+                    limitations, injected=True))
 
             # ── Label consistency validation ───────────────────────────────────
             # If a session archetype labelled "Upper" picks up lower-body compounds
@@ -2980,43 +3409,21 @@ class EliteCoachingEngine:
             d['slots'] = clean_slots
 
         # ═══════════════════════════════════════════════════════════════════════
-        # TIME-ESTIMATION VALIDATION — trim sessions that exceed the target duration.
-        # Estimates: ~40s per working set (work + transitions) + rest between sets.
-        # Conditioning finishers estimated at 10 min. Warm-up: 5 min overhead.
-        # If estimated time exceeds target by >15%, trim lowest-priority slots.
+        # TIME FIT — every session must fit the user's chosen session length.
+        # Estimate: 5 min warm-up + sets × (~40s work + rest) + conditioning minutes.
         # ═══════════════════════════════════════════════════════════════════════
-        target_minutes = req.duration_minutes
-        WORK_PER_SET_SEC = 40  # avg set execution + transition time
-        WARMUP_SEC = 300       # 5 min warm-up overhead
-        COND_FINISHER_SEC = 600  # 10 min conditioning finisher estimate
-
+        dur = req.duration_minutes
+        dur_bucket = 30 if dur <= 30 else 45 if dur <= 45 else 60 if dur <= 60 else 75
         for d in day_blueprints:
-            slots = d['slots']
-            est_sec = WARMUP_SEC
-            for slot in slots:
-                if slot['type'] == 'conditioning':
-                    est_sec += COND_FINISHER_SEC
-                else:
-                    est_sec += slot['sets'] * (WORK_PER_SET_SEC + slot['rest_seconds'])
-            est_minutes = est_sec / 60.0
-            overflow_threshold = target_minutes * 1.15
-            while est_minutes > overflow_threshold and len(slots) > 3:
-                removable = [
-                    (idx, s) for idx, s in enumerate(slots)
-                    if s['type'] not in ('primary_compound', 'conditioning')
-                ]
-                if not removable:
-                    break
-                remove_idx = removable[-1][0]
-                removed = slots.pop(remove_idx)
-                est_sec = WARMUP_SEC
-                for slot in slots:
-                    if slot['type'] == 'conditioning':
-                        est_sec += COND_FINISHER_SEC
-                    else:
-                        est_sec += slot['sets'] * (WORK_PER_SET_SEC + slot['rest_seconds'])
-                est_minutes = est_sec / 60.0
-            d['slots'] = slots
+            # Well under time on general fitness → use the spare time for a finisher
+            # (fat loss already has one every day; recomp alternates, 2-3 a week)
+            if (goal == 'general_fitness'
+                    and not any(s['type'] == 'conditioning' for s in d['slots'])
+                    and self._estimate_minutes(d['slots']) < dur * 0.8):
+                d['slots'].append(self._conditioning_spec(
+                    goal, style, level, dur_bucket, d['archetype_id'], "", equipment,
+                    limitations, injected=True))
+            d['slots'] = self._fit_to_duration(d['slots'], dur, goal, primary_patterns)
 
         return {
             "split_id":          split_id,
@@ -3025,13 +3432,14 @@ class EliteCoachingEngine:
             "progression_name":  progression_name,
             "progression_desc":  progression_desc,
             "deload_timing":     {
-                "strength":             "Every 4 weeks: reduce weight 40% for 1 week, then reload heavier than before.",
-                "build_muscle":         "Every 5-6 weeks: cut working sets by 50% for 1 week — keep load, reduce volume.",
-                "lose_fat":             "Every 6-7 weeks: reduce volume 40% for 1 week while maintaining training frequency.",
-                "body_recomp":          "Every 5 weeks: reduce both load and volume by 40% — prioritise sleep and recovery.",
-                "athletic_performance": "Every 4 weeks: cut volume 50% — use deload week for skill work and mobility.",
-                "general_fitness":      "Every 6-8 weeks: reduce total volume by 30% for 1 week, stay lightly active.",
-            }.get(goal, "Every 5-6 weeks: reduce volume by 40% for 1 week to allow full recovery and super-compensation."),
+                # Matches the deload weeks in generate_weekly_progression
+                "strength":             "Weeks 4, 8 and 12: cut working sets by 50% and keep the same weight, then come back heavier.",
+                "build_muscle":         "Weeks 4, 8 and 12: cut working sets by 50% — keep the load, reduce the volume.",
+                "lose_fat":             "Weeks 4 and 8: reduce volume by 40% while keeping your training days.",
+                "body_recomp":          "Weeks 4, 8 and 12: reduce volume by about 40% and keep the load — prioritise sleep and recovery.",
+                "athletic_performance": "Weeks 4, 8 and 12: cut volume by 50% and keep the intensity — use the week for skill work and mobility.",
+                "general_fitness":      "Weeks 4 and 8: reduce sets by about 30% and stay lightly active.",
+            }.get(goal, "Weeks 4 and 8: reduce sets by about 30% and stay lightly active."),
             "weekly_structure": EliteCoachingEngine.assign_days_of_week(
                 training_labels=[f"{d['label']} — {d['focus']}" for d in day_blueprints],
                 start_day=getattr(req, 'preferred_start_day', 'Monday'),
@@ -3153,6 +3561,9 @@ class FoodLogRequest(BaseModel):
     meal_type: str
     logged_date: str
     image_base64: Optional[str] = None
+    # Where the numbers came from: "database", "usda", "ai", "snap", "manual",
+    # "saved". Only AI estimates (or older apps that don't say) are corrected.
+    source: Optional[str] = None
 
 class FoodImageAnalyzeRequest(BaseModel):
     user_id: str
@@ -3165,6 +3576,7 @@ class FoodImageAnalyzeRequest(BaseModel):
     # same parser: the typed text, a structured amount, or grams.
     portion_text: Optional[str] = None
     portion_amount: Optional[float] = None
+    logged_date: Optional[str] = None   # the user's local day; server date if missing
     portion_unit: Optional[str] = None  # "grams" | "servings" | "count" | a unit noun ("egg")
     portion_g: Optional[float] = None
     quantity: int = 1
@@ -3253,9 +3665,8 @@ class SubscriptionInfo(BaseModel):
 
 # Subscription pricing constants
 SUBSCRIPTION_PRICES = {
-    "monthly": 9.99,
-    "quarterly": 29.99,
-    "yearly": 79.99,
+    "monthly": 14.99,
+    "yearly": 99.99,
 }
 
 # Stripe Price IDs (to be configured in Stripe Dashboard)
@@ -3275,7 +3686,8 @@ STRIPE_PRICE_IDS = {
 
 # ==================== HELPER FUNCTIONS ====================
 
-def calculate_macros(weight: float, height: float, age: int, gender: str, activity_level: str, goal: str) -> Dict[str, float]:
+def calculate_macros(weight: float, height: float, age: int, gender: str, activity_level: str, goal: str,
+                     mostly_muscle: Optional[bool] = False) -> Dict[str, float]:
     """Calculate personalized macros using Mifflin-St Jeor equation.
 
     Protein is prescribed from bodyweight (g/kg) per ISSN guidelines — not as
@@ -3303,9 +3715,16 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
     tdee = bmr * activity_multipliers.get(activity_level, 1.55)
 
     # ── Calorie target (percentage-based off TDEE) ────────────────────
+    floor_applied = False
     if goal == "weight_loss":
         calories = tdee * 0.80              # 20% deficit
         protein_per_kg = 2.2                # high — preserve LBM in deficit
+        # Safety floor: never below BMR or the usual unsupervised minimum
+        # (1,200 women / 1,500 men), and never above maintenance. Small or
+        # older people then sit near maintenance — their loss comes from activity.
+        floor = max(bmr, {"male": 1500, "female": 1200}.get(gender, 1350))
+        if calories < floor:
+            calories, floor_applied = min(floor, tdee), True
     elif goal == "muscle_building":
         calories = tdee * 1.10              # 10% surplus (lean bulk)
         protein_per_kg = 2.0                # industry standard for hypertrophy (RP/MacroFactor)
@@ -3313,11 +3732,18 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
         calories = tdee
         protein_per_kg = 1.8                # above MPS ceiling with comfortable margin
 
-    # Safety floor — never prescribe below BMR
-    calories = max(calories, bmr * 1.1)
-
     # ── Macro split: protein from bodyweight, fat at 25% of cals, rest carbs ──
-    protein_g = round(min(weight * protein_per_kg, 220))
+    # With a BMI over 30, protein is set from a healthy-weight reference (the
+    # weight at BMI 25 for their height): g/kg targets are for lean mass, and
+    # total weight would ask for far more than is needed (220g+). Unless the
+    # user says their weight is mostly muscle — then full weight, higher cap.
+    height_m = height / 100
+    bmi = weight / (height_m ** 2) if height_m > 0 else 0
+    if bmi > 30 and mostly_muscle:
+        protein_g = round(min(weight * protein_per_kg, 260))
+    else:
+        protein_weight = min(weight, 25 * height_m ** 2) if bmi > 30 else weight
+        protein_g = round(min(protein_weight * protein_per_kg, 220))
     fat_g     = round((calories * 0.25) / 9)    # 25% of cals from fat (hormonal minimum)
     remaining_cals = calories - (protein_g * 4) - (fat_g * 9)
     carbs_g   = round(max(remaining_cals, 0) / 4)
@@ -3329,6 +3755,7 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
         "fats":     fat_g,
         "bmr":      round(bmr),
         "tdee":     round(tdee),
+        "calorie_floor_applied": floor_applied,   # target held at the safe minimum
     }
 
 # ==================== USER PROFILE ENDPOINTS ====================
@@ -3356,7 +3783,8 @@ async def create_profile(profile_data: UserProfileCreate):
     profile_dict["id"] = str(uuid.uuid4())
     profile_dict["calculated_macros"] = calculate_macros(
         profile_dict["weight"], profile_dict["height"], profile_dict["age"],
-        profile_dict["gender"], profile_dict["activity_level"], profile_dict["goal"]
+        profile_dict["gender"], profile_dict["activity_level"], profile_dict["goal"],
+        profile_dict.get("mostly_muscle"),
     )
     profile_dict["created_at"] = datetime.utcnow()
     profile_dict["updated_at"] = datetime.utcnow()
@@ -3399,14 +3827,15 @@ async def update_profile(user_id: str, update_data: UserProfileUpdate):
     update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
     
     # Check if we need to recalculate macros
-    macro_fields = ["weight", "height", "age", "gender", "activity_level", "goal"]
+    macro_fields = ["weight", "height", "age", "gender", "activity_level", "goal", "mostly_muscle"]
     need_recalc = any(field in update_dict for field in macro_fields)
     
     if need_recalc:
         merged = {**profile, **update_dict}
         macros = calculate_macros(
             merged["weight"], merged["height"], merged["age"],
-            merged["gender"], merged["activity_level"], merged["goal"]
+            merged["gender"], merged["activity_level"], merged["goal"],
+            merged.get("mostly_muscle"),
         )
         update_dict["calculated_macros"] = macros
     
@@ -3609,6 +4038,7 @@ async def generate_workout(request: WorkoutGenerateRequest):
     prompt_lines += [
         "",
         "For each slot below: choose ONE name from Options and write coaching Instructions (15-20 words, strict form cue).",
+        "Never choose the same exercise twice in one day.",
         "Do NOT change sets, reps, rest, or effort — those are fixed.",
         "",
     ]
@@ -3746,10 +4176,18 @@ async def generate_workout(request: WorkoutGenerateRequest):
             llm_day_exs = llm_days[day_idx].get('exercises', [])
 
         exercises_with_gifs = []
+        names_today = set()
         for ex_idx, slot_meta in enumerate(day['exercises_meta']):
             llm_ex = llm_day_exs[ex_idx] if ex_idx < len(llm_day_exs) else {}
 
             chosen_name = (llm_ex.get('name') or '').strip() or slot_meta['default_name']
+            if chosen_name.lower() in names_today:
+                # Same exercise twice in one day → next unused option for this slot
+                unused = [o for o in slot_meta['options'] if o.lower() not in names_today]
+                if unused:
+                    chosen_name = unused[0]
+                    llm_ex = {}   # the AI's cues were written for the duplicate
+            names_today.add(chosen_name.lower())
             instructions = (llm_ex.get('instructions') or '').strip()
             if not instructions:
                 instructions = (
@@ -3785,7 +4223,8 @@ async def generate_workout(request: WorkoutGenerateRequest):
             exercises_with_gifs.append({
                 "name":              chosen_name,
                 "sets":              slot_meta['sets'],
-                "reps":              slot_meta['reps'],
+                "reps":              EliteCoachingEngine.reps_for_exercise(
+                                         chosen_name, slot_meta['reps'], blueprint['level']),
                 "rest_seconds":      slot_meta['rest_seconds'],
                 "instructions":      instructions,
                 "muscle_groups":     PATTERN_MUSCLES.get(slot_meta['pattern'], ['various']),
@@ -3839,6 +4278,10 @@ async def generate_workout(request: WorkoutGenerateRequest):
             f"Style: {request.training_style.title()} | "
             f"Split: {blueprint['split_name']} | "
             f"{request.days_per_week} days/week @ {request.duration_minutes}min"
+            + (" | Pregnancy or postpartum: get clearance from your doctor or midwife first, "
+               "and stop any exercise that causes pain, dizziness or bleeding."
+               if 'pregnancy' in EliteCoachingEngine._normalize_limitations(request.injuries or [])
+               else "")
         ),
         workout_days=[WorkoutDay(**day) for day in processed_days],
     )
@@ -4062,6 +4505,8 @@ class CompleteSessionRequest(BaseModel):
     completed_exercises: List[SessionExercise] = []
     notes: Optional[str] = None
     photo_base64: Optional[str] = None
+    local_date: Optional[str] = None          # the user's calendar day, YYYY-MM-DD
+    tz_offset_minutes: Optional[int] = None   # minutes ahead of UTC (Sydney summer = 660)
 
 class WorkoutSession(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -4075,7 +4520,93 @@ class WorkoutSession(BaseModel):
     total_volume: float = 0.0
     notes: Optional[str] = None
     photo_base64: Optional[str] = None
+    local_date: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+def _session_day(s: dict, tz_offset_minutes: int = 0):
+    """The calendar day a session belongs to for the user: the day their app
+    sent, otherwise the stored UTC time shifted to their time zone."""
+    ld = s.get("local_date")
+    if ld:
+        try:
+            return datetime.strptime(ld, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    d = s.get("date")
+    return (d + timedelta(minutes=tz_offset_minutes)).date() if d else None
+
+
+def _has_completed_set(s: dict) -> bool:
+    return any(st.get("completed") for ex in s.get("completed_exercises", []) for st in ex.get("sets", []))
+
+
+def _session_bests(sessions: list) -> Dict[str, dict]:
+    """Best results per exercise (lower-cased name) across sessions:
+    heaviest weight (+ most reps at it), most reps at every weight, and most
+    reps for bodyweight sets (no weight entered)."""
+    bests: Dict[str, dict] = {}
+    for ps in sessions:
+        for pex in ps.get("completed_exercises", []):
+            key = (pex.get("exercise_name") or "").lower().strip()
+            if not key:
+                continue
+            b = bests.setdefault(key, {"name": pex.get("exercise_name"), "best_weight": 0.0,
+                                       "reps_at": {}, "bodyweight_reps": 0, "date": None})
+            for st in pex.get("sets", []):
+                if not st.get("completed") or not st.get("reps"):
+                    continue
+                r = int(st["reps"])
+                w = float(st.get("weight") or 0)
+                if w <= 0:
+                    if r > b["bodyweight_reps"]:
+                        b["bodyweight_reps"] = r
+                    continue
+                if w > b["best_weight"]:
+                    b["best_weight"], b["date"] = w, ps.get("local_date") or ps.get("date")
+                if r > b["reps_at"].get(w, 0):
+                    b["reps_at"][w] = r
+    return bests
+
+
+def _detect_prs(prior_sessions: list, exercises: List["SessionExercise"]) -> list:
+    """New personal records in this session. An exercise done for the first
+    time sets a baseline, not a record. Weight PR: heavier than ever. Rep PR:
+    more reps than ever at this weight or heavier. Bodyweight PR: more reps."""
+    bests = _session_bests(prior_sessions)
+    prs = []
+    for ex in exercises:
+        b = bests.get(ex.exercise_name.lower().strip())
+        if not b:
+            continue   # first time — nothing to beat yet
+        best_pr = None
+        for st in ex.sets:
+            if not st.completed or not st.reps:
+                continue
+            w = float(st.weight or 0)
+            if w <= 0:
+                if b["bodyweight_reps"] and st.reps > b["bodyweight_reps"]:
+                    cand = {"type": "reps", "new_value": st.reps, "previous_value": b["bodyweight_reps"],
+                            "reps": st.reps, "weight": None}
+                else:
+                    continue
+            elif b["best_weight"] and w > b["best_weight"]:
+                cand = {"type": "weight", "new_value": round(w, 2), "previous_value": round(b["best_weight"], 2),
+                        "reps": st.reps, "weight": round(w, 2)}
+            else:
+                prev = max([r for bw, r in b["reps_at"].items() if bw >= w] or [0])
+                if not prev or st.reps <= prev:
+                    continue
+                cand = {"type": "reps", "new_value": st.reps, "previous_value": prev,
+                        "reps": st.reps, "weight": round(w, 2)}
+            # keep the most impressive: weight PRs beat rep PRs, then bigger numbers
+            rank = (cand["type"] == "weight", cand["new_value"])
+            if best_pr is None or rank > (best_pr["type"] == "weight", best_pr["new_value"]):
+                best_pr = cand
+        if best_pr:
+            prs.append({"exercise_name": ex.exercise_name, **best_pr})
+    return prs
+
 
 @api_router.post("/workout/{workout_id}/performance")
 async def save_workout_performance(workout_id: str, request: WorkoutPerformanceRequest):
@@ -4105,6 +4636,16 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found")
 
+    # Weights arrive in kg; keep 2 decimals (lb → kg conversions are long)
+    for ex in request.completed_exercises:
+        for s in ex.sets:
+            if s.weight is not None:
+                s.weight = round(s.weight, 2) if s.weight > 0 else None
+    if not any(s.completed for ex in request.completed_exercises for s in ex.sets):
+        raise HTTPException(status_code=422, detail={
+            "error": "no_sets_completed",
+            "message": "Tick at least one set before finishing the workout."})
+
     # Compute total volume (weight × reps across all completed sets)
     total_volume = 0.0
     for ex in request.completed_exercises:
@@ -4112,61 +4653,14 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
             if s.completed and s.weight and s.reps:
                 total_volume += s.weight * s.reps
 
-    # ── Detect Personal Records (fetch prior sessions ONCE before the loop) ──
-    personal_records = []
-    prior_cursor = (
-        db.workout_sessions.find(
-            {"user_id": request.user_id},
-            {"completed_exercises": 1, "date": 1},
-        )
-        .sort("date", -1)
-        .limit(100)
-    )
-    prior_sessions = await prior_cursor.to_list(100)
-
-    for ex in request.completed_exercises:
-        name_lower = ex.exercise_name.lower().strip()
-
-        prior_best_weight = 0.0
-        prior_best_reps_at_weight: Dict[float, int] = {}
-        for ps in prior_sessions:
-            for pex in ps.get("completed_exercises", []):
-                if pex.get("exercise_name", "").lower().strip() == name_lower:
-                    for pset in pex.get("sets", []):
-                        if pset.get("completed") and pset.get("weight") and pset.get("reps"):
-                            w = float(pset["weight"])
-                            r = int(pset["reps"])
-                            if w > prior_best_weight:
-                                prior_best_weight = w
-                            if w not in prior_best_reps_at_weight or r > prior_best_reps_at_weight[w]:
-                                prior_best_reps_at_weight[w] = r
-
-        pr_found = False
-        for s in ex.sets:
-            if pr_found:
-                break
-            if not s.completed or not s.weight or not s.reps:
-                continue
-            if s.weight > prior_best_weight:
-                personal_records.append({
-                    "exercise_name": ex.exercise_name,
-                    "type": "weight",
-                    "new_value": s.weight,
-                    "previous_value": prior_best_weight if prior_best_weight > 0 else None,
-                    "reps": s.reps,
-                })
-                pr_found = True
-            elif prior_best_weight > 0 and s.weight == prior_best_weight:
-                prev_reps = prior_best_reps_at_weight.get(s.weight, 0)
-                if s.reps > prev_reps:
-                    personal_records.append({
-                        "exercise_name": ex.exercise_name,
-                        "type": "reps",
-                        "new_value": s.reps,
-                        "previous_value": prev_reps,
-                        "reps": s.reps,
-                    })
-                    pr_found = True
+    # ── Personal records: compared with the user's whole history ──
+    names = [ex.exercise_name for ex in request.completed_exercises if ex.exercise_name]
+    prior_sessions = await db.workout_sessions.find(
+        {"user_id": request.user_id,
+         "completed_exercises.exercise_name": {"$in": names}},
+        {"completed_exercises": 1, "date": 1, "local_date": 1},
+    ).to_list(None)
+    personal_records = _detect_prs(prior_sessions, request.completed_exercises)
 
     session = WorkoutSession(
         user_id=request.user_id,
@@ -4178,6 +4672,7 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
         total_volume=round(total_volume, 1),
         notes=request.notes,
         photo_base64=request.photo_base64,
+        local_date=request.local_date,
     )
     session_dict = session.model_dump()
     await db.workout_sessions.insert_one(session_dict)
@@ -4233,10 +4728,14 @@ class UpdateExerciseRequest(BaseModel):
 # ── Streak & Stats ─────────────────────────────────────────────────────────────
 
 @api_router.get("/workout/stats/{user_id}")
-async def get_workout_stats(user_id: str):
-    """Streak, weekly adherence, and total session counts for a user"""
-    cursor = db.workout_sessions.find({"user_id": user_id}, {"date": 1, "duration_minutes": 1, "total_volume": 1, "completed_exercises": 1}).sort("date", -1).limit(500)
-    sessions = await cursor.to_list(500)
+async def get_workout_stats(user_id: str, tz_offset_minutes: int = 0):
+    """Streak, weekly adherence, and total session counts for a user.
+    Days and weeks are the user's own (tz_offset_minutes = minutes ahead of UTC)."""
+    cursor = db.workout_sessions.find(
+        {"user_id": user_id},
+        {"date": 1, "local_date": 1, "duration_minutes": 1, "total_volume": 1, "completed_exercises": 1},
+    ).sort("date", -1)
+    sessions = [s for s in await cursor.to_list(None) if _has_completed_set(s)]
     total_sessions = len(sessions)
 
     # Weekly target from the user's most recent workout program
@@ -4252,26 +4751,25 @@ async def get_workout_stats(user_id: str):
             "total_sessions": 0,
         }
 
-    today = datetime.utcnow().date()
+    today = (datetime.utcnow() + timedelta(minutes=tz_offset_minutes)).date()
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
-    sessions_this_week = sum(
-        1 for s in sessions
-        if s.get("date") and monday <= s["date"].date() <= sunday
-    )
+    days = [d for d in (_session_day(s, tz_offset_minutes) for s in sessions) if d]
+    sessions_this_week = sum(1 for d in days if monday <= d <= sunday)
 
     # Unique training dates sorted newest-first
-    training_dates = sorted(
-        {s["date"].date() for s in sessions if s.get("date")},
-        reverse=True,
-    )
+    training_dates = sorted(set(days), reverse=True)
+    if not training_dates:
+        return {"current_streak": 0, "best_streak": 0, "sessions_this_week": 0,
+                "weekly_target": days_per_week, "total_sessions": total_sessions}
 
     # Max gap (calendar days) that still keeps the streak alive
     max_gap = (7 + days_per_week - 1) // days_per_week + 1  # ceil(7/dpw) + 1
 
-    # Grace rule: streak is alive if the last session was today or yesterday
+    # The streak stays alive through planned rest days: same gap rule as
+    # between sessions (a Mon/Wed/Fri plan keeps its streak over the weekend)
     last_date = training_dates[0]
-    streak_alive = (today - last_date).days <= 1
+    streak_alive = (today - last_date).days <= max_gap
 
     current_streak = 0
     if streak_alive:
@@ -4307,36 +4805,25 @@ async def get_workout_stats(user_id: str):
 
 @api_router.get("/workout/personal-records/{user_id}")
 async def get_personal_records(user_id: str):
-    """All-time best weight and best reps per exercise for a user"""
-    cursor = (
-        db.workout_sessions.find({"user_id": user_id}, {"completed_exercises": 1})
-        .sort("date", -1)
-        .limit(200)
-    )
-    sessions = await cursor.to_list(200)
-    records: Dict[str, Any] = {}
-    for s in sessions:
-        for ex in s.get("completed_exercises", []):
-            name = ex.get("exercise_name", "")
-            if not name:
-                continue
-            key = name.lower().strip()
-            if key not in records:
-                records[key] = {
-                    "exercise_name": name,
-                    "best_weight": 0.0,
-                    "best_reps_at_weight": 0,
-                }
-            for set_ in ex.get("sets", []):
-                if set_.get("completed") and set_.get("weight") and set_.get("reps"):
-                    w = float(set_["weight"])
-                    r = int(set_["reps"])
-                    if w > records[key]["best_weight"]:
-                        records[key]["best_weight"] = w
-                        records[key]["best_reps_at_weight"] = r
-                    elif w == records[key]["best_weight"] and r > records[key]["best_reps_at_weight"]:
-                        records[key]["best_reps_at_weight"] = r
-    return list(records.values())
+    """All-time best per exercise: heaviest weight (with reps at it), or most
+    reps for bodyweight exercises, and the day it was set. Weights in kg."""
+    sessions = await db.workout_sessions.find(
+        {"user_id": user_id}, {"completed_exercises": 1, "date": 1, "local_date": 1}
+    ).sort("date", 1).to_list(None)
+    out = []
+    for key, b in _session_bests(sessions).items():
+        if not b["best_weight"] and not b["bodyweight_reps"]:
+            continue
+        d = b["date"]
+        out.append({
+            "exercise_name": b["name"],
+            "best_weight": round(b["best_weight"], 2),
+            "best_reps_at_weight": b["reps_at"].get(b["best_weight"], 0),
+            "best_bodyweight_reps": b["bodyweight_reps"],
+            "date": d if isinstance(d, str) else (d.strftime("%Y-%m-%d") if d else None),
+        })
+    out.sort(key=lambda r: r["exercise_name"].lower())
+    return out
 
 
 # ── Session Photo ─────────────────────────────────────────────────────────────
@@ -4392,6 +4879,28 @@ class ReplaceExerciseRequest(BaseModel):
     exercise_index: int
     new_exercise: dict
 
+def _remap_day_performance(perf: dict, day_index: int, mapping: Dict[int, Optional[int]]) -> dict:
+    """Saved sets are keyed "day-exercise-set". When a day's exercises move,
+    move their saved sets too: mapping is old exercise index → new index
+    (None drops it, e.g. a replaced or deleted exercise)."""
+    out = {}
+    prefix = f"{day_index}-"
+    for k, v in (perf or {}).items():
+        if not k.startswith(prefix):
+            out[k] = v
+            continue
+        try:
+            _, ex, st = k.split("-")
+            ex = int(ex)
+        except ValueError:
+            out[k] = v
+            continue
+        new = mapping.get(ex, ex)
+        if new is not None:
+            out[f"{day_index}-{new}-{st}"] = v
+    return out
+
+
 @api_router.patch("/workout/{workout_id}/replace-exercise")
 async def replace_exercise(workout_id: str, request: ReplaceExerciseRequest):
     """Replace an exercise in a workout"""
@@ -4407,13 +4916,15 @@ async def replace_exercise(workout_id: str, request: ReplaceExerciseRequest):
     if request.exercise_index >= len(exercises):
         raise HTTPException(status_code=400, detail="Invalid exercise index")
     
-    # Replace the exercise
+    # Replace the exercise (the new one starts with no saved sets)
     exercises[request.exercise_index] = request.new_exercise
     workout_days[request.day_index]["exercises"] = exercises
-    
+    perf = _remap_day_performance(workout.get("performance", {}), request.day_index,
+                                  {request.exercise_index: None})
+
     await db.workouts.update_one(
         {"id": workout_id},
-        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+        {"$set": {"workout_days": workout_days, "performance": perf, "updated_at": datetime.utcnow()}}
     )
     
     return {"message": "Exercise replaced successfully"}
@@ -4437,13 +4948,17 @@ async def delete_exercise(workout_id: str, request: DeleteExerciseRequest):
     if request.exercise_index >= len(exercises):
         raise HTTPException(status_code=400, detail="Invalid exercise index")
     
-    # Remove the exercise
+    # Remove the exercise; later exercises' saved sets move up with them
+    n = len(exercises)
     exercises.pop(request.exercise_index)
     workout_days[request.day_index]["exercises"] = exercises
-    
+    mapping = {i: (None if i == request.exercise_index else i - 1 if i > request.exercise_index else i)
+               for i in range(n)}
+    perf = _remap_day_performance(workout.get("performance", {}), request.day_index, mapping)
+
     await db.workouts.update_one(
         {"id": workout_id},
-        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+        {"$set": {"workout_days": workout_days, "performance": perf, "updated_at": datetime.utcnow()}}
     )
     
     return {"message": "Exercise deleted successfully"}
@@ -4468,16 +4983,20 @@ async def reorder_exercises(workout_id: str, request: ReorderExercisesRequest):
     exercises = workout_days[request.day_index].get("exercises", [])
     if len(request.exercise_order) != len(exercises):
         raise HTTPException(status_code=400, detail="Order length mismatch")
+    if sorted(request.exercise_order) != list(range(len(exercises))):
+        raise HTTPException(status_code=400, detail="Order must list every exercise once")
     workout_days[request.day_index]["exercises"] = [exercises[i] for i in request.exercise_order]
+    perf = _remap_day_performance(workout.get("performance", {}), request.day_index,
+                                  {old: new for new, old in enumerate(request.exercise_order)})
     await db.workouts.update_one(
         {"id": workout_id},
-        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+        {"$set": {"workout_days": workout_days, "performance": perf, "updated_at": datetime.utcnow()}}
     )
     return {"message": "Exercises reordered successfully"}
 
 
 
-def _params_for_added_exercise(name: str, goal: str) -> dict:
+def _params_for_added_exercise(name: str, goal: str, level: str = 'intermediate') -> dict:
     """Goal-appropriate sets/reps/rest for a manually-added exercise.
     Classifies the exercise (conditioning / core / compound / isolation) from its
     name, then pulls the matching scheme from the program goal's GOAL_PARAMS so an
@@ -4505,7 +5024,7 @@ def _params_for_added_exercise(name: str, goal: str) -> dict:
     p = goal_params.get(ex_type) or goal_params.get('accessory') or {}
     return {
         'sets':         p.get('sets', 3),
-        'reps':         p.get('reps', '10-12'),
+        'reps':         EliteCoachingEngine.reps_for_exercise(name, p.get('reps', '10-12'), level),
         'rest_seconds': p.get('rest', 90),
         'effort':       p.get('effort', ''),
     }
@@ -4537,6 +5056,7 @@ async def add_exercise(workout_id: str, request: AddExerciseRequest):
     _added = _params_for_added_exercise(
         exercise_data.get("name", ""),
         workout.get("goal", "general_fitness"),
+        workout.get("fitness_level", "intermediate"),
     )
     exercise_data["sets"]         = _added["sets"]
     exercise_data["reps"]         = _added["reps"]
@@ -5047,6 +5567,8 @@ from nutrition_engine import (  # noqa: E402
     optimise_portions, prompt_food_names, template_draft,
     build_plate, grams_in_text, is_composite_name, parse_portions, plate_totals, portion_grams, resolve_food,
     snap_item_from_text,
+    snap_item,
+    food_matches,
 )
 from meal_templates import TEMPLATES_BY_STYLE  # noqa: E402
 
@@ -5801,7 +6323,22 @@ def _is_safe_reference_fallback(food_name: str) -> bool:
         return False
     return n in _SAFE_FALLBACK_FOODS
 
-def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = None) -> tuple[dict, list[str]]:
+# Drinks whose calories come mostly from alcohol (7 kcal/g, not in P/C/F):
+# their calories can't be checked against protein/carbs/fat.
+_ALCOHOL_RE = re.compile(
+    r"\b(beer|lager|ale|stout|ipa|pilsner|cider|wine|champagne|prosecco|sparkling wine|vodka|gin|rum|"
+    r"whisk(?:e)?y|bourbon|scotch|tequila|brandy|cognac|liqueur|sake|soju|cocktail|margarita|mojito|"
+    r"martini|negroni|daiquiri|spritz|aperol|sangria|seltzer|alcoholic|rtd|bacardi|smirnoff|jack daniel)s?\b",
+    re.I)
+
+
+def _is_alcoholic(name: str) -> bool:
+    n = name or ""
+    return bool(_ALCOHOL_RE.search(n)) and not re.search(r"\b(vinegar|non[- ]?alcoholic|alcohol[- ]free|0\.0%?|ginger)\b", n, re.I)
+
+
+def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = None,
+                        reconcile: bool = True) -> tuple[dict, list[str]]:
     """Guardrail applied to every food entry before it's saved / returned.
 
     Applies Fix 1 (deterministic calorie reconciliation), Fix 2 (physical
@@ -5837,8 +6374,15 @@ def sanitize_food_entry(entry: dict, food_name: str = None, portion_g: float = N
     # Fix 8 structured-portion path was built to honour are preserved.
     is_label = str(entry.get("energy_source", "")).lower() == "label"
     _cal_tol = 0.30 if is_label else 0.10
-    derived = protein * 4 + carbs * 4 + fats * 9
-    if derived > 0:
+    fiber = _f("fiber", _f("fiber_g"))
+    # Fibre counts ~2 kcal/g, not 4 (high-fibre bars, vegetables)
+    if 0 < fiber <= carbs:
+        derived = protein * 4 + (carbs - fiber) * 4 + fiber * 2 + fats * 9
+    else:
+        derived = protein * 4 + carbs * 4 + fats * 9
+    if _is_alcoholic(fname):
+        reconcile = False   # alcohol calories aren't in protein/carbs/fat
+    if derived > 0 and reconcile:
         gap = abs(stated - derived) / max(stated, 1.0)
         if gap > _cal_tol:
             corrected = round(derived)
@@ -5993,7 +6537,7 @@ async def _log_plated_meal(request, food_data: dict, raw_items: list, specs: lis
         serving_size=f"{tot['grams']}g",
         calories=tot["calories"], protein=tot["protein"], carbs=tot["carbs"], fats=tot["fats"],
         meal_type=request.meal_type,
-        logged_date=datetime.now().strftime("%Y-%m-%d"),
+        logged_date=request.logged_date or datetime.now().strftime("%Y-%m-%d"),
         image_base64=request.image_base64[:100] + "...",
     )
     if not request.preview:
@@ -6480,7 +7024,7 @@ For labels, the `calories/protein/carbs/fats` top-level fields describe ONE labe
             sugar=float(food_data.get("sugar", 0)) * qty,
             sodium=float(food_data.get("sodium", 0)) * qty,
             meal_type=request.meal_type,
-            logged_date=datetime.now().strftime("%Y-%m-%d"),
+            logged_date=request.logged_date or datetime.now().strftime("%Y-%m-%d"),
             image_base64=request.image_base64[:100] + "..."  # Store truncated for reference
         )
 
@@ -6515,12 +7059,65 @@ For labels, the `calories/protein/carbs/fats` top-level fields describe ONE labe
             raise HTTPException(status_code=400, detail="Invalid image format. Please use a valid JPEG or PNG image.")
         raise HTTPException(status_code=500, detail=f"Failed to analyze food: {str(e)}")
 
+async def usda_generic_per_100g(food: str):
+    """Per-100g macros for a plain food from USDA's generic tables (Foundation /
+    SR Legacy — not branded products), or None. Only a result whose name contains
+    every word the user typed is used; otherwise nothing is guessed."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{USDA_API_BASE}/foods/search",
+                params={"api_key": USDA_API_KEY, "query": food, "pageSize": 10,
+                        "dataType": ["Foundation", "SR Legacy"]},
+                timeout=8.0,
+            )
+        if response.status_code != 200:
+            logger.warning(f"USDA fallback error {response.status_code} for '{food}'")
+            return None
+        foods = response.json().get("foods", [])
+    except Exception as e:
+        logger.warning(f"USDA fallback exception for '{food}': {e}")
+        return None
+    for f in foods:
+        desc = f.get("description", "")
+        if not food_matches(food, name=desc):
+            continue
+        n = {}
+        for x in f.get("foodNutrients", []):
+            name, unit = x.get("nutrientName", ""), str(x.get("unitName", "")).upper()
+            if name.startswith("Energy") and unit != "KCAL":
+                continue   # kJ entries
+            n.setdefault("Energy" if name.startswith("Energy") else name, float(x.get("value") or 0))
+        p, c, fat = n.get("Protein", 0), n.get("Carbohydrate, by difference", 0), n.get("Total lipid (fat)", 0)
+        cal = n.get("Energy") or round(p * 4 + c * 4 + fat * 9)
+        if cal <= 0 and p + c + fat <= 0:
+            continue
+        return {"calories": round(cal), "protein": round(p, 1), "carbs": round(c, 1),
+                "fats": round(fat, 1), "usda_name": desc}
+    return None
+
+
 @api_router.post("/food/item")
 async def snap_food_item(request: SnapItemRequest):
     """Edit one item of a snapped plate ('150g', '3 eggs') or add one by name
     ('30g cheddar', '1 tbsp olive oil'). Same food database and calculator as
-    meal plans; an unknown food is reported, never guessed."""
+    meal plans. A food that isn't in the database is looked up in USDA's generic
+    tables (grams required); an unknown food is reported, never guessed."""
     item, error = snap_item_from_text(request.text, request.key, request.name, request.per_100g)
+    if error and not request.key and not request.per_100g and "food database" in error:
+        specs = parse_portions(request.text)
+        spec = specs[0] if specs else None
+        food = (spec["food"] if spec else request.text).strip()
+        usda = await usda_generic_per_100g(food) if food else None
+        if usda:
+            if not spec or spec["unit"] not in ("g", "ml"):
+                error = f"Found '{food}' — add the amount in grams, e.g. '50g {food}'."
+            else:
+                item = snap_item(food, spec["amount"], per_100g=usda)
+                if item:
+                    item["source"] = "usda"
+                    item["usda_name"] = usda["usda_name"]
+                    return item
     if error:
         raise HTTPException(status_code=422, detail={"error": "item_unresolvable", "message": error})
     return item
@@ -6539,8 +7136,9 @@ async def log_food(request: FoodLogRequest):
     # known reference (Fix 4). Manual entries can't be retried, so we
     # deterministically correct the calorie total in place.
     payload = request.model_dump()
+    source = (payload.pop("source", None) or "").lower()
     portion_g = grams_in_text(payload.get("serving_size", ""), payload.get("food_name", ""))
-    sanitize_food_entry(payload, portion_g=portion_g)
+    sanitize_food_entry(payload, portion_g=portion_g, reconcile=source in ("", "ai"))
     food_entry = FoodEntry(**payload)
     await db.food_logs.insert_one(food_entry.model_dump())
     return food_entry
@@ -7112,9 +7710,9 @@ async def search_foods(query: str, user_id: str):
             "fats":     float(_r.get("fats", 0)),
         }
         _portion = grams_in_text(_r.get("name", ""), _r.get("name", ""))
-        sanitize_food_entry(_tmp, portion_g=_portion)
-        if _tmp["calories"] != _r.get("calories"):
-            _r["calories"] = _tmp["calories"]
+        # Built-in and USDA values are trusted: food-specific energy factors and
+        # fibre mean they rightly differ from 4/4/9 — warnings only, no rewrite
+        sanitize_food_entry(_tmp, portion_g=_portion, reconcile=False)
     return combined_results[:50]
 
 @api_router.get("/food/ai-search")
@@ -7202,12 +7800,17 @@ async def ai_food_search(query: str, user_id: str):
         sanitize_food_entry(_tmp, portion_g=portion_g)
         data["calories"] = _tmp["calories"]
 
+    serving_size = str(data.get("serving_size") or "")
+    serving_g = grams_in_text(serving_size, data.get("food_name", "")) or None
     return {
         "name":           data.get("food_name", query.title()),
         "calories":       round(float(data.get("calories", 0))),
         "protein":        round(float(data.get("protein_g", 0)), 1),
         "carbs":          round(float(data.get("carbs_g", 0)), 1),
         "fats":           round(float(data.get("fat_g", 0)), 1),
+        "serving_size":   serving_size,
+        "serving_g":      serving_g,
+        "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
         "is_ai_estimate": True,
         "verified":       False,
         "source":         data.get("source", "AI estimate"),
@@ -7304,18 +7907,24 @@ async def web_food_search(query: str, user_id: str):
             "protein_g": float(data.get("protein_g", 0)),
             "carbs_g":   float(data.get("carbs_g", 0)),
             "fat_g":     float(data.get("fat_g", 0)),
+            "fiber_g":   float(data.get("fiber_g", 0) or 0),
         }
         portion_g = grams_in_text(data.get("serving_size", ""),
                                            data.get("food_name", ""))
         sanitize_food_entry(_tmp, portion_g=portion_g)
         data["calories"] = _tmp["calories"]
         domain = urlparse(source_url).netloc.replace("www.", "") if source_url else "web"
+        serving_size = str(data.get("serving_size") or "")
+        serving_g = grams_in_text(serving_size, data.get("food_name", "")) or None
         return {
             "name":           data.get("food_name", query.title()),
             "calories":       round(float(data.get("calories", 0))),
             "protein":        round(float(data.get("protein_g", 0)), 1),
             "carbs":          round(float(data.get("carbs_g", 0)), 1),
             "fats":           round(float(data.get("fat_g", 0)), 1),
+            "serving_size":   serving_size,
+            "serving_g":      serving_g,
+            "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
             "is_ai_estimate": True,
             "verified":       True,
             "source":         domain,
@@ -7413,40 +8022,104 @@ async def generate_grocery_list(meal_plan_id: str, days: int = 7):
 
 # ==================== ASK INTERFITAI CHAT ENDPOINTS ====================
 
+CHAT_DAILY_LIMIT = 60          # messages per user per 24 hours
+CHAT_MAX_MESSAGE_CHARS = 2000
+
+
+async def _chat_user_context(user_id: str, profile: Optional[dict]) -> str:
+    """What the coach knows about the user: stats, the app's own daily targets,
+    and their current program (including injuries)."""
+    if not profile:
+        return ""
+    lines = []
+    for label, key, unit in (("Age", "age", ""), ("Gender", "gender", ""), ("Height", "height", " cm"),
+                             ("Weight", "weight", " kg"), ("Activity level", "activity_level", "")):
+        if profile.get(key):
+            lines.append(f"{label}: {profile[key]}{unit}")
+    if profile.get("goal"):
+        lines.append(f"Nutrition goal: {str(profile['goal']).replace('_', ' ')}")
+    if profile.get("unit_preference") == "lbs":
+        lines.append("Prefers pounds (lbs) for weights")
+    m = profile.get("calculated_macros") or {}
+    if m.get("calories"):
+        adj = profile.get("calorie_adjustment") or 0
+        lines.append(f"App daily targets: {round(m['calories'] + adj)} kcal, {round(m.get('protein', 0))}g protein, "
+                     f"{round(m.get('carbs', 0) + adj / 4)}g carbs, {round(m.get('fats', 0))}g fat")
+    program = await db.workouts.find_one({"user_id": user_id}, sort=[("created_at", -1)])
+    if program:
+        lines.append(f"Current program: {program.get('name', '')} — {program.get('days_per_week', '?')} days/week, "
+                     f"{program.get('session_duration_minutes', '?')} min sessions, level {program.get('fitness_level', '?')}")
+        if program.get("injuries"):
+            lines.append(f"Injuries / limitations: {', '.join(program['injuries'])}")
+    lines.append(f"Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}")
+    return "\n".join(lines)
+
+
+CHAT_SYSTEM_PROMPT = """You are InterFitAI, the user's AI fitness and nutrition coach inside the InterFitAI app. You help with training, exercise technique, nutrition, recovery, habits and motivation.
+
+USER:
+{context}
+
+RULES
+- Use the user's details above. When they ask about calories, protein or macros, use the APP DAILY TARGETS above — never invent different numbers. If they want to change them, tell them they can adjust calories in Profile → Daily targets.
+- Respect their injuries/limitations: suggest safe alternatives and tell them to stop anything that causes pain.
+- Evidence-based advice only. Food first. You may mention well-established basics (protein powder, creatine monohydrate, caffeine, vitamin D) with normal doses. Never recommend steroids, SARMs, prohormones, fat burners, diuretics, or any prescription drug, and never give dosing for them.
+- Never suggest crash diets, eating under 1,200 kcal (women) or 1,500 kcal (men), purging, or extreme fasting.
+- You are not a doctor. For chest pain, fainting, injuries that don't improve, pregnancy, medical conditions or medications, give general guidance only and recommend seeing a doctor or physio. If the user mentions disordered eating, self-harm or thoughts of hurting themselves, respond with care, don't give diet advice, and encourage them to contact a health professional or a local support line (e.g. Butterfly Foundation 1800 33 4673 in Australia, Lifeline 13 11 14).
+- If the user seems under 18, keep advice general and safe and encourage involving a parent, coach or doctor.
+- Stay on fitness, nutrition, health habits and using the app. Politely decline unrelated requests.
+
+STYLE
+- Friendly, direct, encouraging. Usually under 150 words unless they ask for detail or a full plan.
+- Plain text. Short paragraphs; use simple "- " bullet lines for lists. No markdown headings, bold or tables."""
+
+
 @api_router.post("/chat", response_model=ChatMessage)
 async def chat_with_ai(request: ChatRequest):
     """Chat with InterFitAI for fitness and health questions"""
+    # Paid AI feature: checked on the server, with a daily cap to control cost
+    access = await check_subscription_access(request.user_id)
+    if not access.get("has_access"):
+        raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Ask InterFitAI",
+                                                     "message": "Ask InterFitAI is a premium feature. Start your free trial to unlock it."})
+    message = (request.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail={"error": "empty_message", "message": "Type a question first."})
+    if len(message) > CHAT_MAX_MESSAGE_CHARS:
+        raise HTTPException(status_code=400, detail={"error": "message_too_long",
+                                                     "message": f"Please keep messages under {CHAT_MAX_MESSAGE_CHARS} characters."})
+    sent_today = await db.chat_history.count_documents({
+        "user_id": request.user_id, "role": "user",
+        "created_at": {"$gte": datetime.utcnow() - timedelta(hours=24)},
+    })
+    if sent_today >= CHAT_DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail={"error": "daily_limit",
+                                                     "message": "You've reached today's message limit. It resets within 24 hours."})
+
     # Get user context for personalized responses
     profile = await db.profiles.find_one({"id": request.user_id})
-    
-    # Get recent chat history
-    history = await db.chat_history.find({"user_id": request.user_id}).sort("created_at", -1).limit(10).to_list(10)
+
+    # Recent conversation the user can still see (removed messages don't steer answers)
+    history = await db.chat_history.find(
+        {"user_id": request.user_id, "chat_visible": {"$ne": False}}
+    ).sort("created_at", -1).limit(10).to_list(10)
     history.reverse()
-    
+
     messages = [
         {
             "role": "system",
-            "content": f"""You are InterFitAI, an expert AI fitness and nutrition coach. You help users with:
-- Workout advice and exercise form
-- Nutrition guidance and meal suggestions
-- Weight management strategies
-- Supplement recommendations
-- Recovery and injury prevention
-- Mental fitness and motivation
-
-{"User context: " + f"Goal: {profile.get('goal', 'general fitness')}, Weight: {profile.get('weight', 'unknown')}kg, Activity level: {profile.get('activity_level', 'moderate')}" if profile else ""}
-
-Be helpful, encouraging, and provide evidence-based advice. Keep responses concise but informative."""
+            "content": CHAT_SYSTEM_PROMPT.format(
+                context=await _chat_user_context(request.user_id, profile) or "(no profile details yet)"),
         }
     ]
-    
+
     # Add chat history
     for msg in history:
         messages.append({"role": msg["role"], "content": msg["content"]})
-    
+
     # Add current message
-    messages.append({"role": "user", "content": request.message})
-    
+    messages.append({"role": "user", "content": message})
+
     try:
         # Build initial_messages = system + history (without current user message)
         initial_messages = messages[:-1]
@@ -7457,24 +8130,24 @@ Be helpful, encouraging, and provide evidence-based advice. Keep responses conci
                 system_message="",
                 initial_messages=initial_messages,
             )
-            .with_model("anthropic", "claude-haiku-4-5-20251001")
-            .with_params(temperature=0.7, max_tokens=1000)
+            .with_model("anthropic", CLAUDE_HAIKU_MODEL)
+            .with_params(max_tokens=1000 + HAIKU_THINKING_HEADROOM, timeout=90)
         )
-        ai_response = await chat.send_message(UserMessage(text=request.message))
-        
-        # Save user message
-        user_msg = ChatMessage(user_id=request.user_id, role="user", content=request.message)
-        await db.chat_history.insert_one(user_msg.model_dump())
-        
-        # Save AI response
-        ai_msg = ChatMessage(user_id=request.user_id, role="assistant", content=ai_response)
-        await db.chat_history.insert_one(ai_msg.model_dump())
-        
-        return ai_msg
-        
+        ai_response = await chat.send_message(UserMessage(text=message))
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+        raise HTTPException(status_code=503, detail={"error": "chat_unavailable",
+                                                     "message": "The coach couldn't answer just now. Please try again in a moment."})
+
+    # Save user message
+    user_msg = ChatMessage(user_id=request.user_id, role="user", content=message)
+    await db.chat_history.insert_one(user_msg.model_dump())
+
+    # Save AI response
+    ai_msg = ChatMessage(user_id=request.user_id, role="assistant", content=ai_response)
+    await db.chat_history.insert_one(ai_msg.model_dump())
+
+    return ai_msg
 
 @api_router.get("/chat/history/{user_id}")
 async def get_chat_history(user_id: str, limit: int = 50):
@@ -7542,9 +8215,12 @@ async def clear_chat_history(user_id: str):
 # ==================== STEP TRACKING ENDPOINTS ====================
 
 @api_router.post("/steps/log", response_model=StepEntry)
-async def log_steps(user_id: str, steps: int, distance_km: float = 0, source: str = "device"):
-    """Log steps for today"""
-    today = datetime.now().strftime("%Y-%m-%d")
+async def log_steps(user_id: str, steps: int, distance_km: float = 0, source: str = "device",
+                    date: Optional[str] = None):
+    """Log steps for the user's day. A phone/watch reports the day's total so
+    far, so device entries replace a lower total instead of adding to it;
+    manual entries add."""
+    today = date or datetime.now().strftime("%Y-%m-%d")
     
     # Calculate calories burned (rough estimate: 0.04 calories per step)
     calories_burned = int(steps * 0.04)
@@ -7554,8 +8230,12 @@ async def log_steps(user_id: str, steps: int, distance_km: float = 0, source: st
     
     if existing:
         # Update existing entry
-        new_steps = existing["steps"] + steps
-        new_distance = existing["distance_km"] + distance_km
+        if source == "manual":
+            new_steps = existing["steps"] + steps
+            new_distance = existing["distance_km"] + distance_km
+        else:
+            new_steps = max(existing["steps"], steps)
+            new_distance = max(existing["distance_km"], distance_km)
         new_calories = int(new_steps * 0.04)
         
         await db.steps.update_one(
@@ -7748,9 +8428,8 @@ async def disconnect_device(user_id: str, device_type: str):
 # ==================== SUBSCRIPTION ENDPOINTS ====================
 
 SUBSCRIPTION_PLANS = {
-    "monthly": {"name": "Monthly", "price": 9.99, "duration_months": 1, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer"]},
-    "quarterly": {"name": "Quarterly", "price": 24.99, "duration_months": 3, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support"]},
-    "yearly": {"name": "Yearly", "price": 79.99, "duration_months": 12, "trial_days": 3, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support", "Exclusive Content"]}
+    "monthly": {"name": "Monthly", "price": 14.99, "duration_months": 1, "trial_days": 7, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer"]},
+    "yearly": {"name": "Yearly", "price": 99.99, "duration_months": 12, "trial_days": 7, "features": ["AI Workouts", "AI Meal Plans", "Food Tracking", "Ask InterFitAI", "Step Tracking", "Body Analyzer", "Priority Support", "Exclusive Content"]}
 }
 
 # Stripe Price IDs - create these in Stripe Dashboard for recurring billing
@@ -7781,7 +8460,7 @@ async def check_subscription_status(user_id: str):
 
 @api_router.post("/subscription/checkout")
 async def create_checkout_session(request: PaymentRequest):
-    """Create Stripe checkout session with 3-day free trial"""
+    """Create Stripe checkout session with the plan's free trial (7 days)"""
     if request.plan_id not in SUBSCRIPTION_PLANS:
         raise HTTPException(status_code=400, detail="Invalid plan")
     
@@ -7804,7 +8483,7 @@ async def create_checkout_session(request: PaymentRequest):
                     'currency': 'usd',
                     'product_data': {
                         'name': f'InterFitAI {plan["name"]} Subscription',
-                        'description': f'3-day FREE trial, then ${plan["price"]}/{"month" if plan["duration_months"] == 1 else str(plan["duration_months"]) + " months"}'
+                        'description': f'{plan["trial_days"]}-day FREE trial, then ${plan["price"]}/{"month" if plan["duration_months"] == 1 else str(plan["duration_months"]) + " months"}'
                     },
                     'unit_amount': int(plan["price"] * 100),
                     'recurring': {
@@ -7816,7 +8495,7 @@ async def create_checkout_session(request: PaymentRequest):
             }],
             mode='subscription',
             subscription_data={
-                'trial_period_days': 3,  # 3-day free trial
+                'trial_period_days': plan["trial_days"],  # free trial (7 days)
                 'metadata': {
                     'user_id': request.user_id,
                     'plan_id': request.plan_id,
@@ -8039,6 +8718,87 @@ async def get_reminder_settings(user_id: str):
 
 # ==================== BODY ANALYZER ====================
 
+class WeightEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    weight_kg: float
+    date: str                      # the user's day, YYYY-MM-DD
+    note: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class WeightLogRequest(BaseModel):
+    user_id: str
+    weight_kg: float
+    date: str
+    note: Optional[str] = None
+
+
+async def _sync_profile_weight(user_id: str):
+    """The profile follows the 7-day average of logged weights (daily water
+    swings don't move targets). Targets are recalculated, as when weight is
+    edited in the profile, once the average moves by 0.5 kg or more."""
+    recent = await db.weight_logs.find({"user_id": user_id}).sort("date", -1).to_list(7)
+    if not recent:
+        return
+    latest = datetime.strptime(recent[0]["date"], "%Y-%m-%d")
+    week = [r["weight_kg"] for r in recent
+            if (latest - datetime.strptime(r["date"], "%Y-%m-%d")).days < 7]
+    avg = round(sum(week) / len(week), 1)
+    profile = await db.profiles.find_one({"id": user_id})
+    if not profile or abs(float(profile.get("weight") or 0) - avg) < 0.5:
+        return
+    update = {"weight": avg, "updated_at": datetime.utcnow()}
+    try:
+        update["calculated_macros"] = calculate_macros(
+            avg, profile["height"], profile["age"], profile["gender"],
+            profile["activity_level"], profile["goal"], profile.get("mostly_muscle"))
+    except Exception as e:   # incomplete profile — keep the weight, skip targets
+        logger.warning(f"Weight sync: targets not recalculated for {user_id}: {e}")
+    await db.profiles.update_one({"id": user_id}, {"$set": update})
+
+
+@api_router.post("/weight/log")
+async def log_weight(request: WeightLogRequest):
+    """Log body weight for a day (one entry per day — logging again replaces
+    it). The profile's weight follows the 7-day average."""
+    if not 20 <= request.weight_kg <= 400:
+        raise HTTPException(status_code=422, detail={"error": "weight_out_of_range",
+                                                     "message": "Enter a weight between 20 and 400 kg."})
+    try:
+        datetime.strptime(request.date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=422, detail={"error": "bad_date", "message": "Date must be YYYY-MM-DD."})
+    entry = WeightEntry(user_id=request.user_id, weight_kg=round(request.weight_kg, 2),
+                        date=request.date, note=request.note)
+    existing = await db.weight_logs.find_one({"user_id": request.user_id, "date": request.date})
+    if existing:
+        entry.id = existing["id"]
+    await db.weight_logs.replace_one({"user_id": request.user_id, "date": request.date},
+                                     entry.model_dump(), upsert=True)
+    await _sync_profile_weight(request.user_id)
+    return entry
+
+
+@api_router.get("/weight/logs/{user_id}")
+async def get_weight_logs(user_id: str, days: int = 365):
+    """Weight entries, oldest first, for the last `days` days (by entry date)."""
+    since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    docs = await db.weight_logs.find({"user_id": user_id, "date": {"$gte": since}}).sort("date", 1).to_list(None)
+    for d in docs:
+        d.pop("_id", None)
+    return docs
+
+
+@api_router.delete("/weight/log/{entry_id}")
+async def delete_weight_log(entry_id: str, user_id: str):
+    result = await db.weight_logs.delete_one({"id": entry_id, "user_id": user_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Weight entry not found")
+    await _sync_profile_weight(user_id)
+    return {"message": "Weight entry deleted"}
+
+
 class ProgressPhoto(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
@@ -8086,6 +8846,12 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
     can calibrate its feedback — a 4kg change means different things for a 60kg
     vs a 110kg person, and a cutter vs a bulker.
     """
+    # Paid AI feature: checked here, not only in the app
+    access = await check_subscription_access(request.user_id)
+    if not access.get("has_access"):
+        raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Body Analysis",
+                                                     "message": "AI body analysis is a premium feature. Start your free trial to unlock it."})
+
     # ── Pull user profile for context ────────────────────────────────
     profile = await db.profiles.find_one({"id": request.user_id})
     ctx_lines = [f"Time period between photos: {request.time_period}"]
@@ -8102,6 +8868,10 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
         if age:    ctx_lines.append(f"Age: {age}")
         ctx_lines.append(f"Gender: {gender}")
         ctx_lines.append(f"Training goal: {goal.replace('_', ' ')}")
+        m = profile.get("calculated_macros") or {}
+        if m.get("calories"):
+            cal = round(m["calories"] + (profile.get("calorie_adjustment") or 0))
+            ctx_lines.append(f"App daily targets: {cal} kcal, {round(m.get('protein', 0))}g protein")
 
         goal_framing = {
             "weight_loss":     "visible fat loss while preserving muscle",
@@ -8120,9 +8890,10 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
 
     user_context = "\n".join(ctx_lines)
 
+    body_system_prompt = None
     try:
         content = await call_claude_sonnet(
-            system_message=f"""You are a professional fitness coach and body composition expert analysing before/after progress photos.
+            system_message=(body_system_prompt := f"""You are a professional fitness coach and body composition expert analysing before/after progress photos.
 
 USER CONTEXT:
 {user_context}
@@ -8141,6 +8912,25 @@ Provide a body fat % ESTIMATE as a range (e.g. "18-21%") for each photo. Prefix 
 
 Be encouraging but HONEST. Do not inflate scores. If there is little change, say so and give specific actionable next steps.
 
+The FIRST image is BEFORE and the SECOND image is AFTER. Compare like with like (same angle,
+lighting, pump/flex); if the photos differ a lot in angle, lighting or clothing, say so and lower
+analysis_confidence.
+
+RECOMMENDATIONS: practical training, nutrition, sleep and consistency steps. If the user's app
+daily targets are given above, keep nutrition advice in line with them (e.g. "keep hitting your
+protein target") — never give a different calorie or protein number, never suggest crash diets,
+fasting protocols, supplements beyond basics, or drugs.
+
+SAFETY:
+- Describe the body neutrally and respectfully. No comments on attractiveness; no shaming words.
+- If the person appears to be under 18, do not analyse body fat or score — set
+  estimated_progress_score to 0, analysis_confidence to "low", and kindly say the analysis is
+  for adults.
+- If the photos suggest the person may be underweight or unwell, do not praise further fat loss;
+  gently encourage them to check in with a doctor or dietitian.
+- If the images are not two photos of a person's body, say so in overall_assessment, set
+  estimated_progress_score to 0 and analysis_confidence to "low".
+
 Respond with valid JSON only — no markdown fences:
 {{
     "overall_assessment": "2-3 sentence assessment calibrated to the user's goal and stats",
@@ -8152,9 +8942,10 @@ Respond with valid JSON only — no markdown fences:
     "motivation_message": "Encouraging but honest message",
     "estimated_progress_score": 8,
     "analysis_confidence": "high | medium | low"
-}}""",
-            user_message=f"Analyze these before and after progress photos taken over {request.time_period}. Provide the full JSON response per the system prompt.",
+}}"""),
+            user_message=f"Image 1 is BEFORE, image 2 is AFTER, taken {request.time_period} apart. Analyse them and return the full JSON response per the system prompt.",
             max_tokens=1200,
+            temperature=0.3,   # consistent scores for the same photos
             image_base64=request.before_image_base64,
             image_base64_2=request.after_image_base64
         )
@@ -8192,8 +8983,9 @@ Respond with valid JSON only — no markdown fences:
         # One retry with a stricter instruction
         try:
             retry_content = await call_claude_sonnet(
-                system_message="You MUST respond with valid JSON only — no markdown, no prose. Retry the body analysis.",
-                user_message=f"Re-analyze these photos and return ONLY the JSON object with fields: overall_assessment, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). Taken over {request.time_period}.",
+                system_message=(body_system_prompt or "") + "\n\nYou MUST respond with valid JSON only — no markdown, no prose.",
+                temperature=0.3,
+                user_message=f"Image 1 is BEFORE, image 2 is AFTER. Re-analyse these photos and return ONLY the JSON object with fields: overall_assessment, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). Taken over {request.time_period}.",
                 max_tokens=1000,
                 image_base64=request.before_image_base64,
                 image_base64_2=request.after_image_base64
@@ -8489,20 +9281,21 @@ async def admin_list_complimentary(admin_email: str):
 @api_router.post("/stripe/create-checkout-session")
 async def create_stripe_checkout_session(
     user_id: str,
-    plan: str,  # quarterly or yearly
+    plan: str,  # monthly or yearly
     success_url: str,
     cancel_url: str
 ):
     """
-    Create a Stripe Checkout session for website subscriptions.
-    - Quarterly: $29.99 with 7-day free trial
-    - Yearly: $79.99 with 30-day bonus (applied after payment)
+    Create a Stripe Checkout session for website subscriptions — the same two
+    plans and prices as the app (SUBSCRIPTION_PLANS):
+    - Monthly: $14.99 with a 7-day free trial
+    - Yearly: $99.99 with a 30-day bonus (applied after payment)
     """
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Stripe not configured")
     
-    if plan not in ["quarterly", "yearly"]:
-        raise HTTPException(status_code=400, detail="Invalid plan. Choose 'quarterly' or 'yearly'")
+    if plan not in ["monthly", "yearly"]:
+        raise HTTPException(status_code=400, detail="Invalid plan. Choose 'monthly' or 'yearly'")
     
     # Get user profile
     profile = await db.profiles.find_one({"id": user_id})
@@ -8548,23 +9341,23 @@ async def create_stripe_checkout_session(
         }
         
         # Configure pricing based on plan
-        if plan == "quarterly":
-            # Quarterly with 7-day free trial
+        if plan == "monthly":
+            # Monthly with the same free trial as the app (SUBSCRIPTION_PLANS)
             checkout_params["line_items"] = [{
                 "price_data": {
                     "currency": "usd",
                     "product_data": {
-                        "name": "InterFitAI Premium - Quarterly",
+                        "name": "InterFitAI Premium - Monthly",
                         "description": "Full access to all InterFitAI features",
                     },
-                    "unit_amount": 2999,  # $29.99 in cents
-                    "recurring": {"interval": "month", "interval_count": 3},
+                    "unit_amount": int(round(SUBSCRIPTION_PLANS["monthly"]["price"] * 100)),  # $14.99
+                    "recurring": {"interval": "month"},
                 },
                 "quantity": 1,
             }]
             checkout_params["subscription_data"] = {
-                "trial_period_days": 7,
-                "metadata": {"user_id": user_id, "plan": "quarterly"},
+                "trial_period_days": SUBSCRIPTION_PLANS["monthly"]["trial_days"],
+                "metadata": {"user_id": user_id, "plan": "monthly"},
             }
             
         elif plan == "yearly":
@@ -8576,7 +9369,7 @@ async def create_stripe_checkout_session(
                         "name": "InterFitAI Premium - Annual",
                         "description": "Full access to all InterFitAI features + 1 bonus month",
                     },
-                    "unit_amount": 7999,  # $79.99 in cents
+                    "unit_amount": int(round(SUBSCRIPTION_PLANS["yearly"]["price"] * 100)),  # $99.99
                     "recurring": {"interval": "year"},
                 },
                 "quantity": 1,
@@ -8595,6 +9388,11 @@ async def create_stripe_checkout_session(
     except stripe.error.StripeError as e:
         logger.error(f"Stripe error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+def _stripe_plan_days(plan: str) -> int:
+    """Days of access one website payment buys (renewals add the same)."""
+    return {"yearly": 365, "quarterly": 90}.get(plan, 31)   # quarterly: older subscribers only
+
 
 @api_router.post("/stripe/webhook")
 async def handle_stripe_webhook(request: Request):
@@ -8622,7 +9420,7 @@ async def handle_stripe_webhook(request: Request):
         if event_type == "checkout.session.completed":
             # Initial subscription created
             user_id = data.get("metadata", {}).get("user_id")
-            plan = data.get("metadata", {}).get("plan", "quarterly")
+            plan = data.get("metadata", {}).get("plan", "monthly")
             subscription_id = data.get("subscription")
             
             if user_id:
@@ -8635,7 +9433,7 @@ async def handle_stripe_webhook(request: Request):
                     if apply_bonus:
                         expires_at += timedelta(days=30)  # Add 30-day bonus
                 else:
-                    expires_at = datetime.utcnow() + timedelta(days=90)  # Quarterly
+                    expires_at = datetime.utcnow() + timedelta(days=_stripe_plan_days(plan))
                 
                 # Update user subscription
                 update_data = {
@@ -8663,11 +9461,8 @@ async def handle_stripe_webhook(request: Request):
                 # Find user by subscription ID
                 profile = await db.profiles.find_one({"stripe_subscription_id": subscription_id})
                 if profile:
-                    plan = profile.get("subscription_plan", "quarterly")
-                    if plan == "yearly":
-                        expires_at = datetime.utcnow() + timedelta(days=365)
-                    else:
-                        expires_at = datetime.utcnow() + timedelta(days=90)
+                    plan = profile.get("subscription_plan", "monthly")
+                    expires_at = datetime.utcnow() + timedelta(days=_stripe_plan_days(plan))
                     
                     await db.profiles.update_one(
                         {"stripe_subscription_id": subscription_id},

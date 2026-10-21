@@ -48,6 +48,7 @@ export default function RootLayout() {
           <Stack.Screen name="workout-detail" />
           <Stack.Screen name="meal-detail" />
           <Stack.Screen name="food-log" />
+          <Stack.Screen name="progress" />
           <Stack.Screen name="subscription" />
           <Stack.Screen name="subscription/success" />
         </Stack>
