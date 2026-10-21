@@ -1,0 +1,307 @@
+"""
+Progress tracking: streaks over rest days and in the user's time zone, empty
+workouts, personal records (first time, bodyweight, full history), saved sets
+following their exercise, phone step totals, and the body-weight log.
+Uses a small in-memory stand-in for MongoDB.
+"""
+import asyncio
+import copy
+from datetime import datetime, timedelta
+
+import pytest
+from fastapi import HTTPException
+
+import server
+
+
+# ── in-memory Mongo stand-in ──────────────────────────────────────────────
+def _get(doc, path):
+    vals = [doc]
+    for part in path.split("."):
+        nxt = []
+        for v in vals:
+            if isinstance(v, list):
+                nxt += [x.get(part) for x in v if isinstance(x, dict)]
+            elif isinstance(v, dict):
+                nxt.append(v.get(part))
+        vals = nxt
+    flat = []
+    for v in vals:
+        flat += v if isinstance(v, list) else [v]
+    return flat
+
+
+def _match(doc, q):
+    for k, cond in q.items():
+        vals = _get(doc, k)
+        if isinstance(cond, dict):
+            if "$in" in cond and not any(v in cond["$in"] for v in vals):
+                return False
+            if "$gte" in cond and not any(v is not None and v >= cond["$gte"] for v in vals):
+                return False
+        elif cond not in vals:
+            return False
+    return True
+
+
+class Cursor:
+    def __init__(self, docs):
+        self.docs = docs
+
+    def sort(self, key, direction=1):
+        if isinstance(key, list):
+            key, direction = key[0]
+        self.docs.sort(key=lambda d: d.get(key), reverse=direction == -1)
+        return self
+
+    def limit(self, n):
+        self.docs = self.docs[:n]
+        return self
+
+    async def to_list(self, n):
+        return [copy.deepcopy(d) for d in (self.docs if n is None else self.docs[:n])]
+
+
+class Coll:
+    def __init__(self):
+        self.docs = []
+
+    def find(self, q=None, proj=None):
+        return Cursor([d for d in self.docs if _match(d, q or {})])
+
+    async def find_one(self, q, sort=None, **kw):
+        c = self.find(q)
+        if sort:
+            c.sort(sort)
+        return copy.deepcopy(c.docs[0]) if c.docs else None
+
+    async def insert_one(self, doc):
+        self.docs.append(copy.deepcopy(doc))
+
+    async def update_one(self, q, upd):
+        for d in self.docs:
+            if _match(d, q):
+                d.update(copy.deepcopy(upd.get("$set", {})))
+                return type("R", (), {"matched_count": 1})()
+        return type("R", (), {"matched_count": 0})()
+
+    async def replace_one(self, q, doc, upsert=False):
+        for i, d in enumerate(self.docs):
+            if _match(d, q):
+                self.docs[i] = copy.deepcopy(doc)
+                return
+        if upsert:
+            self.docs.append(copy.deepcopy(doc))
+
+    async def delete_one(self, q):
+        for i, d in enumerate(self.docs):
+            if _match(d, q):
+                self.docs.pop(i)
+                return type("R", (), {"deleted_count": 1})()
+        return type("R", (), {"deleted_count": 0})()
+
+
+class FakeDB:
+    def __init__(self):
+        for name in ("workout_sessions", "workouts", "steps", "weight_logs", "profiles"):
+            setattr(self, name, Coll())
+
+
+@pytest.fixture
+def db(monkeypatch):
+    d = FakeDB()
+    monkeypatch.setattr(server, "db", d)
+    return d
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+def _ex(name, sets):
+    return server.SessionExercise(exercise_name=name, sets=[
+        server.SessionSet(set_number=i + 1, weight=w, reps=r, completed=c) for i, (w, r, c) in enumerate(sets)])
+
+
+def _finish(db, exercises, local_date="2026-10-05", workout_id="w1"):
+    if not db.workouts.docs:
+        db.workouts.docs.append({"id": workout_id, "user_id": "u", "days_per_week": 3, "performance": {},
+                                 "updated_at": datetime(2026, 1, 1)})
+    req = server.CompleteSessionRequest(user_id="u", day_index=0, completed_exercises=exercises,
+                                        local_date=local_date)
+    return run(server.complete_workout_session(workout_id, req))
+
+
+# ── streaks and days ─────────────────────────────────────────────────────
+def _session(day, done=True):
+    return {"user_id": "u", "date": datetime.strptime(day, "%Y-%m-%d") + timedelta(hours=8),
+            "local_date": day,
+            "completed_exercises": [{"exercise_name": "Squat", "sets": [{"completed": done, "weight": 100, "reps": 5}]}]}
+
+
+def _stats(db, today, tz=0):
+    class FakeDT(datetime):
+        @classmethod
+        def utcnow(cls):
+            return today
+    orig = server.datetime
+    server.datetime = FakeDT
+    try:
+        return run(server.get_workout_stats("u", tz_offset_minutes=tz))
+    finally:
+        server.datetime = orig
+
+
+def test_streak_survives_planned_rest_days(db):
+    db.workouts.docs.append({"user_id": "u", "days_per_week": 3, "updated_at": datetime(2026, 1, 1)})
+    for d in ["2026-10-05", "2026-10-07", "2026-10-09", "2026-10-12", "2026-10-14", "2026-10-16"]:
+        db.workout_sessions.docs.append(_session(d))
+    # Sunday and Monday morning after a Mon/Wed/Fri week
+    assert _stats(db, datetime(2026, 10, 18, 2))["current_streak"] == 6
+    assert _stats(db, datetime(2026, 10, 19, 2))["current_streak"] == 6
+    # a whole missed week ends it
+    assert _stats(db, datetime(2026, 10, 25, 2))["current_streak"] == 0
+
+
+def test_week_uses_users_day(db):
+    db.workouts.docs.append({"user_id": "u", "days_per_week": 3, "updated_at": datetime(2026, 1, 1)})
+    # Monday 8am Sydney = Sunday 21:00 UTC; the app sends its local date
+    s = _session("2026-10-19")
+    s["date"] = datetime(2026, 10, 18, 21)
+    db.workout_sessions.docs.append(s)
+    st = _stats(db, datetime(2026, 10, 19, 1), tz=660)   # Monday midday in Sydney
+    assert st["sessions_this_week"] == 1
+
+
+def test_old_sessions_without_local_date_use_offset(db):
+    db.workouts.docs.append({"user_id": "u", "days_per_week": 3, "updated_at": datetime(2026, 1, 1)})
+    s = _session("2026-10-19")
+    s.pop("local_date")
+    s["date"] = datetime(2026, 10, 18, 21)        # Monday 8am in Sydney
+    db.workout_sessions.docs.append(s)
+    assert _stats(db, datetime(2026, 10, 19, 1), tz=660)["sessions_this_week"] == 1
+    assert _stats(db, datetime(2026, 10, 19, 1), tz=0)["sessions_this_week"] == 0
+
+
+def test_empty_sessions_do_not_count(db):
+    db.workouts.docs.append({"user_id": "u", "days_per_week": 3, "updated_at": datetime(2026, 1, 1)})
+    db.workout_sessions.docs.append(_session("2026-10-19", done=False))
+    st = _stats(db, datetime(2026, 10, 19, 12))
+    assert st["total_sessions"] == 0 and st["current_streak"] == 0
+
+
+def test_finish_needs_a_ticked_set(db):
+    with pytest.raises(HTTPException) as e:
+        _finish(db, [_ex("Squat", [(100, 5, False)])])
+    assert e.value.status_code == 422
+
+
+# ── personal records ─────────────────────────────────────────────────────
+def test_first_time_is_not_a_record(db):
+    r = _finish(db, [_ex("Bench Press", [(60, 8, True)])])
+    assert r["personal_records"] == []
+
+
+def test_weight_and_rep_records(db):
+    _finish(db, [_ex("Bench Press", [(60, 8, True), (62.5, 6, True)])], "2026-10-05")
+    r = _finish(db, [_ex("Bench Press", [(65, 3, True)])], "2026-10-07")
+    assert r["personal_records"][0]["type"] == "weight" and r["personal_records"][0]["new_value"] == 65
+    # more reps at a weight already lifted
+    r = _finish(db, [_ex("Bench Press", [(62.5, 8, True)])], "2026-10-09")
+    assert r["personal_records"][0]["type"] == "reps" and r["personal_records"][0]["previous_value"] == 6
+    # 8 reps at 60 is not a record: 8 reps at 62.5 already done
+    r = _finish(db, [_ex("Bench Press", [(60, 8, True)])], "2026-10-12")
+    assert r["personal_records"] == []
+
+
+def test_bodyweight_rep_records(db):
+    _finish(db, [_ex("Pull-Up", [(None, 8, True)])], "2026-10-05")
+    r = _finish(db, [_ex("Pull-Up", [(None, 10, True)])], "2026-10-07")
+    assert r["personal_records"][0] == {"exercise_name": "Pull-Up", "type": "reps", "new_value": 10,
+                                        "previous_value": 8, "reps": 10, "weight": None}
+
+
+def test_records_use_full_history(db):
+    # an old best from more than 100 sessions ago still counts
+    _finish(db, [_ex("Squat", [(140, 3, True)])], "2025-01-01")
+    for i in range(120):
+        _finish(db, [_ex("Leg Press", [(100, 10, True)])], f"2025-06-{(i % 28) + 1:02d}")
+    r = _finish(db, [_ex("Squat", [(120, 3, True)])], "2026-10-05")
+    assert r["personal_records"] == []
+
+
+def test_weights_rounded_to_2_decimals(db):
+    r = _finish(db, [_ex("Curl", [(45.359237, 10, True)])])
+    assert r["completed_exercises"][0]["sets"][0]["weight"] == 45.36
+
+
+def test_all_time_records_list(db):
+    _finish(db, [_ex("Bench Press", [(60, 8, True), (70, 3, True)]), _ex("Pull-Up", [(None, 12, True)])], "2026-10-05")
+    recs = {r["exercise_name"]: r for r in run(server.get_personal_records("u"))}
+    assert recs["Bench Press"]["best_weight"] == 70 and recs["Bench Press"]["best_reps_at_weight"] == 3
+    assert recs["Bench Press"]["date"] == "2026-10-05"
+    assert recs["Pull-Up"]["best_bodyweight_reps"] == 12 and recs["Pull-Up"]["best_weight"] == 0
+
+
+# ── saved sets follow their exercise ─────────────────────────────────────
+def test_remap_on_reorder_delete_replace():
+    perf = {"0-0-0": "A", "0-1-0": "B", "0-2-0": "C", "1-0-0": "other day"}
+    swapped = server._remap_day_performance(perf, 0, {0: 1, 1: 0})
+    assert swapped["0-0-0"] == "B" and swapped["0-1-0"] == "A" and swapped["1-0-0"] == "other day"
+    deleted = server._remap_day_performance(perf, 0, {0: 0, 1: None, 2: 1})
+    assert deleted == {"0-0-0": "A", "0-1-0": "C", "1-0-0": "other day"}
+    replaced = server._remap_day_performance(perf, 0, {1: None})
+    assert "0-1-0" not in replaced and replaced["0-2-0"] == "C"
+
+
+def test_reorder_endpoint_moves_saved_sets(db):
+    db.workouts.docs.append({"id": "w", "workout_days": [{"exercises": [{"name": "A"}, {"name": "B"}]}],
+                             "performance": {"0-0-0": {"weight": "60"}, "0-1-0": {"weight": "20"}}})
+    run(server.reorder_exercises("w", server.ReorderExercisesRequest(day_index=0, exercise_order=[1, 0])))
+    w = db.workouts.docs[0]
+    assert w["workout_days"][0]["exercises"][0]["name"] == "B"
+    assert w["performance"]["0-0-0"] == {"weight": "20"}
+
+
+# ── steps ────────────────────────────────────────────────────────────────
+def test_phone_steps_are_a_daily_total(db):
+    for n in (3000, 5000, 5000):
+        run(server.log_steps("u", n, date="2026-10-21"))
+    assert db.steps.docs[0]["steps"] == 5000
+    run(server.log_steps("u", 1000, source="manual", date="2026-10-21"))
+    assert db.steps.docs[0]["steps"] == 6000
+
+
+# ── weight log ───────────────────────────────────────────────────────────
+def _profile(db, weight=90.0):
+    db.profiles.docs.append({"id": "u", "weight": weight, "height": 180, "age": 30, "gender": "male",
+                             "activity_level": "moderate", "goal": "lose_fat", "calculated_macros": {"calories": 1}})
+
+
+def test_weight_log_one_per_day_and_profile_follows_average(db):
+    _profile(db)
+    run(server.log_weight(server.WeightLogRequest(user_id="u", weight_kg=89.0, date="2026-10-19")))
+    run(server.log_weight(server.WeightLogRequest(user_id="u", weight_kg=88.6, date="2026-10-20")))
+    run(server.log_weight(server.WeightLogRequest(user_id="u", weight_kg=88.0, date="2026-10-20")))  # replaces
+    logs = run(server.get_weight_logs("u", days=36500))
+    assert [l["weight_kg"] for l in logs] == [89.0, 88.0]
+    prof = db.profiles.docs[0]
+    assert prof["weight"] == 88.5 and prof["calculated_macros"]["calories"] != 1
+
+
+def test_small_daily_swings_dont_move_targets(db):
+    _profile(db, weight=88.5)
+    run(server.log_weight(server.WeightLogRequest(user_id="u", weight_kg=88.8, date="2026-10-21")))
+    assert db.profiles.docs[0]["weight"] == 88.5 and db.profiles.docs[0]["calculated_macros"]["calories"] == 1
+
+
+def test_weight_out_of_range_rejected(db):
+    with pytest.raises(HTTPException):
+        run(server.log_weight(server.WeightLogRequest(user_id="u", weight_kg=5, date="2026-10-21")))
+
+
+def test_delete_weight_entry(db):
+    _profile(db)
+    e = run(server.log_weight(server.WeightLogRequest(user_id="u", weight_kg=89, date="2026-10-21")))
+    run(server.delete_weight_log(e.id, user_id="u"))
+    assert db.weight_logs.docs == []

@@ -4471,6 +4471,8 @@ class CompleteSessionRequest(BaseModel):
     completed_exercises: List[SessionExercise] = []
     notes: Optional[str] = None
     photo_base64: Optional[str] = None
+    local_date: Optional[str] = None          # the user's calendar day, YYYY-MM-DD
+    tz_offset_minutes: Optional[int] = None   # minutes ahead of UTC (Sydney summer = 660)
 
 class WorkoutSession(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -4484,7 +4486,93 @@ class WorkoutSession(BaseModel):
     total_volume: float = 0.0
     notes: Optional[str] = None
     photo_base64: Optional[str] = None
+    local_date: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+def _session_day(s: dict, tz_offset_minutes: int = 0):
+    """The calendar day a session belongs to for the user: the day their app
+    sent, otherwise the stored UTC time shifted to their time zone."""
+    ld = s.get("local_date")
+    if ld:
+        try:
+            return datetime.strptime(ld, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    d = s.get("date")
+    return (d + timedelta(minutes=tz_offset_minutes)).date() if d else None
+
+
+def _has_completed_set(s: dict) -> bool:
+    return any(st.get("completed") for ex in s.get("completed_exercises", []) for st in ex.get("sets", []))
+
+
+def _session_bests(sessions: list) -> Dict[str, dict]:
+    """Best results per exercise (lower-cased name) across sessions:
+    heaviest weight (+ most reps at it), most reps at every weight, and most
+    reps for bodyweight sets (no weight entered)."""
+    bests: Dict[str, dict] = {}
+    for ps in sessions:
+        for pex in ps.get("completed_exercises", []):
+            key = (pex.get("exercise_name") or "").lower().strip()
+            if not key:
+                continue
+            b = bests.setdefault(key, {"name": pex.get("exercise_name"), "best_weight": 0.0,
+                                       "reps_at": {}, "bodyweight_reps": 0, "date": None})
+            for st in pex.get("sets", []):
+                if not st.get("completed") or not st.get("reps"):
+                    continue
+                r = int(st["reps"])
+                w = float(st.get("weight") or 0)
+                if w <= 0:
+                    if r > b["bodyweight_reps"]:
+                        b["bodyweight_reps"] = r
+                    continue
+                if w > b["best_weight"]:
+                    b["best_weight"], b["date"] = w, ps.get("local_date") or ps.get("date")
+                if r > b["reps_at"].get(w, 0):
+                    b["reps_at"][w] = r
+    return bests
+
+
+def _detect_prs(prior_sessions: list, exercises: List["SessionExercise"]) -> list:
+    """New personal records in this session. An exercise done for the first
+    time sets a baseline, not a record. Weight PR: heavier than ever. Rep PR:
+    more reps than ever at this weight or heavier. Bodyweight PR: more reps."""
+    bests = _session_bests(prior_sessions)
+    prs = []
+    for ex in exercises:
+        b = bests.get(ex.exercise_name.lower().strip())
+        if not b:
+            continue   # first time — nothing to beat yet
+        best_pr = None
+        for st in ex.sets:
+            if not st.completed or not st.reps:
+                continue
+            w = float(st.weight or 0)
+            if w <= 0:
+                if b["bodyweight_reps"] and st.reps > b["bodyweight_reps"]:
+                    cand = {"type": "reps", "new_value": st.reps, "previous_value": b["bodyweight_reps"],
+                            "reps": st.reps, "weight": None}
+                else:
+                    continue
+            elif b["best_weight"] and w > b["best_weight"]:
+                cand = {"type": "weight", "new_value": round(w, 2), "previous_value": round(b["best_weight"], 2),
+                        "reps": st.reps, "weight": round(w, 2)}
+            else:
+                prev = max([r for bw, r in b["reps_at"].items() if bw >= w] or [0])
+                if not prev or st.reps <= prev:
+                    continue
+                cand = {"type": "reps", "new_value": st.reps, "previous_value": prev,
+                        "reps": st.reps, "weight": round(w, 2)}
+            # keep the most impressive: weight PRs beat rep PRs, then bigger numbers
+            rank = (cand["type"] == "weight", cand["new_value"])
+            if best_pr is None or rank > (best_pr["type"] == "weight", best_pr["new_value"]):
+                best_pr = cand
+        if best_pr:
+            prs.append({"exercise_name": ex.exercise_name, **best_pr})
+    return prs
+
 
 @api_router.post("/workout/{workout_id}/performance")
 async def save_workout_performance(workout_id: str, request: WorkoutPerformanceRequest):
@@ -4514,6 +4602,16 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found")
 
+    # Weights arrive in kg; keep 2 decimals (lb → kg conversions are long)
+    for ex in request.completed_exercises:
+        for s in ex.sets:
+            if s.weight is not None:
+                s.weight = round(s.weight, 2) if s.weight > 0 else None
+    if not any(s.completed for ex in request.completed_exercises for s in ex.sets):
+        raise HTTPException(status_code=422, detail={
+            "error": "no_sets_completed",
+            "message": "Tick at least one set before finishing the workout."})
+
     # Compute total volume (weight × reps across all completed sets)
     total_volume = 0.0
     for ex in request.completed_exercises:
@@ -4521,61 +4619,14 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
             if s.completed and s.weight and s.reps:
                 total_volume += s.weight * s.reps
 
-    # ── Detect Personal Records (fetch prior sessions ONCE before the loop) ──
-    personal_records = []
-    prior_cursor = (
-        db.workout_sessions.find(
-            {"user_id": request.user_id},
-            {"completed_exercises": 1, "date": 1},
-        )
-        .sort("date", -1)
-        .limit(100)
-    )
-    prior_sessions = await prior_cursor.to_list(100)
-
-    for ex in request.completed_exercises:
-        name_lower = ex.exercise_name.lower().strip()
-
-        prior_best_weight = 0.0
-        prior_best_reps_at_weight: Dict[float, int] = {}
-        for ps in prior_sessions:
-            for pex in ps.get("completed_exercises", []):
-                if pex.get("exercise_name", "").lower().strip() == name_lower:
-                    for pset in pex.get("sets", []):
-                        if pset.get("completed") and pset.get("weight") and pset.get("reps"):
-                            w = float(pset["weight"])
-                            r = int(pset["reps"])
-                            if w > prior_best_weight:
-                                prior_best_weight = w
-                            if w not in prior_best_reps_at_weight or r > prior_best_reps_at_weight[w]:
-                                prior_best_reps_at_weight[w] = r
-
-        pr_found = False
-        for s in ex.sets:
-            if pr_found:
-                break
-            if not s.completed or not s.weight or not s.reps:
-                continue
-            if s.weight > prior_best_weight:
-                personal_records.append({
-                    "exercise_name": ex.exercise_name,
-                    "type": "weight",
-                    "new_value": s.weight,
-                    "previous_value": prior_best_weight if prior_best_weight > 0 else None,
-                    "reps": s.reps,
-                })
-                pr_found = True
-            elif prior_best_weight > 0 and s.weight == prior_best_weight:
-                prev_reps = prior_best_reps_at_weight.get(s.weight, 0)
-                if s.reps > prev_reps:
-                    personal_records.append({
-                        "exercise_name": ex.exercise_name,
-                        "type": "reps",
-                        "new_value": s.reps,
-                        "previous_value": prev_reps,
-                        "reps": s.reps,
-                    })
-                    pr_found = True
+    # ── Personal records: compared with the user's whole history ──
+    names = [ex.exercise_name for ex in request.completed_exercises if ex.exercise_name]
+    prior_sessions = await db.workout_sessions.find(
+        {"user_id": request.user_id,
+         "completed_exercises.exercise_name": {"$in": names}},
+        {"completed_exercises": 1, "date": 1, "local_date": 1},
+    ).to_list(None)
+    personal_records = _detect_prs(prior_sessions, request.completed_exercises)
 
     session = WorkoutSession(
         user_id=request.user_id,
@@ -4587,6 +4638,7 @@ async def complete_workout_session(workout_id: str, request: CompleteSessionRequ
         total_volume=round(total_volume, 1),
         notes=request.notes,
         photo_base64=request.photo_base64,
+        local_date=request.local_date,
     )
     session_dict = session.model_dump()
     await db.workout_sessions.insert_one(session_dict)
@@ -4642,10 +4694,14 @@ class UpdateExerciseRequest(BaseModel):
 # ── Streak & Stats ─────────────────────────────────────────────────────────────
 
 @api_router.get("/workout/stats/{user_id}")
-async def get_workout_stats(user_id: str):
-    """Streak, weekly adherence, and total session counts for a user"""
-    cursor = db.workout_sessions.find({"user_id": user_id}, {"date": 1, "duration_minutes": 1, "total_volume": 1, "completed_exercises": 1}).sort("date", -1).limit(500)
-    sessions = await cursor.to_list(500)
+async def get_workout_stats(user_id: str, tz_offset_minutes: int = 0):
+    """Streak, weekly adherence, and total session counts for a user.
+    Days and weeks are the user's own (tz_offset_minutes = minutes ahead of UTC)."""
+    cursor = db.workout_sessions.find(
+        {"user_id": user_id},
+        {"date": 1, "local_date": 1, "duration_minutes": 1, "total_volume": 1, "completed_exercises": 1},
+    ).sort("date", -1)
+    sessions = [s for s in await cursor.to_list(None) if _has_completed_set(s)]
     total_sessions = len(sessions)
 
     # Weekly target from the user's most recent workout program
@@ -4661,26 +4717,25 @@ async def get_workout_stats(user_id: str):
             "total_sessions": 0,
         }
 
-    today = datetime.utcnow().date()
+    today = (datetime.utcnow() + timedelta(minutes=tz_offset_minutes)).date()
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
-    sessions_this_week = sum(
-        1 for s in sessions
-        if s.get("date") and monday <= s["date"].date() <= sunday
-    )
+    days = [d for d in (_session_day(s, tz_offset_minutes) for s in sessions) if d]
+    sessions_this_week = sum(1 for d in days if monday <= d <= sunday)
 
     # Unique training dates sorted newest-first
-    training_dates = sorted(
-        {s["date"].date() for s in sessions if s.get("date")},
-        reverse=True,
-    )
+    training_dates = sorted(set(days), reverse=True)
+    if not training_dates:
+        return {"current_streak": 0, "best_streak": 0, "sessions_this_week": 0,
+                "weekly_target": days_per_week, "total_sessions": total_sessions}
 
     # Max gap (calendar days) that still keeps the streak alive
     max_gap = (7 + days_per_week - 1) // days_per_week + 1  # ceil(7/dpw) + 1
 
-    # Grace rule: streak is alive if the last session was today or yesterday
+    # The streak stays alive through planned rest days: same gap rule as
+    # between sessions (a Mon/Wed/Fri plan keeps its streak over the weekend)
     last_date = training_dates[0]
-    streak_alive = (today - last_date).days <= 1
+    streak_alive = (today - last_date).days <= max_gap
 
     current_streak = 0
     if streak_alive:
@@ -4716,36 +4771,25 @@ async def get_workout_stats(user_id: str):
 
 @api_router.get("/workout/personal-records/{user_id}")
 async def get_personal_records(user_id: str):
-    """All-time best weight and best reps per exercise for a user"""
-    cursor = (
-        db.workout_sessions.find({"user_id": user_id}, {"completed_exercises": 1})
-        .sort("date", -1)
-        .limit(200)
-    )
-    sessions = await cursor.to_list(200)
-    records: Dict[str, Any] = {}
-    for s in sessions:
-        for ex in s.get("completed_exercises", []):
-            name = ex.get("exercise_name", "")
-            if not name:
-                continue
-            key = name.lower().strip()
-            if key not in records:
-                records[key] = {
-                    "exercise_name": name,
-                    "best_weight": 0.0,
-                    "best_reps_at_weight": 0,
-                }
-            for set_ in ex.get("sets", []):
-                if set_.get("completed") and set_.get("weight") and set_.get("reps"):
-                    w = float(set_["weight"])
-                    r = int(set_["reps"])
-                    if w > records[key]["best_weight"]:
-                        records[key]["best_weight"] = w
-                        records[key]["best_reps_at_weight"] = r
-                    elif w == records[key]["best_weight"] and r > records[key]["best_reps_at_weight"]:
-                        records[key]["best_reps_at_weight"] = r
-    return list(records.values())
+    """All-time best per exercise: heaviest weight (with reps at it), or most
+    reps for bodyweight exercises, and the day it was set. Weights in kg."""
+    sessions = await db.workout_sessions.find(
+        {"user_id": user_id}, {"completed_exercises": 1, "date": 1, "local_date": 1}
+    ).sort("date", 1).to_list(None)
+    out = []
+    for key, b in _session_bests(sessions).items():
+        if not b["best_weight"] and not b["bodyweight_reps"]:
+            continue
+        d = b["date"]
+        out.append({
+            "exercise_name": b["name"],
+            "best_weight": round(b["best_weight"], 2),
+            "best_reps_at_weight": b["reps_at"].get(b["best_weight"], 0),
+            "best_bodyweight_reps": b["bodyweight_reps"],
+            "date": d if isinstance(d, str) else (d.strftime("%Y-%m-%d") if d else None),
+        })
+    out.sort(key=lambda r: r["exercise_name"].lower())
+    return out
 
 
 # ── Session Photo ─────────────────────────────────────────────────────────────
@@ -4801,6 +4845,28 @@ class ReplaceExerciseRequest(BaseModel):
     exercise_index: int
     new_exercise: dict
 
+def _remap_day_performance(perf: dict, day_index: int, mapping: Dict[int, Optional[int]]) -> dict:
+    """Saved sets are keyed "day-exercise-set". When a day's exercises move,
+    move their saved sets too: mapping is old exercise index → new index
+    (None drops it, e.g. a replaced or deleted exercise)."""
+    out = {}
+    prefix = f"{day_index}-"
+    for k, v in (perf or {}).items():
+        if not k.startswith(prefix):
+            out[k] = v
+            continue
+        try:
+            _, ex, st = k.split("-")
+            ex = int(ex)
+        except ValueError:
+            out[k] = v
+            continue
+        new = mapping.get(ex, ex)
+        if new is not None:
+            out[f"{day_index}-{new}-{st}"] = v
+    return out
+
+
 @api_router.patch("/workout/{workout_id}/replace-exercise")
 async def replace_exercise(workout_id: str, request: ReplaceExerciseRequest):
     """Replace an exercise in a workout"""
@@ -4816,13 +4882,15 @@ async def replace_exercise(workout_id: str, request: ReplaceExerciseRequest):
     if request.exercise_index >= len(exercises):
         raise HTTPException(status_code=400, detail="Invalid exercise index")
     
-    # Replace the exercise
+    # Replace the exercise (the new one starts with no saved sets)
     exercises[request.exercise_index] = request.new_exercise
     workout_days[request.day_index]["exercises"] = exercises
-    
+    perf = _remap_day_performance(workout.get("performance", {}), request.day_index,
+                                  {request.exercise_index: None})
+
     await db.workouts.update_one(
         {"id": workout_id},
-        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+        {"$set": {"workout_days": workout_days, "performance": perf, "updated_at": datetime.utcnow()}}
     )
     
     return {"message": "Exercise replaced successfully"}
@@ -4846,13 +4914,17 @@ async def delete_exercise(workout_id: str, request: DeleteExerciseRequest):
     if request.exercise_index >= len(exercises):
         raise HTTPException(status_code=400, detail="Invalid exercise index")
     
-    # Remove the exercise
+    # Remove the exercise; later exercises' saved sets move up with them
+    n = len(exercises)
     exercises.pop(request.exercise_index)
     workout_days[request.day_index]["exercises"] = exercises
-    
+    mapping = {i: (None if i == request.exercise_index else i - 1 if i > request.exercise_index else i)
+               for i in range(n)}
+    perf = _remap_day_performance(workout.get("performance", {}), request.day_index, mapping)
+
     await db.workouts.update_one(
         {"id": workout_id},
-        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+        {"$set": {"workout_days": workout_days, "performance": perf, "updated_at": datetime.utcnow()}}
     )
     
     return {"message": "Exercise deleted successfully"}
@@ -4877,10 +4949,14 @@ async def reorder_exercises(workout_id: str, request: ReorderExercisesRequest):
     exercises = workout_days[request.day_index].get("exercises", [])
     if len(request.exercise_order) != len(exercises):
         raise HTTPException(status_code=400, detail="Order length mismatch")
+    if sorted(request.exercise_order) != list(range(len(exercises))):
+        raise HTTPException(status_code=400, detail="Order must list every exercise once")
     workout_days[request.day_index]["exercises"] = [exercises[i] for i in request.exercise_order]
+    perf = _remap_day_performance(workout.get("performance", {}), request.day_index,
+                                  {old: new for new, old in enumerate(request.exercise_order)})
     await db.workouts.update_one(
         {"id": workout_id},
-        {"$set": {"workout_days": workout_days, "updated_at": datetime.utcnow()}}
+        {"$set": {"workout_days": workout_days, "performance": perf, "updated_at": datetime.utcnow()}}
     )
     return {"message": "Exercises reordered successfully"}
 
@@ -8041,9 +8117,12 @@ async def clear_chat_history(user_id: str):
 # ==================== STEP TRACKING ENDPOINTS ====================
 
 @api_router.post("/steps/log", response_model=StepEntry)
-async def log_steps(user_id: str, steps: int, distance_km: float = 0, source: str = "device"):
-    """Log steps for today"""
-    today = datetime.now().strftime("%Y-%m-%d")
+async def log_steps(user_id: str, steps: int, distance_km: float = 0, source: str = "device",
+                    date: Optional[str] = None):
+    """Log steps for the user's day. A phone/watch reports the day's total so
+    far, so device entries replace a lower total instead of adding to it;
+    manual entries add."""
+    today = date or datetime.now().strftime("%Y-%m-%d")
     
     # Calculate calories burned (rough estimate: 0.04 calories per step)
     calories_burned = int(steps * 0.04)
@@ -8053,8 +8132,12 @@ async def log_steps(user_id: str, steps: int, distance_km: float = 0, source: st
     
     if existing:
         # Update existing entry
-        new_steps = existing["steps"] + steps
-        new_distance = existing["distance_km"] + distance_km
+        if source == "manual":
+            new_steps = existing["steps"] + steps
+            new_distance = existing["distance_km"] + distance_km
+        else:
+            new_steps = max(existing["steps"], steps)
+            new_distance = max(existing["distance_km"], distance_km)
         new_calories = int(new_steps * 0.04)
         
         await db.steps.update_one(
@@ -8538,6 +8621,87 @@ async def get_reminder_settings(user_id: str):
 
 # ==================== BODY ANALYZER ====================
 
+class WeightEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    weight_kg: float
+    date: str                      # the user's day, YYYY-MM-DD
+    note: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class WeightLogRequest(BaseModel):
+    user_id: str
+    weight_kg: float
+    date: str
+    note: Optional[str] = None
+
+
+async def _sync_profile_weight(user_id: str):
+    """The profile follows the 7-day average of logged weights (daily water
+    swings don't move targets). Targets are recalculated, as when weight is
+    edited in the profile, once the average moves by 0.5 kg or more."""
+    recent = await db.weight_logs.find({"user_id": user_id}).sort("date", -1).to_list(7)
+    if not recent:
+        return
+    latest = datetime.strptime(recent[0]["date"], "%Y-%m-%d")
+    week = [r["weight_kg"] for r in recent
+            if (latest - datetime.strptime(r["date"], "%Y-%m-%d")).days < 7]
+    avg = round(sum(week) / len(week), 1)
+    profile = await db.profiles.find_one({"id": user_id})
+    if not profile or abs(float(profile.get("weight") or 0) - avg) < 0.5:
+        return
+    update = {"weight": avg, "updated_at": datetime.utcnow()}
+    try:
+        update["calculated_macros"] = calculate_macros(
+            avg, profile["height"], profile["age"], profile["gender"],
+            profile["activity_level"], profile["goal"])
+    except Exception as e:   # incomplete profile — keep the weight, skip targets
+        logger.warning(f"Weight sync: targets not recalculated for {user_id}: {e}")
+    await db.profiles.update_one({"id": user_id}, {"$set": update})
+
+
+@api_router.post("/weight/log")
+async def log_weight(request: WeightLogRequest):
+    """Log body weight for a day (one entry per day — logging again replaces
+    it). The profile's weight follows the 7-day average."""
+    if not 20 <= request.weight_kg <= 400:
+        raise HTTPException(status_code=422, detail={"error": "weight_out_of_range",
+                                                     "message": "Enter a weight between 20 and 400 kg."})
+    try:
+        datetime.strptime(request.date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=422, detail={"error": "bad_date", "message": "Date must be YYYY-MM-DD."})
+    entry = WeightEntry(user_id=request.user_id, weight_kg=round(request.weight_kg, 2),
+                        date=request.date, note=request.note)
+    existing = await db.weight_logs.find_one({"user_id": request.user_id, "date": request.date})
+    if existing:
+        entry.id = existing["id"]
+    await db.weight_logs.replace_one({"user_id": request.user_id, "date": request.date},
+                                     entry.model_dump(), upsert=True)
+    await _sync_profile_weight(request.user_id)
+    return entry
+
+
+@api_router.get("/weight/logs/{user_id}")
+async def get_weight_logs(user_id: str, days: int = 365):
+    """Weight entries, oldest first, for the last `days` days (by entry date)."""
+    since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    docs = await db.weight_logs.find({"user_id": user_id, "date": {"$gte": since}}).sort("date", 1).to_list(None)
+    for d in docs:
+        d.pop("_id", None)
+    return docs
+
+
+@api_router.delete("/weight/log/{entry_id}")
+async def delete_weight_log(entry_id: str, user_id: str):
+    result = await db.weight_logs.delete_one({"id": entry_id, "user_id": user_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Weight entry not found")
+    await _sync_profile_weight(user_id)
+    return {"message": "Weight entry deleted"}
+
+
 class ProgressPhoto(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
@@ -8585,6 +8749,12 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
     can calibrate its feedback — a 4kg change means different things for a 60kg
     vs a 110kg person, and a cutter vs a bulker.
     """
+    # Paid AI feature: checked here, not only in the app
+    access = await check_subscription_access(request.user_id)
+    if not access.get("has_access"):
+        raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Body Analysis",
+                                                     "message": "AI body analysis is a premium feature. Start your free trial to unlock it."})
+
     # ── Pull user profile for context ────────────────────────────────
     profile = await db.profiles.find_one({"id": request.user_id})
     ctx_lines = [f"Time period between photos: {request.time_period}"]

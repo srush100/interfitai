@@ -21,6 +21,8 @@ import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
 import { HEALTH_INTEGRATION_ENABLED } from '../../src/config/features';
+import { localDateString } from '../../src/utils/date';
+import { parseAmount } from '../../src/utils/numbers';
 
 const DEVICES = [
   { id: 'apple_health', name: 'Apple Health', icon: 'logo-apple' },
@@ -167,7 +169,7 @@ export default function ProfileScreen() {
         // Log steps to backend
         if (profile?.id) {
           try {
-            await api.post(`/steps/log?user_id=${profile.id}&steps=${result.steps}&source=device`);
+            await api.post(`/steps/log?user_id=${profile.id}&steps=${result.steps}&source=device&date=${localDateString()}`);
           } catch (error) {
             console.log('Error logging steps:', error);
           }
@@ -205,8 +207,13 @@ export default function ProfileScreen() {
     setSaving(true);
     try {
       // Convert to metric (kg/cm) before saving
-      let weightInKg = parseFloat(editData.weight);
-      let heightInCm = parseFloat(editData.height);
+      let weightInKg = parseAmount(editData.weight);
+      let heightInCm = parseAmount(editData.height);
+      const age = Math.round(parseAmount(editData.age));
+      if (!weightInKg || !heightInCm || !age) {
+        Alert.alert('Check your details', 'Enter your weight, height and age as numbers.');
+        return;
+      }
       
       if (weightUnit === 'lbs') {
         weightInKg = lbsToKg(weightInKg);
@@ -218,7 +225,7 @@ export default function ProfileScreen() {
       await updateProfile({
         weight: weightInKg,
         height: heightInCm,
-        age: parseInt(editData.age),
+        age,
         goal: editData.goal,
         activity_level: editData.activity_level,
       });
@@ -452,6 +459,9 @@ export default function ProfileScreen() {
                     : '-'}
                 </Text>
                 <Text style={styles.statLabel}>Weight</Text>
+                <TouchableOpacity onPress={() => router.push('/progress')} hitSlop={8} testID="profile-weight-progress">
+                  <Text style={[styles.statLabel, { color: colors.primary, marginTop: 2 }]}>Track ›</Text>
+                </TouchableOpacity>
               </View>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>{profile?.height}cm</Text>
