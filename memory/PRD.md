@@ -137,6 +137,7 @@ Build a comprehensive AI-powered fitness app (InterFitAI) with:
 
 - **[Jun 2026] Whole-unit foods + raw/dry labels**: eggs (58g), bread/toast slices (30g), tortillas, wraps, pita, bagels, English muffins, naan and rice cakes always land on whole units ("2 large eggs (116g)", "2 slices sourdough bread (60g)"); the optimiser re-tunes the other foods around them. meal-detail shows "(dry)" on oats/flour/protein powder, "(raw)" on vegetables/potatoes and "(cooked)" on lentils/beans/chickpeas (not green beans/bean sprouts); the grocery list counts whole units. Tests: iteration_52 PASS; verify script 9/9 PASS.
 - **[Jun 2026] USDA key** read from `USDA_API_KEY` in backend/.env (user key added).
+- **[Jun 2026] Instructions ↔ ingredients check**: generation + swap prompts require every food in the instructions to be listed with grams (cooking fat listed, else "use a non-stick pan"). `nutrition_engine.reconcile_instructions` adds a missing cooking fat (butter/oil/ghee/cream…) at a small default (5g; cream 15g) if the diet allows it, otherwise the meal is regenerated; foods the steps mention are never tuned away. Check script `backend/scripts/check_instruction_foods.py` → `/app/memory/instruction_foods_check.md`: before 4/111 generated + 1/10 swapped meals had unlisted foods; after 0/120 + 0/10 (30/30 days on target).
 
 ## Backlog (Prioritized)
 ### P0 — Critical

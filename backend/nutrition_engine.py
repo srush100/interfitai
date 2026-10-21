@@ -529,6 +529,132 @@ class FoodRules:
         return not self.violations("", [{"label": key, "key": key}])
 
 
+# ── Instructions ↔ ingredients: every food the steps mention must be listed ──
+# Seasonings, aromatics and liquids with negligible calories may be mentioned freely.
+_FREE_MENTIONS = {
+    "salt", "sea salt", "black pepper", "cayenne pepper", "red pepper flakes", "chili flakes", "chili powder",
+    "paprika", "smoked paprika", "cumin", "cinnamon", "turmeric", "curry powder", "garlic powder", "onion powder",
+    "oregano", "italian seasoning", "dried herbs", "thyme", "rosemary", "basil", "cilantro", "parsley", "dill",
+    "mint", "capers", "vanilla extract", "stevia", "vinegar", "red wine vinegar", "rice vinegar",
+    "apple cider vinegar", "balsamic vinegar", "hot sauce", "lemon juice", "lime juice", "lemon", "lime",
+    "vegetable broth", "chicken broth", "bone broth", "garlic", "ginger", "mustard", "dijon mustard",
+    "soy sauce", "tamari", "coconut aminos", "fish sauce", "worcestershire sauce", "pickles",
+}
+# Words that are usually not a food on their own: "extra protein", "toast the oats", "wrap tightly".
+_IGNORED_MENTIONS = {"protein", "toast", "wrap", "vegetables"}
+# Generic words count as listed when any ingredient of that kind is.
+_GENERIC_COVER = {
+    "fish": {"fish", "salmon", "tilapia", "tuna", "cod", "trout", "halibut", "bass", "haddock", "snapper",
+             "mahi", "mackerel", "sardine"},
+    "berries": {"berry", "blueberry", "strawberry", "raspberry", "blackberry", "cherry"},
+    "greens": {"green", "spinach", "kale", "arugula", "lettuce", "romaine", "chard", "collard"},
+    "cheese": {"cheese", "cheddar", "mozzarella", "parmesan", "feta", "ricotta", "halloumi", "paneer", "brie",
+               "gouda", "mascarpone"},
+    "protein powder": {"whey", "protein", "casein"},
+    "pasta": {"pasta", "spaghetti", "orzo", "noodle"},
+    "noodles": {"noodle", "ramen", "udon", "soba", "spaghetti"},
+    "beef": {"beef", "steak", "sirloin", "ribeye", "rump", "brisket", "flank", "mince"},
+    "steak": {"steak", "sirloin", "ribeye", "rump", "flank", "beef", "venison", "bison", "lamb", "pork", "tuna"},
+    "bread": {"bread", "toast", "sourdough", "ciabatta", "bagel", "pita", "naan", "muffin"},
+    "tortilla": {"tortilla", "wrap"},
+    "yogurt": {"yogurt", "skyr", "kefir"},
+    "egg": {"egg"}, "eggs": {"egg"}, "whole eggs": {"egg"}, "large eggs": {"egg"},
+    "seeds": {"seed"},
+    "squash": {"squash", "zucchini", "pumpkin"},
+    "onion": {"onion", "shallot", "scallion"}, "onions": {"onion", "shallot", "scallion"},
+    "peppers": {"pepper", "capsicum", "jalapeno"}, "pepper": {"pepper", "capsicum", "jalapeno"},
+    "oil": {"oil"}, "cream": {"cream"},
+    "mayo": {"mayonnaise", "mayo"}, "mayonnaise": {"mayonnaise", "mayo"},
+    "pita bread": {"pita"}, "pita": {"pita"},
+    "jasmine rice": {"jasmine", "basmati", "white"}, "basmati rice": {"jasmine", "basmati", "white"},
+    "white rice": {"jasmine", "basmati", "white"},
+    "mixed vegetables": {"broccoli", "zucchini", "pepper", "carrot", "asparagus", "spinach", "kale", "onion",
+                         "mushroom", "tomato", "cauliflower", "pea", "cabbage", "eggplant", "squash", "celery",
+                         "cucumber", "beet", "leek", "bok", "radish", "fennel", "okra", "chard", "artichoke",
+                         "broccolini", "sprout", "capsicum"},
+}
+# A missing cooking fat is added with a small default amount (grams).
+_FAT_DEFAULTS = {"butter": 5, "ghee": 5, "olive oil": 5, "coconut oil": 5, "avocado oil": 5, "vegetable oil": 5,
+                 "sesame oil": 3, "beef tallow": 5, "tallow": 5, "lard": 5, "duck fat": 5, "chicken fat": 5,
+                 "heavy cream": 15, "sour cream": 15, "coconut cream": 15}
+_GENERIC_FAT_PICKS = {"oil": ["olive oil", "avocado oil", "coconut oil", "vegetable oil"],
+                      "cream": ["heavy cream", "coconut cream"]}
+
+
+def _build_mention_index():
+    idx = {}
+    for k in list(INGREDIENT_MACROS) + ["oil", "cream"]:
+        seq = tuple(_stem(t) for t in _tokens(k))
+        if seq:
+            idx.setdefault(seq[0], {}).setdefault(seq, k)
+    return {first: sorted(seqs.items(), key=lambda kv: -len(kv[0])) for first, seqs in idx.items()}
+
+
+_MENTION_INDEX = _build_mention_index()
+
+
+def instruction_mentions(instructions: str) -> list:
+    """Foods (database keys, plus generic 'oil'/'cream') the instructions mention,
+    longest name first. Seasonings, negated ('no oil', 'oil-free') and
+    alternative ('or butter') mentions are skipped."""
+    raw = _tokens(instructions)
+    st = [_stem(t) for t in raw]
+    found, i = [], 0
+    while i < len(st):
+        for seq, key in _MENTION_INDEX.get(st[i], ()):
+            n = len(seq)
+            if tuple(st[i:i + n]) != seq:
+                continue
+            prev = raw[i - 1] if i else ""
+            nxt = raw[i + n] if i + n < len(raw) else ""
+            skipped = (prev in ("no", "without", "or", "skip") or nxt == "free" or key in _FREE_MENTIONS
+                       or key in _IGNORED_MENTIONS or (n == 1 and raw[i] == "pepper"))  # "salt and pepper"
+            if not skipped:
+                found.append(key)
+            i += n
+            break
+        else:
+            i += 1
+    return list(dict.fromkeys(found))
+
+
+def _covers(mention: str, item_stems: set) -> bool:
+    return {_stem(t) for t in _tokens(mention)} <= item_stems or bool(_GENERIC_COVER.get(mention, set()) & item_stems)
+
+
+def _item_stems(it) -> set:
+    return {_stem(t) for t in _tokens(f"{it['key']} {it.get('label', '')}")}
+
+
+def unlisted_mentions(instructions: str, items: list) -> list:
+    """Foods the instructions mention that no ingredient covers."""
+    sets = [_item_stems(it) for it in items]
+    return [m for m in instruction_mentions(instructions) if not any(_covers(m, s) for s in sets)]
+
+
+def reconcile_instructions(draft, rules: FoodRules) -> list:
+    """Make the ingredient list cover every food the instructions mention.
+    A missing cooking fat (butter, oil, ghee, cream…) is added with a small
+    default amount; any other missing food is returned as a problem so the
+    meal gets regenerated. Listed foods the steps mention are marked 'keep'
+    so portion tuning never removes them."""
+    problems = []
+    for key in unlisted_mentions(draft["instructions"], draft["items"]):
+        picks = _GENERIC_FAT_PICKS.get(key, [key] if key in _FAT_DEFAULTS else [])
+        fat = next((k for k in picks if rules.food_allowed(k)), None)
+        if fat:
+            draft["items"].append({"label": fat, "key": fat, "grams": float(_FAT_DEFAULTS[fat])})
+            logger.info(f"'{draft['name']}': instructions mention {key} — added {_FAT_DEFAULTS[fat]}g {fat}")
+        else:
+            problems.append(f"instructions mention '{key}' but it is not in the ingredients")
+    mentions = instruction_mentions(draft["instructions"])
+    for it in draft["items"]:
+        s = _item_stems(it)
+        if any(_covers(m, s) for m in mentions):
+            it["keep"] = True
+    return problems
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # 4. MEAL DRAFTS
 # ════════════════════════════════════════════════════════════════════════════
@@ -601,6 +727,8 @@ def _bounds(it, widen: bool):
         hi = max(3.0 * g0, 30.0)
     else:
         lo, hi = 0.5 * g0, 2.2 * g0
+    if it.get("keep"):  # the instructions use it, so it must stay on the list
+        lo = max(lo, min(g0, 3.0))
     hi = max(min(hi, max(cap, g0)), lo)
     return lo, hi
 

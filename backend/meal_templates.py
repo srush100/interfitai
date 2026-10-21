@@ -630,7 +630,7 @@ VEGETARIAN_TEMPLATES = {
                 "marinara sauce": 100,
                 "olive oil": 15,
             },
-            "instructions": "Bread and bake eggplant, top with sauce and cheese",
+            "instructions": "Brush eggplant slices with olive oil and bake, layer with marinara sauce, mozzarella and parmesan",
             "prep_time": 40,
         },
         "snack": {

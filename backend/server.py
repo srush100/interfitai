@@ -5039,7 +5039,7 @@ async def get_exercise_gif(exercise_id: str, resolution: str = "360"):
 from food_database import INGREDIENT_MACROS  # noqa: E402  (also used by the food-log reference check)
 from nutrition_engine import (  # noqa: E402
     DIET_BANNED_TERMS, FoodRules, MACRO_KEYS, balance_day, build_day, build_safe_meal,
-    day_totals, finalize_meal, is_on_target, items_from_raw, make_draft, max_deviation, meal_targets,
+    day_totals, finalize_meal, is_on_target, items_from_raw, make_draft, max_deviation, meal_targets, reconcile_instructions,
     optimise_portions, prompt_food_names, template_draft,
 )
 from meal_templates import TEMPLATES_BY_STYLE  # noqa: E402
@@ -5155,7 +5155,9 @@ _INGREDIENT_RULES = """INGREDIENT RULES (critical):
   add them all up and do NOT overshoot the protein or calorie target.
   Do NOT output any calorie or macro numbers — they are calculated from your foods and grams.
 - Beef mince must be "beef mince 95/5" (extra lean/premium/5-star), "beef mince 90/10" (lean) or "beef mince 80/20" (regular/fatty).
-- Instructions: 2-3 short steps, never mention gram amounts."""
+- Instructions: 2-3 short steps, never mention gram amounts.
+- Every food the instructions mention MUST be in the ingredient list with grams. If the meal is cooked in fat,
+  list that fat (e.g. 5g butter or 5g olive oil); otherwise write "use a non-stick pan"."""
 
 
 async def _ai_plan_drafts(eating_style, plan_name, targets, rules, allergies, request):
@@ -5237,6 +5239,7 @@ def _draft_with_problems(m: dict, meal_type: str, rules: FoodRules):
         logger.info(f"Meal '{m.get('name')}': unresolved ingredients {unknown}")
     draft = make_draft(m.get("name"), meal_type, items, m.get("instructions"), m.get("prep_time_minutes"))
     problems = rules.violations(draft["name"], items, draft["instructions"])
+    problems += reconcile_instructions(draft, rules)
     problems += [f"unknown:{u[0]}" for u in big_unknown]
     if not items:
         problems.append("no ingredients")
@@ -5289,7 +5292,7 @@ def _template_replacement(style_key, meal_type, rules, used_names):
             if not tpl or tpl["name"] in used_names:
                 continue
             d = template_draft(meal_type, tpl)
-            if not rules.violations(d["name"], d["items"], d["instructions"]):
+            if not rules.violations(d["name"], d["items"], d["instructions"]) and not reconcile_instructions(d, rules):
                 return d
     return None
 
@@ -5381,6 +5384,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
             else:
                 draft = template_draft(mt, templates[f"day{di + 1}"][mt])
                 problems = rules.violations(draft["name"], draft["items"], draft["instructions"])
+                problems += reconcile_instructions(draft, rules)
             if draft is not None and not problems:
                 used_names.add(draft["name"])
             else:
