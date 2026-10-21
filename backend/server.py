@@ -3323,8 +3323,9 @@ class EliteCoachingEngine:
         dur = req.duration_minutes
         dur_bucket = 30 if dur <= 30 else 45 if dur <= 45 else 60 if dur <= 60 else 75
         for d in day_blueprints:
-            # Well under time on a cardio-friendly goal → use the spare time for a finisher
-            if (goal in ('general_fitness', 'lose_fat', 'body_recomp')
+            # Well under time on general fitness → use the spare time for a finisher
+            # (fat loss already has one every day; recomp alternates, 2-3 a week)
+            if (goal == 'general_fitness'
                     and not any(s['type'] == 'conditioning' for s in d['slots'])
                     and self._estimate_minutes(d['slots']) < dur * 0.8):
                 d['slots'].append(self._conditioning_spec(
@@ -3924,6 +3925,7 @@ async def generate_workout(request: WorkoutGenerateRequest):
     prompt_lines += [
         "",
         "For each slot below: choose ONE name from Options and write coaching Instructions (15-20 words, strict form cue).",
+        "Never choose the same exercise twice in one day.",
         "Do NOT change sets, reps, rest, or effort — those are fixed.",
         "",
     ]
@@ -4061,10 +4063,18 @@ async def generate_workout(request: WorkoutGenerateRequest):
             llm_day_exs = llm_days[day_idx].get('exercises', [])
 
         exercises_with_gifs = []
+        names_today = set()
         for ex_idx, slot_meta in enumerate(day['exercises_meta']):
             llm_ex = llm_day_exs[ex_idx] if ex_idx < len(llm_day_exs) else {}
 
             chosen_name = (llm_ex.get('name') or '').strip() or slot_meta['default_name']
+            if chosen_name.lower() in names_today:
+                # Same exercise twice in one day → next unused option for this slot
+                unused = [o for o in slot_meta['options'] if o.lower() not in names_today]
+                if unused:
+                    chosen_name = unused[0]
+                    llm_ex = {}   # the AI's cues were written for the duplicate
+            names_today.add(chosen_name.lower())
             instructions = (llm_ex.get('instructions') or '').strip()
             if not instructions:
                 instructions = (
