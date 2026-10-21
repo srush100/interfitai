@@ -23,6 +23,9 @@ import api from '../../src/services/api';
 import { HEALTH_INTEGRATION_ENABLED } from '../../src/config/features';
 import { localDateString } from '../../src/utils/date';
 import { parseAmount } from '../../src/utils/numbers';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const HEIGHT_UNIT_KEY = '@height_unit';
 
 const DEVICES = [
   { id: 'apple_health', name: 'Apple Health', icon: 'logo-apple' },
@@ -63,40 +66,70 @@ export default function ProfileScreen() {
   const [stepGoal, setStepGoal] = useState(10000);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
+  // What the membership card says for each subscription status
+  const planLabel = (status?: string) => {
+    switch (status) {
+      case 'free_access':
+      case 'complimentary': return 'Complimentary access active ✓';
+      case 'trial': return 'Free trial active ✓';
+      case 'monthly': return 'Monthly plan active ✓';
+      case 'quarterly': return 'Quarterly plan active ✓';
+      case 'yearly': return 'Annual plan active ✓';
+      case 'active':
+      case 'premium': return 'Premium active ✓';
+      case 'cancelled':
+      case 'canceled':
+      case 'expired': return 'Subscription ended — tap to renew';
+      default: return 'Upgrade for full access';
+    }
+  };
+
   // Conversion helpers
   const kgToLbs = (kg: number) => Math.round(kg * 2.20462 * 10) / 10;
   const lbsToKg = (lbs: number) => Math.round(lbs / 2.20462 * 10) / 10;
   const cmToIn = (cm: number) => Math.round(cm / 2.54 * 10) / 10;
   const inToCm = (inches: number) => Math.round(inches * 2.54 * 10) / 10;
 
-  // Handle unit toggle for weight
-  const toggleWeightUnit = async () => {
-    const currentWeight = parseFloat(editData.weight) || 0;
-    const newUnit = weightUnit === 'kg' ? 'lbs' : 'kg';
-    if (weightUnit === 'kg') {
-      setWeightUnit('lbs');
-      setEditData({ ...editData, weight: kgToLbs(currentWeight).toString() });
-    } else {
-      setWeightUnit('kg');
-      setEditData({ ...editData, weight: lbsToKg(currentWeight).toString() });
-    }
-    try {
-      await updateProfile({ unit_preference: newUnit });
-    } catch {
-      // preference saved locally even if backend fails
+  // Handle unit toggle for weight — converts what's typed; saved with Save
+  const toggleWeightUnit = () => {
+    const currentWeight = parseAmount(editData.weight);
+    const toLbs = weightUnit === 'kg';
+    setWeightUnit(toLbs ? 'lbs' : 'kg');
+    if (currentWeight > 0) {
+      setEditData({ ...editData, weight: (toLbs ? kgToLbs(currentWeight) : lbsToKg(currentWeight)).toString() });
     }
   };
 
-  // Handle unit toggle for height
+  // Handle unit toggle for height — remembered on this device
   const toggleHeightUnit = () => {
-    const currentHeight = parseFloat(editData.height) || 0;
-    if (heightUnit === 'cm') {
-      setHeightUnit('in');
-      setEditData({ ...editData, height: cmToIn(currentHeight).toString() });
-    } else {
-      setHeightUnit('cm');
-      setEditData({ ...editData, height: inToCm(currentHeight).toString() });
+    const currentHeight = parseAmount(editData.height);
+    const toIn = heightUnit === 'cm';
+    setHeightUnit(toIn ? 'in' : 'cm');
+    AsyncStorage.setItem(HEIGHT_UNIT_KEY, toIn ? 'in' : 'cm').catch(() => {});
+    if (currentHeight > 0) {
+      setEditData({ ...editData, height: (toIn ? cmToIn(currentHeight) : inToCm(currentHeight)).toString() });
     }
+  };
+
+  // Editing always starts from the saved profile, in the chosen units
+  const startEditing = () => {
+    const wUnit = (profile?.unit_preference as 'kg' | 'lbs') || 'kg';
+    setWeightUnit(wUnit);
+    setEditData({
+      weight: profile?.weight ? String(wUnit === 'lbs' ? kgToLbs(profile.weight) : profile.weight) : '',
+      height: profile?.height ? String(heightUnit === 'in' ? cmToIn(profile.height) : profile.height) : '',
+      age: profile?.age?.toString() || '',
+      goal: profile?.goal || 'muscle_building',
+      activity_level: profile?.activity_level || 'moderate',
+    });
+    setEditing(true);
+  };
+
+  const formatHeight = (cm?: number) => {
+    if (!cm) return '-';
+    if (heightUnit === 'cm') return `${cm}cm`;
+    const inches = Math.round(cm / 2.54);
+    return `${Math.floor(inches / 12)}'${inches % 12}"`;
   };
 
   useEffect(() => {
@@ -105,19 +138,15 @@ export default function ProfileScreen() {
     loadStepGoal();
   }, []);
 
-  // Sync weightUnit and editData when profile preference loads/changes
+  // Weight unit follows the saved preference; height unit is a device setting
   useEffect(() => {
-    if (profile?.unit_preference) {
-      setWeightUnit(profile.unit_preference);
-      if (profile.weight) {
-        const displayWeight =
-          profile.unit_preference === 'lbs'
-            ? String(Math.round(profile.weight * 2.20462 * 10) / 10)
-            : String(profile.weight);
-        setEditData((prev) => ({ ...prev, weight: displayWeight }));
-      }
-    }
+    if (profile?.unit_preference && !editing) setWeightUnit(profile.unit_preference);
   }, [profile?.unit_preference]);
+  useEffect(() => {
+    AsyncStorage.getItem(HEIGHT_UNIT_KEY)
+      .then(v => { if (v === 'in' || v === 'cm') setHeightUnit(v); })
+      .catch(() => {});
+  }, []);
 
   const pickProfileImage = async () => {
     try {
@@ -225,6 +254,7 @@ export default function ProfileScreen() {
       await updateProfile({
         weight: weightInKg,
         height: heightInCm,
+        unit_preference: weightUnit,
         age,
         goal: editData.goal,
         activity_level: editData.activity_level,
@@ -235,14 +265,6 @@ export default function ProfileScreen() {
       Alert.alert('Error', 'Failed to update profile');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const toggleReminders = async (value: boolean) => {
-    try {
-      await updateProfile({ reminders_enabled: value });
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update settings');
     }
   };
 
@@ -344,7 +366,7 @@ export default function ProfileScreen() {
             </View>
             <TouchableOpacity
               style={styles.editBtn}
-              onPress={() => setEditing(!editing)}
+              onPress={() => (editing ? setEditing(false) : startEditing())}
             >
               <Ionicons name={editing ? 'close' : 'pencil'} size={20} color={colors.primary} />
             </TouchableOpacity>
@@ -464,7 +486,7 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </View>
               <View style={styles.stat}>
-                <Text style={styles.statValue}>{profile?.height}cm</Text>
+                <Text style={styles.statValue}>{formatHeight(profile?.height)}</Text>
                 <Text style={styles.statLabel}>Height</Text>
               </View>
               <View style={styles.stat}>
@@ -605,18 +627,13 @@ export default function ProfileScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Notifications</Text>
           
-          <View style={styles.settingRow}>
+          <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/settings')} testID="profile-reminders">
             <View style={styles.settingInfo}>
               <Ionicons name="notifications" size={22} color={colors.textSecondary} />
               <Text style={styles.settingLabel}>Workout Reminders</Text>
             </View>
-            <Switch
-              value={profile?.reminders_enabled ?? true}
-              onValueChange={toggleReminders}
-              trackColor={{ false: colors.surfaceLight, true: colors.primary + '50' }}
-              thumbColor={profile?.reminders_enabled ? colors.primary : colors.textMuted}
-            />
-          </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
 
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
@@ -642,11 +659,7 @@ export default function ProfileScreen() {
             <View style={styles.subscriptionText}>
               <Text style={styles.subscriptionTitle}>Premium Membership</Text>
               <Text style={styles.subscriptionStatus}>
-                {profile?.subscription_status === 'free'
-                  ? 'Upgrade for full access'
-                  : profile?.subscription_status === 'free_access' || profile?.subscription_status === 'complimentary'
-                  ? 'Complimentary access active ✓'
-                  : `${profile?.subscription_status} plan active`}
+                {planLabel(profile?.subscription_status)}
               </Text>
             </View>
           </View>

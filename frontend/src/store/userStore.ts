@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
+import { cancelAllReminders } from '../services/notifications';
 
 interface UserProfile {
   id: string;
@@ -145,6 +146,8 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   logout: async () => {
     try {
+      // The next person on this phone shouldn't get this user's reminders
+      await cancelAllReminders().catch(() => {});
       await AsyncStorage.removeItem('userId');
       await AsyncStorage.removeItem('@user_id');
       await AsyncStorage.setItem('isOnboarded', 'false');

@@ -21,7 +21,7 @@ import {
   WorkoutReminder,
   loadReminders,
   saveReminders,
-  registerForPushNotificationsAsync,
+  ensureNotificationPermission,
 } from '../src/services/notifications';
 import {
   isHealthAvailable,
@@ -31,6 +31,7 @@ import {
   HealthData,
 } from '../src/services/health';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import api from '../src/services/api';
 import { HEALTH_INTEGRATION_ENABLED } from '../src/config/features';
 
@@ -110,14 +111,20 @@ export default function SettingsScreen() {
   };
 
   const toggleReminder = async (index: number) => {
-    const updated = [...reminders];
-    updated[index].enabled = !updated[index].enabled;
-    setReminders(updated);
-    
-    if (updated[index].enabled) {
-      await registerForPushNotificationsAsync();
+    const turningOn = !reminders[index].enabled;
+    if (turningOn && !(await ensureNotificationPermission())) {
+      Alert.alert(
+        'Notifications are off',
+        'Allow notifications for InterFitAI in your phone\u2019s Settings to get workout reminders.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return;   // the switch stays off
     }
-    
+    const updated = reminders.map((r, i) => (i === index ? { ...r, enabled: turningOn } : r));
+    setReminders(updated);
     await saveReminders(updated);
   };
 
@@ -131,9 +138,8 @@ export default function SettingsScreen() {
   const saveTimeSelection = async () => {
     if (selectedReminderIndex === null) return;
     
-    const updated = [...reminders];
-    updated[selectedReminderIndex].hour = tempHour;
-    updated[selectedReminderIndex].minute = tempMinute;
+    const updated = reminders.map((r, i) =>
+      i === selectedReminderIndex ? { ...r, hour: tempHour, minute: tempMinute } : r);
     setReminders(updated);
     await saveReminders(updated);
     setShowTimePicker(false);
@@ -425,11 +431,15 @@ export default function SettingsScreen() {
           <View style={styles.card}>
             <View style={styles.aboutRow}>
               <Text style={styles.aboutLabel}>Version</Text>
-              <Text style={styles.aboutValue}>1.0.0</Text>
+              <Text style={styles.aboutValue}>{Constants.expoConfig?.version || '–'}</Text>
             </View>
             <View style={[styles.aboutRow, { borderBottomWidth: 0 }]}>
               <Text style={styles.aboutLabel}>Build</Text>
-              <Text style={styles.aboutValue}>2025.03</Text>
+              <Text style={styles.aboutValue}>
+                {(Platform.OS === 'ios'
+                  ? Constants.expoConfig?.ios?.buildNumber
+                  : Constants.expoConfig?.android?.versionCode?.toString()) || '–'}
+              </Text>
             </View>
           </View>
         </View>
