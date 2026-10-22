@@ -93,3 +93,24 @@ def test_recomp_upper_days_keep_biceps_triceps_and_side_delts():
             assert {"bicep_curl", "tricep_push"} <= pats
         if any(s["type"] == "conditioning" for s in d["slots"]):
             assert d["slots"][-1]["type"] == "conditioning"
+
+
+# ── "No deadlifts or squats" typed as a limitation ──
+@pytest.mark.parametrize("text", [["no deadlifts or squats"], ["No deadlifts", "no squats"],
+                                  ["can't squat or deadlift"]])
+def test_named_movements_are_left_out(text):
+    bp = E().build_blueprint(WorkoutGenerateRequest(
+        user_id="u", goal="body_recomp", training_style="weights", focus_areas=["full_body"],
+        equipment=["full_gym"], days_per_week=5, duration_minutes=60,
+        fitness_level="intermediate", injuries=text))
+    names = [o.lower() for d in bp["day_blueprints"] for s in d["slots"] for o in s["options"]]
+    assert not [n for n in names if "squat" in n or "deadlift" in n or "rdl" in n]
+    hinge = [s["options"] for d in bp["day_blueprints"] for s in d["slots"] if s["pattern"] == "hip_hinge"]
+    assert hinge and all("Back Extension Machine" in o for o in hinge)
+    assert any("Leg Press" in s["options"] for d in bp["day_blueprints"] for s in d["slots"]
+               if s["pattern"] == "squat")
+
+
+def test_lunges_kept_when_only_squats_are_ruled_out():
+    opts = E().get_exercise_options("lunge", ["full_gym"], "weights", ["no squats"])
+    assert opts and not any("squat" in o.lower() for o in opts)

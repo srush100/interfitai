@@ -1145,11 +1145,11 @@ class EliteCoachingEngine:
         },
         "hip_hinge": {
             "full_gym":  ["Romanian Deadlift", "Conventional Deadlift", "Cable Pull-Through",
-                          "Dumbbell Romanian Deadlift"],
+                          "Dumbbell Romanian Deadlift", "Back Extension Machine"],
             "beginner_gym": ["Dumbbell Romanian Deadlift", "Cable Pull-Through", "Leg Curl"],
             "barbells":  ["Romanian Deadlift", "Conventional Deadlift", "Sumo Deadlift"],
             "dumbbells": ["Dumbbell Romanian Deadlift", "Single-Leg RDL"],
-            "machines":  ["Cable Pull-Through", "Leg Curl"],
+            "machines":  ["Cable Pull-Through", "Leg Curl", "Back Extension Machine"],
             "bodyweight":["Single-Leg Romanian Deadlift", "Good Morning"],
             "kettlebells":["Kettlebell Swing", "Kettlebell Romanian Deadlift"],
             "cables":    ["Cable Pull-Through"],
@@ -2090,6 +2090,34 @@ class EliteCoachingEngine:
         "knee": {"squat": ["Box Squat (pain-free depth)", "Spanish Squat", "Wall Sit"]},
     }
 
+    # "No squats", "avoid deadlifts", "can't do lunges": a movement the user names
+    # is removed by name (every variation of it), on top of the injury lists above
+    MOVEMENT_LIMITS = [
+        (r"squat",                ["squat", "thruster"]),
+        (r"dead ?lift|rdl",       ["deadlift", "rdl"]),
+        (r"lunge",                ["lunge", "split squat", "step-up"]),
+        (r"bench",                ["bench press"]),
+        (r"overhead|shoulder press|military press",
+                                  ["overhead press", "shoulder press", "push press", "arnold press"]),
+        (r"pull ?-?ups?|chin ?-?ups?", ["pull-up", "chin-up"]),
+        (r"\bdips?\b",            ["dip"]),
+        (r"hip thrust",           ["hip thrust"]),
+        (r"\brun|running",        ["running", "sprint"]),
+        (r"jump|plyo",            ["jump", "bound", "plyo"]),
+        (r"burpee",               ["burpee"]),
+    ]
+
+    @classmethod
+    def _blocked_movements(cls, limitations: list) -> list:
+        """Name fragments of exercises the user asked to leave out."""
+        text = " ".join(limitations or []).lower()
+        return [frag for pat, frags in cls.MOVEMENT_LIMITS if re.search(pat, text) for frag in frags]
+
+    @staticmethod
+    def _is_blocked(name: str, fragments: list) -> bool:
+        n = name.lower()
+        return any(f in n for f in fragments)
+
     # Fly / raise / curl style moves: fine as accessories, but never the main
     # heavy lift of a session (they would get 5x3-5 compound prescriptions).
     ISOLATION_MOVES = {
@@ -2512,6 +2540,8 @@ class EliteCoachingEngine:
                 substitutes.append(sub)
         if substitutes:
             unique = substitutes + [e for e in unique if e not in substitutes]
+        blocked = self._blocked_movements(limitations)
+        excluded.update(e for e in unique if self._is_blocked(e, blocked))
         filtered = [e for e in unique if e not in excluded]
         # Main lifts must be real compound movements
         if ex_type in ('primary_compound', 'secondary_compound'):
@@ -2525,7 +2555,7 @@ class EliteCoachingEngine:
         else:
             safe_fallback = [
                 e for e in (opts.get('bodyweight', []) + opts.get('any', []))
-                if e not in excluded
+                if e not in excluded and not self._is_blocked(e, blocked)
             ]
             result = safe_fallback if safe_fallback else ["Bodyweight Exercise"]
 
