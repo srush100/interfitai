@@ -2107,16 +2107,31 @@ class EliteCoachingEngine:
         (r"burpee",               ["burpee"]),
     ]
 
+    @staticmethod
+    def _plain(text: str) -> str:
+        return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
     @classmethod
     def _blocked_movements(cls, limitations: list) -> list:
         """Name fragments of exercises the user asked to leave out."""
-        text = " ".join(limitations or []).lower()
-        return [frag for pat, frags in cls.MOVEMENT_LIMITS if re.search(pat, text) for frag in frags]
+        text = f" {cls._plain(' '.join(limitations or []))} "
+        frags = []
+        # 1. Exact exercise names ("no barbell bench press", "no leg extensions")
+        #    leave out just that exercise, not the whole movement
+        names = {cls._plain(n) for p in cls.PATTERNS.values() for lst in p.values() for n in lst}
+        for name in sorted(names, key=len, reverse=True):
+            m = re.search(rf" {re.escape(name)}(?:e?s)? ", text)
+            if m:
+                frags.append(name)
+                text = text.replace(m.group(0), " ")
+        # 2. Whole movements ("no squats", "can't deadlift") from what's left
+        frags += [cls._plain(f) for pat, fs in cls.MOVEMENT_LIMITS if re.search(pat, text) for f in fs]
+        return frags
 
-    @staticmethod
-    def _is_blocked(name: str, fragments: list) -> bool:
-        n = name.lower()
-        return any(f in n for f in fragments)
+    @classmethod
+    def _is_blocked(cls, name: str, fragments: list) -> bool:
+        n = f" {cls._plain(name)} "
+        return any(f" {f}" in n for f in fragments)
 
     # Fly / raise / curl style moves: fine as accessories, but never the main
     # heavy lift of a session (they would get 5x3-5 compound prescriptions).

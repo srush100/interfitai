@@ -114,3 +114,19 @@ def test_named_movements_are_left_out(text):
 def test_lunges_kept_when_only_squats_are_ruled_out():
     opts = E().get_exercise_options("lunge", ["full_gym"], "weights", ["no squats"])
     assert opts and not any("squat" in o.lower() for o in opts)
+
+
+@pytest.mark.parametrize("text, gone, kept", [
+    ("no barbell bench press", "Barbell Bench Press", "Close-Grip Bench Press"),
+    ("No skull crushers", "Skull Crusher", "Cable Tricep Pushdown"),
+    ("no leg extensions please", "Leg Extension", "Spanish Squat"),
+])
+def test_one_named_exercise_is_left_out(text, gone, kept):
+    pattern = {"Barbell Bench Press": "horizontal_push", "Skull Crusher": "tricep_push",
+               "Leg Extension": "knee_extension"}[gone]
+    opts = E().get_exercise_options(pattern, ["full_gym"], "weights", [text], "intermediate")
+    assert gone not in opts and kept in opts
+
+
+def test_injury_words_do_not_remove_exercises_by_name():
+    assert E._blocked_movements(["lower back pain", "bad knee"]) == []
