@@ -216,3 +216,13 @@ def test_no_jump_day_straight_after_a_heavy_leg_day(goal, style, days):
         kinds.append("jump" if "explosive" in pats else "legs" if pats & legs else "upper")
     for a, b in zip(kinds, kinds[1:]):
         assert not (a == "legs" and b == "jump"), (week, kinds)
+
+
+def test_barbell_squats_keeps_machine_and_dumbbell_squats():
+    e = E()
+    squat = e.get_exercise_options("squat", ["full_gym"], "weights", ["deadlifts", "barbell squats"],
+                                   "advanced", "primary_compound")
+    assert "Back Squat" not in squat and {"Leg Press", "Hack Squat"} <= set(squat)
+    lunge = e.get_exercise_options("lunge", ["full_gym"], "weights", ["barbell squats"])
+    assert "Barbell Bulgarian Split Squat" not in lunge and "Dumbbell Reverse Lunge" in lunge
+    assert "Back Squat" not in e.get_exercise_options("squat", ["full_gym"], "weights", ["no squats or lunges"])

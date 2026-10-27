@@ -2134,6 +2134,11 @@ class EliteCoachingEngine:
     # "No squats", "avoid deadlifts", "can't do lunges": a movement the user names
     # is removed by name (every variation of it), on top of the injury lists above
     MOVEMENT_LIMITS = [
+        # Specific phrases first: they are removed from the text so the general
+        # word ("squat") doesn't also remove the machine and dumbbell versions
+        (r"barbell squats?|bar squats?",
+                                  ["back squat", "front squat", "pause squat", "barbell squat",
+                                   "barbell bulgarian split squat", "thruster"]),
         (r"squat",                ["squat", "thruster"]),
         (r"dead ?lift|rdl",       ["deadlift", "rdl"]),
         (r"lunge",                ["lunge", "split squat", "step-up"]),
@@ -2166,7 +2171,10 @@ class EliteCoachingEngine:
                 frags.append(name)
                 text = text.replace(m.group(0), " ")
         # 2. Whole movements ("no squats", "can't deadlift") from what's left
-        frags += [cls._plain(f) for pat, fs in cls.MOVEMENT_LIMITS if re.search(pat, text) for f in fs]
+        for pat, fs in cls.MOVEMENT_LIMITS:
+            if re.search(pat, text):
+                frags += [cls._plain(f) for f in fs]
+                text = re.sub(pat, " ", text)
         return frags
 
     @classmethod
