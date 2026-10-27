@@ -13,7 +13,7 @@ interface UserProfile {
   gender: string;
   activity_level: string;
   goal: string;
-  mostly_muscle?: boolean;   // asked only when BMI is over 30
+  mostly_muscle?: boolean;   // asked only when BMI is over 25
   calculated_macros: {
     calories: number;
     protein: number;
@@ -21,6 +21,8 @@ interface UserProfile {
     fats: number;
     bmr: number;
     calorie_floor_applied?: boolean | number;   // target held at the safe minimum
+    protein_from_lean_mass?: boolean | number;  // protein set from estimated lean mass
+    lean_mass_kg?: number;
     tdee: number;
   } | null;
   subscription_status: string;

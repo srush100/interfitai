@@ -3803,8 +3803,8 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
                      mostly_muscle: Optional[bool] = False) -> Dict[str, float]:
     """Calculate personalized macros using Mifflin-St Jeor equation.
 
-    Protein is prescribed from bodyweight (g/kg) per ISSN guidelines — not as
-    a % of calories — to ensure adequate lean mass preservation during a
+    Protein is prescribed from estimated lean mass (g/kg) per ISSN guidelines —
+    not as a % of calories — to ensure adequate lean mass preservation during a
     deficit. Calorie adjustments are percentage-based off TDEE so they scale
     correctly across body sizes.
     """
@@ -3838,6 +3838,7 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
     if goal == "weight_loss":
         calories = tdee * 0.80              # 20% deficit
         protein_per_kg = 2.2                # high — preserve LBM in deficit
+        protein_per_kg_lean = 2.6
         # Safety floor: never below BMR or the usual unsupervised minimum
         # (1,200 women / 1,500 men), and never above maintenance. Small or
         # older people then sit near maintenance — their loss comes from activity.
@@ -3847,22 +3848,34 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
     elif goal == "muscle_building":
         calories = tdee * 1.10              # 10% surplus (lean bulk)
         protein_per_kg = 2.0                # industry standard for hypertrophy (RP/MacroFactor)
+        protein_per_kg_lean = 2.4
     else:  # maintenance
         calories = tdee
         protein_per_kg = 1.8                # above MPS ceiling with comfortable margin
+        protein_per_kg_lean = 2.2
 
-    # ── Macro split: protein from bodyweight, fat at 25% of cals, rest carbs ──
-    # With a BMI over 30, protein is set from a healthy-weight reference (the
-    # weight at BMI 25 for their height): g/kg targets are for lean mass, and
-    # total weight would ask for far more than is needed (220g+). Unless the
-    # user says their weight is mostly muscle — then full weight, higher cap.
+    # ── Macro split: protein from lean mass, fat at 25% of cals, rest carbs ──
+    # g/kg targets are really for lean mass: body fat doesn't need protein, so
+    # total weight overshoots for women and anyone with fat to lose (85 kg
+    # woman: 187g). Lean mass is estimated from height, weight and sex (Boer);
+    # protein is the lower of that and the body-weight target (with a BMI
+    # over 30, the weight at BMI 25), so it is only ever brought down.
+    # A user whose weight is mostly muscle gets full weight, higher cap.
     height_m = height / 100
     bmi = weight / (height_m ** 2) if height_m > 0 else 0
-    if bmi > 30 and mostly_muscle:
+    lbm_male = 0.407 * weight + 0.267 * height - 19.2
+    lbm_female = 0.252 * weight + 0.473 * height - 48.3
+    lean_mass = {"male": lbm_male, "female": lbm_female}.get(gender, (lbm_male + lbm_female) / 2)
+    lean_mass = max(0.0, min(lean_mass, weight))
+    if mostly_muscle:
         protein_g = round(min(weight * protein_per_kg, 260))
+        from_lean = False
     else:
         protein_weight = min(weight, 25 * height_m ** 2) if bmi > 30 else weight
-        protein_g = round(min(protein_weight * protein_per_kg, 220))
+        by_weight = protein_weight * protein_per_kg
+        by_lean = lean_mass * protein_per_kg_lean
+        protein_g = round(min(by_weight, by_lean or by_weight, 220))
+        from_lean = bool(by_lean) and by_lean < by_weight
     fat_g     = round((calories * 0.25) / 9)    # 25% of cals from fat (hormonal minimum)
     remaining_cals = calories - (protein_g * 4) - (fat_g * 9)
     carbs_g   = round(max(remaining_cals, 0) / 4)
@@ -3875,6 +3888,8 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
         "bmr":      round(bmr),
         "tdee":     round(tdee),
         "calorie_floor_applied": floor_applied,   # target held at the safe minimum
+        "protein_from_lean_mass": from_lean,      # True: set from estimated lean mass
+        "lean_mass_kg": round(lean_mass, 1),
     }
 
 # ==================== USER PROFILE ENDPOINTS ====================

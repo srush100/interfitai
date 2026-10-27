@@ -127,12 +127,12 @@ export default function ProfileScreen() {
     setEditing(true);
   };
 
-  // Asked only when BMI is over 30: is the weight mostly muscle?
-  const editBmiOver30 = (() => {
+  // Asked only when BMI is over 25: is the weight mostly muscle?
+  const editAskMostlyMuscle = (() => {
     const w = parseAmount(editData.weight), h = parseAmount(editData.height);
     const kg = weightUnit === 'lbs' ? w / 2.20462 : w;
     const cm = heightUnit === 'in' ? h * 2.54 : h;
-    return kg > 0 && cm > 0 && kg / (cm / 100) ** 2 > 30;
+    return kg > 0 && cm > 0 && kg / (cm / 100) ** 2 > 25;
   })();
 
   const formatHeight = (cm?: number) => {
@@ -265,7 +265,7 @@ export default function ProfileScreen() {
         weight: weightInKg,
         height: heightInCm,
         unit_preference: weightUnit,
-        mostly_muscle: editBmiOver30 ? editData.mostly_muscle : false,
+        mostly_muscle: editAskMostlyMuscle ? editData.mostly_muscle : false,
         age,
         goal: editData.goal,
         activity_level: editData.activity_level,
@@ -437,7 +437,7 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
-              {editBmiOver30 && (
+              {editAskMostlyMuscle && (
                 <>
                   <Text style={styles.editLabel}>Is your weight mostly muscle?</Text>
                   <View style={styles.goalSelector} testID="profile-mostly-muscle">
@@ -573,6 +573,11 @@ export default function ProfileScreen() {
               </Text>
             )}
             
+            {!!macros.protein_from_lean_mass && (
+              <Text style={styles.tapToEdit}>
+                Protein is based on your estimated muscle mass, not total weight.
+              </Text>
+            )}
             <Text style={styles.tapToEdit}>Tap to adjust</Text>
           </TouchableOpacity>
         )}
