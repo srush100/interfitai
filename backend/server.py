@@ -1038,9 +1038,9 @@ class EliteCoachingEngine:
     # ----- Exercise options per movement pattern and equipment type -----
     PATTERNS = {
         "horizontal_push": {
-            "full_gym":  ["Barbell Bench Press", "Machine Chest Press", "Cable Chest Fly"],
+            "full_gym":  ["Barbell Bench Press", "Dumbbell Bench Press", "Machine Chest Press", "Cable Chest Fly"],
             "beginner_gym": ["Machine Chest Press", "Dumbbell Bench Press", "Cable Chest Fly", "Incline Machine Press"],
-            "barbells":  ["Barbell Bench Press", "Close-Grip Bench Press"],
+            "barbells":  ["Barbell Bench Press"],
             "dumbbells": ["Dumbbell Bench Press", "Dumbbell Incline Press"],
             "machines":  ["Machine Chest Press", "Machine Incline Press"],
             "bodyweight":["Push-Up", "Archer Push-Up", "Decline Push-Up"],
@@ -1057,6 +1057,14 @@ class EliteCoachingEngine:
             "bodyweight":["Pike Push-Up", "Decline Push-Up"],
             "cables":    ["High-to-Low Cable Fly"],
             "resistance_bands":["Incline Band Press"],
+        },
+        "chest_fly": {
+            "full_gym":  ["Cable Chest Fly", "Pec Deck", "Incline Dumbbell Fly", "Cable Crossover"],
+            "dumbbells": ["Dumbbell Fly", "Incline Dumbbell Fly"],
+            "machines":  ["Pec Deck"],
+            "cables":    ["Cable Chest Fly", "Cable Crossover"],
+            "bodyweight":["Push-Up", "Decline Push-Up"],
+            "resistance_bands":["Band Chest Fly"],
         },
         "vertical_push": {
             "full_gym":  ["Barbell Overhead Press", "Dumbbell Shoulder Press", "Machine Shoulder Press"],
@@ -1085,6 +1093,14 @@ class EliteCoachingEngine:
             "resistance_bands":["Band Face Pull", "Band Pull-Apart"],
             "bodyweight":["Prone Y-T Raise", "Reverse Snow Angel"],
         },
+        "tricep_compound": {
+            "full_gym":  ["Close-Grip Bench Press", "Dip", "Assisted Dip"],
+            "barbells":  ["Close-Grip Bench Press"],
+            "dumbbells": ["Close-Grip Dumbbell Press"],
+            "machines":  ["Assisted Dip"],
+            "bodyweight":["Dip", "Diamond Push-Up"],
+            "resistance_bands":["Diamond Push-Up"],
+        },
         "tricep_push": {
             "full_gym":  ["Cable Tricep Pushdown", "Overhead Cable Extension", "Skull Crusher"],
             "barbells":  ["Skull Crusher", "Close-Grip Bench Press"],
@@ -1102,6 +1118,20 @@ class EliteCoachingEngine:
             "bodyweight":["Pull-Up", "Chin-Up"],
             "cables":    ["Lat Pulldown", "Single-Arm Lat Pulldown"],
             "resistance_bands":["Band-Assisted Pull-Up", "Band Lat Pulldown"],
+        },
+        "lat_isolation": {
+            "full_gym":  ["Straight Arm Pulldown", "Dumbbell Pullover"],
+            "dumbbells": ["Dumbbell Pullover"],
+            "cables":    ["Straight Arm Pulldown"],
+            "machines":  ["Straight Arm Pulldown"],
+            "resistance_bands":["Band Straight Arm Pulldown"],
+        },
+        "shrug": {
+            "full_gym":  ["Dumbbell Shrug", "Barbell Shrug"],
+            "dumbbells": ["Dumbbell Shrug"],
+            "barbells":  ["Barbell Shrug"],
+            "kettlebells":["Kettlebell Shrug"],
+            "resistance_bands":["Band Shrug"],
         },
         "horizontal_pull": {
             "full_gym":  ["Barbell Row", "Cable Row", "Machine Row"],
@@ -1122,6 +1152,14 @@ class EliteCoachingEngine:
             "cables":    ["Cable Curl", "Cable Hammer Curl"],
             "bodyweight":["Chin-Up", "Supinated Row"],
             "resistance_bands":["Band Curl"],
+        },
+        "hammer_curl": {
+            "full_gym":  ["Hammer Curl", "Cable Hammer Curl", "Machine Preacher Curl"],
+            "dumbbells": ["Hammer Curl"],
+            "cables":    ["Cable Hammer Curl"],
+            "machines":  ["Machine Preacher Curl"],
+            "bodyweight":["Chin-Up"],
+            "resistance_bands":["Band Hammer Curl"],
         },
         "squat": {
             "full_gym":  ["Back Squat", "Leg Press", "Hack Squat"],
@@ -1261,7 +1299,7 @@ class EliteCoachingEngine:
                 ("bicep_curl",       "isolation",           "bicep isolation – elbow flexion"),
             ],
             "optional_slots": [
-                ("bicep_curl",       "isolation",           "hammer curl – brachialis and forearm"),
+                ("hammer_curl",      "isolation",           "hammer curl – brachialis and forearm"),
             ],
         },
         "upper_pull_volume": {
@@ -1327,7 +1365,7 @@ class EliteCoachingEngine:
                 ("bicep_curl",       "isolation",           "bicep curl – elbow flexion"),
             ],
             "optional_slots": [
-                ("bicep_curl",       "isolation",           "hammer curl variation"),
+                ("hammer_curl",      "isolation",           "hammer curl variation"),
             ],
         },
         "legs_session": {
@@ -1472,7 +1510,7 @@ class EliteCoachingEngine:
             "slots": [
                 ("explosive",        "primary_compound",   "power development – explosive lower body"),
                 ("carry",            "accessory",           "loaded carry – trunk stability and grip"),
-                ("squat",            "secondary_compound",  "strength base – squat pattern"),
+                ("horizontal_push",  "secondary_compound",  "press – upper-body pushing strength"),
                 ("horizontal_pull",  "secondary_compound",  "row – pulling strength"),
                 ("conditioning",     "conditioning",        "metabolic finisher – work capacity"),
             ],
@@ -1591,7 +1629,7 @@ class EliteCoachingEngine:
             "slots": [
                 ("explosive",        "primary_compound",   "plyometric power – explosive lower body output"),
                 ("carry",            "accessory",           "loaded carry – trunk integrity and grip strength"),
-                ("squat",            "secondary_compound",  "squat strength – bilateral lower body base"),
+                ("horizontal_push",  "secondary_compound",  "press – upper-body pushing strength"),
                 ("horizontal_pull",  "secondary_compound",  "row – pulling strength and postural balance"),
                 ("conditioning",     "conditioning",        "high-output metabolic finisher – push the limit"),
             ],
@@ -1644,16 +1682,19 @@ class EliteCoachingEngine:
         # ── True Bro Split archetypes — one muscle group per session ─────────
         "bro_chest": {
             "label": "Chest Day",
-            "focus": "Chest & Triceps",
+            "focus": "Chest",
             "slots": [
                 ("horizontal_push",  "primary_compound",   "flat pressing – chest mass and strength foundation"),
                 ("incline_push",     "secondary_compound",  "incline angle – upper chest focus and fullness"),
-                ("incline_push",     "accessory",           "flye or crossover – chest isolation and stretch"),
-                ("tricep_push",      "isolation",           "tricep isolation – full elbow extension and pump"),
+                ("horizontal_push",  "accessory",           "second press – dumbbell or machine for extra chest volume"),
+                ("chest_fly",        "isolation",           "flye – chest stretch and squeeze"),
             ],
             "optional_slots": [
-                ("lateral_raise",    "accessory",           "medial delt – shoulder width complement to chest"),
-                ("tricep_push",      "isolation",           "overhead extension – long head stretch"),
+                ("chest_fly",        "isolation",           "crossover or pec deck – inner chest and pump"),
+            ],
+            # Only when the week has no Arms Day (4-day bro split)
+            "arm_finisher": [
+                ("tricep_push",      "isolation",           "tricep isolation – full elbow extension"),
             ],
         },
         "bro_chest_shoulders": {
@@ -1672,16 +1713,17 @@ class EliteCoachingEngine:
         },
         "bro_back": {
             "label": "Back Day",
-            "focus": "Back & Biceps",
+            "focus": "Back & Rear Delts",
             "slots": [
                 ("vertical_pull",    "primary_compound",   "vertical pull – lat width and upper back thickness"),
                 ("horizontal_pull",  "primary_compound",   "heavy row – mid-back density and rhomboid strength"),
                 ("horizontal_pull",  "secondary_compound",  "second row variation – upper or lower back emphasis"),
+                ("lat_isolation",    "accessory",           "straight-arm pulldown or pullover – lats without biceps"),
                 ("rear_delt",        "accessory",           "rear delt – shoulder health and upper back detail"),
-                ("bicep_curl",       "isolation",           "bicep curl – elbow flexion strength and peak"),
             ],
-            "optional_slots": [
-                ("bicep_curl",       "isolation",           "hammer or reverse curl – brachialis and grip"),
+            "optional_slots": [],
+            "arm_finisher": [
+                ("bicep_curl",       "isolation",           "bicep curl – elbow flexion strength and peak"),
             ],
         },
         "bro_shoulders": {
@@ -1689,25 +1731,25 @@ class EliteCoachingEngine:
             "focus": "Deltoids & Traps",
             "slots": [
                 ("vertical_push",    "primary_compound",   "overhead press – deltoid mass and pressing strength"),
+                ("vertical_push",    "secondary_compound",  "second press – dumbbell or machine for shoulder volume"),
                 ("lateral_raise",    "accessory",           "lateral raise – medial delt width"),
-                ("lateral_raise",    "secondary_compound",  "second lateral raise variation – cable or dumbbell"),
                 ("rear_delt",        "accessory",           "rear delt – posterior shoulder and rotator health"),
-                ("tricep_push",      "isolation",           "tricep isolation – supports pressing strength"),
+                ("lateral_raise",    "isolation",           "second lateral raise variation – cable or machine"),
             ],
             "optional_slots": [
-                ("carry",            "accessory",           "shrug – upper trap development and neck thickness"),
+                ("shrug",            "isolation",           "shrug – upper trap development"),
             ],
         },
         "bro_arms": {
             "label": "Arms Day",
             "focus": "Biceps & Triceps",
             "slots": [
-                ("bicep_curl",       "primary_compound",   "barbell or dumbbell curl – bicep mass and peak"),
-                ("tricep_push",      "primary_compound",   "close-grip press or dip – tricep mass and strength"),
-                ("bicep_curl",       "secondary_compound",  "incline or preacher curl – stretch and peak development"),
-                ("tricep_push",      "secondary_compound",  "skull crusher or overhead extension – long head focus"),
-                ("bicep_curl",       "isolation",           "concentration curl or hammer – brachialis and detail"),
+                ("tricep_compound",  "secondary_compound",  "close-grip press or dip – tricep mass and strength"),
+                ("bicep_curl",       "secondary_compound",  "barbell or EZ-bar curl – bicep mass"),
+                ("tricep_push",      "accessory",           "skull crusher or overhead extension – long head focus"),
+                ("bicep_curl",       "accessory",           "incline or cable curl – stretch and peak development"),
                 ("tricep_push",      "isolation",           "cable pushdown – tricep isolation and pump"),
+                ("hammer_curl",      "isolation",           "hammer or preacher curl – brachialis and detail"),
             ],
             "optional_slots": [],
         },
@@ -1717,14 +1759,13 @@ class EliteCoachingEngine:
             "slots": [
                 ("squat",            "primary_compound",   "squat – bilateral lower body mass and strength"),
                 ("hip_hinge",        "secondary_compound",  "deadlift variation – hamstring and glute mass"),
-                ("lunge",            "secondary_compound",  "lunge or leg press – quad volume and unilateral work"),
-                ("hamstring_curl",   "isolation",           "leg curl – hamstring isolation and peak"),
-                ("glute",            "accessory",           "hip thrust – glute isolation and activation"),
+                ("lunge",            "secondary_compound",  "lunge or split squat – quad volume and unilateral work"),
+                ("glute",            "accessory",           "hip thrust – glute strength"),
+                ("knee_extension",   "isolation",           "leg extension – quad isolation and detail"),
+                ("hamstring_curl",   "isolation",           "leg curl – hamstring isolation"),
                 ("calf",             "isolation",           "calf raise – calves and soleus strength"),
             ],
-            "optional_slots": [
-                ("knee_extension",   "isolation",           "leg extension – quad isolation and detail"),
-            ],
+            "optional_slots": [],
         },
     }
 
@@ -1760,8 +1801,8 @@ class EliteCoachingEngine:
             2: ["full_body_heavy", "athletic_conditioning"],
             3: ["full_body_heavy", "athletic_conditioning", "lower_full"],
             4: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full"],
-            5: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full", "athletic_conditioning"],
-            6: ["full_body_heavy", "athletic_conditioning", "upper_push_heavy", "lower_quad_focus", "athletic_conditioning", "lower_hip_focus"],
+            5: ["athletic_conditioning", "full_body_heavy", "upper_full", "athletic_conditioning", "lower_full"],
+            6: ["athletic_conditioning", "lower_quad_focus", "upper_push_heavy", "athletic_conditioning", "lower_hip_focus", "upper_full"],
         },
         "functional_split": {
             2: ["functional_movement_quality", "functional_strength_capacity"],
@@ -1775,7 +1816,7 @@ class EliteCoachingEngine:
             3: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_power_conditioning"],
             4: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning"],
             5: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_lower"],
-            6: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_push", "hybrid_strength_pull"],
+            6: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_lower", "hybrid_strength_pull"],
         },
         "calisthenics_split": {
             2: ["calisthenics_upper", "calisthenics_lower"],
@@ -2066,9 +2107,9 @@ class EliteCoachingEngine:
                           "Dumbbell Step-Up", "Step-Up",
                           "Jump Squat", "Running"],
         "shoulder":      ["Barbell Overhead Press", "Push Press", "Upright Row",
-                          "Behind-the-Neck Press", "Barbell Bench Press"],
+                          "Behind-the-Neck Press", "Barbell Bench Press", "Dip", "Assisted Dip"],
         "wrist":         ["Barbell Curl", "Barbell Overhead Press", "Push-Up", "Barbell Bench Press"],
-        "elbow":         ["Skull Crusher", "Dip", "Barbell Curl"],
+        "elbow":         ["Skull Crusher", "Dip", "Assisted Dip", "Barbell Curl"],
         "hip":           ["Barbell Hip Thrust", "Barbell Bulgarian Split Squat",
                           "Leg Press", "Leg Press (feet high)"],
         "ankle":         ["Calf Raise", "Calf Raise Machine", "Seated Calf Raise",
@@ -2162,12 +2203,12 @@ class EliteCoachingEngine:
 
     # Focus area → movement patterns that should receive volume priority
     FOCUS_AREA_PATTERNS: dict = {
-        "chest":        ["horizontal_push", "incline_push"],
-        "back":         ["vertical_pull", "horizontal_pull"],
+        "chest":        ["horizontal_push", "incline_push", "chest_fly"],
+        "back":         ["vertical_pull", "horizontal_pull", "lat_isolation"],
         "shoulders":    ["vertical_push", "lateral_raise", "rear_delt"],
-        "arms":         ["bicep_curl", "tricep_push"],
-        "biceps":       ["bicep_curl"],
-        "triceps":      ["tricep_push"],
+        "arms":         ["bicep_curl", "tricep_push", "hammer_curl", "tricep_compound"],
+        "biceps":       ["bicep_curl", "hammer_curl"],
+        "triceps":      ["tricep_push", "tricep_compound"],
         "legs":         ["squat", "lunge", "knee_extension", "calf", "hamstring_curl"],
         "glutes":       ["glute", "hip_hinge", "lunge"],
         "hamstrings":   ["hip_hinge", "hamstring_curl"],
@@ -3037,6 +3078,10 @@ class EliteCoachingEngine:
             archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
             # Start with all slots (base + optional) — deduplication happens via session_native gate
             slots = list(archetype['slots']) + list(archetype.get('optional_slots', []))
+            # Bro split: arms get their own day at 5+ days, so chest/back days
+            # only carry a tricep/bicep finisher when there is no Arms Day
+            if 'bro_arms' not in session_types:
+                slots += list(archetype.get('arm_finisher', []))
 
             # ── Determine duration bucket ────────────────────────────────────
             dur = req.duration_minutes
@@ -3170,6 +3215,12 @@ class EliteCoachingEngine:
 
                 # How many sets should this slot get?
                 base_params = goal_params.get(ex_type, goal_params.get('accessory', {}))
+                # Jumps and core work keep their own reps and rest even when they
+                # lead the day (no 6-10 box jumps or planks with 2:30 rest)
+                if pattern == 'explosive' and 'explosive' in goal_params:
+                    base_params = goal_params['explosive']
+                elif pattern.startswith('core_') and 'core' in goal_params:
+                    base_params = goal_params['core']
                 s_min, s_max = self._set_range(ex_type, level, goal)
                 base_sets   = base_params.get('sets', 3)
                 # Clamp to level range
@@ -3259,6 +3310,13 @@ class EliteCoachingEngine:
 
                 if ex_type != 'primary_compound' and total_sets_allocated >= set_ceiling:
                     break
+
+            # Calves go after the other leg work (before core and finishers)
+            calves = [sp for sp in slot_specs if sp['pattern'] == 'calf']
+            if calves:
+                rest_specs = [sp for sp in slot_specs if sp['pattern'] != 'calf']
+                at = next((k for k, sp in enumerate(rest_specs) if sp['type'] == 'core'), len(rest_specs))
+                slot_specs = rest_specs[:at] + calves + rest_specs[at:]
 
             for _, _, cond_note in cond_slots:
                 slot_specs.append(self._conditioning_spec(
@@ -3373,12 +3431,14 @@ class EliteCoachingEngine:
             # Reorder slots: primary compounds first → secondary compounds → focus accessories
             # → other accessories → ARM ISOLATION LAST → CORE LAST → conditioning finisher
             # This gives clean coach-built session flow: big lifts first, finish with arms/core.
-            ARM_ISO  = {'bicep_curl', 'tricep_push'}
+            ARM_ISO  = {'bicep_curl', 'tricep_push', 'hammer_curl'}
             CORE_PAT = {'core_stability', 'core_flexion', 'carry'}
             def _slot_priority(s: dict) -> int:
                 if s['type'] == 'conditioning':            return 99  # always last
                 if s['pattern'] in CORE_PAT:               return 6   # core just before conditioning
-                if s['pattern'] in ARM_ISO:                return 5   # arm isolation before core
+                if (s['pattern'] in ARM_ISO               # arm isolation before core
+                        and s['type'] not in ('primary_compound', 'secondary_compound')):
+                    return 5   # (on Arms Day the heavy curl still leads)
                 if s['type'] == 'primary_compound':        return 0   # heavy main lifts first
                 if s['type'] == 'secondary_compound':      return 1   # secondary heavy movements
                 if s['pattern'] in primary_patterns:       return 2   # primary focus accessories
@@ -4194,6 +4254,11 @@ async def generate_workout(request: WorkoutGenerateRequest):
         "vertical_pull":   ["lats", "biceps"],
         "horizontal_pull": ["rhomboids", "lats", "biceps"],
         "bicep_curl":      ["biceps", "brachialis"],
+        "hammer_curl":     ["brachialis", "biceps", "forearms"],
+        "tricep_compound": ["triceps", "chest"],
+        "chest_fly":       ["chest"],
+        "lat_isolation":   ["lats"],
+        "shrug":           ["traps"],
         "squat":           ["quads", "glutes"],
         "lunge":           ["quads", "glutes", "hamstrings"],
         "hip_hinge":       ["hamstrings", "glutes", "lower back"],
