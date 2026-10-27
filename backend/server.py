@@ -3808,6 +3808,12 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
     deficit. Calorie adjustments are percentage-based off TDEE so they scale
     correctly across body sizes.
     """
+    # "Female", "F", "woman" etc. all count: an unrecognised value would
+    # otherwise give men and women the same in-between numbers
+    g = (gender or "").strip().lower()
+    gender = ("male" if g in ("male", "m", "man") else
+              "female" if g in ("female", "f", "woman") else g)
+
     # ── BMR: Mifflin-St Jeor ──────────────────────────────────────────
     if gender == "male":
         bmr = 10 * weight + 6.25 * height - 5 * age + 5

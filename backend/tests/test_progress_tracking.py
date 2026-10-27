@@ -510,3 +510,11 @@ def test_chat_rejects_huge_messages(chat_env):
     with pytest.raises(HTTPException) as e:
         _chat("x" * 5000)
     assert e.value.status_code == 400
+
+
+@pytest.mark.parametrize("label", ["Female", "FEMALE", " female ", "F", "woman"])
+def test_macros_female_spellings(label):
+    from server import calculate_macros
+    exact = calculate_macros(70, 170, 30, "female", "moderate", "weight_loss")
+    assert calculate_macros(70, 170, 30, label, "moderate", "weight_loss")["calories"] == exact["calories"]
+    assert exact["calories"] < calculate_macros(70, 170, 30, "Male", "moderate", "weight_loss")["calories"]
