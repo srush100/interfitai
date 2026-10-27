@@ -245,9 +245,21 @@ async def search_usda(query: str, max_results: int = 50):
             results = []
             for food in foods:
                 # Extract nutrients
-                nutrients = {n.get("nutrientName", ""): n.get("value", 0) for n in food.get("foodNutrients", [])}
-                
-                calories = nutrients.get("Energy", 0)
+                # Energy is listed twice for many foods (kcal and kJ) under the
+                # same name; keeping the last one showed kJ as calories
+                # (boiled broccoli 146 "cal"). Use kcal, else convert kJ.
+                nutrients, kcal, kj = {}, None, None
+                for n in food.get("foodNutrients", []):
+                    name, unit = n.get("nutrientName", ""), str(n.get("unitName", "")).upper()
+                    value = float(n.get("value") or 0)
+                    if name.startswith("Energy"):
+                        if unit == "KCAL" and kcal is None:
+                            kcal = value
+                        elif unit == "KJ" and kj is None:
+                            kj = value
+                    else:
+                        nutrients.setdefault(name, value)
+                calories = kcal if kcal is not None else round(kj / 4.184) if kj else 0
                 protein = nutrients.get("Protein", 0)
                 carbs = nutrients.get("Carbohydrate, by difference", 0)
                 fats = nutrients.get("Total lipid (fat)", 0)
@@ -5708,6 +5720,7 @@ from nutrition_engine import (  # noqa: E402
     snap_item_from_text,
     snap_item,
     food_matches,
+    calculate_meal_text, meal_summary,
 )
 from meal_templates import TEMPLATES_BY_STYLE  # noqa: E402
 
@@ -7822,7 +7835,10 @@ async def search_foods(query: str, user_id: str):
     # STEP 2: Try to get API results to supplement
     api_results = []
     
-    usda_results = await search_usda(query, max_results=30)
+    # A whole meal ("3 boiled eggs on 2 slices of rye") is calculated by
+    # /food/ai-search from the food database; keyword matches for it are noise
+    _meal = calculate_meal_text(query)
+    usda_results = [] if _meal and len(_meal["items"]) > 1 else await search_usda(query, max_results=30)
     if usda_results:
         logger.info(f"USDA returned {len(usda_results)} results")
         api_results = usda_results
@@ -7854,6 +7870,33 @@ async def search_foods(query: str, user_id: str):
         sanitize_food_entry(_tmp, portion_g=_portion, reconcile=False)
     return combined_results[:50]
 
+def database_meal_result(query: str, calc: dict) -> dict:
+    """A typed meal worked out from the food database (USDA values), shaped
+    like an AI search result. Same numbers as Snap and the chat coach."""
+    summary = meal_summary(calc)
+    if calc["assumed"]:
+        summary += " — " + ", ".join(f"1 {f} assumed" for f in calc["assumed"])
+    name = query.strip()
+    return {
+        "name":           name[:1].upper() + name[1:],
+        "calories":       calc["calories"],
+        "protein":        calc["protein"],
+        "carbs":          calc["carbs"],
+        "fats":           calc["fats"],
+        "serving_size":   summary,
+        "serving_g":      calc["grams"],
+        "serving_unit":   "g",
+        "items":          [{k: i[k] for k in ("name", "grams", "display", "calories", "protein", "carbs", "fats")}
+                           for i in calc["items"]],
+        "is_ai_estimate": False,
+        "from_database":  True,
+        "verified":       False,
+        "source":         "InterFitAI food database (USDA values)",
+        "source_url":     "",
+        "confidence":     "high",
+    }
+
+
 @api_router.get("/food/ai-search")
 async def ai_food_search(query: str, user_id: str):
     """Return accurate nutrition for any food (generic, branded, or restaurant)
@@ -7864,6 +7907,10 @@ async def ai_food_search(query: str, user_id: str):
         raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
                                                      "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
     import re as _re
+
+    calc = calculate_meal_text(query)
+    if calc:
+        return database_meal_result(query, calc)
 
     system_prompt = (
         "You are a precise nutrition database with deep knowledge of generic foods, "
@@ -8255,6 +8302,22 @@ async def chat_with_ai(request: ChatRequest):
     # Add chat history
     for msg in history:
         messages.append({"role": msg["role"], "content": msg["content"]})
+
+    # A meal with amounts in the question ("macros for 3 boiled eggs on 2 slices
+    # of rye?") is worked out by the food database, so the coach gives the same
+    # numbers as the food log instead of its own estimate
+    digit = re.search(r"\d", message)
+    meal = calculate_meal_text(re.split(r"[?!\n]", message[digit.start():])[0]) if digit else None
+    if meal:
+        lines = [f"- {i['display']} ({i['grams']}g): {i['calories']} kcal, {i['protein']}g protein, "
+                 f"{i['carbs']}g carbs, {i['fats']}g fat" for i in meal["items"]]
+        if meal["assumed"]:
+            lines.append("- Assumed (no amount given): " + ", ".join(f"1 {f}" for f in meal["assumed"]))
+        lines.append(f"- Total: {meal['calories']} kcal, {meal['protein']}g protein, "
+                     f"{meal['carbs']}g carbs, {meal['fats']}g fat")
+        messages[0]["content"] += (
+            "\n\nFOOD DATABASE RESULT for the food in the user's message. The app's food log "
+            "shows exactly these numbers — use them, do not estimate your own:\n" + "\n".join(lines))
 
     # Add current message
     messages.append({"role": "user", "content": message})

@@ -1236,15 +1236,12 @@ def parse_portions(text: str) -> list:
     → [{amount 4, unit count, food eggs}, {amount 3, unit piece, food sourdough}].
     Text without an amount ('no dressing', 'grilled not fried') gives [] — it is
     a correction for the AI, never a reason to fail."""
+    return [spec for spec in map(_parse_segment, _segments(text)) if spec]
+
+
+def _segments(text: str) -> list:
     s = _normalise_portion_text(text)
-    if not s:
-        return []
-    out = []
-    for seg in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b|\bwith\b|\balso\b)\s*", s):
-        spec = _parse_segment(seg)
-        if spec:
-            out.append(spec)
-    return out
+    return re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b|\bwith\b|\balso\b|\bon\b)\s*", s) if s else []
 
 
 # Words that describe a food rather than name it ("fried eggs", "fresh sourdough").
@@ -1433,6 +1430,46 @@ def build_plate(raw_items, specs, qty: int = 1):
     if sum(float(i["grams"]) for i in items) > 3000 * max(1, qty or 1):
         problems.append("This meal weighs over 3 kg — please check the amounts before logging.")
     return items, problems
+
+
+def calculate_meal_text(text: str):
+    """'3 boiled eggs on 2 slices of rye' → items and totals from the food
+    database: the same numbers as Snap, meal plans and the chat coach, every
+    time. None unless every food and amount is understood."""
+    items, assumed, has_amount = [], [], False
+    text = re.sub(r"\b(?:for|at|with my)\s+(?:breakfast|brekkie|lunch|dinner|tea|supper|a snack|snack)\b",
+                  " ", (text or "").lower())
+    for seg in _segments(text):
+        spec = _parse_segment(seg)
+        if spec:
+            has_amount = True
+        else:
+            # "eggs on rye": a food with no amount is never dropped. A food
+            # counted in pieces is 1 piece (and the user is told); anything
+            # else can't be worked out here
+            food = _strip_articles(seg)
+            if not food:
+                continue
+            key = resolve_food_typed(food)
+            if not key or not (key in UNIT_FOODS or unit_grams(key)):
+                return None
+            spec = {"amount": 1.0, "unit": "count", "food": food, "text": seg}
+            assumed.append(food)
+        key = resolve_food_typed(spec["food"]) if spec["food"] else None
+        g = portion_grams(spec, key) if key else None
+        it = snap_item(spec["food"], g, key) if g else None
+        if not it:
+            return None
+        items.append(it)
+    if not items or not has_amount:
+        return None
+    return {"items": items, "assumed": assumed, **plate_totals(items)}
+
+
+def meal_summary(calc) -> str:
+    """'3 large eggs (174g) + 2 slices rye bread (60g)'"""
+    return " + ".join(f"{i['display']} ({_round_g(i['grams'])}g)" if i["display"] != i["name"]
+                      else f"{_round_g(i['grams'])}g {i['name'].lower()}" for i in calc["items"])
 
 
 def snap_item_from_text(text: str, key: str = None, name: str = None, per_100g: dict = None):

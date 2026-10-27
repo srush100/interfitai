@@ -59,6 +59,7 @@ interface SearchResult {
   fats: number;
   is_ai_estimate?: boolean;
   verified?: boolean;
+  from_database?: boolean;   // worked out from the food database (same numbers everywhere)
   source?: string;
   source_url?: string;
   confidence?: 'high' | 'medium' | 'low';
@@ -1244,13 +1245,13 @@ export default function FoodLog() {
                         <Text style={styles.resultName}>{aiResult.name}</Text>
                         <View style={[
                           styles.aiEstimateBadge,
-                          aiResult.verified ? styles.aiEstimateBadgeHigh : styles.aiEstimateBadgeMedium,
+                          aiResult.verified || aiResult.from_database ? styles.aiEstimateBadgeHigh : styles.aiEstimateBadgeMedium,
                         ]}>
                           <Text style={[
                             styles.aiEstimateBadgeText,
-                            aiResult.verified ? styles.aiEstimateBadgeTextHigh : styles.aiEstimateBadgeTextMedium,
+                            aiResult.verified || aiResult.from_database ? styles.aiEstimateBadgeTextHigh : styles.aiEstimateBadgeTextMedium,
                           ]}>
-                            {aiResult.verified ? '✓ Verified · web' : 'AI Estimate'}
+                            {aiResult.from_database ? '✓ Food database' : aiResult.verified ? '✓ Verified · web' : 'AI Estimate'}
                           </Text>
                         </View>
                       </View>
@@ -1292,7 +1293,7 @@ export default function FoodLog() {
                     />
                   </TouchableOpacity>
 
-                  {!aiResult.verified && (
+                  {!aiResult.verified && !aiResult.from_database && (
                     <TouchableOpacity
                       style={styles.verifyWebBtn}
                       onPress={searchWithWeb}
