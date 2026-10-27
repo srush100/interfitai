@@ -169,3 +169,28 @@ def test_log_still_checks_ai_and_old_apps(fake_db):
     assert _log("ai", "Eggs (100g)", 596, 13, 1.1, 11).calories == 155
     assert _log(None, "Eggs (100g)", 596, 13, 1.1, 11).calories == 155
     assert _log("ai", "Beer", 153, 1.6, 12.6, 0).calories == 153
+
+
+# ── typed amounts on a snapped plate: "220 gram chicken" is never 220 breasts ──
+import nutrition_engine as _ne
+
+
+@pytest.mark.parametrize("text", ["220 gram cooked chicken breast", "220 grams chicken breast",
+                                  "220g chicken breast", "220 chicken breast"])
+def test_snap_typed_chicken_is_220_grams(text):
+    specs = _ne.parse_portions(f"200g cooked basmati rice, {text}, half an avocado")
+    items, problems = _ne.build_plate([{"food": "basmati rice", "grams": 180},
+                                       {"food": "chicken breast", "grams": 150},
+                                       {"food": "avocado", "grams": 60}], specs)
+    chicken = next(i for i in items if "hicken" in i["name"])
+    assert chicken["grams"] == 220 and chicken["calories"] < 400 and not problems
+
+
+def test_small_counts_still_counted():
+    assert _ne.portion_grams({"amount": 2, "unit": "count", "food": "chicken breast"}, "chicken breast") == 350
+    assert _ne.portion_grams({"amount": 25, "unit": "count", "food": "almonds"}, "almonds") < 100
+
+
+def test_huge_plate_is_flagged():
+    items, problems = _ne.build_plate([{"food": "chicken breast", "grams": 4000}], [])
+    assert problems and "3 kg" in problems[0]

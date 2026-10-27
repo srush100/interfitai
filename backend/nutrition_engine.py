@@ -1312,6 +1312,10 @@ def portion_grams(spec, key=None, *, serving_g=None, unit_name=None, units_per_s
             return None
         size = next((w for w in _SIZE_WORDS if re.search(rf"\b{w}\b", food)), None)
         per = unit_grams(key) if key in UNIT_FOODS and not size else _item_weight(key, size)
+        # "220 chicken breast" is 220 grams, not 220 breasts (38.5 kg): a count
+        # of 20+ that would weigh over 2 kg was meant as a weight
+        if per and u == "count" and a >= 20 and a * per > 2000:
+            return a
     return a * per if per else None
 
 
@@ -1425,7 +1429,10 @@ def build_plate(raw_items, specs, qty: int = 1):
                 items.append(new)
     if qty and qty > 1:
         items = [_resize(i, float(i["grams"]) * qty) for i in items]
-    return [i for i in items if i], problems
+    items = [i for i in items if i]
+    if sum(float(i["grams"]) for i in items) > 3000 * max(1, qty or 1):
+        problems.append("This meal weighs over 3 kg — please check the amounts before logging.")
+    return items, problems
 
 
 def snap_item_from_text(text: str, key: str = None, name: str = None, per_100g: dict = None):
