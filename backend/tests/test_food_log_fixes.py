@@ -57,7 +57,7 @@ def paid(monkeypatch):
 
 
 def _fake_usda(monkeypatch, foods):
-    async def fake(query, max_results=50):
+    async def fake(query, max_results=50, **kw):
         return [r for r in foods]
     monkeypatch.setattr(server, "search_usda", fake)
 
@@ -124,7 +124,7 @@ def test_ai_search_reports_its_serving(paid, monkeypatch):
         return ('{"food_name":"Big Mac","calories":563,"protein_g":26,"carbs_g":45,"fat_g":33,'
                 '"serving_size":"1 burger (219g)","source":"McDonald\'s","confidence":"high"}')
     monkeypatch.setattr(server, "call_claude_sonnet", fake_claude)
-    r = asyncio.run(server.ai_food_search(query="big mac", user_id="u"))
+    r = asyncio.run(server._ai_estimate("big mac"))      # the last-resort step of the lookup
     assert r["serving_size"] == "1 burger (219g)" and r["serving_g"] == 219 and r["calories"] == 563
 
 
@@ -133,7 +133,7 @@ def test_ai_search_serving_without_weight(paid, monkeypatch):
         return ('{"food_name":"Big Mac","calories":563,"protein_g":26,"carbs_g":45,"fat_g":33,'
                 '"serving_size":"1 burger","confidence":"high"}')
     monkeypatch.setattr(server, "call_claude_sonnet", fake_claude)
-    r = asyncio.run(server.ai_food_search(query="big mac", user_id="u"))
+    r = asyncio.run(server._ai_estimate("big mac"))
     assert r["serving_size"] == "1 burger" and r["serving_g"] is None
 
 
@@ -204,18 +204,18 @@ def _paid(monkeypatch):
 
 
 @pytest.mark.parametrize("text, kcal, assumed", [
-    ("3 boiled eggs on 2 pieces of rye", 425, []),
-    ("3 boiled eggs on 2 pieces of rye bread", 425, []),
-    ("3 boiled eggs + 2 slices rye bread", 425, []),
-    ("3 eggs on rye", 348, ["rye"]),                 # rye isn't dropped: 1 slice, and said so
-    ("3 eggs on rye for breakfast", 348, ["rye"]),
+    ("3 boiled eggs on 2 pieces of rye", 387, []),
+    ("3 boiled eggs on 2 pieces of rye bread", 387, []),
+    ("3 boiled eggs + 2 slices rye bread", 387, []),
+    ("3 eggs on rye", 310, ["rye"]),                 # rye isn't dropped: 1 slice, and said so
+    ("3 eggs on rye for breakfast", 310, ["rye"]),
 ])
 def test_typed_meal_from_food_database(text, kcal, assumed):
     calc = _ne.calculate_meal_text(text)
     assert calc["calories"] == kcal and calc["assumed"] == assumed
 
 
-@pytest.mark.parametrize("text", ["banana", "beans on toast", "2 eggs and some spinach", "how much protein?"])
+@pytest.mark.parametrize("text", ["big mac", "beans on toast", "2 eggs and some spinach", "how much protein?"])
 def test_typed_meal_unclear_goes_to_ai(text):
     assert _ne.calculate_meal_text(text) is None
 
@@ -227,8 +227,8 @@ def test_ai_search_uses_database_and_is_the_same_every_time(monkeypatch):
     monkeypatch.setattr(server, "call_claude_sonnet", no_ai)
     a = asyncio.run(server.ai_food_search("3 boiled eggs on 2 pieces of rye", "u"))
     b = asyncio.run(server.ai_food_search("3 boiled eggs on 2 pieces of rye", "u"))
-    assert a == b and a["from_database"] and a["calories"] == 425
-    assert "3 large eggs (174g)" in a["serving_size"] and "2 slices" in a["serving_size"]
+    assert a == b and a["from_database"] and a["calories"] == 387
+    assert "3 large eggs (150g)" in a["serving_size"] and "2 slices" in a["serving_size"]
 
 
 def test_food_search_meal_skips_usda_keyword_noise(monkeypatch):
@@ -294,4 +294,4 @@ def test_chat_coach_gets_food_database_numbers(monkeypatch):
     monkeypatch.setattr(server, "_chat_user_context", ctx)
     asyncio.run(server.chat_with_ai(server.ChatRequest(
         user_id="u", message="What are the macros for 3 boiled eggs on 2 pieces of rye bread?")))
-    assert "FOOD DATABASE RESULT" in seen["system"] and "Total: 425 kcal" in seen["system"]
+    assert "FOOD DATABASE RESULT" in seen["system"] and "Total: 387 kcal" in seen["system"]

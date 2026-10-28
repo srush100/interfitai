@@ -1,4 +1,4 @@
-"""Fix 5 regression tests — egg weight 50g → 58g and meal-detail.tsx ingredient
+"""Fix 5 regression tests — egg weight (now USDA 50g) and meal-detail.tsx ingredient
 state-stripping.
 
 Adds targeted coverage on top of the existing 58-test nutrition-accuracy guard:
@@ -93,97 +93,52 @@ def paid_user(event_loop):
 
 
 # ===========================================================================
-# 1. calculate_ingredient_macros for '2 large eggs' → 116g of egg
+# 1. calculate_ingredient_macros for eggs — USDA large egg, 50g without shell
 # ===========================================================================
 class TestCalculateIngredientMacrosEggs:
-    """2 large eggs = 2 * 58g = 116g; INGREDIENT_MACROS['egg'] = (155,13,1.1,11).
-    Expected: cal=round(155*1.16)=180, prot=round(13*1.16,1)=15.1,
-              carbs=round(1.1*1.16,1)=1.3, fats=round(11*1.16,1)=12.8"""
+    """1 large egg = 50g (USDA, edible); INGREDIENT_MACROS['egg'] = (155,13,1.1,11)."""
 
-    def test_two_large_eggs_returns_116g_macros(self):
+    def test_two_large_eggs_returns_100g_macros(self):
         m = calculate_ingredient_macros("2 large eggs")
-        assert m is not None, "calculate_ingredient_macros returned None for '2 large eggs'"
-        assert m["calories"] == 180, f"expected 180 cal, got {m['calories']}"
-        assert m["protein"] == 15.1, f"expected 15.1 P, got {m['protein']}"
-        assert m["carbs"] == 1.3,   f"expected 1.3 C, got {m['carbs']}"
-        assert m["fats"] == 12.8,   f"expected 12.8 F, got {m['fats']}"
+        assert m == {"calories": 155, "protein": 13.0, "carbs": 1.1, "fats": 11.0}
 
-    def test_one_large_egg_returns_58g_macros(self):
-        """Sanity: 1 large egg = 58g → 90 cal, 7.5P, 0.6C, 6.4F"""
+    def test_one_large_egg_returns_50g_macros(self):
         m = calculate_ingredient_macros("1 large egg")
-        assert m is not None
-        # round(155*0.58)=90, round(13*0.58,1)=7.5, round(1.1*0.58,1)=0.6, round(11*0.58,1)=6.4
-        assert m["calories"] == 90
-        assert m["protein"] == 7.5
-        assert m["carbs"] == 0.6
-        assert m["fats"] == 6.4
+        assert m == {"calories": 78, "protein": 6.5, "carbs": 0.6, "fats": 5.5}
 
-    def test_three_eggs_uses_58g_weight_not_50g(self):
-        """Regression guard: with old 50g weight, 3 eggs = 150g → 233 cal.
-        With new 58g weight, 3 eggs = 174g → round(155*1.74)=270 cal."""
+    def test_three_eggs_uses_50g_weight(self):
         m = calculate_ingredient_macros("3 eggs")
-        assert m is not None
-        assert m["calories"] == 270, (
-            f"expected 270 cal (58g × 3), got {m['calories']}. "
-            f"If this is 233, egg weight regressed to 50g."
-        )
+        assert m["calories"] == 232
 
 
 # ===========================================================================
 # 2. _extract_portion_grams for eggs — used for plausibility bounds
 # ===========================================================================
 class TestExtractPortionGramsEggs:
-    """`_extract_portion_grams` uses regex `\\d+\\s*(egg|eggs|...)` which requires
-    the number immediately followed by the unit word. It does NOT parse the
-    'large' modifier — that's pre-existing behavior (the sanitizer flow always
-    passes explicit grams like '2 large eggs (116g)' which matches the first
-    regex branch). Fix 5 only changed the per-unit value from 50 → 58."""
-
-    def test_four_eggs_returns_232g(self):
-        g = _extract_portion_grams("4 eggs", "eggs")
-        assert g == 232.0, f"expected 232.0 (4 × 58), got {g}"
-
-    def test_one_egg_returns_58g(self):
-        g = _extract_portion_grams("1 egg", "egg")
-        assert g == 58.0, f"expected 58.0, got {g}"
-
-    def test_two_eggs_returns_116g(self):
-        """The clean review-request scenario, using a spelling the regex parses."""
-        g = _extract_portion_grams("2 eggs", "eggs")
-        assert g == 116.0, f"expected 116.0 (2 × 58), got {g}"
+    def test_counts_use_50g(self):
+        assert _extract_portion_grams("4 eggs", "eggs") == 200.0
+        assert _extract_portion_grams("1 egg", "egg") == 50.0
+        assert _extract_portion_grams("3 eggs", "eggs") == 150.0
 
     def test_explicit_grams_serving_still_wins(self):
-        """When the string carries explicit grams (as the meal-plan pipeline does
-        for 'N large eggs (Xg)'), the explicit-g branch is used. Verifies that
-        the 'large' modifier not being parsed doesn't break the sanitizer flow."""
-        g = _extract_portion_grams("2 large eggs (116g)", "eggs")
-        assert g == 116.0
-
-    def test_regression_guard_uses_58_not_50(self):
-        """With old 50g weight, 3 eggs = 150g. With new 58g weight, 3 eggs = 174g."""
-        g = _extract_portion_grams("3 eggs", "eggs")
-        assert g == 174.0, (
-            f"expected 174.0 (3 × 58), got {g}. "
-            f"If this is 150.0, per_unit['eggs'] regressed to 50."
-        )
+        assert _extract_portion_grams("2 large eggs (116g)", "eggs") == 116.0
 
 
 # ===========================================================================
-# 3. Meal-plan prompt source assertions — presence of new values, absence of old
+# 3. Meal-plan prompt source assertions
 # ===========================================================================
 class TestMealPlanPromptStrings:
-    """The old hand-written MACRO REFERENCE prompt block was replaced by a food
-    list generated from INGREDIENT_MACROS, so the AI sees the same egg values
-    the code uses (155/13/1.1/11 per 100g; one large egg = 58g)."""
+    """The prompt's food list is generated from INGREDIENT_MACROS, so the AI sees
+    the same egg values the code uses (155/13/1.1/11 per 100g; one large egg = 50g)."""
 
     def test_prompt_food_list_uses_database_egg_values(self):
         import server
         from nutrition_engine import FoodRules
         assert "eggs 155/13/1.1/11" in server._food_list_text(FoodRules([], [], "balanced"))
 
-    def test_grams_only_rule_converts_eggs_at_58g(self):
+    def test_grams_only_rule_converts_eggs_at_50g(self):
         import server
-        assert "2 eggs -> 116g eggs" in server._INGREDIENT_RULES
+        assert "2 eggs -> 100g eggs" in server._INGREDIENT_RULES
 
 
 # ===========================================================================

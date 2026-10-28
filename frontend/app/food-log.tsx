@@ -24,6 +24,7 @@ import api from '../src/services/api';
 import usePremium from '../src/hooks/usePremium';
 import SnapItemsList, { SnapItem } from '../src/components/SnapItemsList';
 import { localDateString } from '../src/utils/date';
+import { phoneCountry } from '../src/utils/country';
 
 // ── Raw-weight annotation (Fix 5) ────────────────────────────────────
 // Package labels the user photographs are ALWAYS raw / dry. So a logged
@@ -60,6 +61,8 @@ interface SearchResult {
   is_ai_estimate?: boolean;
   verified?: boolean;
   from_database?: boolean;   // worked out from the food database (same numbers everywhere)
+  lookup?: 'database' | 'open_food_facts' | 'web' | 'ai_estimate' | 'none';   // where the numbers came from
+  web_not_found?: boolean;
   source?: string;
   source_url?: string;
   confidence?: 'high' | 'medium' | 'low';
@@ -372,7 +375,7 @@ export default function FoodLog() {
     setSearchResults([]);
     setAiResult(null);
     try {
-      const response = await api.get(`/food/search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}`);
+      const response = await api.get(`/food/search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}&country=${phoneCountry()}`);
       if (latestSearch.current !== q) return;   // a newer search has started
       setSearchResults(response.data);
     } catch (error) {
@@ -399,7 +402,7 @@ export default function FoodLog() {
     if (!searchQuery.trim() || !profile?.id) return;
     setAiSearching(true);
     try {
-      const response = await api.get(`/food/ai-search?query=${encodeURIComponent(searchQuery)}&user_id=${encodeURIComponent(profile?.id || '')}`);
+      const response = await api.get(`/food/ai-search?query=${encodeURIComponent(searchQuery)}&user_id=${encodeURIComponent(profile?.id || '')}&country=${phoneCountry()}`);
       setAiResult(response.data);
       setAiResultExpanded(false);
     } catch (error) {
@@ -412,12 +415,12 @@ export default function FoodLog() {
   const [webSearching, setWebSearching] = useState(false);
 
   const searchWithWeb = async () => {
-    const q = (aiResult?.name || searchQuery).trim();
+    const q = searchQuery.trim();
     if (!q) return;
     setWebSearching(true);
     try {
-      const response = await api.get(`/food/web-search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}`);
-      if (response.data && response.data.calories > 0 && response.data.verified) {
+      const response = await api.get(`/food/web-search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}&country=${phoneCountry()}`);
+      if (response.data && response.data.calories > 0 && response.data.verified && !response.data.web_not_found) {
         setAiResult(response.data);
         setAiResultExpanded(false);
       } else {
@@ -1192,7 +1195,7 @@ export default function FoodLog() {
                 ) : (
                   <>
                     <Ionicons name="sparkles" size={16} color={colors.primary} />
-                    <Text style={styles.aiSearchInlineBtnText}>Not quite right? Search with AI</Text>
+                    <Text style={styles.aiSearchInlineBtnText}>Not quite right? Find an exact match</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -1213,7 +1216,7 @@ export default function FoodLog() {
                   ) : (
                     <>
                       <Ionicons name="sparkles" size={18} color={colors.background} />
-                      <Text style={styles.aiSearchBtnText}>Search with AI</Text>
+                      <Text style={styles.aiSearchBtnText}>Find it (products & web)</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -1245,13 +1248,16 @@ export default function FoodLog() {
                         <Text style={styles.resultName}>{aiResult.name}</Text>
                         <View style={[
                           styles.aiEstimateBadge,
-                          aiResult.verified || aiResult.from_database ? styles.aiEstimateBadgeHigh : styles.aiEstimateBadgeMedium,
+                          aiResult.lookup === 'ai_estimate' || aiResult.lookup === 'none' ? styles.aiEstimateBadgeMedium : styles.aiEstimateBadgeHigh,
                         ]}>
                           <Text style={[
                             styles.aiEstimateBadgeText,
-                            aiResult.verified || aiResult.from_database ? styles.aiEstimateBadgeTextHigh : styles.aiEstimateBadgeTextMedium,
+                            aiResult.lookup === 'ai_estimate' || aiResult.lookup === 'none' ? styles.aiEstimateBadgeTextMedium : styles.aiEstimateBadgeTextHigh,
                           ]}>
-                            {aiResult.from_database ? '✓ Food database' : aiResult.verified ? '✓ Verified · web' : 'AI Estimate'}
+                            {aiResult.from_database ? '✓ Food database'
+                              : aiResult.lookup === 'open_food_facts' ? '✓ Verified · Open Food Facts'
+                              : aiResult.lookup === 'none' ? 'Not found'
+                              : aiResult.verified ? '✓ Verified · web' : 'AI Estimate'}
                           </Text>
                         </View>
                       </View>
@@ -1293,7 +1299,7 @@ export default function FoodLog() {
                     />
                   </TouchableOpacity>
 
-                  {!aiResult.verified && !aiResult.from_database && (
+                  {aiResult.lookup === 'ai_estimate' && (
                     <TouchableOpacity
                       style={styles.verifyWebBtn}
                       onPress={searchWithWeb}

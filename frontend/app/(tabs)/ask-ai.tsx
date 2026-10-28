@@ -20,6 +20,7 @@ import { useUserStore } from '../../src/store/userStore';
 import { colors } from '../../src/theme/colors';
 import api from '../../src/services/api';
 import usePremium from '../../src/hooks/usePremium';
+import { phoneCountry } from '../../src/utils/country';
 
 interface Message {
   id: string;
@@ -157,6 +158,7 @@ export default function AskAIScreen() {
       const response = await api.post('/chat', {
         user_id: profile.id,
         message: userMessage,
+        country: phoneCountry(),   // matches foods the food log has looked up
       });
 
       // Replace temp message with actual and add AI response

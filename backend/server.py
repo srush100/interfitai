@@ -218,8 +218,9 @@ EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 USDA_API_KEY = os.environ.get("USDA_API_KEY", "DEMO_KEY")
 USDA_API_BASE = "https://api.nal.usda.gov/fdc/v1"
 
-async def search_usda(query: str, max_results: int = 50):
-    """Search USDA FoodData Central database (free, no IP restrictions)"""
+async def search_usda(query: str, max_results: int = 50, branded: bool = True):
+    """Search USDA FoodData Central database (free, no IP restrictions).
+    branded=False leaves out USDA's brand list, which only has US products."""
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
@@ -228,7 +229,7 @@ async def search_usda(query: str, max_results: int = 50):
                     "api_key": USDA_API_KEY,
                     "query": query,
                     "pageSize": max_results,
-                    "dataType": ["Branded", "Foundation", "SR Legacy"]
+                    "dataType": (["Branded"] if branded else []) + ["Foundation", "SR Legacy"]
                 },
                 timeout=10.0
             )
@@ -3728,6 +3729,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     user_id: str
     message: str
+    country: Optional[str] = None   # phone region, e.g. "AU" — matches saved food lookups
 
 # Step Tracking Models
 class StepEntry(BaseModel):
@@ -5722,6 +5724,7 @@ from nutrition_engine import (  # noqa: E402
     food_matches,
     calculate_meal_text, meal_summary,
 )
+import food_lookup as FoodLookup  # noqa: E402
 from meal_templates import TEMPLATES_BY_STYLE  # noqa: E402
 
 MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"]
@@ -5826,9 +5829,9 @@ def _prohibitions_text(allergies, foods_to_avoid) -> str:
 
 _INGREDIENT_RULES = """INGREDIENT RULES (critical):
 - Every ingredient is an object {"food": "<exact name from FOOD LIST>", "grams": <number>}.
-- GRAMS ONLY. Never cups, ml, scoops, slices or counts: 2 eggs -> 116g eggs, a scoop of whey -> 30g whey protein,
+- GRAMS ONLY. Never cups, ml, scoops, slices or counts: 2 eggs -> 100g eggs, a scoop of whey -> 30g whey protein,
   15ml honey -> 21g honey, 2 rice cakes -> 18g rice cakes.
-- Whole-unit foods in whole units' weight: eggs 58g each, bread 30g per slice, wraps 60g, rice cakes 9g.
+- Whole-unit foods in whole units' weight: eggs 50g each, bread 30g per slice, wraps 60g, rice cakes 9g.
 - Meat, fish, rice, pasta, grains and legumes are COOKED weights. Oats are DRY weight ("rolled oats").
 - Pick grams so the meal lands near its target using the per-100g values (kcal/protein/carbs/fat).
   Protein, carbs and fat come from EVERY food (grains, legumes, dairy and bread add protein too) —
@@ -6766,7 +6769,7 @@ WHEN NO LABEL IS VISIBLE (plated meal, restaurant plate, home cooking, produce, 
 2. List EVERY part of the meal in `items` as {"food": "<name>", "grams": <estimated grams>} — e.g. eggs, toast, the frying oil or butter, sauces, dressings, cheese. Never blend the plate into one food.
 3. `food` must be the closest name from this FOOD LIST: """ + food_list + """
    Only if nothing on the list fits, use your own name and add "per_100g": {"calories", "protein", "carbs", "fats"}.
-4. Estimate grams from what you see (a large egg ≈ 58g, a slice of sourdough ≈ 30g, a tablespoon of oil ≈ 14g). Count whole eggs and slices.
+4. Estimate grams from what you see (a large egg ≈ 50g, a slice of sourdough ≈ 30g, a tablespoon of oil ≈ 14g). Count whole eggs and slices.
 5. Set `food_name` to a short name for the whole meal, `energy_source: "derived"`, and leave `per_100g` and the top-level calories/protein/carbs/fats null — the app calculates them from the items.
 
 ═══════════════════════════════════════════════════════════════════════
@@ -7349,7 +7352,7 @@ async def delete_food_log(log_id: str):
     return {"message": "Food log deleted successfully"}
 
 @api_router.get("/food/search")
-async def search_foods(query: str, user_id: str):
+async def search_foods(query: str, user_id: str, country: str = ""):
     """Search food database - combines local database with API results for best coverage.
     Requires an active subscription (`user_id` gates the paid nutrition feature)."""
     access = await check_subscription_access(user_id)
@@ -7838,7 +7841,11 @@ async def search_foods(query: str, user_id: str):
     # A whole meal ("3 boiled eggs on 2 slices of rye") is calculated by
     # /food/ai-search from the food database; keyword matches for it are noise
     _meal = calculate_meal_text(query)
-    usda_results = [] if _meal and len(_meal["items"]) > 1 else await search_usda(query, max_results=30)
+    # USDA's brand list is US products only: outside the US, brands come from
+    # Open Food Facts / the web via /food/ai-search instead
+    _country, _ = FoodLookup.country_from(query, country)
+    usda_results = [] if _meal and len(_meal["items"]) > 1 else \
+        await search_usda(query, max_results=30, branded=_country in ("US", "INTL"))
     if usda_results:
         logger.info(f"USDA returned {len(usda_results)} results")
         api_results = usda_results
@@ -7846,6 +7853,11 @@ async def search_foods(query: str, user_id: str):
     # STEP 3: Combine results - local first (specific items), then API results
     # Avoid duplicates by checking names
     combined_results = local_results.copy()
+    # A typed meal or plain food worked out from the food database goes first —
+    # the same numbers the AI search and the chat give
+    if _meal:
+        _db = database_meal_result(query, _meal)
+        combined_results.insert(0, {**_db, "name": meal_summary(_meal)})
     local_names_lower = {food["name"].lower() for food in local_results}
     
     for api_food in api_results:
@@ -7870,6 +7882,118 @@ async def search_foods(query: str, user_id: str):
         sanitize_food_entry(_tmp, portion_g=_portion, reconcile=False)
     return combined_results[:50]
 
+# Open Food Facts country sites (others use the ISO code)
+_OFF_SITES = {"GB": "uk", "INTL": "world"}
+
+
+async def _off_lookup(query: str, country: str = ""):
+    """Packaged products from Open Food Facts (free, worldwide — Australian,
+    UK and European brands that USDA doesn't have). Only an exact product match
+    is used; restaurant chains go to the web. None when nothing matches."""
+    if FoodLookup.is_chain(query):
+        return None
+    _, rest = FoodLookup.country_from(query, country)
+    tokens = FoodLookup.food_tokens(rest)
+    if not tokens:
+        return None
+    site = _OFF_SITES.get(country, (country or "world").lower())
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            r = await client.get(
+                f"https://{site}.openfoodfacts.org/cgi/search.pl",
+                params={"search_terms": rest, "search_simple": 1, "action": "process", "json": 1,
+                        "page_size": 20,
+                        "fields": "code,product_name,brands,quantity,serving_size,serving_quantity,nutriments"},
+                headers={"User-Agent": "InterFitAI/1.0 (nutrition tracking app)"},
+            )
+        if r.status_code != 200:
+            return None
+        products = r.json().get("products") or []
+    except Exception as e:
+        logger.warning(f"Open Food Facts search failed for '{query}': {e}")
+        return None
+    for product in products:
+        if FoodLookup.off_match(product, tokens):
+            res = FoodLookup.off_result(product)
+            if res:
+                return {**res, "is_ai_estimate": False, "verified": True, "confidence": "high"}
+    return None
+
+
+_food_lookup_index_ready = False
+
+
+async def lookup_food(query: str, country: str = "", force_web: bool = False) -> dict:
+    """One answer per food, the same every time, in the food log and the chat:
+    1. the food database (USDA values) — everyday foods and typed meals
+    2. the saved answer for this food in this country (any word order/spelling)
+    3. Open Food Facts — packaged products
+    4. a web search — brands and restaurants, for the user's country
+    5. an AI estimate — only when nothing else finds it
+    New answers are saved for everyone. Web/product answers are re-checked
+    after a year; an AI estimate is retried against real sources after a week,
+    and a verified answer is never replaced by an estimate."""
+    global _food_lookup_index_ready
+    query = (query or "").strip()
+    calc = calculate_meal_text(query)
+    if calc:
+        return database_meal_result(query, calc)
+    key, tokens, cc = FoodLookup.lookup_key(query, country)
+    if not tokens:
+        raise HTTPException(status_code=400, detail={"error": "empty_query", "message": "Type a food to search."})
+    if not _food_lookup_index_ready:
+        try:
+            await db.food_lookups.create_index("key", unique=True)
+            _food_lookup_index_ready = True
+        except Exception as e:
+            logger.warning(f"food_lookups index: {e}")
+    saved = await db.food_lookups.find_one({"key": key})
+    if saved and not force_web and FoodLookup.is_fresh(saved):
+        return {**saved["result"], "saved": True}
+
+    steps = [("web", _web_lookup)] if force_web else \
+        [("open_food_facts", _off_lookup), ("web", _web_lookup), ("ai_estimate", _ai_estimate)]
+    for kind, find in steps:
+        if kind == "ai_estimate" and saved:
+            break   # keep the saved answer rather than a new guess
+        res = await find(query, cc)
+        if res:
+            res = {**res, "lookup": kind, "country": cc}
+            await db.food_lookups.update_one(
+                {"key": key},
+                {"$set": {"key": key, "tokens": tokens, "country": cc, "query": query, "kind": kind,
+                          "result": res, "updated_at": datetime.utcnow()}},
+                upsert=True)
+            return {**res, "saved": False}
+    if saved:   # a re-check found nothing new: the saved answer stands
+        return {**saved["result"], "saved": True, "web_not_found": force_web}
+    return {
+        "name": query[:1].upper() + query[1:], "calories": 0, "protein": 0, "carbs": 0, "fats": 0,
+        "serving_size": "", "is_ai_estimate": True, "verified": False, "lookup": "none", "country": cc,
+        "source": "Couldn't find this food — please add it manually", "source_url": "", "confidence": "low",
+        "web_not_found": force_web,
+    }
+
+
+async def saved_foods_in(message: str, country: str = "", limit: int = 3) -> list:
+    """Saved foods named in a chat message (for the user's country), most
+    specific first: 'is a large McDonald's thick shake ok?' → that shake."""
+    words = set(FoodLookup.food_tokens(message))
+    cc, _ = FoodLookup.country_from(message, country)
+    if not words:
+        return []
+    found = await db.food_lookups.find({
+        "country": cc, "tokens.0": {"$exists": True},
+        "tokens": {"$not": {"$elemMatch": {"$nin": sorted(words)}}},
+    }).to_list(50)
+    found.sort(key=lambda d: len(d["tokens"]), reverse=True)
+    picked = []
+    for d in found:
+        if not any(set(d["tokens"]) <= set(p["tokens"]) for p in picked):
+            picked.append(d)
+    return picked[:limit]
+
+
 def database_meal_result(query: str, calc: dict) -> dict:
     """A typed meal worked out from the food database (USDA values), shaped
     like an AI search result. Same numbers as Snap and the chat coach."""
@@ -7891,6 +8015,7 @@ def database_meal_result(query: str, calc: dict) -> dict:
         "is_ai_estimate": False,
         "from_database":  True,
         "verified":       False,
+        "lookup":         "database",
         "source":         "InterFitAI food database (USDA values)",
         "source_url":     "",
         "confidence":     "high",
@@ -7898,19 +8023,21 @@ def database_meal_result(query: str, calc: dict) -> dict:
 
 
 @api_router.get("/food/ai-search")
-async def ai_food_search(query: str, user_id: str):
-    """Return accurate nutrition for any food (generic, branded, or restaurant)
-    via Claude Sonnet — the same reliable path the rest of the app uses.
+async def ai_food_search(query: str, user_id: str, country: str = ""):
+    """Nutrition for any food — one answer per food, the same every time and in
+    the chat (see lookup_food). `country` is the phone's region, e.g. 'AU'.
     Requires an active subscription (paid nutrition feature)."""
     access = await check_subscription_access(user_id)
     if not access.get("has_access"):
         raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
                                                      "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
-    import re as _re
+    return await lookup_food(query, country)
 
-    calc = calculate_meal_text(query)
-    if calc:
-        return database_meal_result(query, calc)
+
+async def _ai_estimate(query: str, country: str = ""):
+    """The AI's own estimate, without the web. Only used when the food database,
+    Open Food Facts and the web all find nothing. None when it fails."""
+    import re as _re
 
     system_prompt = (
         "You are a precise nutrition database with deep knowledge of generic foods, "
@@ -7951,7 +8078,8 @@ async def ai_food_search(query: str, user_id: str):
         try:
             raw = await call_claude_sonnet(
                 system_message=system_prompt,
-                user_message=f"Nutrition for: {query}",
+                user_message=f"Nutrition for: {query}" + (
+                    f" (as sold in {FoodLookup.COUNTRY_NAMES[country]})" if country in FoodLookup.COUNTRY_NAMES else ""),
                 temperature=0.2 if attempt == 0 else 0.0,
                 max_tokens=500,
             )
@@ -7963,15 +8091,9 @@ async def ai_food_search(query: str, user_id: str):
         except Exception as e:
             logger.warning(f"AI food search attempt {attempt + 1} failed for '{query}': {e}")
 
-    if not data:
-        data = {
-            "food_name": query.title(),
-            "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0,
-            "serving_size": "unknown",
-            "source": "Could not retrieve data — please add manually",
-            "confidence": "low",
-        }
-    else:
+    if not data or _all_zero(data):
+        return None
+    if data:
         # Nutrition-accuracy guard — reconcile calories with macros (Fix 1),
         # log any physical-plausibility or reference-table divergences (Fix 2/4).
         _tmp = {
@@ -8006,24 +8128,27 @@ async def ai_food_search(query: str, user_id: str):
 
 
 @api_router.get("/food/web-search")
-async def web_food_search(query: str, user_id: str):
-    """Live, web-grounded nutrition lookup: Tavily search -> Haiku extraction.
-    Returns real, sourced macros for branded/regional items. Opt-in (costs a
-    Tavily search), so only called when the user taps 'Verify on the web'.
+async def web_food_search(query: str, user_id: str, country: str = ""):
+    """'Verify on the web' for an AI estimate: searches the web now and, when it
+    finds real figures, saves them for everyone in place of the estimate.
     Requires an active subscription (paid nutrition feature)."""
     access = await check_subscription_access(user_id)
     if not access.get("has_access"):
         raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
                                                      "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
+    return await lookup_food(query, country, force_web=True)
+
+
+async def _web_lookup(query: str, country: str = ""):
+    """Live, web-grounded nutrition: Tavily search -> Haiku extraction. Real,
+    sourced macros for branded/restaurant items, for the user's country.
+    None when the web has nothing reliable."""
     import re as _re
     from urllib.parse import urlparse
 
     if not TAVILY_API_KEY:
-        return {
-            "name": query.title(), "calories": 0, "protein": 0, "carbs": 0, "fats": 0,
-            "is_ai_estimate": True, "verified": False,
-            "source": "Web search not configured", "source_url": "", "confidence": "low",
-        }
+        return None
+    where = FoodLookup.COUNTRY_NAMES.get(country, "")
 
     # 1. Tavily web search
     search_content, source_url = "", ""
@@ -8033,7 +8158,7 @@ async def web_food_search(query: str, user_id: str):
                 "https://api.tavily.com/search",
                 json={
                     "api_key": TAVILY_API_KEY,
-                    "query": f"{query} nutrition facts calories protein carbs fat per serving",
+                    "query": f"{query} {'in ' + where + ' ' if where else ''}nutrition facts calories protein carbs fat per serving",
                     "search_depth": "basic",
                     "max_results": 5,
                     "include_answer": True,
@@ -8058,7 +8183,7 @@ async def web_food_search(query: str, user_id: str):
         system_prompt = (
             "You are a nutrition data extractor. Using ONLY the web search results "
             "provided, extract nutrition for ONE standard serving of the requested food. "
-            "Prefer official brand/restaurant figures. If results give a specific size/serving "
+            "Prefer official brand/restaurant figures for the country named (if any). If results give a specific size/serving "
             "(e.g. 'large'), use that. Convert kilojoules to calories if needed (1 kcal = 4.184 kJ). "
             "Respond with ONLY this JSON:\n"
             '{"food_name":"<name>","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,'
@@ -8068,7 +8193,8 @@ async def web_food_search(query: str, user_id: str):
         try:
             raw = await call_claude_haiku(
                 system_message=system_prompt,
-                user_message=f"Food: {query}\n\nWeb search results:\n{search_content}",
+                user_message=f"Food: {query}" + (f" (in {where})" if where else "") +
+                             f"\n\nWeb search results:\n{search_content}",
                 temperature=0.0,
                 max_tokens=400,
             )
@@ -8111,17 +8237,13 @@ async def web_food_search(query: str, user_id: str):
             "serving_size":   serving_size,
             "serving_g":      serving_g,
             "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
-            "is_ai_estimate": True,
+            "is_ai_estimate": False,
             "verified":       True,
             "source":         domain,
             "source_url":     source_url,
             "confidence":     "high",
         }
-    return {
-        "name": query.title(), "calories": 0, "protein": 0, "carbs": 0, "fats": 0,
-        "is_ai_estimate": True, "verified": False,
-        "source": "No reliable web source found", "source_url": "", "confidence": "low",
-    }
+    return None
 
 # ==================== GROCERY LIST ENDPOINTS ====================
 
@@ -8318,6 +8440,20 @@ async def chat_with_ai(request: ChatRequest):
         messages[0]["content"] += (
             "\n\nFOOD DATABASE RESULT for the food in the user's message. The app's food log "
             "shows exactly these numbers — use them, do not estimate your own:\n" + "\n".join(lines))
+    else:
+        # Foods the food log has already looked up (brands, restaurants…)
+        saved = await saved_foods_in(message, request.country or "")
+        if saved:
+            lines = []
+            for d in saved:
+                r = d["result"]
+                src = "verified on the web" if r.get("verified") else "estimate"
+                lines.append(f"- {r.get('name')} ({r.get('serving_size') or 'per serving'}): {r.get('calories')} kcal, "
+                             f"{r.get('protein')}g protein, {r.get('carbs')}g carbs, {r.get('fats')}g fat "
+                             f"[{r.get('source') or src}]")
+            messages[0]["content"] += (
+                "\n\nFOOD LOG RESULTS for foods in the user's message. The app's food log shows exactly "
+                "these numbers — use them, do not estimate your own:\n" + "\n".join(lines))
 
     # Add current message
     messages.append({"role": "user", "content": message})
