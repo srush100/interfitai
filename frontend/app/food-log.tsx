@@ -24,6 +24,7 @@ import api from '../src/services/api';
 import usePremium from '../src/hooks/usePremium';
 import SnapItemsList, { SnapItem } from '../src/components/SnapItemsList';
 import { localDateString } from '../src/utils/date';
+import { phoneCountry } from '../src/utils/country';
 
 // ── Raw-weight annotation (Fix 5) ────────────────────────────────────
 // Package labels the user photographs are ALWAYS raw / dry. So a logged
@@ -59,6 +60,9 @@ interface SearchResult {
   fats: number;
   is_ai_estimate?: boolean;
   verified?: boolean;
+  from_database?: boolean;   // worked out from the food database (same numbers everywhere)
+  lookup?: 'database' | 'open_food_facts' | 'web' | 'ai_estimate' | 'none';   // where the numbers came from
+  web_not_found?: boolean;
   source?: string;
   source_url?: string;
   confidence?: 'high' | 'medium' | 'low';
@@ -371,7 +375,7 @@ export default function FoodLog() {
     setSearchResults([]);
     setAiResult(null);
     try {
-      const response = await api.get(`/food/search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}`);
+      const response = await api.get(`/food/search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}&country=${phoneCountry()}`);
       if (latestSearch.current !== q) return;   // a newer search has started
       setSearchResults(response.data);
     } catch (error) {
@@ -398,7 +402,7 @@ export default function FoodLog() {
     if (!searchQuery.trim() || !profile?.id) return;
     setAiSearching(true);
     try {
-      const response = await api.get(`/food/ai-search?query=${encodeURIComponent(searchQuery)}&user_id=${encodeURIComponent(profile?.id || '')}`);
+      const response = await api.get(`/food/ai-search?query=${encodeURIComponent(searchQuery)}&user_id=${encodeURIComponent(profile?.id || '')}&country=${phoneCountry()}`);
       setAiResult(response.data);
       setAiResultExpanded(false);
     } catch (error) {
@@ -411,12 +415,12 @@ export default function FoodLog() {
   const [webSearching, setWebSearching] = useState(false);
 
   const searchWithWeb = async () => {
-    const q = (aiResult?.name || searchQuery).trim();
+    const q = searchQuery.trim();
     if (!q) return;
     setWebSearching(true);
     try {
-      const response = await api.get(`/food/web-search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}`);
-      if (response.data && response.data.calories > 0 && response.data.verified) {
+      const response = await api.get(`/food/web-search?query=${encodeURIComponent(q)}&user_id=${encodeURIComponent(profile?.id || '')}&country=${phoneCountry()}`);
+      if (response.data && response.data.calories > 0 && response.data.verified && !response.data.web_not_found) {
         setAiResult(response.data);
         setAiResultExpanded(false);
       } else {
@@ -580,6 +584,11 @@ export default function FoodLog() {
             { text: 'Enter Manually', onPress: () => { setActiveTab('manual'); setPhotoResult(null); } },
           ],
         );
+      } else if (detail && typeof detail === 'object' && detail.error === 'daily_limit') {
+        Alert.alert('Daily photo limit reached', detail.message, [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Search instead', onPress: () => { setActiveTab('search'); setPhotoResult(null); } },
+        ]);
       } else {
         Alert.alert('Error', (typeof detail === 'string' && detail) || detail?.message || 'Failed to analyze food');
       }
@@ -1074,6 +1083,156 @@ export default function FoodLog() {
               </View>
             )}
 
+            {/* Lookup result card (food database / product / web / estimate): top, above the list */}
+            {!searching && aiResult && (
+              <View style={styles.resultsContainer}>
+                <View style={[styles.resultItem, aiResultExpanded && styles.resultItemExpanded]}>
+                  <TouchableOpacity
+                    style={styles.resultContent}
+                    onPress={() => {
+                      setAiResultExpanded(e => !e);
+                      setSearchQty(1);
+                      setCustomAmount('');
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.resultInfo}>
+                      {/* Name + confidence badge */}
+                      <View style={styles.aiResultNameRow}>
+                        <Text style={styles.resultName}>{aiResult.name}</Text>
+                        <View style={[
+                          styles.aiEstimateBadge,
+                          aiResult.lookup === 'ai_estimate' || aiResult.lookup === 'none' ? styles.aiEstimateBadgeMedium : styles.aiEstimateBadgeHigh,
+                        ]}>
+                          <Text style={[
+                            styles.aiEstimateBadgeText,
+                            aiResult.lookup === 'ai_estimate' || aiResult.lookup === 'none' ? styles.aiEstimateBadgeTextMedium : styles.aiEstimateBadgeTextHigh,
+                          ]}>
+                            {aiResult.from_database ? '✓ Food database'
+                              : aiResult.lookup === 'open_food_facts' ? '✓ Verified · Open Food Facts'
+                              : aiResult.lookup === 'none' ? 'Not found'
+                              : aiResult.verified ? '✓ Verified · web' : 'AI Estimate'}
+                          </Text>
+                        </View>
+                      </View>
+                      {/* Source line — tappable when web-verified */}
+                      {!!aiResult.source && (
+                        aiResult.source_url ? (
+                          <TouchableOpacity onPress={() => Linking.openURL(aiResult.source_url!)}>
+                            <Text style={styles.aiSourceLink} numberOfLines={1}>
+                              Source: {aiResult.source} ↗
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <Text style={styles.aiSourceText} numberOfLines={1}>
+                            Source: {aiResult.source}
+                          </Text>
+                        )
+                      )}
+                      <Text style={styles.resultMacros}>
+                        {aiResultExpanded
+                          ? (() => { const s = getScaledMacros(aiResult, searchQty, customAmount); return `${s.calories} cal • ${s.protein}g P • ${s.carbs}g C • ${s.fats}g F`; })()
+                          : `${aiResult.calories} cal • ${aiResult.protein}g P • ${aiResult.carbs}g C • ${aiResult.fats}g F`}
+                      </Text>
+                      {!!aiResult.serving_size && aiResult.serving_size !== 'unknown' && (
+                        <Text style={styles.aiSourceText} numberOfLines={1}>
+                          Per {aiResult.serving_size}
+                        </Text>
+                      )}
+                      {/* Low-confidence warning */}
+                      {aiResult.confidence === 'low' && (
+                        <Text style={styles.aiLowConfidenceWarning}>
+                          ⚠ Macros are approximate — verify if tracking strictly
+                        </Text>
+                      )}
+                    </View>
+                    <Ionicons
+                      name={aiResultExpanded ? 'chevron-up' : 'add-circle'}
+                      size={26}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+
+                  {aiResult.lookup === 'ai_estimate' && (
+                    <TouchableOpacity
+                      style={styles.verifyWebBtn}
+                      onPress={searchWithWeb}
+                      disabled={webSearching}
+                    >
+                      {webSearching ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <>
+                          <Ionicons name="globe-outline" size={15} color={colors.primary} />
+                          <Text style={styles.verifyWebBtnText}>Verify on the web</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  {aiResultExpanded && (
+                    <>
+                      <View style={styles.inlineQtyRow}>
+                        <View style={styles.inlineQtyControls}>
+                          <TouchableOpacity
+                            style={[styles.inlineQtyBtn, searchQty <= 1 && styles.inlineQtyBtnDisabled]}
+                            onPress={() => { setSearchQty(q => Math.max(1, q - 1)); setCustomAmount(''); }}
+                            disabled={searchQty <= 1}
+                          >
+                            <Ionicons name="remove" size={18} color={searchQty <= 1 ? colors.textSecondary : colors.text} />
+                          </TouchableOpacity>
+                          <Text style={styles.inlineQtyValue}>{searchQty}</Text>
+                          <TouchableOpacity
+                            style={[styles.inlineQtyBtn, searchQty >= 10 && styles.inlineQtyBtnDisabled]}
+                            onPress={() => { setSearchQty(q => Math.min(10, q + 1)); setCustomAmount(''); }}
+                            disabled={searchQty >= 10}
+                          >
+                            <Ionicons name="add" size={18} color={searchQty >= 10 ? colors.textSecondary : colors.text} />
+                          </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.inlineAddBtn}
+                          onPress={() => logFoodWithCustom(aiResult, searchQty, customAmount)}
+                        >
+                          <Text style={styles.inlineAddBtnText}>
+                            Add {parseAmount(customAmount) > 0 ? `(${getScaledMacros(aiResult, searchQty, customAmount).label})` : searchQty > 1 ? `×${searchQty}` : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.customAmountRow}>
+                        <Text style={styles.customAmountLabel}>{customAmountLabel(aiResult)}</Text>
+                        <TextInput
+                          style={styles.customAmountInput}
+                          placeholder={servingBase(aiResult) ? 'e.g. 150' : 'e.g. 1.5'}
+                          placeholderTextColor={colors.textMuted}
+                          value={customAmount}
+                          onChangeText={setCustomAmount}
+                          keyboardType="decimal-pad"
+                        />
+                      </View>
+                    </>
+                  )}
+                </View>
+              </View>
+            )}
+            {/* Above the list, not under 50 results: products & web lookup */}
+            {!searching && searchResults.length > 0 && !aiResult && (
+              <TouchableOpacity
+                style={styles.aiSearchInlineBtn}
+                onPress={searchWithAI}
+                disabled={aiSearching}
+              >
+                {aiSearching ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="sparkles" size={16} color={colors.primary} />
+                    <Text style={styles.aiSearchInlineBtnText}>{'Can\u2019t see it? Find an exact match'}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
             {/* Regular search results */}
             {!searching && searchResults.length > 0 && (
               <View style={styles.resultsContainer}>
@@ -1179,24 +1338,6 @@ export default function FoodLog() {
               </View>
             )}
 
-            {/* Offer AI search alongside database results */}
-            {!searching && searchResults.length > 0 && !aiResult && (
-              <TouchableOpacity
-                style={styles.aiSearchInlineBtn}
-                onPress={searchWithAI}
-                disabled={aiSearching}
-              >
-                {aiSearching ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <>
-                    <Ionicons name="sparkles" size={16} color={colors.primary} />
-                    <Text style={styles.aiSearchInlineBtnText}>Not quite right? Search with AI</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
             {/* Empty state + AI fallback */}
             {!searching && searchQuery.trim() !== '' && searchResults.length === 0 && !aiResult && (
               <View style={styles.emptySearchState}>
@@ -1212,7 +1353,7 @@ export default function FoodLog() {
                   ) : (
                     <>
                       <Ionicons name="sparkles" size={18} color={colors.background} />
-                      <Text style={styles.aiSearchBtnText}>Search with AI</Text>
+                      <Text style={styles.aiSearchBtnText}>Find it (products & web)</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -1225,135 +1366,6 @@ export default function FoodLog() {
               </View>
             )}
 
-            {/* AI estimate result card */}
-            {!searching && aiResult && (
-              <View style={styles.resultsContainer}>
-                <View style={[styles.resultItem, aiResultExpanded && styles.resultItemExpanded]}>
-                  <TouchableOpacity
-                    style={styles.resultContent}
-                    onPress={() => {
-                      setAiResultExpanded(e => !e);
-                      setSearchQty(1);
-                      setCustomAmount('');
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.resultInfo}>
-                      {/* Name + confidence badge */}
-                      <View style={styles.aiResultNameRow}>
-                        <Text style={styles.resultName}>{aiResult.name}</Text>
-                        <View style={[
-                          styles.aiEstimateBadge,
-                          aiResult.verified ? styles.aiEstimateBadgeHigh : styles.aiEstimateBadgeMedium,
-                        ]}>
-                          <Text style={[
-                            styles.aiEstimateBadgeText,
-                            aiResult.verified ? styles.aiEstimateBadgeTextHigh : styles.aiEstimateBadgeTextMedium,
-                          ]}>
-                            {aiResult.verified ? '✓ Verified · web' : 'AI Estimate'}
-                          </Text>
-                        </View>
-                      </View>
-                      {/* Source line — tappable when web-verified */}
-                      {!!aiResult.source && (
-                        aiResult.source_url ? (
-                          <TouchableOpacity onPress={() => Linking.openURL(aiResult.source_url!)}>
-                            <Text style={styles.aiSourceLink} numberOfLines={1}>
-                              Source: {aiResult.source} ↗
-                            </Text>
-                          </TouchableOpacity>
-                        ) : (
-                          <Text style={styles.aiSourceText} numberOfLines={1}>
-                            Source: {aiResult.source}
-                          </Text>
-                        )
-                      )}
-                      <Text style={styles.resultMacros}>
-                        {aiResultExpanded
-                          ? (() => { const s = getScaledMacros(aiResult, searchQty, customAmount); return `${s.calories} cal • ${s.protein}g P • ${s.carbs}g C • ${s.fats}g F`; })()
-                          : `${aiResult.calories} cal • ${aiResult.protein}g P • ${aiResult.carbs}g C • ${aiResult.fats}g F`}
-                      </Text>
-                      {!!aiResult.serving_size && aiResult.serving_size !== 'unknown' && (
-                        <Text style={styles.aiSourceText} numberOfLines={1}>
-                          Per {aiResult.serving_size}
-                        </Text>
-                      )}
-                      {/* Low-confidence warning */}
-                      {aiResult.confidence === 'low' && (
-                        <Text style={styles.aiLowConfidenceWarning}>
-                          ⚠ Macros are approximate — verify if tracking strictly
-                        </Text>
-                      )}
-                    </View>
-                    <Ionicons
-                      name={aiResultExpanded ? 'chevron-up' : 'add-circle'}
-                      size={26}
-                      color={colors.primary}
-                    />
-                  </TouchableOpacity>
-
-                  {!aiResult.verified && (
-                    <TouchableOpacity
-                      style={styles.verifyWebBtn}
-                      onPress={searchWithWeb}
-                      disabled={webSearching}
-                    >
-                      {webSearching ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
-                      ) : (
-                        <>
-                          <Ionicons name="globe-outline" size={15} color={colors.primary} />
-                          <Text style={styles.verifyWebBtnText}>Verify on the web</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  )}
-
-                  {aiResultExpanded && (
-                    <>
-                      <View style={styles.inlineQtyRow}>
-                        <View style={styles.inlineQtyControls}>
-                          <TouchableOpacity
-                            style={[styles.inlineQtyBtn, searchQty <= 1 && styles.inlineQtyBtnDisabled]}
-                            onPress={() => { setSearchQty(q => Math.max(1, q - 1)); setCustomAmount(''); }}
-                            disabled={searchQty <= 1}
-                          >
-                            <Ionicons name="remove" size={18} color={searchQty <= 1 ? colors.textSecondary : colors.text} />
-                          </TouchableOpacity>
-                          <Text style={styles.inlineQtyValue}>{searchQty}</Text>
-                          <TouchableOpacity
-                            style={[styles.inlineQtyBtn, searchQty >= 10 && styles.inlineQtyBtnDisabled]}
-                            onPress={() => { setSearchQty(q => Math.min(10, q + 1)); setCustomAmount(''); }}
-                            disabled={searchQty >= 10}
-                          >
-                            <Ionicons name="add" size={18} color={searchQty >= 10 ? colors.textSecondary : colors.text} />
-                          </TouchableOpacity>
-                        </View>
-                        <TouchableOpacity
-                          style={styles.inlineAddBtn}
-                          onPress={() => logFoodWithCustom(aiResult, searchQty, customAmount)}
-                        >
-                          <Text style={styles.inlineAddBtnText}>
-                            Add {parseAmount(customAmount) > 0 ? `(${getScaledMacros(aiResult, searchQty, customAmount).label})` : searchQty > 1 ? `×${searchQty}` : ''}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                      <View style={styles.customAmountRow}>
-                        <Text style={styles.customAmountLabel}>{customAmountLabel(aiResult)}</Text>
-                        <TextInput
-                          style={styles.customAmountInput}
-                          placeholder={servingBase(aiResult) ? 'e.g. 150' : 'e.g. 1.5'}
-                          placeholderTextColor={colors.textMuted}
-                          value={customAmount}
-                          onChangeText={setCustomAmount}
-                          keyboardType="decimal-pad"
-                        />
-                      </View>
-                    </>
-                  )}
-                </View>
-              </View>
-            )}
           </View>
         )}
 

@@ -314,13 +314,38 @@ def test_delete_weight_entry(db):
 
 # ── macro targets: protein for higher BMI, safe calorie floor ─────────────
 @pytest.mark.parametrize("args, protein", [
-    ((130, 175, 40, "male", "sedentary", "weight_loss"), 168),
-    ((110, 165, 35, "female", "light", "weight_loss"), 150),
+    ((130, 175, 40, "male", "sedentary", "weight_loss"), 168),     # healthy-weight reference
+    ((110, 165, 35, "female", "light", "weight_loss"), 149),
     ((115, 180, 28, "male", "moderate", "muscle_building"), 162),
-    ((80, 180, 30, "male", "moderate", "weight_loss"), 176),      # BMI under 30: unchanged
+    ((80, 180, 30, "male", "moderate", "weight_loss"), 160),       # lean-mass estimate
 ])
 def test_protein_uses_healthy_weight_reference_above_bmi_30(args, protein):
     assert server.calculate_macros(*args)["protein"] == protein
+
+
+# ── protein from estimated lean mass (women get less than men, same stats) ──
+@pytest.mark.parametrize("args, protein", [
+    ((85, 178, 26, "female", "moderate", "weight_loss"), 149),     # was 187g (1g/lb)
+    ((85, 178, 26, "male", "moderate", "weight_loss"), 164),
+    ((60, 165, 28, "female", "moderate", "weight_loss"), 117),
+    ((101, 179, 27, "male", "moderate", "weight_loss"), 176),      # BMI 31.5: unchanged
+])
+def test_protein_from_estimated_lean_mass(args, protein):
+    m = server.calculate_macros(*args)
+    assert m["protein"] == protein
+    assert m["protein"] * 4 + m["carbs"] * 4 + m["fats"] * 9 == pytest.approx(m["calories"], abs=6)
+
+
+def test_protein_never_raised_and_mostly_muscle_keeps_full_weight():
+    for w, h, sex in ((50, 160, "female"), (65, 190, "male"), (150, 165, "female"), (120, 200, "male")):
+        for goal, per_kg in (("weight_loss", 2.2), ("maintenance", 1.8), ("muscle_building", 2.0)):
+            m = server.calculate_macros(w, h, 30, sex, "moderate", goal)
+            bmi = w / (h / 100) ** 2                     # healthy-weight reference over BMI 30
+            ref = min(w, 25 * (h / 100) ** 2) if bmi > 30 else w
+            assert round(ref * 1.5) <= m["protein"] <= round(ref * per_kg)
+    ruby = server.calculate_macros(85, 178, 26, "female", "moderate", "weight_loss", True)
+    assert ruby["protein"] == 187 and ruby["protein_from_lean_mass"] is False
+    assert server.calculate_macros(85, 178, 26, "female", "moderate", "weight_loss")["protein_from_lean_mass"] is True
 
 
 @pytest.mark.parametrize("args, calories, floor", [
@@ -510,3 +535,11 @@ def test_chat_rejects_huge_messages(chat_env):
     with pytest.raises(HTTPException) as e:
         _chat("x" * 5000)
     assert e.value.status_code == 400
+
+
+@pytest.mark.parametrize("label", ["Female", "FEMALE", " female ", "F", "woman"])
+def test_macros_female_spellings(label):
+    from server import calculate_macros
+    exact = calculate_macros(70, 170, 30, "female", "moderate", "weight_loss")
+    assert calculate_macros(70, 170, 30, label, "moderate", "weight_loss")["calories"] == exact["calories"]
+    assert exact["calories"] < calculate_macros(70, 170, 30, "Male", "moderate", "weight_loss")["calories"]

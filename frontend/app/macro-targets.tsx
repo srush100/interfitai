@@ -212,6 +212,13 @@ export default function MacroTargetsScreen() {
               <Text style={styles.macroNote}>Fixed</Text>
             </View>
           </View>
+          {!!macros?.protein_from_lean_mass && (
+            <Text style={[styles.macroNote, { textAlign: 'center', marginTop: 12 }]}>
+              Protein is based on your estimated muscle mass (about {macros.lean_mass_kg} kg), not your
+              total weight — enough to protect muscle. If your weight is mostly muscle, say so in your
+              profile and we'll use your full weight.
+            </Text>
+          )}
         </View>
 
         {/* Help Guide */}

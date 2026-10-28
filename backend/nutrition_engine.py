@@ -106,10 +106,10 @@ def macros_for(key: str, grams: float) -> dict:
 # ════════════════════════════════════════════════════════════════════════════
 # 2. AMOUNT PARSING — everything becomes grams
 # ════════════════════════════════════════════════════════════════════════════
-# Grams per single item (medium size unless stated). Unknown count items are
-# REJECTED instead of being guessed as 100g.
+# Grams per single item (medium size unless stated; USDA edible weights). Unknown
+# count items are REJECTED instead of being guessed as 100g.
 ITEM_WEIGHTS = {
-    "egg": 58, "eggs": 58, "whole eggs": 58, "large eggs": 58, "egg white": 33, "egg whites": 33,
+    "egg": 50, "eggs": 50, "whole eggs": 50, "large eggs": 50, "egg white": 33, "egg whites": 33,
     "banana": 120, "bananas": 120, "apple": 180, "apples": 180, "orange": 130, "oranges": 130,
     "pear": 178, "peach": 150, "nectarine": 142, "plum": 66, "apricot": 35, "kiwi": 70, "fig": 50,
     "dates": 24, "strawberry": 12, "strawberries": 12, "lime": 67, "lemon": 58,
@@ -121,8 +121,8 @@ ITEM_WEIGHTS = {
     "pork sausage": 75, "bacon": 8, "turkey bacon": 15,
     "garlic": 4, "ginger": 5, "shallot": 20, "tomato": 120, "tomatoes": 120,
     "cherry tomatoes": 17, "avocado": 150, "onion": 110, "red onion": 110,
-    "bell pepper": 120, "pepper": 120, "jalapeno": 14, "mushroom": 90, "mushrooms": 90,
-    "carrot": 80, "carrots": 80, "zucchini": 196, "potato": 180, "potatoes": 180,
+    "bell pepper": 120, "pepper": 120, "jalapeno": 14, "mushroom": 18, "mushrooms": 18,
+    "carrot": 61, "carrots": 61, "zucchini": 196, "potato": 180, "potatoes": 180,
     "sweet potato": 130, "cucumber": 300, "almonds": 1.2, "almond": 1.2, "walnuts": 4,
     "brazil nuts": 5, "olives": 4, "falafel": 17,
     "brown onion": 110, "white onion": 110, "yellow onion": 110, "spanish onion": 110,
@@ -132,9 +132,9 @@ ITEM_WEIGHTS = {
     "raw chicken breast": 200, "raw chicken thigh": 130,
 }
 # Foods bought and cooked as whole units: portions always end on whole units
-# and are shown as e.g. "2 large eggs (116g)".
+# and are shown as e.g. "2 large eggs (100g)".
 # key → (grams per unit, singular, plural); None names = "N slice(s) <label>".
-UNIT_FOODS = {k: (58, "large egg", "large eggs") for k in ("egg", "eggs", "whole eggs", "large eggs")}
+UNIT_FOODS = {k: (50, "large egg", "large eggs") for k in ("egg", "eggs", "whole eggs", "large eggs")}
 UNIT_FOODS.update({k: (30, None, None) for k in ("bread", "whole wheat bread", "sourdough bread", "rye bread",
                                                    "toast", "whole wheat toast")})
 UNIT_FOODS.update({
@@ -154,7 +154,7 @@ def unit_grams(key: str):
 
 
 _SIZE_FACTORS = {"small": 0.8, "medium": 1.0, "large": 1.25, "extra large": 1.4}
-_EGG_SIZES = {"small": 42, "medium": 50, "large": 58, "extra large": 66, "jumbo": 70}
+_EGG_SIZES = {"small": 38, "medium": 44, "large": 50, "extra large": 56, "jumbo": 63}   # USDA, without shell
 _SLICE_WEIGHTS = [({"bread", "toast", "sourdough", "rye", "ciabatta"}, 30), ({"bacon"}, 8),
                   ({"turkey", "ham"}, 28), ({"cheese", "cheddar", "mozzarella", "gouda", "brie", "halloumi"}, 20),
                   ({"tomato"}, 20), ({"avocado"}, 30), ({"pineapple"}, 80)]
@@ -187,7 +187,7 @@ def _lookup_by_tokens(key: str, table, default=None):
 
 def _item_weight(key: str, size: str = None):
     if key in ("egg", "eggs", "whole eggs", "large eggs"):
-        return _EGG_SIZES.get(size or "large", 58)
+        return _EGG_SIZES.get(size or "large", 50)
     w = ITEM_WEIGHTS.get(key)
     if w is None:
         return None
@@ -316,7 +316,7 @@ def unit_text(label: str, grams: float, key: str = None):
 
 
 def format_ingredient(label: str, grams: float, key: str = None) -> str:
-    """'245g Sweet potato', or for whole-unit foods '2 large eggs (116g)' /
+    """'245g Sweet potato', or for whole-unit foods '2 large eggs (100g)' /
     '2 slices sourdough bread (60g)'. Both forms parse back to the same grams."""
     g = round(grams, 1)
     g_txt = str(int(g)) if float(g).is_integer() else f"{g}"
@@ -1236,15 +1236,17 @@ def parse_portions(text: str) -> list:
     → [{amount 4, unit count, food eggs}, {amount 3, unit piece, food sourdough}].
     Text without an amount ('no dressing', 'grilled not fried') gives [] — it is
     a correction for the AI, never a reason to fail."""
+    return [spec for spec in map(_parse_segment, _segments(text)) if spec]
+
+
+def split_foods(text: str) -> list:
+    """'hungry jacks whopper and large chips' → ['hungry jacks whopper', 'large chips']"""
+    return [seg for seg in _segments(text) if seg.strip()]
+
+
+def _segments(text: str) -> list:
     s = _normalise_portion_text(text)
-    if not s:
-        return []
-    out = []
-    for seg in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b|\bwith\b|\balso\b)\s*", s):
-        spec = _parse_segment(seg)
-        if spec:
-            out.append(spec)
-    return out
+    return re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b|\bwith\b|\balso\b|\bon\b)\s*", s) if s else []
 
 
 # Words that describe a food rather than name it ("fried eggs", "fresh sourdough").
@@ -1312,6 +1314,10 @@ def portion_grams(spec, key=None, *, serving_g=None, unit_name=None, units_per_s
             return None
         size = next((w for w in _SIZE_WORDS if re.search(rf"\b{w}\b", food)), None)
         per = unit_grams(key) if key in UNIT_FOODS and not size else _item_weight(key, size)
+        # "220 chicken breast" is 220 grams, not 220 breasts (38.5 kg): a count
+        # of 20+ that would weigh over 2 kg was meant as a weight
+        if per and u == "count" and a >= 20 and a * per > 2000:
+            return a
     return a * per if per else None
 
 
@@ -1425,7 +1431,57 @@ def build_plate(raw_items, specs, qty: int = 1):
                 items.append(new)
     if qty and qty > 1:
         items = [_resize(i, float(i["grams"]) * qty) for i in items]
-    return [i for i in items if i], problems
+    items = [i for i in items if i]
+    if sum(float(i["grams"]) for i in items) > 3000 * max(1, qty or 1):
+        problems.append("This meal weighs over 3 kg — please check the amounts before logging.")
+    return items, problems
+
+
+def calculate_meal_text(text: str):
+    """'3 boiled eggs on 2 slices of rye' → items and totals from the food
+    database: the same numbers as Snap, meal plans and the chat coach, every
+    time. None unless every food and amount is understood."""
+    items, assumed, has_amount = [], [], False
+    text = re.sub(r"\b(?:for|at|with my)\s+(?:breakfast|brekkie|lunch|dinner|tea|supper|a snack|snack)\b",
+                  " ", (text or "").lower())
+    if not parse_portions(text):
+        # Just a food's name ("banana", "white rice"): one standard portion
+        # (one medium item, else 100g) from the database, never a web guess
+        key = resolve_food_typed(_strip_articles(_normalise_portion_text(text)))
+        g = (unit_grams(key) or _item_weight(key) or 100.0) if key else None
+        it = snap_item(_strip_articles(_normalise_portion_text(text)), g, key) if g else None
+        return {"items": [it], "assumed": [], **plate_totals([it])} if it else None
+    for seg in _segments(text):
+        spec = _parse_segment(seg)
+        if spec:
+            has_amount = True
+        else:
+            # "eggs on rye": a food with no amount is never dropped. A food
+            # counted in pieces is 1 piece (and the user is told); anything
+            # else can't be worked out here
+            food = _strip_articles(seg)
+            if not food:
+                continue
+            key = resolve_food_typed(food)
+            if not key or not (key in UNIT_FOODS or unit_grams(key)):
+                return None
+            spec = {"amount": 1.0, "unit": "count", "food": food, "text": seg}
+            assumed.append(food)
+        key = resolve_food_typed(spec["food"]) if spec["food"] else None
+        g = portion_grams(spec, key) if key else None
+        it = snap_item(spec["food"], g, key) if g else None
+        if not it:
+            return None
+        items.append(it)
+    if not items or not has_amount:
+        return None
+    return {"items": items, "assumed": assumed, **plate_totals(items)}
+
+
+def meal_summary(calc) -> str:
+    """'3 large eggs (150g) + 2 slices rye bread (60g)'"""
+    return " + ".join(f"{i['display']} ({_round_g(i['grams'])}g)" if i["display"] != i["name"]
+                      else f"{_round_g(i['grams'])}g {i['name'].lower()}" for i in calc["items"])
 
 
 def snap_item_from_text(text: str, key: str = None, name: str = None, per_100g: dict = None):

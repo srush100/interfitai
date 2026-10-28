@@ -192,6 +192,10 @@ const ConfettiBurst = ({ active }: { active: boolean }) => {
 };
 // ────────────────────────────────────────────────────────────────────────────
 
+// "full_body" → "Full Body"
+const tagLabel = (area: string) =>
+  area.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 export default function WorkoutDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
@@ -1392,12 +1396,12 @@ export default function WorkoutDetail() {
             <View style={styles.tagContainer}>
               {(workout.focus_areas || []).map((area, idx) => (
                 <View key={idx} style={styles.tag}>
-                  <Text style={styles.tagText}>{area}</Text>
+                  <Text style={styles.tagText}>{tagLabel(area)}</Text>
                 </View>
               ))}
               {(workout.secondary_focus_areas || []).map((area, idx) => (
                 <View key={`sec-${idx}`} style={[styles.tag, styles.tagSecondary]}>
-                  <Text style={styles.tagText}>{area}</Text>
+                  <Text style={styles.tagText}>{tagLabel(area)}</Text>
                 </View>
               ))}
             </View>

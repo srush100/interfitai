@@ -73,11 +73,11 @@ export default function Onboarding() {
     return { weightKg, heightCm };
   };
 
-  // Only people heavy for their height (BMI over 30) are asked whether their
+  // People heavy for their height (BMI over 25) are asked whether their
   // weight is mostly muscle — it sets how protein is calculated
-  const bmiOver30 = (() => {
+  const askMostlyMuscle = (() => {
     const { weightKg, heightCm } = convertToMetric();
-    return weightKg > 0 && heightCm > 0 && weightKg / (heightCm / 100) ** 2 > 30;
+    return weightKg > 0 && heightCm > 0 && weightKg / (heightCm / 100) ** 2 > 25;
   })();
 
   const handleNext = () => {
@@ -133,7 +133,7 @@ export default function Onboarding() {
         gender: formData.gender,
         activity_level: formData.activity_level,
         goal: formData.goal,
-        mostly_muscle: bmiOver30 ? formData.mostly_muscle : undefined,
+        mostly_muscle: askMostlyMuscle ? formData.mostly_muscle : undefined,
       } as any);
       router.replace('/(tabs)');
     } catch (error) {
@@ -311,7 +311,7 @@ export default function Onboarding() {
         </View>
       </View>
 
-      {bmiOver30 && (
+      {askMostlyMuscle && (
         <View style={styles.inputGroup} testID="onboarding-mostly-muscle">
           <Text style={styles.label}>Is your weight mostly muscle?</Text>
           <View style={styles.genderContainer}>

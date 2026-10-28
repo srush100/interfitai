@@ -218,8 +218,9 @@ EXERCISEDB_API_BASE = "https://exercisedb.p.rapidapi.com"
 USDA_API_KEY = os.environ.get("USDA_API_KEY", "DEMO_KEY")
 USDA_API_BASE = "https://api.nal.usda.gov/fdc/v1"
 
-async def search_usda(query: str, max_results: int = 50):
-    """Search USDA FoodData Central database (free, no IP restrictions)"""
+async def search_usda(query: str, max_results: int = 50, branded: bool = True):
+    """Search USDA FoodData Central database (free, no IP restrictions).
+    branded=False leaves out USDA's brand list, which only has US products."""
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
@@ -228,7 +229,7 @@ async def search_usda(query: str, max_results: int = 50):
                     "api_key": USDA_API_KEY,
                     "query": query,
                     "pageSize": max_results,
-                    "dataType": ["Branded", "Foundation", "SR Legacy"]
+                    "dataType": (["Branded"] if branded else []) + ["Foundation", "SR Legacy"]
                 },
                 timeout=10.0
             )
@@ -245,9 +246,21 @@ async def search_usda(query: str, max_results: int = 50):
             results = []
             for food in foods:
                 # Extract nutrients
-                nutrients = {n.get("nutrientName", ""): n.get("value", 0) for n in food.get("foodNutrients", [])}
-                
-                calories = nutrients.get("Energy", 0)
+                # Energy is listed twice for many foods (kcal and kJ) under the
+                # same name; keeping the last one showed kJ as calories
+                # (boiled broccoli 146 "cal"). Use kcal, else convert kJ.
+                nutrients, kcal, kj = {}, None, None
+                for n in food.get("foodNutrients", []):
+                    name, unit = n.get("nutrientName", ""), str(n.get("unitName", "")).upper()
+                    value = float(n.get("value") or 0)
+                    if name.startswith("Energy"):
+                        if unit == "KCAL" and kcal is None:
+                            kcal = value
+                        elif unit == "KJ" and kj is None:
+                            kj = value
+                    else:
+                        nutrients.setdefault(name, value)
+                calories = kcal if kcal is not None else round(kj / 4.184) if kj else 0
                 protein = nutrients.get("Protein", 0)
                 carbs = nutrients.get("Carbohydrate, by difference", 0)
                 fats = nutrients.get("Total lipid (fat)", 0)
@@ -1038,9 +1051,9 @@ class EliteCoachingEngine:
     # ----- Exercise options per movement pattern and equipment type -----
     PATTERNS = {
         "horizontal_push": {
-            "full_gym":  ["Barbell Bench Press", "Machine Chest Press", "Cable Chest Fly"],
+            "full_gym":  ["Barbell Bench Press", "Dumbbell Bench Press", "Machine Chest Press", "Cable Chest Fly"],
             "beginner_gym": ["Machine Chest Press", "Dumbbell Bench Press", "Cable Chest Fly", "Incline Machine Press"],
-            "barbells":  ["Barbell Bench Press", "Close-Grip Bench Press"],
+            "barbells":  ["Barbell Bench Press"],
             "dumbbells": ["Dumbbell Bench Press", "Dumbbell Incline Press"],
             "machines":  ["Machine Chest Press", "Machine Incline Press"],
             "bodyweight":["Push-Up", "Archer Push-Up", "Decline Push-Up"],
@@ -1057,6 +1070,14 @@ class EliteCoachingEngine:
             "bodyweight":["Pike Push-Up", "Decline Push-Up"],
             "cables":    ["High-to-Low Cable Fly"],
             "resistance_bands":["Incline Band Press"],
+        },
+        "chest_fly": {
+            "full_gym":  ["Cable Chest Fly", "Pec Deck", "Incline Dumbbell Fly", "Cable Crossover"],
+            "dumbbells": ["Dumbbell Fly", "Incline Dumbbell Fly"],
+            "machines":  ["Pec Deck"],
+            "cables":    ["Cable Chest Fly", "Cable Crossover"],
+            "bodyweight":["Push-Up", "Decline Push-Up"],
+            "resistance_bands":["Band Chest Fly"],
         },
         "vertical_push": {
             "full_gym":  ["Barbell Overhead Press", "Dumbbell Shoulder Press", "Machine Shoulder Press"],
@@ -1085,6 +1106,14 @@ class EliteCoachingEngine:
             "resistance_bands":["Band Face Pull", "Band Pull-Apart"],
             "bodyweight":["Prone Y-T Raise", "Reverse Snow Angel"],
         },
+        "tricep_compound": {
+            "full_gym":  ["Close-Grip Bench Press", "Dip", "Assisted Dip"],
+            "barbells":  ["Close-Grip Bench Press"],
+            "dumbbells": ["Close-Grip Dumbbell Press"],
+            "machines":  ["Assisted Dip"],
+            "bodyweight":["Dip", "Diamond Push-Up"],
+            "resistance_bands":["Diamond Push-Up"],
+        },
         "tricep_push": {
             "full_gym":  ["Cable Tricep Pushdown", "Overhead Cable Extension", "Skull Crusher"],
             "barbells":  ["Skull Crusher", "Close-Grip Bench Press"],
@@ -1102,6 +1131,20 @@ class EliteCoachingEngine:
             "bodyweight":["Pull-Up", "Chin-Up"],
             "cables":    ["Lat Pulldown", "Single-Arm Lat Pulldown"],
             "resistance_bands":["Band-Assisted Pull-Up", "Band Lat Pulldown"],
+        },
+        "lat_isolation": {
+            "full_gym":  ["Straight Arm Pulldown", "Dumbbell Pullover"],
+            "dumbbells": ["Dumbbell Pullover"],
+            "cables":    ["Straight Arm Pulldown"],
+            "machines":  ["Straight Arm Pulldown"],
+            "resistance_bands":["Band Straight Arm Pulldown"],
+        },
+        "shrug": {
+            "full_gym":  ["Dumbbell Shrug", "Barbell Shrug"],
+            "dumbbells": ["Dumbbell Shrug"],
+            "barbells":  ["Barbell Shrug"],
+            "kettlebells":["Kettlebell Shrug"],
+            "resistance_bands":["Band Shrug"],
         },
         "horizontal_pull": {
             "full_gym":  ["Barbell Row", "Cable Row", "Machine Row"],
@@ -1122,6 +1165,14 @@ class EliteCoachingEngine:
             "cables":    ["Cable Curl", "Cable Hammer Curl"],
             "bodyweight":["Chin-Up", "Supinated Row"],
             "resistance_bands":["Band Curl"],
+        },
+        "hammer_curl": {
+            "full_gym":  ["Hammer Curl", "Cable Hammer Curl", "Machine Preacher Curl"],
+            "dumbbells": ["Hammer Curl"],
+            "cables":    ["Cable Hammer Curl"],
+            "machines":  ["Machine Preacher Curl"],
+            "bodyweight":["Chin-Up"],
+            "resistance_bands":["Band Hammer Curl"],
         },
         "squat": {
             "full_gym":  ["Back Squat", "Leg Press", "Hack Squat"],
@@ -1145,11 +1196,11 @@ class EliteCoachingEngine:
         },
         "hip_hinge": {
             "full_gym":  ["Romanian Deadlift", "Conventional Deadlift", "Cable Pull-Through",
-                          "Dumbbell Romanian Deadlift"],
+                          "Dumbbell Romanian Deadlift", "Back Extension Machine"],
             "beginner_gym": ["Dumbbell Romanian Deadlift", "Cable Pull-Through", "Leg Curl"],
             "barbells":  ["Romanian Deadlift", "Conventional Deadlift", "Sumo Deadlift"],
             "dumbbells": ["Dumbbell Romanian Deadlift", "Single-Leg RDL"],
-            "machines":  ["Cable Pull-Through", "Leg Curl"],
+            "machines":  ["Cable Pull-Through", "Leg Curl", "Back Extension Machine"],
             "bodyweight":["Single-Leg Romanian Deadlift", "Good Morning"],
             "kettlebells":["Kettlebell Swing", "Kettlebell Romanian Deadlift"],
             "cables":    ["Cable Pull-Through"],
@@ -1261,7 +1312,7 @@ class EliteCoachingEngine:
                 ("bicep_curl",       "isolation",           "bicep isolation – elbow flexion"),
             ],
             "optional_slots": [
-                ("bicep_curl",       "isolation",           "hammer curl – brachialis and forearm"),
+                ("hammer_curl",      "isolation",           "hammer curl – brachialis and forearm"),
             ],
         },
         "upper_pull_volume": {
@@ -1327,7 +1378,7 @@ class EliteCoachingEngine:
                 ("bicep_curl",       "isolation",           "bicep curl – elbow flexion"),
             ],
             "optional_slots": [
-                ("bicep_curl",       "isolation",           "hammer curl variation"),
+                ("hammer_curl",      "isolation",           "hammer curl variation"),
             ],
         },
         "legs_session": {
@@ -1472,7 +1523,7 @@ class EliteCoachingEngine:
             "slots": [
                 ("explosive",        "primary_compound",   "power development – explosive lower body"),
                 ("carry",            "accessory",           "loaded carry – trunk stability and grip"),
-                ("squat",            "secondary_compound",  "strength base – squat pattern"),
+                ("horizontal_push",  "secondary_compound",  "press – upper-body pushing strength"),
                 ("horizontal_pull",  "secondary_compound",  "row – pulling strength"),
                 ("conditioning",     "conditioning",        "metabolic finisher – work capacity"),
             ],
@@ -1591,7 +1642,7 @@ class EliteCoachingEngine:
             "slots": [
                 ("explosive",        "primary_compound",   "plyometric power – explosive lower body output"),
                 ("carry",            "accessory",           "loaded carry – trunk integrity and grip strength"),
-                ("squat",            "secondary_compound",  "squat strength – bilateral lower body base"),
+                ("horizontal_push",  "secondary_compound",  "press – upper-body pushing strength"),
                 ("horizontal_pull",  "secondary_compound",  "row – pulling strength and postural balance"),
                 ("conditioning",     "conditioning",        "high-output metabolic finisher – push the limit"),
             ],
@@ -1644,16 +1695,19 @@ class EliteCoachingEngine:
         # ── True Bro Split archetypes — one muscle group per session ─────────
         "bro_chest": {
             "label": "Chest Day",
-            "focus": "Chest & Triceps",
+            "focus": "Chest",
             "slots": [
                 ("horizontal_push",  "primary_compound",   "flat pressing – chest mass and strength foundation"),
                 ("incline_push",     "secondary_compound",  "incline angle – upper chest focus and fullness"),
-                ("incline_push",     "accessory",           "flye or crossover – chest isolation and stretch"),
-                ("tricep_push",      "isolation",           "tricep isolation – full elbow extension and pump"),
+                ("horizontal_push",  "accessory",           "second press – dumbbell or machine for extra chest volume"),
+                ("chest_fly",        "isolation",           "flye – chest stretch and squeeze"),
             ],
             "optional_slots": [
-                ("lateral_raise",    "accessory",           "medial delt – shoulder width complement to chest"),
-                ("tricep_push",      "isolation",           "overhead extension – long head stretch"),
+                ("chest_fly",        "isolation",           "crossover or pec deck – inner chest and pump"),
+            ],
+            # Only when the week has no Arms Day (4-day bro split)
+            "arm_finisher": [
+                ("tricep_push",      "isolation",           "tricep isolation – full elbow extension"),
             ],
         },
         "bro_chest_shoulders": {
@@ -1672,16 +1726,17 @@ class EliteCoachingEngine:
         },
         "bro_back": {
             "label": "Back Day",
-            "focus": "Back & Biceps",
+            "focus": "Back & Rear Delts",
             "slots": [
                 ("vertical_pull",    "primary_compound",   "vertical pull – lat width and upper back thickness"),
                 ("horizontal_pull",  "primary_compound",   "heavy row – mid-back density and rhomboid strength"),
                 ("horizontal_pull",  "secondary_compound",  "second row variation – upper or lower back emphasis"),
+                ("lat_isolation",    "accessory",           "straight-arm pulldown or pullover – lats without biceps"),
                 ("rear_delt",        "accessory",           "rear delt – shoulder health and upper back detail"),
-                ("bicep_curl",       "isolation",           "bicep curl – elbow flexion strength and peak"),
             ],
-            "optional_slots": [
-                ("bicep_curl",       "isolation",           "hammer or reverse curl – brachialis and grip"),
+            "optional_slots": [],
+            "arm_finisher": [
+                ("bicep_curl",       "isolation",           "bicep curl – elbow flexion strength and peak"),
             ],
         },
         "bro_shoulders": {
@@ -1689,25 +1744,25 @@ class EliteCoachingEngine:
             "focus": "Deltoids & Traps",
             "slots": [
                 ("vertical_push",    "primary_compound",   "overhead press – deltoid mass and pressing strength"),
+                ("vertical_push",    "secondary_compound",  "second press – dumbbell or machine for shoulder volume"),
                 ("lateral_raise",    "accessory",           "lateral raise – medial delt width"),
-                ("lateral_raise",    "secondary_compound",  "second lateral raise variation – cable or dumbbell"),
                 ("rear_delt",        "accessory",           "rear delt – posterior shoulder and rotator health"),
-                ("tricep_push",      "isolation",           "tricep isolation – supports pressing strength"),
+                ("lateral_raise",    "isolation",           "second lateral raise variation – cable or machine"),
             ],
             "optional_slots": [
-                ("carry",            "accessory",           "shrug – upper trap development and neck thickness"),
+                ("shrug",            "isolation",           "shrug – upper trap development"),
             ],
         },
         "bro_arms": {
             "label": "Arms Day",
             "focus": "Biceps & Triceps",
             "slots": [
-                ("bicep_curl",       "primary_compound",   "barbell or dumbbell curl – bicep mass and peak"),
-                ("tricep_push",      "primary_compound",   "close-grip press or dip – tricep mass and strength"),
-                ("bicep_curl",       "secondary_compound",  "incline or preacher curl – stretch and peak development"),
-                ("tricep_push",      "secondary_compound",  "skull crusher or overhead extension – long head focus"),
-                ("bicep_curl",       "isolation",           "concentration curl or hammer – brachialis and detail"),
+                ("tricep_compound",  "secondary_compound",  "close-grip press or dip – tricep mass and strength"),
+                ("bicep_curl",       "secondary_compound",  "barbell or EZ-bar curl – bicep mass"),
+                ("tricep_push",      "accessory",           "skull crusher or overhead extension – long head focus"),
+                ("bicep_curl",       "accessory",           "incline or cable curl – stretch and peak development"),
                 ("tricep_push",      "isolation",           "cable pushdown – tricep isolation and pump"),
+                ("hammer_curl",      "isolation",           "hammer or preacher curl – brachialis and detail"),
             ],
             "optional_slots": [],
         },
@@ -1717,14 +1772,13 @@ class EliteCoachingEngine:
             "slots": [
                 ("squat",            "primary_compound",   "squat – bilateral lower body mass and strength"),
                 ("hip_hinge",        "secondary_compound",  "deadlift variation – hamstring and glute mass"),
-                ("lunge",            "secondary_compound",  "lunge or leg press – quad volume and unilateral work"),
-                ("hamstring_curl",   "isolation",           "leg curl – hamstring isolation and peak"),
-                ("glute",            "accessory",           "hip thrust – glute isolation and activation"),
+                ("lunge",            "secondary_compound",  "lunge or split squat – quad volume and unilateral work"),
+                ("glute",            "accessory",           "hip thrust – glute strength"),
+                ("knee_extension",   "isolation",           "leg extension – quad isolation and detail"),
+                ("hamstring_curl",   "isolation",           "leg curl – hamstring isolation"),
                 ("calf",             "isolation",           "calf raise – calves and soleus strength"),
             ],
-            "optional_slots": [
-                ("knee_extension",   "isolation",           "leg extension – quad isolation and detail"),
-            ],
+            "optional_slots": [],
         },
     }
 
@@ -1760,8 +1814,8 @@ class EliteCoachingEngine:
             2: ["full_body_heavy", "athletic_conditioning"],
             3: ["full_body_heavy", "athletic_conditioning", "lower_full"],
             4: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full"],
-            5: ["full_body_heavy", "athletic_conditioning", "upper_full", "lower_full", "athletic_conditioning"],
-            6: ["full_body_heavy", "athletic_conditioning", "upper_push_heavy", "lower_quad_focus", "athletic_conditioning", "lower_hip_focus"],
+            5: ["athletic_conditioning", "full_body_heavy", "upper_full", "athletic_conditioning", "lower_full"],
+            6: ["athletic_conditioning", "lower_quad_focus", "upper_push_heavy", "athletic_conditioning", "lower_hip_focus", "upper_full"],
         },
         "functional_split": {
             2: ["functional_movement_quality", "functional_strength_capacity"],
@@ -1775,7 +1829,7 @@ class EliteCoachingEngine:
             3: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_power_conditioning"],
             4: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning"],
             5: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_lower"],
-            6: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_push", "hybrid_strength_pull"],
+            6: ["hybrid_strength_push", "hybrid_strength_lower", "hybrid_strength_pull", "hybrid_power_conditioning", "hybrid_strength_lower", "hybrid_strength_pull"],
         },
         "calisthenics_split": {
             2: ["calisthenics_upper", "calisthenics_lower"],
@@ -2066,9 +2120,9 @@ class EliteCoachingEngine:
                           "Dumbbell Step-Up", "Step-Up",
                           "Jump Squat", "Running"],
         "shoulder":      ["Barbell Overhead Press", "Push Press", "Upright Row",
-                          "Behind-the-Neck Press", "Barbell Bench Press"],
+                          "Behind-the-Neck Press", "Barbell Bench Press", "Dip", "Assisted Dip"],
         "wrist":         ["Barbell Curl", "Barbell Overhead Press", "Push-Up", "Barbell Bench Press"],
-        "elbow":         ["Skull Crusher", "Dip", "Barbell Curl"],
+        "elbow":         ["Skull Crusher", "Dip", "Assisted Dip", "Barbell Curl"],
         "hip":           ["Barbell Hip Thrust", "Barbell Bulgarian Split Squat",
                           "Leg Press", "Leg Press (feet high)"],
         "ankle":         ["Calf Raise", "Calf Raise Machine", "Seated Calf Raise",
@@ -2089,6 +2143,57 @@ class EliteCoachingEngine:
     LIMITATION_SUBSTITUTES = {
         "knee": {"squat": ["Box Squat (pain-free depth)", "Spanish Squat", "Wall Sit"]},
     }
+
+    # "No squats", "avoid deadlifts", "can't do lunges": a movement the user names
+    # is removed by name (every variation of it), on top of the injury lists above
+    MOVEMENT_LIMITS = [
+        # Specific phrases first: they are removed from the text so the general
+        # word ("squat") doesn't also remove the machine and dumbbell versions
+        (r"barbell squats?|bar squats?",
+                                  ["back squat", "front squat", "pause squat", "barbell squat",
+                                   "barbell bulgarian split squat", "thruster"]),
+        (r"squat",                ["squat", "thruster"]),
+        (r"dead ?lift|rdl",       ["deadlift", "rdl"]),
+        (r"lunge",                ["lunge", "split squat", "step-up"]),
+        (r"bench",                ["bench press"]),
+        (r"overhead|shoulder press|military press",
+                                  ["overhead press", "shoulder press", "push press", "arnold press"]),
+        (r"pull ?-?ups?|chin ?-?ups?", ["pull-up", "chin-up"]),
+        (r"\bdips?\b",            ["dip"]),
+        (r"hip thrust",           ["hip thrust"]),
+        (r"\brun|running",        ["running", "sprint"]),
+        (r"jump|plyo",            ["jump", "bound", "plyo"]),
+        (r"burpee",               ["burpee"]),
+    ]
+
+    @staticmethod
+    def _plain(text: str) -> str:
+        return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
+    @classmethod
+    def _blocked_movements(cls, limitations: list) -> list:
+        """Name fragments of exercises the user asked to leave out."""
+        text = f" {cls._plain(' '.join(limitations or []))} "
+        frags = []
+        # 1. Exact exercise names ("no barbell bench press", "no leg extensions")
+        #    leave out just that exercise, not the whole movement
+        names = {cls._plain(n) for p in cls.PATTERNS.values() for lst in p.values() for n in lst}
+        for name in sorted(names, key=len, reverse=True):
+            m = re.search(rf" {re.escape(name)}(?:e?s)? ", text)
+            if m:
+                frags.append(name)
+                text = text.replace(m.group(0), " ")
+        # 2. Whole movements ("no squats", "can't deadlift") from what's left
+        for pat, fs in cls.MOVEMENT_LIMITS:
+            if re.search(pat, text):
+                frags += [cls._plain(f) for f in fs]
+                text = re.sub(pat, " ", text)
+        return frags
+
+    @classmethod
+    def _is_blocked(cls, name: str, fragments: list) -> bool:
+        n = f" {cls._plain(name)} "
+        return any(f" {f}" in n for f in fragments)
 
     # Fly / raise / curl style moves: fine as accessories, but never the main
     # heavy lift of a session (they would get 5x3-5 compound prescriptions).
@@ -2119,12 +2224,12 @@ class EliteCoachingEngine:
 
     # Focus area → movement patterns that should receive volume priority
     FOCUS_AREA_PATTERNS: dict = {
-        "chest":        ["horizontal_push", "incline_push"],
-        "back":         ["vertical_pull", "horizontal_pull"],
+        "chest":        ["horizontal_push", "incline_push", "chest_fly"],
+        "back":         ["vertical_pull", "horizontal_pull", "lat_isolation"],
         "shoulders":    ["vertical_push", "lateral_raise", "rear_delt"],
-        "arms":         ["bicep_curl", "tricep_push"],
-        "biceps":       ["bicep_curl"],
-        "triceps":      ["tricep_push"],
+        "arms":         ["bicep_curl", "tricep_push", "hammer_curl", "tricep_compound"],
+        "biceps":       ["bicep_curl", "hammer_curl"],
+        "triceps":      ["tricep_push", "tricep_compound"],
         "legs":         ["squat", "lunge", "knee_extension", "calf", "hamstring_curl"],
         "glutes":       ["glute", "hip_hinge", "lunge"],
         "hamstrings":   ["hip_hinge", "hamstring_curl"],
@@ -2512,6 +2617,8 @@ class EliteCoachingEngine:
                 substitutes.append(sub)
         if substitutes:
             unique = substitutes + [e for e in unique if e not in substitutes]
+        blocked = self._blocked_movements(limitations)
+        excluded.update(e for e in unique if self._is_blocked(e, blocked))
         filtered = [e for e in unique if e not in excluded]
         # Main lifts must be real compound movements
         if ex_type in ('primary_compound', 'secondary_compound'):
@@ -2525,7 +2632,7 @@ class EliteCoachingEngine:
         else:
             safe_fallback = [
                 e for e in (opts.get('bodyweight', []) + opts.get('any', []))
-                if e not in excluded
+                if e not in excluded and not self._is_blocked(e, blocked)
             ]
             result = safe_fallback if safe_fallback else ["Bodyweight Exercise"]
 
@@ -2992,6 +3099,10 @@ class EliteCoachingEngine:
             archetype = self.SESSION_ARCHETYPES.get(session_type, self.SESSION_ARCHETYPES['full_body_heavy'])
             # Start with all slots (base + optional) — deduplication happens via session_native gate
             slots = list(archetype['slots']) + list(archetype.get('optional_slots', []))
+            # Bro split: arms get their own day at 5+ days, so chest/back days
+            # only carry a tricep/bicep finisher when there is no Arms Day
+            if 'bro_arms' not in session_types:
+                slots += list(archetype.get('arm_finisher', []))
 
             # ── Determine duration bucket ────────────────────────────────────
             dur = req.duration_minutes
@@ -3125,6 +3236,12 @@ class EliteCoachingEngine:
 
                 # How many sets should this slot get?
                 base_params = goal_params.get(ex_type, goal_params.get('accessory', {}))
+                # Jumps and core work keep their own reps and rest even when they
+                # lead the day (no 6-10 box jumps or planks with 2:30 rest)
+                if pattern == 'explosive' and 'explosive' in goal_params:
+                    base_params = goal_params['explosive']
+                elif pattern.startswith('core_') and 'core' in goal_params:
+                    base_params = goal_params['core']
                 s_min, s_max = self._set_range(ex_type, level, goal)
                 base_sets   = base_params.get('sets', 3)
                 # Clamp to level range
@@ -3214,6 +3331,13 @@ class EliteCoachingEngine:
 
                 if ex_type != 'primary_compound' and total_sets_allocated >= set_ceiling:
                     break
+
+            # Calves go after the other leg work (before core and finishers)
+            calves = [sp for sp in slot_specs if sp['pattern'] == 'calf']
+            if calves:
+                rest_specs = [sp for sp in slot_specs if sp['pattern'] != 'calf']
+                at = next((k for k, sp in enumerate(rest_specs) if sp['type'] == 'core'), len(rest_specs))
+                slot_specs = rest_specs[:at] + calves + rest_specs[at:]
 
             for _, _, cond_note in cond_slots:
                 slot_specs.append(self._conditioning_spec(
@@ -3328,12 +3452,14 @@ class EliteCoachingEngine:
             # Reorder slots: primary compounds first → secondary compounds → focus accessories
             # → other accessories → ARM ISOLATION LAST → CORE LAST → conditioning finisher
             # This gives clean coach-built session flow: big lifts first, finish with arms/core.
-            ARM_ISO  = {'bicep_curl', 'tricep_push'}
+            ARM_ISO  = {'bicep_curl', 'tricep_push', 'hammer_curl'}
             CORE_PAT = {'core_stability', 'core_flexion', 'carry'}
             def _slot_priority(s: dict) -> int:
                 if s['type'] == 'conditioning':            return 99  # always last
                 if s['pattern'] in CORE_PAT:               return 6   # core just before conditioning
-                if s['pattern'] in ARM_ISO:                return 5   # arm isolation before core
+                if (s['pattern'] in ARM_ISO               # arm isolation before core
+                        and s['type'] not in ('primary_compound', 'secondary_compound')):
+                    return 5   # (on Arms Day the heavy curl still leads)
                 if s['type'] == 'primary_compound':        return 0   # heavy main lifts first
                 if s['type'] == 'secondary_compound':      return 1   # secondary heavy movements
                 if s['pattern'] in primary_patterns:       return 2   # primary focus accessories
@@ -3565,6 +3691,9 @@ class FoodLogRequest(BaseModel):
     # "saved". Only AI estimates (or older apps that don't say) are corrected.
     source: Optional[str] = None
 
+SNAP_DAILY_LIMIT = 15          # photo analyses per user per 24 hours (fair use)
+
+
 class FoodImageAnalyzeRequest(BaseModel):
     user_id: str
     image_base64: str
@@ -3603,6 +3732,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     user_id: str
     message: str
+    country: Optional[str] = None   # phone region, e.g. "AU" — matches saved food lookups
 
 # Step Tracking Models
 class StepEntry(BaseModel):
@@ -3690,11 +3820,17 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
                      mostly_muscle: Optional[bool] = False) -> Dict[str, float]:
     """Calculate personalized macros using Mifflin-St Jeor equation.
 
-    Protein is prescribed from bodyweight (g/kg) per ISSN guidelines — not as
-    a % of calories — to ensure adequate lean mass preservation during a
+    Protein is prescribed from estimated lean mass (g/kg) per ISSN guidelines —
+    not as a % of calories — to ensure adequate lean mass preservation during a
     deficit. Calorie adjustments are percentage-based off TDEE so they scale
     correctly across body sizes.
     """
+    # "Female", "F", "woman" etc. all count: an unrecognised value would
+    # otherwise give men and women the same in-between numbers
+    g = (gender or "").strip().lower()
+    gender = ("male" if g in ("male", "m", "man") else
+              "female" if g in ("female", "f", "woman") else g)
+
     # ── BMR: Mifflin-St Jeor ──────────────────────────────────────────
     if gender == "male":
         bmr = 10 * weight + 6.25 * height - 5 * age + 5
@@ -3719,6 +3855,7 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
     if goal == "weight_loss":
         calories = tdee * 0.80              # 20% deficit
         protein_per_kg = 2.2                # high — preserve LBM in deficit
+        protein_per_kg_lean = 2.6
         # Safety floor: never below BMR or the usual unsupervised minimum
         # (1,200 women / 1,500 men), and never above maintenance. Small or
         # older people then sit near maintenance — their loss comes from activity.
@@ -3728,22 +3865,34 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
     elif goal == "muscle_building":
         calories = tdee * 1.10              # 10% surplus (lean bulk)
         protein_per_kg = 2.0                # industry standard for hypertrophy (RP/MacroFactor)
+        protein_per_kg_lean = 2.4
     else:  # maintenance
         calories = tdee
         protein_per_kg = 1.8                # above MPS ceiling with comfortable margin
+        protein_per_kg_lean = 2.2
 
-    # ── Macro split: protein from bodyweight, fat at 25% of cals, rest carbs ──
-    # With a BMI over 30, protein is set from a healthy-weight reference (the
-    # weight at BMI 25 for their height): g/kg targets are for lean mass, and
-    # total weight would ask for far more than is needed (220g+). Unless the
-    # user says their weight is mostly muscle — then full weight, higher cap.
+    # ── Macro split: protein from lean mass, fat at 25% of cals, rest carbs ──
+    # g/kg targets are really for lean mass: body fat doesn't need protein, so
+    # total weight overshoots for women and anyone with fat to lose (85 kg
+    # woman: 187g). Lean mass is estimated from height, weight and sex (Boer);
+    # protein is the lower of that and the body-weight target (with a BMI
+    # over 30, the weight at BMI 25), so it is only ever brought down.
+    # A user whose weight is mostly muscle gets full weight, higher cap.
     height_m = height / 100
     bmi = weight / (height_m ** 2) if height_m > 0 else 0
-    if bmi > 30 and mostly_muscle:
+    lbm_male = 0.407 * weight + 0.267 * height - 19.2
+    lbm_female = 0.252 * weight + 0.473 * height - 48.3
+    lean_mass = {"male": lbm_male, "female": lbm_female}.get(gender, (lbm_male + lbm_female) / 2)
+    lean_mass = max(0.0, min(lean_mass, weight))
+    if mostly_muscle:
         protein_g = round(min(weight * protein_per_kg, 260))
+        from_lean = False
     else:
         protein_weight = min(weight, 25 * height_m ** 2) if bmi > 30 else weight
-        protein_g = round(min(protein_weight * protein_per_kg, 220))
+        by_weight = protein_weight * protein_per_kg
+        by_lean = lean_mass * protein_per_kg_lean
+        protein_g = round(min(by_weight, by_lean or by_weight, 220))
+        from_lean = bool(by_lean) and by_lean < by_weight
     fat_g     = round((calories * 0.25) / 9)    # 25% of cals from fat (hormonal minimum)
     remaining_cals = calories - (protein_g * 4) - (fat_g * 9)
     carbs_g   = round(max(remaining_cals, 0) / 4)
@@ -3756,6 +3905,8 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
         "bmr":      round(bmr),
         "tdee":     round(tdee),
         "calorie_floor_applied": floor_applied,   # target held at the safe minimum
+        "protein_from_lean_mass": from_lean,      # True: set from estimated lean mass
+        "lean_mass_kg": round(lean_mass, 1),
     }
 
 # ==================== USER PROFILE ENDPOINTS ====================
@@ -4149,6 +4300,11 @@ async def generate_workout(request: WorkoutGenerateRequest):
         "vertical_pull":   ["lats", "biceps"],
         "horizontal_pull": ["rhomboids", "lats", "biceps"],
         "bicep_curl":      ["biceps", "brachialis"],
+        "hammer_curl":     ["brachialis", "biceps", "forearms"],
+        "tricep_compound": ["triceps", "chest"],
+        "chest_fly":       ["chest"],
+        "lat_isolation":   ["lats"],
+        "shrug":           ["traps"],
         "squat":           ["quads", "glutes"],
         "lunge":           ["quads", "glutes", "hamstrings"],
         "hip_hinge":       ["hamstrings", "glutes", "lower back"],
@@ -5569,7 +5725,9 @@ from nutrition_engine import (  # noqa: E402
     snap_item_from_text,
     snap_item,
     food_matches,
+    calculate_meal_text, meal_summary, split_foods,
 )
+import food_lookup as FoodLookup  # noqa: E402
 from meal_templates import TEMPLATES_BY_STYLE  # noqa: E402
 
 MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"]
@@ -5674,9 +5832,9 @@ def _prohibitions_text(allergies, foods_to_avoid) -> str:
 
 _INGREDIENT_RULES = """INGREDIENT RULES (critical):
 - Every ingredient is an object {"food": "<exact name from FOOD LIST>", "grams": <number>}.
-- GRAMS ONLY. Never cups, ml, scoops, slices or counts: 2 eggs -> 116g eggs, a scoop of whey -> 30g whey protein,
+- GRAMS ONLY. Never cups, ml, scoops, slices or counts: 2 eggs -> 100g eggs, a scoop of whey -> 30g whey protein,
   15ml honey -> 21g honey, 2 rice cakes -> 18g rice cakes.
-- Whole-unit foods in whole units' weight: eggs 58g each, bread 30g per slice, wraps 60g, rice cakes 9g.
+- Whole-unit foods in whole units' weight: eggs 50g each, bread 30g per slice, wraps 60g, rice cakes 9g.
 - Meat, fish, rice, pasta, grains and legumes are COOKED weights. Oats are DRY weight ("rolled oats").
 - Pick grams so the meal lands near its target using the per-100g values (kcal/protein/carbs/fat).
   Protein, carbs and fat come from EVERY food (grains, legumes, dairy and bread add protein too) —
@@ -6563,6 +6721,17 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         # Validate base64 image
         if not request.image_base64 or len(request.image_base64) < 100:
             raise HTTPException(status_code=400, detail="Invalid image data")
+        # Fair-use cap: photo analysis is the app's most expensive AI call. Far
+        # above normal use (3-5 meals a day, plus re-analyses); stops one
+        # account costing more than its subscription.
+        used = await db.snap_usage.count_documents({
+            "user_id": request.user_id, "created_at": {"$gte": datetime.utcnow() - timedelta(hours=24)}})
+        if used >= SNAP_DAILY_LIMIT:
+            raise HTTPException(status_code=429, detail={
+                "error": "daily_limit",
+                "message": f"You've used today's {SNAP_DAILY_LIMIT} photo analyses. It resets within 24 hours "
+                           "\u2014 you can still search for food or add it manually."})
+        await db.snap_usage.insert_one({"user_id": request.user_id, "created_at": datetime.utcnow()})
         
         # The description goes to the AI as a hint about WHAT is in the photo
         # ("no dressing", "grilled not fried", "4 eggs and 3 slices sourdough").
@@ -6614,7 +6783,7 @@ WHEN NO LABEL IS VISIBLE (plated meal, restaurant plate, home cooking, produce, 
 2. List EVERY part of the meal in `items` as {"food": "<name>", "grams": <estimated grams>} — e.g. eggs, toast, the frying oil or butter, sauces, dressings, cheese. Never blend the plate into one food.
 3. `food` must be the closest name from this FOOD LIST: """ + food_list + """
    Only if nothing on the list fits, use your own name and add "per_100g": {"calories", "protein", "carbs", "fats"}.
-4. Estimate grams from what you see (a large egg ≈ 58g, a slice of sourdough ≈ 30g, a tablespoon of oil ≈ 14g). Count whole eggs and slices.
+4. Estimate grams from what you see (a large egg ≈ 50g, a slice of sourdough ≈ 30g, a tablespoon of oil ≈ 14g). Count whole eggs and slices.
 5. Set `food_name` to a short name for the whole meal, `energy_source: "derived"`, and leave `per_100g` and the top-level calories/protein/carbs/fats null — the app calculates them from the items.
 
 ═══════════════════════════════════════════════════════════════════════
@@ -7197,7 +7366,7 @@ async def delete_food_log(log_id: str):
     return {"message": "Food log deleted successfully"}
 
 @api_router.get("/food/search")
-async def search_foods(query: str, user_id: str):
+async def search_foods(query: str, user_id: str, country: str = ""):
     """Search food database - combines local database with API results for best coverage.
     Requires an active subscription (`user_id` gates the paid nutrition feature)."""
     access = await check_subscription_access(user_id)
@@ -7683,7 +7852,14 @@ async def search_foods(query: str, user_id: str):
     # STEP 2: Try to get API results to supplement
     api_results = []
     
-    usda_results = await search_usda(query, max_results=30)
+    # A whole meal ("3 boiled eggs on 2 slices of rye") is calculated by
+    # /food/ai-search from the food database; keyword matches for it are noise
+    _meal = calculate_meal_text(query)
+    # USDA's brand list is US products only: outside the US, brands come from
+    # Open Food Facts / the web via /food/ai-search instead
+    _country, _ = FoodLookup.country_from(query, country)
+    usda_results = [] if _meal and len(_meal["items"]) > 1 else \
+        await search_usda(query, max_results=30, branded=_country in ("US", "INTL"))
     if usda_results:
         logger.info(f"USDA returned {len(usda_results)} results")
         api_results = usda_results
@@ -7691,6 +7867,11 @@ async def search_foods(query: str, user_id: str):
     # STEP 3: Combine results - local first (specific items), then API results
     # Avoid duplicates by checking names
     combined_results = local_results.copy()
+    # A typed meal or plain food worked out from the food database goes first —
+    # the same numbers the AI search and the chat give
+    if _meal:
+        _db = database_meal_result(query, _meal)
+        combined_results.insert(0, {**_db, "name": meal_summary(_meal)})
     local_names_lower = {food["name"].lower() for food in local_results}
     
     for api_food in api_results:
@@ -7715,15 +7896,288 @@ async def search_foods(query: str, user_id: str):
         sanitize_food_entry(_tmp, portion_g=_portion, reconcile=False)
     return combined_results[:50]
 
+# Open Food Facts country sites (others use the ISO code)
+_OFF_SITES = {"GB": "uk", "INTL": "world"}
+
+
+async def _off_lookup(query: str, country: str = ""):
+    """Packaged products from Open Food Facts (free, worldwide — Australian,
+    UK and European brands that USDA doesn't have). Only an exact product match
+    is used; restaurant chains go to the web. None when nothing matches."""
+    if FoodLookup.is_chain(query):
+        return None
+    _, rest = FoodLookup.country_from(query, country)
+    tokens = FoodLookup.food_tokens(rest)
+    if not tokens:
+        return None
+    site = _OFF_SITES.get(country, (country or "world").lower())
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            r = await client.get(
+                f"https://{site}.openfoodfacts.org/cgi/search.pl",
+                params={"search_terms": rest, "search_simple": 1, "action": "process", "json": 1,
+                        "page_size": 20,
+                        "fields": "code,product_name,brands,quantity,serving_size,serving_quantity,nutriments"},
+                headers={"User-Agent": "InterFitAI/1.0 (nutrition tracking app)"},
+            )
+        if r.status_code != 200:
+            return None
+        products = r.json().get("products") or []
+    except Exception as e:
+        logger.warning(f"Open Food Facts search failed for '{query}': {e}")
+        return None
+    for product in products:
+        if FoodLookup.off_match(product, tokens):
+            res = FoodLookup.off_result(product)
+            if res:
+                return {**res, "is_ai_estimate": False, "verified": True, "confidence": "high"}
+    return None
+
+
+_food_lookup_index_ready = False
+
+
+async def lookup_food(query: str, country: str = "", force_web: bool = False, whole: bool = False) -> dict:
+    """One answer per food, the same every time, in the food log and the chat:
+    1. the food database (USDA values) — everyday foods and typed meals
+    2. the saved answer for this food in this country (any word order/spelling)
+    3. Open Food Facts — packaged products
+    4. a web search — brands and restaurants, for the user's country
+    5. an AI estimate — only when nothing else finds it
+    New answers are saved for everyone. Web/product answers are re-checked
+    after a year; an AI estimate is retried against real sources after a week,
+    and a verified answer is never replaced by an estimate."""
+    global _food_lookup_index_ready
+    query = (query or "").strip()
+    calc = calculate_meal_text(query)
+    if calc:
+        return database_meal_result(query, calc)
+    if not whole:
+        if FoodLookup.is_chain(query):
+            if re.search(r",|;|\+|&|\band\b|\bplus\b|\bwith\b|\bon\b|^\d", query):
+                order = await _lookup_order(query, country, force_web)
+                if order:
+                    return order
+        else:
+            parts = split_foods(query)
+            if len(parts) > 1:
+                return await _lookup_items(query, parts, country, force_web)
+    key, tokens, cc = FoodLookup.lookup_key(query, country)
+    if not tokens:
+        raise HTTPException(status_code=400, detail={"error": "empty_query", "message": "Type a food to search."})
+    if not _food_lookup_index_ready:
+        try:
+            await db.food_lookups.create_index("key", unique=True)
+            _food_lookup_index_ready = True
+        except Exception as e:
+            logger.warning(f"food_lookups index: {e}")
+    saved = await db.food_lookups.find_one({"key": key})
+    if saved and not force_web and FoodLookup.is_fresh(saved):
+        return {**saved["result"], "saved": True}
+
+    steps = [("web", _web_lookup)] if force_web else \
+        [("open_food_facts", _off_lookup), ("web", _web_lookup), ("ai_estimate", _ai_estimate)]
+    for kind, find in steps:
+        if kind == "ai_estimate" and saved:
+            break   # keep the saved answer rather than a new guess
+        res = await find(query, cc)
+        if res:
+            res = {**res, "lookup": kind, "country": cc}
+            await db.food_lookups.update_one(
+                {"key": key},
+                {"$set": {"key": key, "tokens": tokens, "country": cc, "query": query, "kind": kind,
+                          "result": res, "updated_at": datetime.utcnow()}},
+                upsert=True)
+            return {**res, "saved": False}
+    if saved:   # a re-check found nothing new: the saved answer stands
+        return {**saved["result"], "saved": True, "web_not_found": force_web}
+    return {
+        "name": query[:1].upper() + query[1:], "calories": 0, "protein": 0, "carbs": 0, "fats": 0,
+        "serving_size": "", "is_ai_estimate": True, "verified": False, "lookup": "none", "country": cc,
+        "source": "Couldn't find this food — please add it manually", "source_url": "", "confidence": "low",
+        "web_not_found": force_web,
+    }
+
+
+_ORDER_PROMPT = (
+    "You split a food order into what was ordered. Respond with ONLY this JSON:\n"
+    '{"items":[{"item":"<menu item, with the restaurant and size>","qty":1,"parts":[]}]}\n'
+    "- Separate menu items (a burger and fries, a sub and a cookie) are separate items.\n"
+    "- A standard menu item is one item with no parts, even if its name has 'and'/'with' "
+    "(Whopper with Cheese, Steak & Cheese is a sub's name, Big Mac).\n"
+    "- A build-your-own item (Subway sub, burrito, bowl, salad, wrap, poke, pizza with toppings) is ONE "
+    "item; list every component the user named in \"parts\", each with the restaurant and the size, "
+    "e.g. \"subway footlong rye bread\", \"subway footlong steak\", \"subway footlong cheese\", "
+    "\"subway footlong spinach\", \"subway footlong smokey bbq sauce\".\n"
+    "- Keep the user's words. Never add anything they didn't mention."
+)
+
+
+async def _parse_order(query: str):
+    """A restaurant order → [{'item', 'qty', 'parts'}], or None if it can't be read."""
+    try:
+        raw = await call_claude_haiku(system_message=_ORDER_PROMPT, user_message=query, max_tokens=500)
+        content = (raw or "").strip()
+        m = re.search(r"\{[\s\S]+\}", content)
+        items = json.loads(m.group(0) if m else content).get("items") or []
+        out = []
+        for it in items:
+            name = str(it.get("item") or "").strip()
+            if not name:
+                continue
+            qty = float(it.get("qty") or 1)
+            parts = [str(x).strip() for x in (it.get("parts") or []) if str(x).strip()]
+            out.append({"item": name, "qty": qty if 0 < qty <= 20 else 1, "parts": parts})
+        return out or None
+    except Exception as e:
+        logger.warning(f"Order parse failed for '{query}': {e}")
+        return None
+
+
+def _combine(name: str, items: list, summary: str = None) -> dict:
+    """Add up looked-up items (each with a 'qty'); the badge is the least trusted source."""
+    trust = ["database", "open_food_facts", "web", "ai_estimate"]
+    worst = max((i.get("lookup") or "ai_estimate" for i in items), key=lambda k: trust.index(k) if k in trust else 3)
+    total = {k: round(sum(float(i.get(k) or 0) * i["qty"] for i in items), 0 if k == "calories" else 1)
+             for k in ("calories", "protein", "carbs", "fats")}
+    summary = summary or " + ".join(f"{i['qty']:g} × {i['name']}" if i["qty"] != 1 else i["name"] for i in items)
+    return {
+        "name": name[:1].upper() + name[1:], **total,
+        "serving_size": summary, "serving_g": None, "serving_unit": "g",
+        "items": [{k: i.get(k) for k in ("name", "qty", "calories", "protein", "carbs", "fats", "serving_size",
+                                         "source", "source_url", "lookup")} for i in items],
+        "is_ai_estimate": worst == "ai_estimate", "verified": worst in ("open_food_facts", "web"),
+        "from_database": worst == "database", "lookup": worst,
+        "source": ", ".join(dict.fromkeys(i.get("source") or "" for i in items if i.get("source"))),
+        "source_url": next((i.get("source_url") for i in items if i.get("source_url")), ""),
+        "confidence": "low" if worst == "ai_estimate" else "high",
+        "saved": all(i.get("saved") for i in items),
+    }
+
+
+async def _lookup_order(query: str, country: str, force_web: bool):
+    """A restaurant order, the way the chain's own nutrition calculator works:
+    1. a quick AI read of the order: separate items ('whopper and large chips')
+       vs one build-your-own item and its parts (a Subway sub: bread, steak,
+       cheese, salads, sauce — at the sub's size)
+    2. each item / part looked up and saved on its own
+    3. added up.
+    Saved parts make every later combination instant. Returns None for a single
+    standard item (looked up whole by the caller)."""
+    chain = FoodLookup.chain_in(query)
+    order = await _parse_order(query)
+    if order is None:   # can't read it: split on and / , / + (never 'with': "whopper with cheese")
+        order = [{"item": x.strip(), "qty": 1, "parts": []}
+                 for x in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b)\s*", query) if x.strip()]
+    if len(order) == 1 and not order[0]["parts"] and order[0]["qty"] == 1:
+        return None
+
+    def with_chain(text):
+        return text if not chain or FoodLookup.chain_in(text) else f"{chain} {text}"
+
+    items = []
+    for it in order:
+        if it["parts"]:
+            parts = []
+            for part in it["parts"]:
+                r = await lookup_food(with_chain(part), country, force_web, whole=True)
+                if not r.get("calories"):
+                    parts = None      # a part nobody knows: look the whole item up instead
+                    break
+                parts.append({**r, "qty": 1})
+            if parts:
+                combo = _combine(it["item"], parts, summary=", ".join(p["name"] for p in parts))
+                items.append({**combo, "qty": it["qty"]})
+                continue
+        r = await lookup_food(with_chain(it["item"]), country, force_web, whole=True)
+        if not r.get("calories"):
+            return {**r, "name": query[:1].upper() + query[1:],
+                    "source": f"Couldn't find '{it['item']}' — search it on its own or add it manually"}
+        items.append({**r, "qty": it["qty"]})
+    if len(items) == 1 and items[0]["qty"] == 1:
+        return {**items[0], "name": query[:1].upper() + query[1:]}
+    return _combine(query, items)
+
+
+async def _lookup_items(query: str, parts: list, country: str, force_web: bool) -> dict:
+    """A typed list that isn't a restaurant order ('2 boiled eggs and a homemade
+    lasagne'): each item looked up on its own, then added up."""
+    items = []
+    for part in parts:
+        calc = calculate_meal_text(part)
+        if calc:
+            items.append({**database_meal_result(part, calc), "qty": 1})
+            continue
+        r = await lookup_food(part, country, force_web, whole=True)
+        if not r.get("calories"):
+            return {**r, "name": query[:1].upper() + query[1:],
+                    "source": f"Couldn't find '{part}' — search it on its own or add it manually"}
+        items.append({**r, "qty": 1})
+    return _combine(query, items)
+
+
+async def saved_foods_in(message: str, country: str = "", limit: int = 3) -> list:
+    """Saved foods named in a chat message (for the user's country), most
+    specific first: 'is a large McDonald's thick shake ok?' → that shake."""
+    words = set(FoodLookup.food_tokens(message))
+    cc, _ = FoodLookup.country_from(message, country)
+    if not words:
+        return []
+    found = await db.food_lookups.find({
+        "country": cc, "tokens.0": {"$exists": True},
+        "tokens": {"$not": {"$elemMatch": {"$nin": sorted(words)}}},
+    }).to_list(50)
+    found.sort(key=lambda d: len(d["tokens"]), reverse=True)
+    picked = []
+    for d in found:
+        if not any(set(d["tokens"]) <= set(p["tokens"]) for p in picked):
+            picked.append(d)
+    return picked[:limit]
+
+
+def database_meal_result(query: str, calc: dict) -> dict:
+    """A typed meal worked out from the food database (USDA values), shaped
+    like an AI search result. Same numbers as Snap and the chat coach."""
+    summary = meal_summary(calc)
+    if calc["assumed"]:
+        summary += " — " + ", ".join(f"1 {f} assumed" for f in calc["assumed"])
+    name = query.strip()
+    return {
+        "name":           name[:1].upper() + name[1:],
+        "calories":       calc["calories"],
+        "protein":        calc["protein"],
+        "carbs":          calc["carbs"],
+        "fats":           calc["fats"],
+        "serving_size":   summary,
+        "serving_g":      calc["grams"],
+        "serving_unit":   "g",
+        "items":          [{k: i[k] for k in ("name", "grams", "display", "calories", "protein", "carbs", "fats")}
+                           for i in calc["items"]],
+        "is_ai_estimate": False,
+        "from_database":  True,
+        "verified":       False,
+        "lookup":         "database",
+        "source":         "InterFitAI food database (USDA values)",
+        "source_url":     "",
+        "confidence":     "high",
+    }
+
+
 @api_router.get("/food/ai-search")
-async def ai_food_search(query: str, user_id: str):
-    """Return accurate nutrition for any food (generic, branded, or restaurant)
-    via Claude Sonnet — the same reliable path the rest of the app uses.
+async def ai_food_search(query: str, user_id: str, country: str = ""):
+    """Nutrition for any food — one answer per food, the same every time and in
+    the chat (see lookup_food). `country` is the phone's region, e.g. 'AU'.
     Requires an active subscription (paid nutrition feature)."""
     access = await check_subscription_access(user_id)
     if not access.get("has_access"):
         raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
                                                      "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
+    return await lookup_food(query, country)
+
+
+async def _ai_estimate(query: str, country: str = ""):
+    """The AI's own estimate, without the web. Only used when the food database,
+    Open Food Facts and the web all find nothing. None when it fails."""
     import re as _re
 
     system_prompt = (
@@ -7765,7 +8219,8 @@ async def ai_food_search(query: str, user_id: str):
         try:
             raw = await call_claude_sonnet(
                 system_message=system_prompt,
-                user_message=f"Nutrition for: {query}",
+                user_message=f"Nutrition for: {query}" + (
+                    f" (as sold in {FoodLookup.COUNTRY_NAMES[country]})" if country in FoodLookup.COUNTRY_NAMES else ""),
                 temperature=0.2 if attempt == 0 else 0.0,
                 max_tokens=500,
             )
@@ -7777,15 +8232,9 @@ async def ai_food_search(query: str, user_id: str):
         except Exception as e:
             logger.warning(f"AI food search attempt {attempt + 1} failed for '{query}': {e}")
 
-    if not data:
-        data = {
-            "food_name": query.title(),
-            "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0,
-            "serving_size": "unknown",
-            "source": "Could not retrieve data — please add manually",
-            "confidence": "low",
-        }
-    else:
+    if not data or _all_zero(data):
+        return None
+    if data:
         # Nutrition-accuracy guard — reconcile calories with macros (Fix 1),
         # log any physical-plausibility or reference-table divergences (Fix 2/4).
         _tmp = {
@@ -7820,24 +8269,27 @@ async def ai_food_search(query: str, user_id: str):
 
 
 @api_router.get("/food/web-search")
-async def web_food_search(query: str, user_id: str):
-    """Live, web-grounded nutrition lookup: Tavily search -> Haiku extraction.
-    Returns real, sourced macros for branded/regional items. Opt-in (costs a
-    Tavily search), so only called when the user taps 'Verify on the web'.
+async def web_food_search(query: str, user_id: str, country: str = ""):
+    """'Verify on the web' for an AI estimate: searches the web now and, when it
+    finds real figures, saves them for everyone in place of the estimate.
     Requires an active subscription (paid nutrition feature)."""
     access = await check_subscription_access(user_id)
     if not access.get("has_access"):
         raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
                                                      "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
+    return await lookup_food(query, country, force_web=True)
+
+
+async def _web_lookup(query: str, country: str = ""):
+    """Live, web-grounded nutrition: Tavily search -> Haiku extraction. Real,
+    sourced macros for branded/restaurant items, for the user's country.
+    None when the web has nothing reliable."""
     import re as _re
     from urllib.parse import urlparse
 
     if not TAVILY_API_KEY:
-        return {
-            "name": query.title(), "calories": 0, "protein": 0, "carbs": 0, "fats": 0,
-            "is_ai_estimate": True, "verified": False,
-            "source": "Web search not configured", "source_url": "", "confidence": "low",
-        }
+        return None
+    where = FoodLookup.COUNTRY_NAMES.get(country, "")
 
     # 1. Tavily web search
     search_content, source_url = "", ""
@@ -7847,7 +8299,7 @@ async def web_food_search(query: str, user_id: str):
                 "https://api.tavily.com/search",
                 json={
                     "api_key": TAVILY_API_KEY,
-                    "query": f"{query} nutrition facts calories protein carbs fat per serving",
+                    "query": f"{query} {'in ' + where + ' ' if where else ''}nutrition facts calories protein carbs fat per serving",
                     "search_depth": "basic",
                     "max_results": 5,
                     "include_answer": True,
@@ -7872,7 +8324,7 @@ async def web_food_search(query: str, user_id: str):
         system_prompt = (
             "You are a nutrition data extractor. Using ONLY the web search results "
             "provided, extract nutrition for ONE standard serving of the requested food. "
-            "Prefer official brand/restaurant figures. If results give a specific size/serving "
+            "Prefer official brand/restaurant figures for the country named (if any). If results give a specific size/serving "
             "(e.g. 'large'), use that. Convert kilojoules to calories if needed (1 kcal = 4.184 kJ). "
             "Respond with ONLY this JSON:\n"
             '{"food_name":"<name>","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,'
@@ -7882,7 +8334,8 @@ async def web_food_search(query: str, user_id: str):
         try:
             raw = await call_claude_haiku(
                 system_message=system_prompt,
-                user_message=f"Food: {query}\n\nWeb search results:\n{search_content}",
+                user_message=f"Food: {query}" + (f" (in {where})" if where else "") +
+                             f"\n\nWeb search results:\n{search_content}",
                 temperature=0.0,
                 max_tokens=400,
             )
@@ -7925,17 +8378,13 @@ async def web_food_search(query: str, user_id: str):
             "serving_size":   serving_size,
             "serving_g":      serving_g,
             "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
-            "is_ai_estimate": True,
+            "is_ai_estimate": False,
             "verified":       True,
             "source":         domain,
             "source_url":     source_url,
             "confidence":     "high",
         }
-    return {
-        "name": query.title(), "calories": 0, "protein": 0, "carbs": 0, "fats": 0,
-        "is_ai_estimate": True, "verified": False,
-        "source": "No reliable web source found", "source_url": "", "confidence": "low",
-    }
+    return None
 
 # ==================== GROCERY LIST ENDPOINTS ====================
 
@@ -8116,6 +8565,41 @@ async def chat_with_ai(request: ChatRequest):
     # Add chat history
     for msg in history:
         messages.append({"role": msg["role"], "content": msg["content"]})
+
+    # A meal with amounts in the question ("macros for 3 boiled eggs on 2 slices
+    # of rye?") is worked out by the food database, so the coach gives the same
+    # numbers as the food log instead of its own estimate
+    digit = re.search(r"\d", message)
+    meal = calculate_meal_text(re.split(r"[?!\n]", message[digit.start():])[0]) if digit else None
+    if meal:
+        lines = [f"- {i['display']} ({i['grams']}g): {i['calories']} kcal, {i['protein']}g protein, "
+                 f"{i['carbs']}g carbs, {i['fats']}g fat" for i in meal["items"]]
+        if meal["assumed"]:
+            lines.append("- Assumed (no amount given): " + ", ".join(f"1 {f}" for f in meal["assumed"]))
+        lines.append(f"- Total: {meal['calories']} kcal, {meal['protein']}g protein, "
+                     f"{meal['carbs']}g carbs, {meal['fats']}g fat")
+        messages[0]["content"] += (
+            "\n\nFOOD DATABASE RESULT for the food in the user's message. The app's food log "
+            "shows exactly these numbers — use them, do not estimate your own:\n" + "\n".join(lines))
+    else:
+        # Foods the food log has already looked up (brands, restaurants…). An
+        # extra only: a lookup problem never stops the coach from answering
+        try:
+            saved = await saved_foods_in(message, request.country or "")
+        except Exception as e:
+            logger.warning(f"Saved food lookup for chat failed: {e}")
+            saved = []
+        if saved:
+            lines = []
+            for d in saved:
+                r = d["result"]
+                src = "verified on the web" if r.get("verified") else "estimate"
+                lines.append(f"- {r.get('name')} ({r.get('serving_size') or 'per serving'}): {r.get('calories')} kcal, "
+                             f"{r.get('protein')}g protein, {r.get('carbs')}g carbs, {r.get('fats')}g fat "
+                             f"[{r.get('source') or src}]")
+            messages[0]["content"] += (
+                "\n\nFOOD LOG RESULTS for foods in the user's message. The app's food log shows exactly "
+                "these numbers — use them, do not estimate your own:\n" + "\n".join(lines))
 
     # Add current message
     messages.append({"role": "user", "content": message})

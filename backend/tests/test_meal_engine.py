@@ -37,7 +37,7 @@ def _sum(ings):
     ("1 cup milk", "milk", 244),
     ("15ml honey", "honey", 21.3),
     ("1 medium banana 100g", "banana", 100),
-    ("2 large eggs", "eggs", 116),
+    ("2 large eggs", "eggs", 100),
     ("2 tbsp olive oil", "olive oil", 27.25),
 ])
 def test_units_become_real_grams(text, key, grams):

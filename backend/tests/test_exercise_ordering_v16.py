@@ -219,7 +219,7 @@ class TestSlotPriorityOrdering:
             secondary_focus_areas=['arms'],
             days_per_week=4,
         )
-        ARM_ISO = {'bicep_curl', 'tricep_push'}
+        ARM_ISO = {'bicep_curl', 'tricep_push', 'hammer_curl'}
         CORE_PAT = {'core_stability', 'core_flexion', 'carry'}
         violations = []
         for day in blueprint['day_blueprints']:
