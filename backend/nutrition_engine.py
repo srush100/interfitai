@@ -1239,6 +1239,11 @@ def parse_portions(text: str) -> list:
     return [spec for spec in map(_parse_segment, _segments(text)) if spec]
 
 
+def split_foods(text: str) -> list:
+    """'hungry jacks whopper and large chips' → ['hungry jacks whopper', 'large chips']"""
+    return [seg for seg in _segments(text) if seg.strip()]
+
+
 def _segments(text: str) -> list:
     s = _normalise_portion_text(text)
     return re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b|\bwith\b|\balso\b|\bon\b)\s*", s) if s else []

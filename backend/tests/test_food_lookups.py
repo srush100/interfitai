@@ -222,3 +222,35 @@ def test_chat_uses_saved_food(world, monkeypatch):
     assert [h["result"]["calories"] for h in hits] == [610]
     assert run(server.saved_foods_in("Is a large McDonald's thickshake OK on a cut?", "US")) == []
     assert run(server.saved_foods_in("what about a small thickshake from mcdonalds", "AU")) == []
+
+
+# ── restaurant orders: each item looked up and saved on its own ───────────
+def test_order_split_per_item_with_chain_carried(world, monkeypatch):
+    menu = {"hungry jacks whopper": {"name": "Hungry Jack's Whopper", "calories": 600, "protein": 27, "carbs": 49,
+                                     "fats": 33, "serving_size": "1 burger", "verified": True,
+                                     "source": "hungryjacks.com.au"},
+            "hungry jacks large chips": {"name": "Hungry Jack's Large Chips", "calories": 400, "protein": 5,
+                                         "carbs": 52, "fats": 19, "serving_size": "1 large",
+                                         "verified": True, "source": "hungryjacks.com.au"}}
+
+    async def web(query, country):
+        world["calls"].append(("web", query, country))
+        return dict(menu[query.lower()]) if query.lower() in menu else None
+    monkeypatch.setattr(server, "_web_lookup", web)
+    r = run(server.lookup_food("hungry jacks whopper and large chips", "AU"))
+    assert r["calories"] == 1000 and r["protein"] == 32 and r["lookup"] == "web" and r["verified"]
+    assert [i["name"] for i in r["items"]] == ["Hungry Jack's Whopper", "Hungry Jack's Large Chips"]
+    assert {c[1] for c in world["calls"] if c[0] == "web"} == set(menu)
+    # each item is now saved: the chips alone come back instantly, same numbers
+    n = len(world["calls"])
+    assert run(server.lookup_food("large chips hungry jacks", "AU"))["calories"] == 400 and len(world["calls"]) == n
+    # "with" stays inside a menu item's name
+    run(server.lookup_food("hungry jacks whopper with cheese", "AU"))
+    assert world["calls"][-1][1] == "hungry jacks whopper with cheese"
+
+
+def test_order_mixes_database_and_restaurant(world):
+    world["found"]["web"] = {**SHAKE, "name": "Big Mac", "calories": 560, "protein": 26, "carbs": 45, "fats": 30}
+    r = run(server.lookup_food("2 boiled eggs and a big mac", "AU"))
+    assert r["calories"] == 560 + 155 and r["lookup"] == "web"
+    assert [i["lookup"] for i in r["items"]] == ["database", "web"]

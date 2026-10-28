@@ -5722,7 +5722,7 @@ from nutrition_engine import (  # noqa: E402
     snap_item_from_text,
     snap_item,
     food_matches,
-    calculate_meal_text, meal_summary,
+    calculate_meal_text, meal_summary, split_foods,
 )
 import food_lookup as FoodLookup  # noqa: E402
 from meal_templates import TEMPLATES_BY_STYLE  # noqa: E402
@@ -7938,6 +7938,12 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False) ->
     calc = calculate_meal_text(query)
     if calc:
         return database_meal_result(query, calc)
+    # A restaurant item's name can contain "with"/"on" ("whopper with cheese"):
+    # an order is only split on and / , / +
+    parts = [x.strip() for x in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b)\s*", query) if x.strip()] \
+        if FoodLookup.is_chain(query) else split_foods(query)
+    if len(parts) > 1:
+        return await _lookup_order(query, parts, country, force_web)
     key, tokens, cc = FoodLookup.lookup_key(query, country)
     if not tokens:
         raise HTTPException(status_code=400, detail={"error": "empty_query", "message": "Type a food to search."})
@@ -7972,6 +7978,48 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False) ->
         "serving_size": "", "is_ai_estimate": True, "verified": False, "lookup": "none", "country": cc,
         "source": "Couldn't find this food — please add it manually", "source_url": "", "confidence": "low",
         "web_not_found": force_web,
+    }
+
+
+async def _lookup_order(query: str, parts: list, country: str, force_web: bool) -> dict:
+    """'hungry jacks whopper and large chips': each item is looked up (and saved)
+    on its own — the chain carried to every item — then added up. One web search
+    per item gives that item's real figures; one search for the whole order
+    would return one of them, or a random combined number."""
+    chain = FoodLookup.chain_in(query)
+    items = []
+    for part in parts:
+        calc = None if chain else calculate_meal_text(part)
+        if calc:                                  # "2 boiled eggs": the food database reads it as typed
+            items.append({**database_meal_result(part, calc), "qty": 1})
+            continue
+        m = re.match(r"^(\d+(?:\.\d+)?|a|an|one|two|three|four)\s+(.+)$", part.strip(), re.I)
+        qty = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4}.get(m.group(1).lower(), None) if m else 1
+        qty = qty if qty is not None else float(m.group(1))
+        food = m.group(2) if m else part
+        if chain and not FoodLookup.chain_in(food):
+            food = f"{chain} {food}"          # "large chips" → "hungry jacks large chips"
+        r = await lookup_food(food, country, force_web)
+        if not r.get("calories"):
+            return {**r, "name": query[:1].upper() + query[1:],
+                    "source": f"Couldn't find '{food}' — search it on its own or add it manually"}
+        items.append({**r, "qty": qty})
+    trust = ["database", "open_food_facts", "web", "ai_estimate"]
+    worst = max((i.get("lookup") or "ai_estimate" for i in items), key=lambda k: trust.index(k) if k in trust else 3)
+    total = {k: round(sum(float(i.get(k) or 0) * i["qty"] for i in items), 0 if k == "calories" else 1)
+             for k in ("calories", "protein", "carbs", "fats")}
+    summary = " + ".join(f"{i['qty']:g} × {i['name']}" if i["qty"] != 1 else i["name"] for i in items)
+    return {
+        "name": query[:1].upper() + query[1:], **total,
+        "serving_size": summary, "serving_g": None, "serving_unit": "g",
+        "items": [{k: i.get(k) for k in ("name", "qty", "calories", "protein", "carbs", "fats", "serving_size",
+                                         "source", "source_url", "lookup")} for i in items],
+        "is_ai_estimate": worst == "ai_estimate", "verified": worst in ("open_food_facts", "web"),
+        "from_database": worst == "database", "lookup": worst,
+        "source": ", ".join(dict.fromkeys(i.get("source") or "" for i in items if i.get("source"))),
+        "source_url": next((i.get("source_url") for i in items if i.get("source_url")), ""),
+        "confidence": "low" if worst == "ai_estimate" else "high",
+        "saved": all(i.get("saved") for i in items),
     }
 
 

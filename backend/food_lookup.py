@@ -95,6 +95,17 @@ def lookup_key(query: str, phone_country: str = "") -> tuple:
     return f"{country}|{' '.join(tokens)}", tokens, country
 
 
+def chain_in(query: str) -> str:
+    """The restaurant chain named in the text, as typed ('hungry jacks'), or ''."""
+    q = _plain(query).replace("'", "")
+    for c in CHAINS:
+        c2 = c.replace("'", "")
+        m = re.search(rf"\b{re.escape(c2)}\w*", q)
+        if m and c2 not in ("big mac", "whopper", "mcflurry", "mcchicken", "mcmuffin", "zinger"):
+            return m.group(0)
+    return ""
+
+
 def is_chain(query: str) -> bool:
     q = _plain(query)
     return any(c.replace("'", "") in q.replace("'", "") for c in CHAINS)
