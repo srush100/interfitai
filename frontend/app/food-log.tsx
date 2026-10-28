@@ -1078,158 +1078,7 @@ export default function FoodLog() {
               </View>
             )}
 
-            {/* Regular search results */}
-            {!searching && searchResults.length > 0 && (
-              <View style={styles.resultsContainer}>
-                {searchResults.map((food, idx) => {
-                  const isSelected = selectedSearchIdx === idx;
-                  const scaled = getScaledMacros(food, isSelected ? searchQty : 1, isSelected ? customAmount : '');
-                  return (
-                    <View key={idx} style={[styles.resultItem, isSelected && styles.resultItemExpanded]}>
-                      {/* Tap to expand/collapse */}
-                      <TouchableOpacity
-                        style={styles.resultContent}
-                        onPress={() => {
-                          if (isSelected) {
-                            setSelectedSearchIdx(null);
-                            setSearchQty(1);
-                            setCustomAmount('');
-                          } else {
-                            setSelectedSearchIdx(idx);
-                            setSearchQty(1);
-                            setCustomAmount('');
-                          }
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.resultInfo}>
-                          <Text style={styles.resultName}>{food.name}</Text>
-                          <Text style={styles.resultMacros}>
-                            {isSelected
-                              ? `${scaled.calories} cal • ${scaled.protein}g P • ${scaled.carbs}g C • ${scaled.fats}g F`
-                              : `${food.calories} cal • ${food.protein}g P • ${food.carbs}g C • ${food.fats}g F`}
-                          </Text>
-                        </View>
-                        <Ionicons
-                          name={isSelected ? 'chevron-up' : 'add-circle'}
-                          size={26}
-                          color={colors.primary}
-                        />
-                      </TouchableOpacity>
-
-                      {/* Expanded: stepper + custom amount + add button */}
-                      {isSelected && (
-                        <>
-                          <View style={styles.inlineQtyRow}>
-                            <View style={styles.inlineQtyControls}>
-                              <TouchableOpacity
-                                style={[styles.inlineQtyBtn, searchQty <= 1 && styles.inlineQtyBtnDisabled]}
-                                onPress={() => { setSearchQty(q => Math.max(1, q - 1)); setCustomAmount(''); }}
-                                disabled={searchQty <= 1}
-                              >
-                                <Ionicons name="remove" size={18} color={searchQty <= 1 ? colors.textSecondary : colors.text} />
-                              </TouchableOpacity>
-                              <Text style={styles.inlineQtyValue}>{searchQty}</Text>
-                              <TouchableOpacity
-                                style={[styles.inlineQtyBtn, searchQty >= 10 && styles.inlineQtyBtnDisabled]}
-                                onPress={() => { setSearchQty(q => Math.min(10, q + 1)); setCustomAmount(''); }}
-                                disabled={searchQty >= 10}
-                              >
-                                <Ionicons name="add" size={18} color={searchQty >= 10 ? colors.textSecondary : colors.text} />
-                              </TouchableOpacity>
-                            </View>
-                            <TouchableOpacity
-                              style={styles.inlineAddBtn}
-                              onPress={() => logFoodWithCustom(food, searchQty, customAmount)}
-                            >
-                              <Text style={styles.inlineAddBtnText}>
-                                Add {parseAmount(customAmount) > 0 ? `(${scaled.label})` : searchQty > 1 ? `×${searchQty}` : ''}
-                              </Text>
-                            </TouchableOpacity>
-                          </View>
-
-                          {/* Custom gram input */}
-                          <View style={styles.customAmountRow}>
-                            <Text style={styles.customAmountLabel}>{customAmountLabel(food)}</Text>
-                            <TextInput
-                              style={styles.customAmountInput}
-                              placeholder={servingBase(food) ? 'e.g. 150' : 'e.g. 1.5'}
-                              placeholderTextColor={colors.textMuted}
-                              value={customAmount}
-                              onChangeText={setCustomAmount}
-                              keyboardType="decimal-pad"
-                            />
-                          </View>
-                        </>
-                      )}
-
-                      {/* Save to favourites — collapsed only */}
-                      {!isSelected && (
-                        <TouchableOpacity
-                          style={styles.saveFavoriteBtn}
-                          onPress={() => saveSearchedFoodToFavorites(food, idx)}
-                          disabled={savingSearchFavorite === idx}
-                        >
-                          {savingSearchFavorite === idx ? (
-                            <ActivityIndicator size="small" color={colors.primary} />
-                          ) : (
-                            <Ionicons name="heart-outline" size={20} color={colors.primary} />
-                          )}
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-
-            {/* Offer AI search alongside database results */}
-            {!searching && searchResults.length > 0 && !aiResult && (
-              <TouchableOpacity
-                style={styles.aiSearchInlineBtn}
-                onPress={searchWithAI}
-                disabled={aiSearching}
-              >
-                {aiSearching ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <>
-                    <Ionicons name="sparkles" size={16} color={colors.primary} />
-                    <Text style={styles.aiSearchInlineBtnText}>Not quite right? Find an exact match</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {/* Empty state + AI fallback */}
-            {!searching && searchQuery.trim() !== '' && searchResults.length === 0 && !aiResult && (
-              <View style={styles.emptySearchState}>
-                <Ionicons name="search-outline" size={40} color={colors.textMuted} />
-                <Text style={styles.emptySearchTitle}>{searchError || `No results for "${searchQuery}"`}</Text>
-                <TouchableOpacity
-                  style={styles.aiSearchBtn}
-                  onPress={searchWithAI}
-                  disabled={aiSearching}
-                >
-                  {aiSearching ? (
-                    <ActivityIndicator size="small" color={colors.background} />
-                  ) : (
-                    <>
-                      <Ionicons name="sparkles" size={18} color={colors.background} />
-                      <Text style={styles.aiSearchBtnText}>Find it (products & web)</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.addManuallyBtn}
-                  onPress={() => setActiveTab('manual')}
-                >
-                  <Text style={styles.addManuallyBtnText}>Add Manually</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* AI estimate result card */}
+            {/* Lookup result card (food database / product / web / estimate): top, above the list */}
             {!searching && aiResult && (
               <View style={styles.resultsContainer}>
                 <View style={[styles.resultItem, aiResultExpanded && styles.resultItemExpanded]}>
@@ -1361,6 +1210,157 @@ export default function FoodLog() {
                 </View>
               </View>
             )}
+            {/* Above the list, not under 50 results: products & web lookup */}
+            {!searching && searchResults.length > 0 && !aiResult && (
+              <TouchableOpacity
+                style={styles.aiSearchInlineBtn}
+                onPress={searchWithAI}
+                disabled={aiSearching}
+              >
+                {aiSearching ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="sparkles" size={16} color={colors.primary} />
+                    <Text style={styles.aiSearchInlineBtnText}>{'Can\u2019t see it? Find an exact match'}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {/* Regular search results */}
+            {!searching && searchResults.length > 0 && (
+              <View style={styles.resultsContainer}>
+                {searchResults.map((food, idx) => {
+                  const isSelected = selectedSearchIdx === idx;
+                  const scaled = getScaledMacros(food, isSelected ? searchQty : 1, isSelected ? customAmount : '');
+                  return (
+                    <View key={idx} style={[styles.resultItem, isSelected && styles.resultItemExpanded]}>
+                      {/* Tap to expand/collapse */}
+                      <TouchableOpacity
+                        style={styles.resultContent}
+                        onPress={() => {
+                          if (isSelected) {
+                            setSelectedSearchIdx(null);
+                            setSearchQty(1);
+                            setCustomAmount('');
+                          } else {
+                            setSelectedSearchIdx(idx);
+                            setSearchQty(1);
+                            setCustomAmount('');
+                          }
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.resultInfo}>
+                          <Text style={styles.resultName}>{food.name}</Text>
+                          <Text style={styles.resultMacros}>
+                            {isSelected
+                              ? `${scaled.calories} cal • ${scaled.protein}g P • ${scaled.carbs}g C • ${scaled.fats}g F`
+                              : `${food.calories} cal • ${food.protein}g P • ${food.carbs}g C • ${food.fats}g F`}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name={isSelected ? 'chevron-up' : 'add-circle'}
+                          size={26}
+                          color={colors.primary}
+                        />
+                      </TouchableOpacity>
+
+                      {/* Expanded: stepper + custom amount + add button */}
+                      {isSelected && (
+                        <>
+                          <View style={styles.inlineQtyRow}>
+                            <View style={styles.inlineQtyControls}>
+                              <TouchableOpacity
+                                style={[styles.inlineQtyBtn, searchQty <= 1 && styles.inlineQtyBtnDisabled]}
+                                onPress={() => { setSearchQty(q => Math.max(1, q - 1)); setCustomAmount(''); }}
+                                disabled={searchQty <= 1}
+                              >
+                                <Ionicons name="remove" size={18} color={searchQty <= 1 ? colors.textSecondary : colors.text} />
+                              </TouchableOpacity>
+                              <Text style={styles.inlineQtyValue}>{searchQty}</Text>
+                              <TouchableOpacity
+                                style={[styles.inlineQtyBtn, searchQty >= 10 && styles.inlineQtyBtnDisabled]}
+                                onPress={() => { setSearchQty(q => Math.min(10, q + 1)); setCustomAmount(''); }}
+                                disabled={searchQty >= 10}
+                              >
+                                <Ionicons name="add" size={18} color={searchQty >= 10 ? colors.textSecondary : colors.text} />
+                              </TouchableOpacity>
+                            </View>
+                            <TouchableOpacity
+                              style={styles.inlineAddBtn}
+                              onPress={() => logFoodWithCustom(food, searchQty, customAmount)}
+                            >
+                              <Text style={styles.inlineAddBtnText}>
+                                Add {parseAmount(customAmount) > 0 ? `(${scaled.label})` : searchQty > 1 ? `×${searchQty}` : ''}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Custom gram input */}
+                          <View style={styles.customAmountRow}>
+                            <Text style={styles.customAmountLabel}>{customAmountLabel(food)}</Text>
+                            <TextInput
+                              style={styles.customAmountInput}
+                              placeholder={servingBase(food) ? 'e.g. 150' : 'e.g. 1.5'}
+                              placeholderTextColor={colors.textMuted}
+                              value={customAmount}
+                              onChangeText={setCustomAmount}
+                              keyboardType="decimal-pad"
+                            />
+                          </View>
+                        </>
+                      )}
+
+                      {/* Save to favourites — collapsed only */}
+                      {!isSelected && (
+                        <TouchableOpacity
+                          style={styles.saveFavoriteBtn}
+                          onPress={() => saveSearchedFoodToFavorites(food, idx)}
+                          disabled={savingSearchFavorite === idx}
+                        >
+                          {savingSearchFavorite === idx ? (
+                            <ActivityIndicator size="small" color={colors.primary} />
+                          ) : (
+                            <Ionicons name="heart-outline" size={20} color={colors.primary} />
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Empty state + AI fallback */}
+            {!searching && searchQuery.trim() !== '' && searchResults.length === 0 && !aiResult && (
+              <View style={styles.emptySearchState}>
+                <Ionicons name="search-outline" size={40} color={colors.textMuted} />
+                <Text style={styles.emptySearchTitle}>{searchError || `No results for "${searchQuery}"`}</Text>
+                <TouchableOpacity
+                  style={styles.aiSearchBtn}
+                  onPress={searchWithAI}
+                  disabled={aiSearching}
+                >
+                  {aiSearching ? (
+                    <ActivityIndicator size="small" color={colors.background} />
+                  ) : (
+                    <>
+                      <Ionicons name="sparkles" size={18} color={colors.background} />
+                      <Text style={styles.aiSearchBtnText}>Find it (products & web)</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addManuallyBtn}
+                  onPress={() => setActiveTab('manual')}
+                >
+                  <Text style={styles.addManuallyBtnText}>Add Manually</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
           </View>
         )}
 

@@ -254,3 +254,54 @@ def test_order_mixes_database_and_restaurant(world):
     r = run(server.lookup_food("2 boiled eggs and a big mac", "AU"))
     assert r["calories"] == 560 + 155 and r["lookup"] == "web"
     assert [i["lookup"] for i in r["items"]] == ["database", "web"]
+
+
+# ── build-your-own items (Subway): added up from saved parts ───────────────
+SUB = "subway footlong on rye bread, steak and cheese with spinach, tomato and onion with smokey bbq sauce"
+PARTS = {"subway footlong rye bread": 420, "subway footlong steak": 220, "subway footlong cheese": 110,
+         "subway footlong spinach": 10, "subway footlong tomato": 15, "subway footlong onion": 15,
+         "subway footlong smokey bbq sauce": 120}
+
+
+def _parser(order):
+    async def parse(query):
+        return order
+    return parse
+
+
+def test_subway_sub_built_from_parts(world, monkeypatch):
+    monkeypatch.setattr(server, "_parse_order", _parser([{"item": "Subway Footlong Steak & Cheese on rye",
+                                                         "qty": 1, "parts": list(PARTS)}]))
+
+    async def web(query, country):
+        world["calls"].append(("web", query, country))
+        cal = PARTS.get(query.lower())
+        return {"name": query.title(), "calories": cal, "protein": 1, "carbs": 1, "fats": 1, "verified": True,
+                "source": "subway.com/en-AU"} if cal else None
+    monkeypatch.setattr(server, "_web_lookup", web)
+    r = run(server.lookup_food(SUB, "AU"))
+    assert r["calories"] == sum(PARTS.values()) and r["lookup"] == "web"
+    assert len([c for c in world["calls"] if c[0] == "web"]) == len(PARTS)
+    # every part is saved: a different sub with the same parts needs no new search
+    monkeypatch.setattr(server, "_parse_order", _parser([{"item": "Subway Footlong Steak", "qty": 1,
+                                                         "parts": ["subway footlong rye bread",
+                                                                   "subway footlong steak"]}]))
+    n = len(world["calls"])
+    assert run(server.lookup_food("subway footlong steak on rye", "AU"))["calories"] == 640
+    assert len(world["calls"]) == n
+
+
+def test_missing_part_falls_back_to_whole_item(world, monkeypatch):
+    monkeypatch.setattr(server, "_parse_order", _parser([{"item": "Subway Footlong Mystery Sub", "qty": 1,
+                                                         "parts": ["subway footlong mystery bread"]}]))
+    world["found"]["ai_estimate"] = {"name": "Footlong", "calories": 800, "protein": 40, "carbs": 90, "fats": 25}
+    r = run(server.lookup_food("subway footlong mystery sub with mystery bread", "AU"))
+    assert r["calories"] == 800 and r["lookup"] == "ai_estimate"
+
+
+def test_two_menu_items_from_parser(world, monkeypatch):
+    monkeypatch.setattr(server, "_parse_order", _parser([{"item": "Hungry Jack's Whopper", "qty": 1, "parts": []},
+                                                        {"item": "Hungry Jack's Large Chips", "qty": 2, "parts": []}]))
+    world["found"]["web"] = {**SHAKE, "calories": 500}
+    r = run(server.lookup_food("hungry jacks whopper and 2 large chips", "AU"))
+    assert r["calories"] == 1500

@@ -7923,7 +7923,7 @@ async def _off_lookup(query: str, country: str = ""):
 _food_lookup_index_ready = False
 
 
-async def lookup_food(query: str, country: str = "", force_web: bool = False) -> dict:
+async def lookup_food(query: str, country: str = "", force_web: bool = False, whole: bool = False) -> dict:
     """One answer per food, the same every time, in the food log and the chat:
     1. the food database (USDA values) — everyday foods and typed meals
     2. the saved answer for this food in this country (any word order/spelling)
@@ -7938,12 +7938,16 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False) ->
     calc = calculate_meal_text(query)
     if calc:
         return database_meal_result(query, calc)
-    # A restaurant item's name can contain "with"/"on" ("whopper with cheese"):
-    # an order is only split on and / , / +
-    parts = [x.strip() for x in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b)\s*", query) if x.strip()] \
-        if FoodLookup.is_chain(query) else split_foods(query)
-    if len(parts) > 1:
-        return await _lookup_order(query, parts, country, force_web)
+    if not whole:
+        if FoodLookup.is_chain(query):
+            if re.search(r",|;|\+|&|\band\b|\bplus\b|\bwith\b|\bon\b|^\d", query):
+                order = await _lookup_order(query, country, force_web)
+                if order:
+                    return order
+        else:
+            parts = split_foods(query)
+            if len(parts) > 1:
+                return await _lookup_items(query, parts, country, force_web)
     key, tokens, cc = FoodLookup.lookup_key(query, country)
     if not tokens:
         raise HTTPException(status_code=400, detail={"error": "empty_query", "message": "Type a food to search."})
@@ -7981,36 +7985,50 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False) ->
     }
 
 
-async def _lookup_order(query: str, parts: list, country: str, force_web: bool) -> dict:
-    """'hungry jacks whopper and large chips': each item is looked up (and saved)
-    on its own — the chain carried to every item — then added up. One web search
-    per item gives that item's real figures; one search for the whole order
-    would return one of them, or a random combined number."""
-    chain = FoodLookup.chain_in(query)
-    items = []
-    for part in parts:
-        calc = None if chain else calculate_meal_text(part)
-        if calc:                                  # "2 boiled eggs": the food database reads it as typed
-            items.append({**database_meal_result(part, calc), "qty": 1})
-            continue
-        m = re.match(r"^(\d+(?:\.\d+)?|a|an|one|two|three|four)\s+(.+)$", part.strip(), re.I)
-        qty = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4}.get(m.group(1).lower(), None) if m else 1
-        qty = qty if qty is not None else float(m.group(1))
-        food = m.group(2) if m else part
-        if chain and not FoodLookup.chain_in(food):
-            food = f"{chain} {food}"          # "large chips" → "hungry jacks large chips"
-        r = await lookup_food(food, country, force_web)
-        if not r.get("calories"):
-            return {**r, "name": query[:1].upper() + query[1:],
-                    "source": f"Couldn't find '{food}' — search it on its own or add it manually"}
-        items.append({**r, "qty": qty})
+_ORDER_PROMPT = (
+    "You split a food order into what was ordered. Respond with ONLY this JSON:\n"
+    '{"items":[{"item":"<menu item, with the restaurant and size>","qty":1,"parts":[]}]}\n'
+    "- Separate menu items (a burger and fries, a sub and a cookie) are separate items.\n"
+    "- A standard menu item is one item with no parts, even if its name has 'and'/'with' "
+    "(Whopper with Cheese, Steak & Cheese is a sub's name, Big Mac).\n"
+    "- A build-your-own item (Subway sub, burrito, bowl, salad, wrap, poke, pizza with toppings) is ONE "
+    "item; list every component the user named in \"parts\", each with the restaurant and the size, "
+    "e.g. \"subway footlong rye bread\", \"subway footlong steak\", \"subway footlong cheese\", "
+    "\"subway footlong spinach\", \"subway footlong smokey bbq sauce\".\n"
+    "- Keep the user's words. Never add anything they didn't mention."
+)
+
+
+async def _parse_order(query: str):
+    """A restaurant order → [{'item', 'qty', 'parts'}], or None if it can't be read."""
+    try:
+        raw = await call_claude_haiku(system_message=_ORDER_PROMPT, user_message=query, max_tokens=500)
+        content = (raw or "").strip()
+        m = re.search(r"\{[\s\S]+\}", content)
+        items = json.loads(m.group(0) if m else content).get("items") or []
+        out = []
+        for it in items:
+            name = str(it.get("item") or "").strip()
+            if not name:
+                continue
+            qty = float(it.get("qty") or 1)
+            parts = [str(x).strip() for x in (it.get("parts") or []) if str(x).strip()]
+            out.append({"item": name, "qty": qty if 0 < qty <= 20 else 1, "parts": parts})
+        return out or None
+    except Exception as e:
+        logger.warning(f"Order parse failed for '{query}': {e}")
+        return None
+
+
+def _combine(name: str, items: list, summary: str = None) -> dict:
+    """Add up looked-up items (each with a 'qty'); the badge is the least trusted source."""
     trust = ["database", "open_food_facts", "web", "ai_estimate"]
     worst = max((i.get("lookup") or "ai_estimate" for i in items), key=lambda k: trust.index(k) if k in trust else 3)
     total = {k: round(sum(float(i.get(k) or 0) * i["qty"] for i in items), 0 if k == "calories" else 1)
              for k in ("calories", "protein", "carbs", "fats")}
-    summary = " + ".join(f"{i['qty']:g} × {i['name']}" if i["qty"] != 1 else i["name"] for i in items)
+    summary = summary or " + ".join(f"{i['qty']:g} × {i['name']}" if i["qty"] != 1 else i["name"] for i in items)
     return {
-        "name": query[:1].upper() + query[1:], **total,
+        "name": name[:1].upper() + name[1:], **total,
         "serving_size": summary, "serving_g": None, "serving_unit": "g",
         "items": [{k: i.get(k) for k in ("name", "qty", "calories", "protein", "carbs", "fats", "serving_size",
                                          "source", "source_url", "lookup")} for i in items],
@@ -8021,6 +8039,67 @@ async def _lookup_order(query: str, parts: list, country: str, force_web: bool) 
         "confidence": "low" if worst == "ai_estimate" else "high",
         "saved": all(i.get("saved") for i in items),
     }
+
+
+async def _lookup_order(query: str, country: str, force_web: bool):
+    """A restaurant order, the way the chain's own nutrition calculator works:
+    1. a quick AI read of the order: separate items ('whopper and large chips')
+       vs one build-your-own item and its parts (a Subway sub: bread, steak,
+       cheese, salads, sauce — at the sub's size)
+    2. each item / part looked up and saved on its own
+    3. added up.
+    Saved parts make every later combination instant. Returns None for a single
+    standard item (looked up whole by the caller)."""
+    chain = FoodLookup.chain_in(query)
+    order = await _parse_order(query)
+    if order is None:   # can't read it: split on and / , / + (never 'with': "whopper with cheese")
+        order = [{"item": x.strip(), "qty": 1, "parts": []}
+                 for x in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b)\s*", query) if x.strip()]
+    if len(order) == 1 and not order[0]["parts"] and order[0]["qty"] == 1:
+        return None
+
+    def with_chain(text):
+        return text if not chain or FoodLookup.chain_in(text) else f"{chain} {text}"
+
+    items = []
+    for it in order:
+        if it["parts"]:
+            parts = []
+            for part in it["parts"]:
+                r = await lookup_food(with_chain(part), country, force_web, whole=True)
+                if not r.get("calories"):
+                    parts = None      # a part nobody knows: look the whole item up instead
+                    break
+                parts.append({**r, "qty": 1})
+            if parts:
+                combo = _combine(it["item"], parts, summary=", ".join(p["name"] for p in parts))
+                items.append({**combo, "qty": it["qty"]})
+                continue
+        r = await lookup_food(with_chain(it["item"]), country, force_web, whole=True)
+        if not r.get("calories"):
+            return {**r, "name": query[:1].upper() + query[1:],
+                    "source": f"Couldn't find '{it['item']}' — search it on its own or add it manually"}
+        items.append({**r, "qty": it["qty"]})
+    if len(items) == 1 and items[0]["qty"] == 1:
+        return {**items[0], "name": query[:1].upper() + query[1:]}
+    return _combine(query, items)
+
+
+async def _lookup_items(query: str, parts: list, country: str, force_web: bool) -> dict:
+    """A typed list that isn't a restaurant order ('2 boiled eggs and a homemade
+    lasagne'): each item looked up on its own, then added up."""
+    items = []
+    for part in parts:
+        calc = calculate_meal_text(part)
+        if calc:
+            items.append({**database_meal_result(part, calc), "qty": 1})
+            continue
+        r = await lookup_food(part, country, force_web, whole=True)
+        if not r.get("calories"):
+            return {**r, "name": query[:1].upper() + query[1:],
+                    "source": f"Couldn't find '{part}' — search it on its own or add it manually"}
+        items.append({**r, "qty": 1})
+    return _combine(query, items)
 
 
 async def saved_foods_in(message: str, country: str = "", limit: int = 3) -> list:
