@@ -188,8 +188,15 @@ INGREDIENT_MACROS = {
     "pistachios": (560, 20, 28, 45),
     "hazelnuts": (628, 15, 17, 61),
     # Dairy
-    "milk": (42, 3.4, 5, 1),
+    # Plain "milk" = regular (full cream) milk — what most people mean.
+    "milk": (61, 3.2, 4.8, 3.3),
     "whole milk": (61, 3.2, 4.8, 3.3),
+    "full cream milk": (61, 3.2, 4.8, 3.3),
+    "regular milk": (61, 3.2, 4.8, 3.3),
+    "reduced fat milk": (50, 3.3, 4.8, 2.0),   # 2%
+    "low fat milk": (42, 3.4, 5, 1),          # 1%
+    "lite milk": (50, 3.3, 4.8, 2.0),
+    "light milk": (50, 3.3, 4.8, 2.0),
     "almond milk": (17, 0.6, 1.4, 1.1),
     "cheese": (403, 25, 1.3, 33),
     "cheddar": (403, 25, 1.3, 33),

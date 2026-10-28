@@ -226,3 +226,18 @@ def test_barbell_squats_keeps_machine_and_dumbbell_squats():
     lunge = e.get_exercise_options("lunge", ["full_gym"], "weights", ["barbell squats"])
     assert "Barbell Bulgarian Split Squat" not in lunge and "Dumbbell Reverse Lunge" in lunge
     assert "Back Squat" not in e.get_exercise_options("squat", ["full_gym"], "weights", ["no squats or lunges"])
+
+
+@pytest.mark.parametrize("style, eq, level", [("calisthenics", ["bodyweight"], "beginner"),
+                                              ("weights", ["bodyweight"], "intermediate"),
+                                              ("weights", ["dumbbells"], "beginner"),
+                                              ("weights", ["full_gym"], "advanced")])
+def test_no_exercise_twice_in_a_day(style, eq, level):
+    for goal in ("build_muscle", "lose_fat", "body_recomp"):
+        for days in (2, 3, 4, 5):
+            bp = E().build_blueprint(WorkoutGenerateRequest(
+                user_id="u", goal=goal, training_style=style, focus_areas=["full_body"], equipment=eq,
+                days_per_week=days, duration_minutes=60, fitness_level=level))
+            for d in bp["day_blueprints"]:
+                firsts = [s["options"][0] for s in d["slots"] if s["type"] != "conditioning"]
+                assert len(firsts) == len(set(firsts)), (goal, days, d["label"], firsts)
