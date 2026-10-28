@@ -1,4 +1,5 @@
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
@@ -17,6 +18,21 @@ export default function RootLayout() {
     };
     init();
   }, []);
+
+  // Tapping a workout reminder ("Time to Train!") opens the Workouts tab — also
+  // when the tap started the app (only a tap from the last minute, so an old
+  // tap never reopens it on a later launch)
+  useEffect(() => {
+    if (!isReady) return;
+    const open = (r: Notifications.NotificationResponse | null, coldStart = false) => {
+      if ((r?.notification.request.content.data as any)?.type !== 'workout_reminder') return;
+      if (coldStart && Date.now() - (r?.notification.date || 0) > 60_000) return;
+      if (useUserStore.getState().profile) router.push('/(tabs)/workouts');
+    };
+    Notifications.getLastNotificationResponseAsync().then((r) => open(r, true)).catch(() => {});
+    const sub = Notifications.addNotificationResponseReceivedListener((r) => open(r));
+    return () => sub.remove();
+  }, [isReady]);
 
   if (!isReady) {
     return (

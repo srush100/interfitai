@@ -676,13 +676,13 @@ export default function ProfileScreen() {
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Ionicons name="flash" size={22} color={colors.textSecondary} />
-              <Text style={styles.settingLabel}>Daily Motivation</Text>
+              <Text style={styles.settingLabel}>Daily Motivation Quote (Home)</Text>
             </View>
             <Switch
-              value={profile?.motivation_enabled ?? true}
+              value={profile?.motivation_enabled !== false}
               onValueChange={toggleMotivation}
               trackColor={{ false: colors.surfaceLight, true: colors.primary + '50' }}
-              thumbColor={profile?.motivation_enabled ? colors.primary : colors.textMuted}
+              thumbColor={profile?.motivation_enabled !== false ? colors.primary : colors.textMuted}
             />
           </View>
         </View>
