@@ -377,7 +377,7 @@ export default function HomeScreen() {
         </Modal>
 
         {/* Motivation */}
-        {motivation !== '' && profile?.motivation_enabled && (
+        {motivation !== '' && profile?.motivation_enabled !== false && (   /* on unless switched off */
           <View style={styles.motivationCard}>
             <Ionicons name="flash" size={20} color={colors.primary} />
             <Text style={styles.motivationText}>{motivation}</Text>
