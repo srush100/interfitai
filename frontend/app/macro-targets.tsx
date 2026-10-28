@@ -29,11 +29,13 @@ export default function MacroTargetsScreen() {
   const isBulking = userGoal === 'muscle_building' || userGoal === 'build_muscle' || userGoal === 'gain_weight';
 
   // Limits: never below the user's BMR (1,200 if unknown) and at least 50g of
-  // carbs; at most +1,000. In 50-calorie steps, like the buttons.
-  const minAdjustment = Math.ceil(Math.max(
+  // carbs; at most +1,000. In 50-calorie steps, like the buttons. A limit only,
+  // never a forced increase. The server re-checks the same limits whenever the
+  // targets change (safe_calorie_adjustment).
+  const minAdjustment = Math.min(0, Math.ceil(Math.max(
     -((macros?.carbs || 0) - 50) * 4,
     Math.min(0, (macros?.bmr || 1200) - (macros?.calories || 0)),
-  ) / 50) * 50;
+  ) / 50) * 50);
   const MAX_ADJUSTMENT = 1000;
   const setAdjustment = (value: number | ((prev: number) => number)) =>
     setCalorieAdjustment(prev => {

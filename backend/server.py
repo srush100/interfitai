@@ -4,6 +4,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import re
+import math
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -3931,6 +3932,24 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
 
 # ==================== USER PROFILE ENDPOINTS ====================
 
+
+CAL_ADJUST_MAX = 1000
+
+
+def safe_calorie_adjustment(macros: dict, adjustment) -> int:
+    """The user's manual calorie change (Daily Targets screen), kept inside that
+    screen's limits: never below their BMR or under 50g carbs, at most +1,000, in
+    50-calorie steps. Re-checked on the server whenever targets change — weight
+    loss lowers the base, so a saved −300 could otherwise drop below the floor."""
+    adj = int(adjustment or 0)
+    if not macros or not macros.get("calories"):
+        return adj
+    carbs = macros.get("carbs")
+    lo = max(-(float(carbs) - 50) * 4 if carbs is not None else float("-inf"),
+             min(0.0, float(macros.get("bmr") or 1200) - float(macros["calories"])))
+    lo = min(0, math.ceil(lo / 50) * 50)     # a limit, never a forced increase
+    return int(max(lo, min(CAL_ADJUST_MAX, adj)))
+
 @api_router.post("/profile", response_model=UserProfile)
 async def create_profile(profile_data: UserProfileCreate):
     """Create a new user profile with password hashing and duplicate email check"""
@@ -3986,6 +4005,9 @@ async def get_profile(user_id: str):
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
     profile["has_password"] = bool(profile.get("password_hash", ""))
+    # A change saved before the targets dropped is shown within today's limits
+    profile["calorie_adjustment"] = safe_calorie_adjustment(
+        profile.get("calculated_macros"), profile.get("calorie_adjustment"))
     return UserProfile(**profile)
 
 @api_router.put("/profile/{user_id}", response_model=UserProfile)
@@ -4009,6 +4031,10 @@ async def update_profile(user_id: str, update_data: UserProfileUpdate):
             merged.get("mostly_muscle"),
         )
         update_dict["calculated_macros"] = macros
+    if need_recalc or "calorie_adjustment" in update_dict:
+        update_dict["calorie_adjustment"] = safe_calorie_adjustment(
+            update_dict.get("calculated_macros") or profile.get("calculated_macros"),
+            update_dict.get("calorie_adjustment", profile.get("calorie_adjustment")))
     
     update_dict["updated_at"] = datetime.utcnow()
     
@@ -6059,7 +6085,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
     # Honour the user's manual calorie adjustment (Macro Targets screen) so the
     # plan is built for the same daily target the food log displays.
     # Carbs absorb the adjustment (cal/4), matching the food log's display logic.
-    manual_cal_adj = int(profile.get("calorie_adjustment", 0) or 0)
+    manual_cal_adj = safe_calorie_adjustment(macros, profile.get("calorie_adjustment"))
     target_cal = macros['calories'] + manual_cal_adj
     target_pro = macros['protein']
     target_carb = max(0, macros['carbs'] + round(manual_cal_adj / 4))
@@ -8511,7 +8537,7 @@ async def _chat_user_context(user_id: str, profile: Optional[dict]) -> str:
         lines.append("Prefers pounds (lbs) for weights")
     m = profile.get("calculated_macros") or {}
     if m.get("calories"):
-        adj = profile.get("calorie_adjustment") or 0
+        adj = safe_calorie_adjustment(m, profile.get("calorie_adjustment"))
         lines.append(f"App daily targets: {round(m['calories'] + adj)} kcal, {round(m.get('protein', 0))}g protein, "
                      f"{round(m.get('carbs', 0) + adj / 4)}g carbs, {round(m.get('fats', 0))}g fat")
     program = await db.workouts.find_one({"user_id": user_id}, sort=[("created_at", -1)])
@@ -9257,6 +9283,8 @@ async def _sync_profile_weight(user_id: str):
         update["calculated_macros"] = calculate_macros(
             avg, profile["height"], profile["age"], profile["gender"],
             profile["activity_level"], profile["goal"], profile.get("mostly_muscle"))
+        update["calorie_adjustment"] = safe_calorie_adjustment(
+            update["calculated_macros"], profile.get("calorie_adjustment"))
     except Exception as e:   # incomplete profile — keep the weight, skip targets
         logger.warning(f"Weight sync: targets not recalculated for {user_id}: {e}")
     await db.profiles.update_one({"id": user_id}, {"$set": update})
@@ -9374,7 +9402,7 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
         ctx_lines.append(f"Training goal: {goal.replace('_', ' ')}")
         m = profile.get("calculated_macros") or {}
         if m.get("calories"):
-            cal = round(m["calories"] + (profile.get("calorie_adjustment") or 0))
+            cal = round(m["calories"] + safe_calorie_adjustment(m, profile.get("calorie_adjustment")))
             ctx_lines.append(f"App daily targets: {cal} kcal, {round(m.get('protein', 0))}g protein")
 
         goal_framing = {

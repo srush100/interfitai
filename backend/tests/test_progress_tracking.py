@@ -550,3 +550,30 @@ def test_protein_at_most_40_percent_of_calories():
     assert m["protein"] * 4 <= m["calories"] * 0.40 + 2 and m["carbs"] * 4 >= m["calories"] * 0.30
     # real lifters are unaffected
     assert server.calculate_macros(101, 179, 27, "male", "moderate", "weight_loss", True)["protein"] == 222
+
+
+# ── manual calorie change stays within the safe limits when targets change ──
+def test_safe_calorie_adjustment_limits():
+    m = {"calories": 1800, "carbs": 150, "bmr": 1500, "protein": 140, "fats": 50}
+    assert server.safe_calorie_adjustment(m, -200) == -200
+    assert server.safe_calorie_adjustment(m, -500) == -300          # never below BMR (1,500)
+    m2 = {"calories": 2400, "carbs": 90, "bmr": 1500}
+    assert server.safe_calorie_adjustment(m2, -500) == -150         # keeps at least 50g carbs
+    assert server.safe_calorie_adjustment(m, 1500) == 1000
+    assert server.safe_calorie_adjustment(None, -300) == -300
+
+
+def test_weight_loss_recheck_clamps_saved_adjustment(db):
+    _profile(db)
+    p = db.profiles.docs[0]
+    p["calorie_adjustment"] = -2000
+    asyncio.run(server.log_weight(server.WeightLogRequest(user_id="u", weight_kg=80, date="2026-10-21")))
+    p = db.profiles.docs[0]
+    m = p["calculated_macros"]
+    assert m["calories"] + p["calorie_adjustment"] >= min(m["bmr"], m["calories"]) - 1
+    assert m["carbs"] + p["calorie_adjustment"] / 4 >= 50 - 1
+
+
+def test_safe_adjustment_never_forces_an_increase():
+    assert server.safe_calorie_adjustment({"calories": 2207, "protein": 176}, -100) == -100   # carbs unknown
+    assert server.safe_calorie_adjustment({"calories": 1500, "carbs": 40, "bmr": 1300}, 0) == 0
