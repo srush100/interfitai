@@ -543,3 +543,10 @@ def test_macros_female_spellings(label):
     exact = calculate_macros(70, 170, 30, "female", "moderate", "weight_loss")
     assert calculate_macros(70, 170, 30, label, "moderate", "weight_loss")["calories"] == exact["calories"]
     assert exact["calories"] < calculate_macros(70, 170, 30, "Male", "moderate", "weight_loss")["calories"]
+
+
+def test_protein_at_most_40_percent_of_calories():
+    m = server.calculate_macros(110, 150, 60, "female", "sedentary", "weight_loss", True)
+    assert m["protein"] * 4 <= m["calories"] * 0.40 + 2 and m["carbs"] * 4 >= m["calories"] * 0.30
+    # real lifters are unaffected
+    assert server.calculate_macros(101, 179, 27, "male", "moderate", "weight_loss", True)["protein"] == 222

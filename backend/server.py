@@ -1067,7 +1067,7 @@ class EliteCoachingEngine:
             "barbells":  ["Incline Barbell Press"],
             "dumbbells": ["Incline Dumbbell Press", "Incline Dumbbell Fly"],
             "machines":  ["Incline Machine Press"],
-            "bodyweight":["Pike Push-Up", "Decline Push-Up"],
+            "bodyweight":["Decline Push-Up"],   # upper chest; pike push-up is a shoulder press (vertical_push)
             "cables":    ["High-to-Low Cable Fly"],
             "resistance_bands":["Incline Band Press"],
         },
@@ -3510,6 +3510,23 @@ class EliteCoachingEngine:
                     day_label = 'Full Body — Lower-Led'
                     day_focus = archetype['focus'] + ', Upper Compound Cross-Pattern'
 
+            # One exercise once per day: each slot leads with an option not used
+            # earlier that day, and a slot with nothing new to offer is dropped.
+            # Short menus (bodyweight) otherwise repeated an exercise: Pike Push-Up
+            # as both the incline push and the overhead press.
+            chosen, deduped = set(), []
+            for sp in slot_specs:
+                if sp['type'] == 'conditioning' or not sp.get('options'):
+                    deduped.append(sp)
+                    continue
+                fresh = [o for o in sp['options'] if o.lower() not in chosen]
+                if not fresh:
+                    continue
+                sp['options'] = fresh + [o for o in sp['options'] if o.lower() in chosen]
+                chosen.add(fresh[0].lower())
+                deduped.append(sp)
+            slot_specs = deduped
+
             day_blueprints.append({
                 "session_number": i + 1,
                 "archetype_id":   session_type,
@@ -3893,6 +3910,9 @@ def calculate_macros(weight: float, height: float, age: int, gender: str, activi
         by_lean = lean_mass * protein_per_kg_lean
         protein_g = round(min(by_weight, by_lean or by_weight, 220))
         from_lean = bool(by_lean) and by_lean < by_weight
+    # Protein never takes more than 40% of the calories: an unlikely "mostly
+    # muscle" answer (150cm, 110kg on a deficit) left only 13% for carbs
+    protein_g = min(protein_g, round(calories * 0.40 / 4))
     fat_g     = round((calories * 0.25) / 9)    # 25% of cals from fat (hormonal minimum)
     remaining_cals = calories - (protein_g * 4) - (fat_g * 9)
     carbs_g   = round(max(remaining_cals, 0) / 4)
