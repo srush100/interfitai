@@ -584,6 +584,11 @@ export default function FoodLog() {
             { text: 'Enter Manually', onPress: () => { setActiveTab('manual'); setPhotoResult(null); } },
           ],
         );
+      } else if (detail && typeof detail === 'object' && detail.error === 'daily_limit') {
+        Alert.alert('Daily photo limit reached', detail.message, [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Search instead', onPress: () => { setActiveTab('search'); setPhotoResult(null); } },
+        ]);
       } else {
         Alert.alert('Error', (typeof detail === 'string' && detail) || detail?.message || 'Failed to analyze food');
       }

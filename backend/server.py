@@ -3691,6 +3691,9 @@ class FoodLogRequest(BaseModel):
     # "saved". Only AI estimates (or older apps that don't say) are corrected.
     source: Optional[str] = None
 
+SNAP_DAILY_LIMIT = 15          # photo analyses per user per 24 hours (fair use)
+
+
 class FoodImageAnalyzeRequest(BaseModel):
     user_id: str
     image_base64: str
@@ -6718,6 +6721,17 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
         # Validate base64 image
         if not request.image_base64 or len(request.image_base64) < 100:
             raise HTTPException(status_code=400, detail="Invalid image data")
+        # Fair-use cap: photo analysis is the app's most expensive AI call. Far
+        # above normal use (3-5 meals a day, plus re-analyses); stops one
+        # account costing more than its subscription.
+        used = await db.snap_usage.count_documents({
+            "user_id": request.user_id, "created_at": {"$gte": datetime.utcnow() - timedelta(hours=24)}})
+        if used >= SNAP_DAILY_LIMIT:
+            raise HTTPException(status_code=429, detail={
+                "error": "daily_limit",
+                "message": f"You've used today's {SNAP_DAILY_LIMIT} photo analyses. It resets within 24 hours "
+                           "\u2014 you can still search for food or add it manually."})
+        await db.snap_usage.insert_one({"user_id": request.user_id, "created_at": datetime.utcnow()})
         
         # The description goes to the AI as a hint about WHAT is in the photo
         # ("no dressing", "grilled not fried", "4 eggs and 3 slices sourdough").

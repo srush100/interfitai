@@ -305,3 +305,40 @@ def test_two_menu_items_from_parser(world, monkeypatch):
     world["found"]["web"] = {**SHAKE, "calories": 500}
     r = run(server.lookup_food("hungry jacks whopper and 2 large chips", "AU"))
     assert r["calories"] == 1500
+
+
+# ── Snap fair-use cap ───────────────────────────────────────────────────────
+def test_snap_daily_cap(monkeypatch):
+    used = []
+
+    class Usage:
+        async def count_documents(self, q):
+            return len([u for u in used if u["user_id"] == q["user_id"] and u["created_at"] >= q["created_at"]["$gte"]])
+
+        async def insert_one(self, d):
+            used.append(d)
+
+    class DB:
+        snap_usage = Usage()
+
+    async def ok(_):
+        return {"has_access": True}
+    monkeypatch.setattr(server, "db", DB())
+    monkeypatch.setattr(server, "check_subscription_access", ok)
+    for _ in range(server.SNAP_DAILY_LIMIT):
+        used.append({"user_id": "u", "created_at": datetime.utcnow() - timedelta(hours=2)})
+    req = server.FoodImageAnalyzeRequest(user_id="u", image_base64="x" * 200)
+    with pytest.raises(server.HTTPException) as e:
+        run(server.analyze_food_image(req))
+    assert e.value.status_code == 429 and e.value.detail["error"] == "daily_limit"
+    # yesterday's photos don't count
+    for u in used:
+        u["created_at"] -= timedelta(hours=23)
+    monkeypatch.setattr(server, "call_claude_sonnet", None)   # past the cap check, the AI step runs
+    try:
+        run(server.analyze_food_image(req))
+    except server.HTTPException as err:
+        assert err.detail != {"error": "daily_limit"} and getattr(err, "status_code", 0) != 429
+    except Exception:
+        pass
+    assert len(used) == server.SNAP_DAILY_LIMIT + 1
