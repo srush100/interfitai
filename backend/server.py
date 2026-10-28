@@ -8441,8 +8441,13 @@ async def chat_with_ai(request: ChatRequest):
             "\n\nFOOD DATABASE RESULT for the food in the user's message. The app's food log "
             "shows exactly these numbers — use them, do not estimate your own:\n" + "\n".join(lines))
     else:
-        # Foods the food log has already looked up (brands, restaurants…)
-        saved = await saved_foods_in(message, request.country or "")
+        # Foods the food log has already looked up (brands, restaurants…). An
+        # extra only: a lookup problem never stops the coach from answering
+        try:
+            saved = await saved_foods_in(message, request.country or "")
+        except Exception as e:
+            logger.warning(f"Saved food lookup for chat failed: {e}")
+            saved = []
         if saved:
             lines = []
             for d in saved:

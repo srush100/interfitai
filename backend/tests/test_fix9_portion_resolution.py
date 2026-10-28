@@ -143,7 +143,7 @@ class TestResolvePortionG:
 
     def test_count_fallback_when_no_units_per_serving(self):
         # Label lacks units_per_serving → the food's own unit weight (egg = 58g)
-        assert resolve_portion_g("3 eggs", "eggs", None, None, "egg") == 3 * 58
+        assert resolve_portion_g("3 eggs", "eggs", None, None, "egg") == 3 * 50
 
     def test_count_unresolved_when_unknown_unit(self):
         assert resolve_portion_g("3 mystery_widget", None, None, None, None) is None
@@ -304,7 +304,7 @@ async def test_count_without_label_units_uses_fallback(client, paid_user, monkey
     })
     assert r.status_code == 200, r.text[:300]
     b = r.json()
-    assert b["portion_g_applied"] == 3 * 58  # fallback egg = 58g
+    assert b["portion_g_applied"] == 3 * 50  # fallback egg = 50g (USDA large)
     assert b["portion_source"] == "count_fallback"
 
 

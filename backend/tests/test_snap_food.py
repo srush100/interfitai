@@ -166,7 +166,7 @@ async def test_plate_scaling(client, paid_user, monkeypatch, text, factor):
 
 def test_item_edit_and_add():
     it, err = snap_item_from_text("3 eggs", key="eggs", name="Eggs")
-    assert err is None and it["grams"] == 174 and it["display"] == "3 large eggs"
+    assert err is None and it["grams"] == 150 and it["display"] == "3 large eggs"
     it, err = snap_item_from_text("1 tbsp olive oil")
     assert err is None and it["key"] == "olive oil"
     it, err = snap_item_from_text("30g dragonfruit-ish thing")
