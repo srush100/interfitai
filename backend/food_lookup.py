@@ -34,7 +34,7 @@ _STOP = {"a", "an", "the", "of", "from", "at", "in", "with", "my", "some", "one"
 # Written as one word or two
 _COMPOUNDS = {"thick shake": "thickshake", "milk shake": "milkshake", "ice cream": "icecream",
               "hash brown": "hashbrown", "cheese burger": "cheeseburger", "chicken burger": "chickenburger",
-              "pop corn": "popcorn", "hot dog": "hotdog", "frozen yoghurt": "frozenyogurt",
+              "pop corn": "popcorn", "weet bix": "weetbix", "tim tam": "timtam", "hot dog": "hotdog", "frozen yoghurt": "frozenyogurt",
               "frozen yogurt": "frozenyogurt", "big mac": "bigmac", "mc flurry": "mcflurry"}
 _SPELLINGS = {"yoghurt": "yogurt", "doughnut": "donut", "flavour": "flavor", "colour": "color",
               "chips": "fries", "maccas": "mcdonalds", "macca": "mcdonalds", "hj": "hungry jacks"}  # "large chips" at an Australian McDonald's = large fries
