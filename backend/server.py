@@ -8055,8 +8055,31 @@ _ORDER_PROMPT = (
     "item; list every component the user named in \"parts\", each with the restaurant and the size, "
     "e.g. \"subway footlong rye bread\", \"subway footlong steak\", \"subway footlong cheese\", "
     "\"subway footlong spinach\", \"subway footlong smokey bbq sauce\".\n"
+    "- Add-ons and extras ('extra chicken', 'add bacon', 'double patty', 'extra cheese') are their own "
+    "item, named with the restaurant (\"oporto extra chicken\"); the menu item stays as on the menu "
+    "(\"Oporto Pulled Chicken Bowl\").\n"
     "- Keep the user's words. Never add anything they didn't mention."
 )
+
+# "… with extra chicken", "add bacon", "double patty": the add-on is its own item
+_ADDON_RE = re.compile(r"\s*(?:\bwith\s+)?\b((?:extra|add|added|double|plus extra)\s+[a-z][a-z ]*?)\s*(?=$|,|\band\b|\bwith\b)", re.I)
+
+
+def _split_addons(order: list) -> list:
+    """Each add-on in an item's name becomes its own item, so 'Oporto Pulled
+    Chicken Bowl with extra chicken' is the bowl + an extra-chicken portion —
+    never the plain bowl with the extra silently dropped."""
+    out = []
+    for it in order:
+        addons = [m.group(1).strip() for m in _ADDON_RE.finditer(it["item"])] if not it["parts"] else []
+        base = it["item"]
+        if addons:
+            base = _ADDON_RE.sub(" ", base)
+            base = re.sub(r"(?:\s*\b(?:and|with)\b\s*)+$", "", re.sub(r"\s+", " ", base)).strip(" ,")
+        out.append({**it, "item": base or it["item"]})
+        out += [{"item": re.sub(r"^(?:add|added)\s+", "extra ", a, flags=re.I), "qty": it["qty"], "parts": []}
+                for a in addons]
+    return out
 
 
 async def _parse_order(query: str):
@@ -8115,6 +8138,7 @@ async def _lookup_order(query: str, country: str, force_web: bool):
     if order is None:   # can't read it: split on and / , / + (never 'with': "whopper with cheese")
         order = [{"item": x.strip(), "qty": 1, "parts": []}
                  for x in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b)\s*", query) if x.strip()]
+    order = _split_addons(order)
     if len(order) == 1 and not order[0]["parts"] and order[0]["qty"] == 1:
         return None
 

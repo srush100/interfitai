@@ -342,3 +342,29 @@ def test_snap_daily_cap(monkeypatch):
     except Exception:
         pass
     assert len(used) == server.SNAP_DAILY_LIMIT + 1
+
+
+# ── add-ons ("with extra chicken") are their own item, never dropped ───────
+@pytest.mark.parametrize("text, items", [
+    ("oporto pulled chicken bowl with extra chicken", ["oporto pulled chicken bowl", "extra chicken"]),
+    ("Oporto Pulled Chicken Bowl with extra chicken and extra cheese",
+     ["Oporto Pulled Chicken Bowl", "extra chicken", "extra cheese"]),
+    ("mcdonalds big mac add bacon", ["mcdonalds big mac", "extra bacon"]),
+    ("hungry jacks whopper with cheese", ["hungry jacks whopper with cheese"]),   # menu item, not an add-on
+])
+def test_addons_split(text, items):
+    assert [i["item"] for i in server._split_addons([{"item": text, "qty": 1, "parts": []}])] == items
+
+
+def test_bowl_with_extra_chicken_adds_the_extra(world, monkeypatch):
+    monkeypatch.setattr(server, "_parse_order", _parser(None))   # AI read unavailable: the rules still work
+    menu = {"oporto pulled chicken bowl": 620, "oporto extra chicken": 150}
+
+    async def web(query, country):
+        world["calls"].append(("web", query, country))
+        cal = menu.get(query.lower())
+        return {"name": query.title(), "calories": cal, "protein": 10, "carbs": 10, "fats": 5,
+                "verified": True, "source": "oporto.com.au"} if cal else None
+    monkeypatch.setattr(server, "_web_lookup", web)
+    r = run(server.lookup_food("oporto pulled chicken bowl with extra chicken", "AU"))
+    assert r["calories"] == 770 and [i["calories"] for i in r["items"]] == [620, 150]
