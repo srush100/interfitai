@@ -95,9 +95,22 @@ def lookup_key(query: str, phone_country: str = "") -> tuple:
     return f"{country}|{' '.join(tokens)}", tokens, country
 
 
-def chain_in(query: str) -> str:
-    """The restaurant chain named in the text, as typed ('hungry jacks'), or ''."""
+# Menu items that name their restaurant ("a big mac" is McDonald's)
+_PRODUCT_CHAINS = {"big mac": "mcdonalds", "mcflurry": "mcdonalds", "mcchicken": "mcdonalds",
+                   "mcmuffin": "mcdonalds", "zinger": "kfc"}
+
+
+def chain_in(query: str, country: str = "") -> str:
+    """The restaurant chain named in the text, as typed ('hungry jacks'), or the
+    one a menu item belongs to ('big mac' → 'mcdonalds'; a Whopper is Hungry
+    Jack's in Australia, Burger King elsewhere). '' if none."""
     q = _plain(query).replace("'", "")
+    for product, chain in _PRODUCT_CHAINS.items():
+        if re.search(rf"\b{product}", q) and not any(c.replace("'", "") in q for c in CHAINS[:40]
+                                                       if c not in _PRODUCT_CHAINS and c != "whopper"):
+            return chain
+    if re.search(r"\bwhopper", q) and "hungry jack" not in q and "burger king" not in q:
+        return "hungry jacks" if (country or "").upper() == "AU" else "burger king"
     for c in CHAINS:
         c2 = c.replace("'", "")
         m = re.search(rf"\b{re.escape(c2)}\w*", q)

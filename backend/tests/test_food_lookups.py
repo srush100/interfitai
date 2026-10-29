@@ -368,3 +368,26 @@ def test_bowl_with_extra_chicken_adds_the_extra(world, monkeypatch):
     monkeypatch.setattr(server, "_web_lookup", web)
     r = run(server.lookup_food("oporto pulled chicken bowl with extra chicken", "AU"))
     assert r["calories"] == 770 and [i["calories"] for i in r["items"]] == [620, 150]
+
+
+@pytest.mark.parametrize("text, items", [
+    ("big mac but with bacon", ["big mac", "extra bacon"]),
+    ("add bacon to my big mac", ["big mac", "extra bacon"]),
+    ("big mac with added bacon", ["big mac", "extra bacon"]),
+    ("mcdonalds extra large fries", ["mcdonalds extra large fries"]),            # a size, not an add-on
+    ("kfc zinger burger with a side of chips", ["kfc zinger burger", "chips"]),
+    ("maccas cheeseburger with extra pickles and extra cheese",
+     ["maccas cheeseburger", "extra pickles", "extra cheese"]),                # each add-on once
+    ("big mac no pickles", ["big mac no pickles"]),
+])
+def test_addon_phrasings(text, items):
+    import re
+    order = [{"item": x.strip(), "qty": 1, "parts": []}
+             for x in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b)\s*", server._normalise_order(text)) if x.strip()]
+    assert [i["item"] for i in server._split_addons(order)] == items
+
+
+def test_menu_items_name_their_restaurant():
+    assert FL.chain_in("big mac with bacon", "AU") == "mcdonalds"
+    assert FL.chain_in("whopper", "AU") == "hungry jacks" and FL.chain_in("whopper", "US") == "burger king"
+    assert FL.chain_in("hungry jacks whopper", "US") == "hungry jacks"
