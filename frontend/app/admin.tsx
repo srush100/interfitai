@@ -33,6 +33,10 @@ export default function AdminScreen() {
   const [loading, setLoading] = useState(false);
   const [freeAccessList, setFreeAccessList] = useState<FreeAccessUser[]>([]);
   const [listLoading, setListLoading] = useState(true);
+  // Reset a member's limits (programs / meal plans / everything)
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetWhat, setResetWhat] = useState<'programs' | 'meal_plans' | 'all'>('all');
+  const [resetting, setResetting] = useState(false);
   
   // Admin emails
   const ADMIN_EMAILS = ['sebastianrush5@gmail.com', 'srush@interfitai.com'];
@@ -108,6 +112,47 @@ export default function AdminScreen() {
           },
         },
       ]
+    );
+  };
+
+  const RESET_OPTIONS: { id: 'programs' | 'meal_plans' | 'all'; label: string }[] = [
+    { id: 'programs', label: 'Programs' },
+    { id: 'meal_plans', label: 'Meal plans' },
+    { id: 'all', label: 'Everything' },
+  ];
+
+  const handleResetLimits = () => {
+    const target = resetEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+    const what = RESET_OPTIONS.find((o) => o.id === resetWhat)!.label.toLowerCase();
+    Alert.alert(
+      'Reset limits',
+      `Reset ${what} for ${target}? Their programs and meal plans are kept \u2014 only this month's usage count is cleared.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          onPress: async () => {
+            setResetting(true);
+            try {
+              const r = await api.post('/admin/reset-limits', {
+                admin_email: profile?.email,
+                user_email: target,
+                what: resetWhat,
+              });
+              Alert.alert('Done', r.data?.message || 'Limits reset');
+              setResetEmail('');
+            } catch (error: any) {
+              Alert.alert('Error', error.response?.data?.detail || 'Failed to reset limits');
+            } finally {
+              setResetting(false);
+            }
+          },
+        },
+      ],
     );
   };
 
@@ -196,6 +241,68 @@ export default function AdminScreen() {
                 <>
                   <Ionicons name="gift" size={20} color="#000" />
                   <Text style={styles.grantBtnText}>Grant Access</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Reset a member's limits */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Reset a Member's Limits</Text>
+            <Text style={styles.sectionDescription}>
+              Lets a member generate again this month (e.g. they used their programs by mistake).
+              Their programs and meal plans are kept.
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Member Email</Text>
+              <View style={styles.inputContainer}>
+                <Ionicons name="mail-outline" size={20} color={colors.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter member's email"
+                  placeholderTextColor={colors.textMuted}
+                  value={resetEmail}
+                  onChangeText={setResetEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {RESET_OPTIONS.map((o) => (
+                <TouchableOpacity
+                  key={o.id}
+                  onPress={() => setResetWhat(o.id)}
+                  style={{
+                    flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', borderWidth: 1,
+                    borderColor: resetWhat === o.id ? colors.primary : colors.border,
+                    backgroundColor: resetWhat === o.id ? colors.primary + '22' : 'transparent',
+                  }}
+                >
+                  <Text style={{ color: resetWhat === o.id ? colors.primary : colors.textSecondary, fontWeight: '600' }}>
+                    {o.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.sectionDescription, { marginTop: -8 }]}>
+              {'Everything = programs + meal plans this month, plus today\u2019s Snap photos and body analyses.'}
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.grantBtn, resetting && styles.grantBtnDisabled]}
+              onPress={handleResetLimits}
+              disabled={resetting}
+            >
+              {resetting ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <>
+                  <Ionicons name="refresh" size={20} color="#000" />
+                  <Text style={styles.grantBtnText}>Reset Limits</Text>
                 </>
               )}
             </TouchableOpacity>

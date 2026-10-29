@@ -9270,6 +9270,47 @@ async def grant_free_access(request: GrantAccessRequest):
     
     return {"message": f"Free access granted to {request.user_email}"}
 
+class ResetLimitsRequest(BaseModel):
+    admin_email: str
+    user_email: str
+    what: str = "all"        # "programs" | "meal_plans" | "all" (also today's Snap & body analyses)
+
+
+@api_router.post("/admin/reset-limits")
+async def reset_user_limits(request: ResetLimitsRequest):
+    """Admin resets a member's usage so they can generate again (e.g. they used
+    their programs by mistake). Only the usage counters are cleared — their
+    programs, meal plans and logs are kept. Every reset is recorded."""
+    if not is_admin(request.admin_email):
+        raise HTTPException(status_code=403, detail="Not authorized as admin")
+    what = (request.what or "all").lower()
+    if what not in ("programs", "meal_plans", "all"):
+        raise HTTPException(status_code=400, detail="Choose programs, meal_plans or all")
+    email = request.user_email.strip().lower()
+    profile = await db.profiles.find_one({"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}})
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"No account found for {email}")
+    uid = profile["id"]
+    now = datetime.utcnow()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    cleared = {}
+    if what in ("programs", "all"):
+        r = await db.generation_events.delete_many({"user_id": uid, "created_at": {"$gte": month_start}})
+        cleared["programs"] = r.deleted_count
+    if what in ("meal_plans", "all"):
+        r = await db.meal_generation_events.delete_many({"user_id": uid, "created_at": {"$gte": month_start}})
+        cleared["meal_plans"] = r.deleted_count
+    if what == "all":
+        day = {"user_id": uid, "created_at": {"$gte": now - timedelta(hours=24)}}
+        cleared["snap_photos"] = (await db.snap_usage.delete_many(day)).deleted_count
+        cleared["body_analyses"] = (await db.body_usage.delete_many(day)).deleted_count
+    await db.admin_actions.insert_one({"action": "reset_limits", "what": what, "user_email": email,
+                                       "admin_email": request.admin_email.lower(), "cleared": cleared,
+                                       "created_at": now})
+    label = {"programs": "workout programs", "meal_plans": "meal plans", "all": "all limits"}[what]
+    return {"message": f"Reset {label} for {email}. They can generate again now.", "cleared": cleared}
+
+
 @api_router.delete("/admin/revoke-access")
 async def revoke_free_access(admin_email: str, user_email: str):
     """Admin revokes free access from a user"""
