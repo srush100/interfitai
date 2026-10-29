@@ -120,6 +120,32 @@ CLAUDE_HAIKU_MODEL = os.environ.get('CLAUDE_HAIKU_MODEL', 'claude-haiku-5-5')
 SONNET_THINKING_HEADROOM = 4000
 HAIKU_THINKING_HEADROOM = 2000
 
+AI_IMAGE_MAX_SIDE = 1568      # the size Claude reads images at; bigger only costs upload time
+
+
+def _fit_image(image_base64: str) -> str:
+    """A phone photo (often 3-4MB, 12MP) shrunk to 1,568px on its longest side
+    as a JPEG: the same detail the AI actually reads, a fraction of the size,
+    and well under the 5MB-per-image limit. Upright (EXIF rotation applied).
+    Returns the photo unchanged if it is already small or can't be read."""
+    try:
+        import base64 as _b64
+        import io as _io
+        from PIL import Image, ImageOps
+        raw = _b64.b64decode(image_base64.split(",", 1)[-1])
+        img = Image.open(_io.BytesIO(raw))
+        if max(img.size) <= AI_IMAGE_MAX_SIDE and len(raw) <= 3_500_000:
+            return image_base64
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        img.thumbnail((AI_IMAGE_MAX_SIDE, AI_IMAGE_MAX_SIDE))
+        out = _io.BytesIO()
+        img.save(out, format="JPEG", quality=85)
+        return _b64.b64encode(out.getvalue()).decode()
+    except Exception as e:
+        logger.warning(f"Image resize skipped: {e}")
+        return image_base64
+
+
 async def call_claude_sonnet(
     system_message: str,
     user_message: str,
@@ -142,9 +168,9 @@ async def call_claude_sonnet(
     )
     file_contents = []
     if image_base64:
-        file_contents.append(ImageContent(image_base64))
+        file_contents.append(ImageContent(_fit_image(image_base64)))
     if image_base64_2:
-        file_contents.append(ImageContent(image_base64_2))
+        file_contents.append(ImageContent(_fit_image(image_base64_2)))
     msg = UserMessage(text=user_message, file_contents=file_contents if file_contents else None)
     try:
         return await chat.send_message(msg)
@@ -179,7 +205,7 @@ async def call_claude_haiku(
     )
     file_contents = []
     if image_base64:
-        file_contents.append(ImageContent(image_base64))
+        file_contents.append(ImageContent(_fit_image(image_base64)))
     msg = UserMessage(text=user_message, file_contents=file_contents if file_contents else None)
     try:
         return await chat.send_message(msg)
@@ -9429,7 +9455,7 @@ class BodyAnalysisRequest(BaseModel):
     user_id: str
     before_image_base64: str
     after_image_base64: str
-    time_period: str = "3 months"
+    time_period: str = ""      # "" = the user didn't give dates — never assumed
     before_weight_kg: Optional[float] = None
     after_weight_kg: Optional[float] = None
 
@@ -9454,6 +9480,39 @@ async def get_progress_photos(user_id: str):
     photos = await db.progress_photos.find({"user_id": user_id}).sort("created_at", -1).to_list(50)
     return photos
 
+BODY_DAILY_LIMIT = 3          # body analyses per user per 24 hours (two photos each, fair use)
+
+
+def _clean_body_analysis(d: dict) -> dict:
+    """The AI's answer, checked before it is saved or shown: a whole-number score
+    0-10, a known confidence level, lists of short texts, plain strings."""
+    d = d if isinstance(d, dict) else {}
+
+    def text(v, default=""):
+        return v.strip() if isinstance(v, str) and v.strip() else default
+
+    def items(v):
+        v = v if isinstance(v, list) else ([v] if isinstance(v, str) else [])
+        return [x.strip() for x in v if isinstance(x, str) and x.strip()][:6]
+
+    raw = d.get("estimated_progress_score")
+    m = re.search(r"-?\d+(?:\.\d+)?", str(raw if raw is not None else ""))
+    score = max(0, min(10, round(float(m.group(0))))) if m else 0
+    conf = text(d.get("analysis_confidence"), "low").lower()
+    conf = next((c for c in ("high", "medium", "low") if c in conf), "low")
+    return {
+        "overall_assessment": text(d.get("overall_assessment"), "Analysis complete."),
+        "estimated_body_fat_before": text(d.get("estimated_body_fat_before"), "Not estimated"),
+        "estimated_body_fat_after": text(d.get("estimated_body_fat_after"), "Not estimated"),
+        "visible_changes": items(d.get("visible_changes")),
+        "areas_improved": items(d.get("areas_improved")),
+        "recommendations": items(d.get("recommendations")),
+        "motivation_message": text(d.get("motivation_message")),
+        "estimated_progress_score": score,
+        "analysis_confidence": conf,
+    }
+
+
 @api_router.post("/body/analyze")
 async def analyze_body_progress(request: BodyAnalysisRequest):
     """AI-powered body transformation analysis comparing before/after photos.
@@ -9467,10 +9526,21 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
     if not access.get("has_access"):
         raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Body Analysis",
                                                      "message": "AI body analysis is a premium feature. Start your free trial to unlock it."})
+    # Fair-use cap: each analysis reads two photos with the larger model
+    used = await db.body_usage.count_documents({
+        "user_id": request.user_id, "created_at": {"$gte": datetime.utcnow() - timedelta(hours=24)}})
+    if used >= BODY_DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail={
+            "error": "daily_limit",
+            "message": f"You've used today's {BODY_DAILY_LIMIT} body analyses. It resets within 24 hours."})
+    await db.body_usage.insert_one({"user_id": request.user_id, "created_at": datetime.utcnow()})
 
     # ── Pull user profile for context ────────────────────────────────
     profile = await db.profiles.find_one({"id": request.user_id})
-    ctx_lines = [f"Time period between photos: {request.time_period}"]
+    period = (request.time_period or "").strip()
+    ctx_lines = [f"Time period between photos: {period}" if period else
+                 "Time period between photos: NOT GIVEN — assess the visible change only. Do not assume "
+                 "a time frame or judge how fast the change happened."]
     goal_framing = "overall body composition"
     if profile:
         weight = profile.get("weight")
@@ -9559,7 +9629,8 @@ Respond with valid JSON only — no markdown fences:
     "estimated_progress_score": 8,
     "analysis_confidence": "high | medium | low"
 }}"""),
-            user_message=f"Image 1 is BEFORE, image 2 is AFTER, taken {request.time_period} apart. Analyse them and return the full JSON response per the system prompt.",
+            user_message=f"Image 1 is BEFORE, image 2 is AFTER" + (f", taken {period} apart" if period else
+                         " (time between them not given)") + ". Analyse them and return the full JSON response per the system prompt.",
             max_tokens=1200,
             temperature=0.3,   # consistent scores for the same photos
             image_base64=request.before_image_base64,
@@ -9582,12 +9653,12 @@ Respond with valid JSON only — no markdown fences:
             content = "\n".join(json_lines)
         content = content.strip()
 
-        analysis_data = json.loads(content)
+        analysis_data = _clean_body_analysis(json.loads(content))
 
         analysis_record = {
             "id": str(uuid.uuid4()),
             "user_id": request.user_id,
-            "time_period": request.time_period,
+            "time_period": period or "Not given",
             "analysis": analysis_data,
             "created_at": datetime.utcnow(),
         }
@@ -9601,7 +9672,7 @@ Respond with valid JSON only — no markdown fences:
             retry_content = await call_claude_sonnet(
                 system_message=(body_system_prompt or "") + "\n\nYou MUST respond with valid JSON only — no markdown, no prose.",
                 temperature=0.3,
-                user_message=f"Image 1 is BEFORE, image 2 is AFTER. Re-analyse these photos and return ONLY the JSON object with fields: overall_assessment, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). Taken over {request.time_period}.",
+                user_message=f"Image 1 is BEFORE, image 2 is AFTER. Re-analyse these photos and return ONLY the JSON object with fields: overall_assessment, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). " + (f"Taken over {period}." if period else "Time between photos not given."),
                 max_tokens=1000,
                 image_base64=request.before_image_base64,
                 image_base64_2=request.after_image_base64
@@ -9612,12 +9683,12 @@ Respond with valid JSON only — no markdown fences:
                 if retry_content.startswith("json"):
                     retry_content = retry_content[4:]
             retry_content = retry_content.strip()
-            analysis_data = json.loads(retry_content)
+            analysis_data = _clean_body_analysis(json.loads(retry_content))
 
             analysis_record = {
                 "id": str(uuid.uuid4()),
                 "user_id": request.user_id,
-                "time_period": request.time_period,
+                "time_period": period or "Not given",
                 "analysis": analysis_data,
                 "created_at": datetime.utcnow(),
             }
@@ -9629,9 +9700,12 @@ Respond with valid JSON only — no markdown fences:
                 status_code=502,
                 detail="Analysis could not be completed — please try again with clearer photos."
             )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Body analysis error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to analyze progress: {str(e)}")
+        raise HTTPException(status_code=500, detail="Couldn't analyse these photos right now. "
+                                                    "Please try again in a moment.")
 
 @api_router.get("/body/history/{user_id}")
 async def get_analysis_history(user_id: str):
