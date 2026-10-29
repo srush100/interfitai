@@ -84,7 +84,7 @@ export default function BodyAnalyzer() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [3, 4],
-      quality: 0.85,
+      quality: 0.7,   // the server also shrinks photos before the AI reads them
       base64: true,
     });
 
@@ -104,7 +104,7 @@ export default function BodyAnalyzer() {
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [3, 4],
-      quality: 0.85,
+      quality: 0.7,   // the server also shrinks photos before the AI reads them
       base64: true,
     });
 
@@ -113,9 +113,11 @@ export default function BodyAnalyzer() {
     }
   };
 
-  // Feature 1 — compute human-readable duration from date strings (DD/MM/YYYY or MM/YYYY)
+  // Feature 1 — compute human-readable duration from date strings (DD/MM/YYYY or MM/YYYY).
+  // No dates, or dates that can't be read (a typo, after before before) → '' so
+  // the analysis never assumes a time frame.
   const calculateTimePeriod = (): string => {
-    if (!beforeDate || !afterDate) return '3 months';
+    if (!beforeDate || !afterDate) return '';
     try {
       const parseDate = (input: string): Date => {
         const parts = input.split('/').map(Number);
@@ -126,13 +128,13 @@ export default function BodyAnalyzer() {
           // MM/YYYY
           return new Date(parts[1], parts[0] - 1, 1);
         }
-        return new Date();
+        return new Date(NaN);
       };
 
       const before = parseDate(beforeDate);
       const after = parseDate(afterDate);
       const diffMs = after.getTime() - before.getTime();
-      if (diffMs <= 0) return '1 month';
+      if (!Number.isFinite(diffMs) || diffMs <= 0) return '';
 
       const totalDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
@@ -150,7 +152,7 @@ export default function BodyAnalyzer() {
       if (remaining === 0) return `${years} year${years !== 1 ? 's' : ''}`;
       return `${years} year${years !== 1 ? 's' : ''} and ${remaining} month${remaining !== 1 ? 's' : ''}`;
     } catch {
-      return '3 months';
+      return '';
     }
   };
 
@@ -269,8 +271,9 @@ export default function BodyAnalyzer() {
     } catch (error: any) {
       // Bug 2 — show honest 502 message from backend retry logic
       const detail = error.response?.data?.detail;
-      const msg = (typeof detail === 'string' && detail) || detail?.message || 'Failed to analyze progress';
-      Alert.alert('Analysis Failed', msg);
+      const msg = (typeof detail === 'string' && detail) || detail?.message ||
+        'Couldn\u2019t analyse these photos right now. Please try again in a moment.';
+      Alert.alert(detail?.error === 'daily_limit' ? 'Daily limit reached' : 'Analysis Failed', msg);
     } finally {
       setAnalyzing(false);
     }
@@ -554,6 +557,9 @@ export default function BodyAnalyzer() {
 
             {/* Feature 1 — Date pickers replace time period chips */}
             <Text style={styles.sectionLabel}>Photo Dates</Text>
+            <Text style={[styles.dateLabel, { marginBottom: 8 }]}>
+              {'Optional \u2014 adding both dates makes the analysis more accurate. Without them, only the visible change is assessed.'}
+            </Text>
             <View style={styles.dateRow}>
               <View style={styles.dateInputWrapper}>
                 <Text style={styles.dateLabel}>Before photo date</Text>

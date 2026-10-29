@@ -419,6 +419,7 @@ def test_body_analysis_prompt_and_retry_keep_context(db, monkeypatch):
                              "goal": "weight_loss", "calorie_adjustment": -100,
                              "calculated_macros": {"calories": 2207, "protein": 176}})
     db.body_analyses = Coll()
+    db.body_usage = Coll()
 
     async def paid(_uid):
         return {"has_access": True}
