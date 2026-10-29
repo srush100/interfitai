@@ -42,7 +42,7 @@ const PREMIUM_FEATURES = [
   {
     icon: 'chatbubbles',
     title: 'Ask InterFitAI',
-    description: 'Unlimited AI fitness coaching',
+    description: 'Your personal AI fitness coach',
   },
   {
     icon: 'analytics',
@@ -250,7 +250,7 @@ export default function Subscription() {
           </LinearGradient>
           <Text style={styles.heroTitle}>Unlock Premium</Text>
           <Text style={styles.heroSubtitle}>
-            Get unlimited access to all InterFitAI features
+            Get full access to every InterFitAI feature
           </Text>
         </View>
 
