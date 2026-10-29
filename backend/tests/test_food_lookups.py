@@ -76,7 +76,8 @@ class Lookups:
         return None
 
     async def find_one(self, q):
-        return next((d for d in self.docs if d["key"] == q["key"]), None)
+        conds = q.get("$or") or [q]
+        return next((d for d in self.docs if any(all(d.get(k) == v for k, v in c.items()) for c in conds)), None)
 
     async def update_one(self, q, upd, upsert=False):
         d = await self.find_one(q)
@@ -421,3 +422,34 @@ def test_count_without_piece_info_looks_up_as_typed(world):
     world["found"]["web"] = {**WEETBIX, "serving_size": "100g", "serving_g": 100}
     r = run(server.lookup_food("3 mystery cookies", "AU"))
     assert any(c[1] == "3 mystery cookies" for c in world["calls"]) and r["calories"] == 105
+
+
+# ── any product name: one word or two, long names, plurals, short forms ────
+PRODUCTS = [("Tim Tam Original Chocolate Biscuits", "Arnott's"), ("Weet-Bix Wholegrain Breakfast Cereal", "Sanitarium"),
+            ("Up&Go Liquid Breakfast Chocolate", "Sanitarium"), ("Shapes Barbecue", "Arnott's"),
+            ("Mint Slice", "Arnott's"), ("Nutri-Grain", "Kellogg's"), ("Tiny Teddy Choc", "Arnott's"),
+            ("Le Snak Cheese", "Kraft"), ("Banana Chips Honey Coated Crunchy", "")]
+
+
+@pytest.mark.parametrize("typed, product", [
+    ("timtams", "Tim Tam Original Chocolate Biscuits"), ("weetbix", "Weet-Bix Wholegrain Breakfast Cereal"),
+    ("up and go", "Up&Go Liquid Breakfast Chocolate"), ("up&go", "Up&Go Liquid Breakfast Chocolate"),
+    ("shapes bbq", "Shapes Barbecue"), ("mintslice", "Mint Slice"), ("nutri grain", "Nutri-Grain"),
+    ("tiny teddies chocolate", "Tiny Teddy Choc"), ("lesnak", "Le Snak Cheese"),
+])
+def test_any_name_variation_matches(typed, product):
+    scored = [(FL.off_score({"product_name": n, "brands": b}, typed), n) for n, b in PRODUCTS]
+    best = min((s, n) for s, n in scored if s is not None)
+    assert best[1] == product
+
+
+def test_generic_word_still_needs_a_close_name():
+    assert FL.off_score({"product_name": "Banana Chips Honey Coated Crunchy"}, "banana") is None
+
+
+def test_saved_answer_found_for_one_word_or_two(world):
+    world["found"]["open_food_facts"] = {**WEETBIX, "name": "Arnott's Mint Slice", "serving_size": "1 biscuit (12 g)"}
+    run(server.lookup_food("mint slice", "AU"))
+    n = len(world["calls"])
+    r = run(server.lookup_food("2 mintslice", "AU"))
+    assert len(world["calls"]) == n and r["serving_size"].startswith("2 biscuits")

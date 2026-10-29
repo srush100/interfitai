@@ -8024,11 +8024,12 @@ async def _off_lookup(query: str, country: str = ""):
     except Exception as e:
         logger.warning(f"Open Food Facts search failed for '{query}': {e}")
         return None
-    for product in products:
-        if FoodLookup.off_match(product, tokens):
-            res = FoodLookup.off_result(product)
-            if res:
-                return {**res, "is_ai_estimate": False, "verified": True, "confidence": "high"}
+    # the closest product: every word typed, fewest extra words in its name
+    scored = [(sc, i, p) for i, p in enumerate(products) if (sc := FoodLookup.off_score(p, rest)) is not None]
+    for _, _, product in sorted(scored, key=lambda t: (t[0], t[1])):
+        res = FoodLookup.off_result(product)
+        if res:
+            return {**res, "is_ai_estimate": False, "verified": True, "confidence": "high"}
     return None
 
 
@@ -8078,10 +8079,14 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False, wh
     if not _food_lookup_index_ready:
         try:
             await db.food_lookups.create_index("key", unique=True)
+            await db.food_lookups.create_index("alt")
             _food_lookup_index_ready = True
         except Exception as e:
             logger.warning(f"food_lookups index: {e}")
-    saved = await db.food_lookups.find_one({"key": key})
+    alt = FoodLookup.alt_key(query, country)      # same name written as one word or two
+    saved = await db.food_lookups.find_one({"$or": [{"key": key}, {"alt": alt}]})
+    if saved:
+        key = saved["key"]
     if saved and not force_web and FoodLookup.is_fresh(saved):
         return {**saved["result"], "saved": True}
 
@@ -8095,7 +8100,7 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False, wh
             res = {**res, "lookup": kind, "country": cc}
             await db.food_lookups.update_one(
                 {"key": key},
-                {"$set": {"key": key, "tokens": tokens, "country": cc, "query": query, "kind": kind,
+                {"$set": {"key": key, "alt": alt, "tokens": tokens, "country": cc, "query": query, "kind": kind,
                           "result": res, "updated_at": datetime.utcnow()}},
                 upsert=True)
             return {**res, "saved": False}

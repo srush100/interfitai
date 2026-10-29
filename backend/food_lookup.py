@@ -34,10 +34,13 @@ _STOP = {"a", "an", "the", "of", "from", "at", "in", "with", "my", "some", "one"
 # Written as one word or two
 _COMPOUNDS = {"thick shake": "thickshake", "milk shake": "milkshake", "ice cream": "icecream",
               "hash brown": "hashbrown", "cheese burger": "cheeseburger", "chicken burger": "chickenburger",
-              "pop corn": "popcorn", "weet bix": "weetbix", "tim tam": "timtam", "hot dog": "hotdog", "frozen yoghurt": "frozenyogurt",
+              "pop corn": "popcorn", "hot dog": "hotdog", "frozen yoghurt": "frozenyogurt",
               "frozen yogurt": "frozenyogurt", "big mac": "bigmac", "mc flurry": "mcflurry"}
 _SPELLINGS = {"yoghurt": "yogurt", "doughnut": "donut", "flavour": "flavor", "colour": "color",
-              "chips": "fries", "maccas": "mcdonalds", "macca": "mcdonalds", "hj": "hungry jacks"}  # "large chips" at an Australian McDonald's = large fries
+              "chips": "fries", "maccas": "mcdonalds", "macca": "mcdonalds", "hj": "hungry jacks",
+              # common short forms on menus and packets
+              "bbq": "barbecue", "barbeque": "barbecue", "choc": "chocolate", "choccy": "chocolate",
+              "vanila": "vanilla", "straw": "strawberry"}  # "large chips" at an Australian McDonald's = large fries
 SIZE_WORDS = {"small", "medium", "regular", "large", "kids", "junior", "mini", "jumbo", "king", "xl"}
 
 # Restaurant chains: their menus are on the web, not in packaged-food databases
@@ -88,6 +91,25 @@ def food_tokens(text: str) -> list:
     return sorted({w for w in t.split() if w not in _STOP})
 
 
+def _words(text: str) -> list:
+    """Normalised words in the order typed ("Up&Go" → ['up', 'go'])."""
+    t = (text or "").replace("&", " and ")
+    return [w for w in (_stem(_SPELLINGS.get(x, x)) for x in _plain(t).split()) if w not in _STOP]
+
+
+def squash(text: str) -> str:
+    """The food's name with the spaces taken out, so a name written as one word
+    or two is the same food: 'mint slice' = 'mintslice', 'Weet-Bix' = 'weetbix',
+    'Tim Tams' = 'timtam', 'Up&Go' = 'up and go'."""
+    return "".join(_words(text))
+
+
+def alt_key(query: str, phone_country: str = "") -> str:
+    """A second saved-answer key: the name without spaces (see squash)."""
+    country, rest = country_from(query, phone_country)
+    return f"{country}|{squash(rest)}"
+
+
 def lookup_key(query: str, phone_country: str = "") -> tuple:
     """('AU|bigmac mcdonald', tokens, country) — the same for every spelling of the same food."""
     country, rest = country_from(query, phone_country)
@@ -133,18 +155,39 @@ def is_fresh(saved: dict, now: datetime = None) -> bool:
 
 
 # ── Open Food Facts (packaged foods, worldwide) ───────────────────────────
-def off_match(product: dict, query_tokens: list) -> bool:
-    """A product matches only if it contains every word the user typed (size
-    words included) and doesn't add more than two of its own words — so
-    'banana' never matches 'banana chips' plus extras, and 'large' is never
-    answered with the small one."""
+MAX_EXTRA_WORDS = 3    # "Tim Tam Original Chocolate Biscuits" for "tim tam"
+
+
+def off_score(product: dict, query: str):
+    """How well a product matches what was typed: the number of extra words in
+    its name (fewer = better), or None for no match. The product must contain
+    every word typed (size words included, so 'large' is never answered with
+    the small one) — as separate words or run together ('mintslice' = 'Mint
+    Slice') — and add at most 3 words of its own ('banana' never matches
+    'Banana Chips Honey Coated Crunchy')."""
     name = product.get("product_name") or ""
-    text = f"{name} {product.get('brands') or ''} {product.get('quantity') or ''}"
-    have = set(food_tokens(text))
-    if not query_tokens or not set(query_tokens) <= have:
-        return False
-    extra = set(food_tokens(name)) - set(query_tokens)
-    return len(extra) <= 2
+    brand = product.get("brands") or ""
+    q_tokens = food_tokens(query)
+    if not q_tokens:
+        return None
+    have = set(food_tokens(f"{name} {brand} {product.get('quantity') or ''}"))
+    if set(q_tokens) <= have:
+        extra = len(set(food_tokens(name)) - set(q_tokens))
+        return extra if extra <= MAX_EXTRA_WORDS else None
+    # the same words run together or split differently
+    q = squash(query)
+    name_w, all_w = _words(name), _words(name) + _words(brand)
+    for i in range(len(all_w)):
+        for j in range(i + 1, len(all_w) + 1):
+            if "".join(all_w[i:j]) == q:
+                extra = len(set(name_w) - set(all_w[i:j]))
+                return extra if extra <= MAX_EXTRA_WORDS else None
+    return None
+
+
+def off_match(product: dict, query_tokens) -> bool:
+    query = query_tokens if isinstance(query_tokens, str) else " ".join(query_tokens)
+    return off_score(product, query) is not None
 
 
 def off_result(product: dict) -> dict:
