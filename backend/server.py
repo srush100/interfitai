@@ -8061,25 +8061,53 @@ _ORDER_PROMPT = (
     "- Keep the user's words. Never add anything they didn't mention."
 )
 
-# "… with extra chicken", "add bacon", "double patty": the add-on is its own item
-_ADDON_RE = re.compile(r"\s*(?:\bwith\s+)?\b((?:extra|add|added|double|plus extra)\s+[a-z][a-z ]*?)\s*(?=$|,|\band\b|\bwith\b)", re.I)
+# "… with extra chicken", "add bacon", "double patty": the add-on is its own item.
+# "extra large / extra crispy …" is a size or style, not an add-on.
+_NOT_ADDON = r"(?!(?:large|small|hot|spicy|crispy|crunchy|thick|thin|well|light|lean)\b)"
+_ADDON_RE = re.compile(
+    r"\s*(?:\b(?:but\s+)?with\s+)?\b((?:extra|add|added|double|plus extra)\s+" + _NOT_ADDON +
+    r"[a-z][a-z ]*?|(?<=but with )[a-z][a-z ]*?)\s*(?=$|,|\band\b|\bwith\b)", re.I)
+_BUT_WITH_RE = re.compile(r"\s*\bbut\s+with\s+([a-z][a-z ]*?)\s*(?=$|,|\band\b)", re.I)
+_SIDE_RE = re.compile(r"\s*\b(?:with\s+)?(?:a\s+)?side\s+of\s+([a-z][a-z ]*?)\s*(?=$|,|\band\b|\bwith\b)", re.I)
+
+
+def _normalise_order(text: str) -> str:
+    """'add bacon to my big mac' → 'big mac with extra bacon'"""
+    return re.sub(r"^\s*add\s+(.+?)\s+to\s+(?:my\s+|the\s+|a\s+|an\s+)?(.+)$", r"\2 with extra \1",
+                  text.strip(), flags=re.I)
 
 
 def _split_addons(order: list) -> list:
     """Each add-on in an item's name becomes its own item, so 'Oporto Pulled
     Chicken Bowl with extra chicken' is the bowl + an extra-chicken portion —
-    never the plain bowl with the extra silently dropped."""
+    never the plain bowl with the extra silently dropped. 'but with bacon' is an
+    add-on too, and 'with a side of chips' a separate item. (Plain 'with cheese'
+    stays in the name: 'Whopper with Cheese' is a menu item.)"""
     out = []
     for it in order:
-        addons = [m.group(1).strip() for m in _ADDON_RE.finditer(it["item"])] if not it["parts"] else []
-        base = it["item"]
-        if addons:
-            base = _ADDON_RE.sub(" ", base)
-            base = re.sub(r"(?:\s*\b(?:and|with)\b\s*)+$", "", re.sub(r"\s+", " ", base)).strip(" ,")
-        out.append({**it, "item": base or it["item"]})
-        out += [{"item": re.sub(r"^(?:add|added)\s+", "extra ", a, flags=re.I), "qty": it["qty"], "parts": []}
-                for a in addons]
-    return out
+        if it["parts"]:
+            out.append(it)
+            continue
+        text = _normalise_order(it["item"])
+        sides = [m.group(1).strip() for m in _SIDE_RE.finditer(text)]
+        text = _SIDE_RE.sub(" ", text)
+        addons = ["extra " + m.group(1).strip() for m in _BUT_WITH_RE.finditer(text)]
+        text = _BUT_WITH_RE.sub(" ", text)
+        addons += [re.sub(r"^(?:add|added)\s+", "extra ", m.group(1).strip(), flags=re.I)
+                   for m in _ADDON_RE.finditer(text)]
+        base = _ADDON_RE.sub(" ", text) if addons else text
+        base = re.sub(r"(?:\s*\b(?:and|with)\b\s*)+$", "", re.sub(r"\s+", " ", base)).strip(" ,")
+        if base:                      # an item that is only an add-on ("extra cheese") adds just that
+            out.append({**it, "item": base})
+        out += [{"item": a, "qty": it["qty"], "parts": []} for a in dict.fromkeys(addons)]
+        out += [{"item": x, "qty": it["qty"], "parts": []} for x in sides]
+    seen, unique = set(), []
+    for it in out:                    # the same add-on named twice counts once
+        k = (it["item"].lower(), tuple(it["parts"]))
+        if k not in seen:
+            seen.add(k)
+            unique.append(it)
+    return unique
 
 
 async def _parse_order(query: str):
@@ -8133,7 +8161,7 @@ async def _lookup_order(query: str, country: str, force_web: bool):
     3. added up.
     Saved parts make every later combination instant. Returns None for a single
     standard item (looked up whole by the caller)."""
-    chain = FoodLookup.chain_in(query)
+    chain = FoodLookup.chain_in(query, country)
     order = await _parse_order(query)
     if order is None:   # can't read it: split on and / , / + (never 'with': "whopper with cheese")
         order = [{"item": x.strip(), "qty": 1, "parts": []}
@@ -8143,7 +8171,11 @@ async def _lookup_order(query: str, country: str, force_web: bool):
         return None
 
     def with_chain(text):
-        return text if not chain or FoodLookup.chain_in(text) else f"{chain} {text}"
+        if not chain or FoodLookup.chain_in(text, country):
+            return text
+        if re.search(r"\d", text) and calculate_meal_text(text):
+            return text           # "2 boiled eggs" with a Big Mac is home food, not McDonald's
+        return f"{chain} {text}"
 
     items = []
     for it in order:
@@ -8258,6 +8290,7 @@ async def _ai_estimate(query: str, country: str = ""):
         "- For a named brand or chain item, use that brand's known values "
         "(e.g. a McDonald's Big Mac, an In-N-Out Double-Double, a Red Rooster Quarter Pack).\n"
         "- For a generic food with no amount given, use a sensible standard serving and state it.\n"
+        "- Include any additions or changes the user typed ('with bacon', 'no pickles', 'extra cheese').\n"
         "- NEVER return all zeros for a real food. If unsure, give your best evidence-based "
         "estimate and set confidence to 'low'.\n"
         "Respond with ONLY this JSON, nothing else:\n"
@@ -8394,7 +8427,8 @@ async def _web_lookup(query: str, country: str = ""):
         system_prompt = (
             "You are a nutrition data extractor. Using ONLY the web search results "
             "provided, extract nutrition for ONE standard serving of the requested food. "
-            "Prefer official brand/restaurant figures for the country named (if any). If results give a specific size/serving "
+            "Prefer official brand/restaurant figures for the country named (if any). If the food has additions or "
+            "changes (e.g. 'with bacon', 'no pickles', 'extra cheese'), include them in the numbers. If results give a specific size/serving "
             "(e.g. 'large'), use that. Convert kilojoules to calories if needed (1 kcal = 4.184 kJ). "
             "Respond with ONLY this JSON:\n"
             '{"food_name":"<name>","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,'
