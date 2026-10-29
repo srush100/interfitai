@@ -315,6 +315,10 @@ export default function MealDetail() {
         ...newMeal,
         meal_type: mealPlan.meal_days[dayIndex].meals[mealIndex].meal_type,
       };
+      // Other meals whose portions were adjusted so the day stays on target
+      const updatedMeals: any[] = response.data.updated_meals || [];
+      updatedPlan.meal_days[dayIndex].meals = updatedPlan.meal_days[dayIndex].meals.map(
+        (m: any) => updatedMeals.find((u) => u.id && u.id === m.id) || m);
       if (response.data.day_totals) {
         updatedPlan.meal_days[dayIndex] = {
           ...updatedPlan.meal_days[dayIndex],
@@ -323,7 +327,9 @@ export default function MealDetail() {
       }
       setMealPlan(updatedPlan);
       
-      Alert.alert('Success', `Replaced with ${newMeal.name}`);
+      Alert.alert('Success', updatedMeals.length
+        ? `Replaced with ${newMeal.name}. Portions in your other meals that day were adjusted slightly to keep you on target.`
+        : `Replaced with ${newMeal.name}`);
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.detail || 'Failed to generate alternate meal');
     } finally {
