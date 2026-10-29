@@ -74,7 +74,7 @@ export default function SubscriptionSuccess() {
             </View>
             <Text style={styles.title}>Welcome to Premium!</Text>
             <Text style={styles.subtitle}>
-              Your subscription is now active. Enjoy unlimited access to all features.
+              Your subscription is now active. Enjoy full access to all features.
             </Text>
           </>
         )}
