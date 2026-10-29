@@ -6285,7 +6285,8 @@ async def generate_alternate_meal(request: AlternateMealRequest):
     used_names = {m.get("name", "") for d in plan["meal_days"] for m in d.get("meals", [])}
     logger.info(f"=== MEAL SWAP === plan={request.meal_plan_id} day={request.day_index} meal={request.meal_index} "
                 f"pref={pref} target={ {k: round(v) for k, v in target.items()} } allergies={allergies} avoid='{foods_to_avoid}'")
-    others_items = [items_from_raw(m.get("ingredients"))[0] for m in others]
+    others_parsed = [items_from_raw(m.get("ingredients")) for m in others]
+    others_items = [items for items, _ in others_parsed]
 
     def _tune(draft) -> float:
         """Tune the candidate's grams; returns its worst miss (≤ 1.0 = on target)."""
@@ -6316,18 +6317,43 @@ async def generate_alternate_meal(request: AlternateMealRequest):
             break
         logger.info(f"Swap candidates missed the target (worst {best[1]:.2f}× tolerance) — trying other dishes")
     draft = best[0]
+
+    # Still off target: no dish fits around the day's other meals as they are
+    # (e.g. the day is already at its fat limit). Re-tune the other meals'
+    # portions a little too, so the DAY still lands on target — only when every
+    # one of their ingredients is in the food database, so nothing is dropped.
+    retuned = None
+    if best[1] > 1.0 and pref not in ("higher_protein", "lower_calories") \
+            and all(not unknown for _, unknown in others_parsed):
+        day_drafts = [make_draft(m.get("name"), m.get("meal_type", "meal"), [dict(it) for it in its],
+                                 m.get("instructions", ""), m.get("prep_time_minutes", 15))
+                      for m, its in zip(others, others_items)] + [draft]
+        if not optimise_portions(day_drafts, plan_targets):
+            optimise_portions(day_drafts, plan_targets, widen=True)
+        if max_deviation(day_drafts, plan_targets) < best[1]:
+            retuned = day_drafts[:-1]
+            logger.info("Swap: other meals' portions re-tuned so the day stays on target")
     new_meal = finalize_meal(draft, str(uuid.uuid4()))
     if pref == "quick_prep":
         new_meal["prep_time_minutes"] = min(new_meal["prep_time_minutes"], 15)
 
     day["meals"][request.meal_index] = new_meal
+    if retuned:
+        others_idx = [i for i in range(len(day["meals"])) if i != request.meal_index]
+        for i, d in zip(others_idx, retuned):
+            m = day["meals"][i]
+            fm = finalize_meal(d, m.get("id") or str(uuid.uuid4()))
+            day["meals"][i] = {**m, **{k: fm[k] for k in ("ingredients", "calories", "protein", "carbs", "fats")}}
     totals = day_totals(day["meals"])
     day.update(totals)
     day["on_target"] = is_on_target(totals, plan_targets)
     await db.mealplans.update_one({"id": request.meal_plan_id}, {"$set": {"meal_days": plan["meal_days"]}})
     logger.info(f"✅ Swap: {new_meal['name']} — {new_meal['calories']} cal {new_meal['protein']}P "
                 f"{new_meal['carbs']}C {new_meal['fats']}F | day on_target={day['on_target']}")
-    return {"alternate_meal": new_meal, "day_totals": {**totals, "on_target": day["on_target"]}}
+    return {"alternate_meal": new_meal, "day_totals": {**totals, "on_target": day["on_target"]},
+            # other meals whose portions were adjusted to keep the day on target
+            "updated_meals": [day["meals"][i] for i in range(len(day["meals"]))
+                              if retuned and i != request.meal_index]}
 
 # ==================== FAVORITE MEALS ENDPOINTS ====================
 
