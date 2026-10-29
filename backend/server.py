@@ -8060,6 +8060,18 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False, wh
             parts = split_foods(query)
             if len(parts) > 1:
                 return await _lookup_items(query, parts, country, force_web)
+        # "3 weet-bix", "2 x tim tams": the food is looked up once (one saved
+        # answer for every amount) and scaled to the number typed, using the
+        # serving the answer is for ("2 biscuits (30g)" → 3 biscuits = 1.5×)
+        m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(?:x\s+|×\s*)?([a-z].*)$", query, re.I)
+        if m and not re.match(r"^\s*\d+(?:\.\d+)?\s*(?:g|gm|gms|grams?|kg|ml|l|oz|lbs?)\b", query, re.I) \
+                and 0 < float(m.group(1)) <= 50:
+            scaled = _scale_to_count(await lookup_food(m.group(2), country, force_web, whole=True),
+                                     float(m.group(1)))
+            if scaled:
+                return scaled
+            # the answer's serving doesn't say how many pieces: the counted text
+            # is looked up as it is, below
     key, tokens, cc = FoodLookup.lookup_key(query, country)
     if not tokens:
         raise HTTPException(status_code=400, detail={"error": "empty_query", "message": "Type a food to search."})
@@ -8268,6 +8280,39 @@ async def _lookup_items(query: str, parts: list, country: str, force_web: bool) 
                     "source": f"Couldn't find '{part}' — search it on its own or add it manually"}
         items.append({**r, "qty": 1})
     return _combine(query, items)
+
+
+_PIECE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(biscuits?|pieces?|pcs?|slices?|bars?|cookies?|crackers?|wafers?|sticks?|"
+                       r"nuggets?|wings?|eggs?|pancakes?|rolls?|buns?|burgers?|wraps?|items?|units?|tablets?|"
+                       r"squares?|fingers?|cakes?|muffins?|donuts?|scoops?|sachets?|packs?|cans?|bottles?)\b", re.I)
+
+
+def _scale_to_count(r: dict, qty: float):
+    """A looked-up food (one serving) scaled to the number of pieces typed.
+    None when the serving doesn't say how many pieces it is (then the counted
+    text is looked up as it is)."""
+    if not r or not r.get("calories"):
+        return None
+    serving = str(r.get("serving_size") or "")
+    m = _PIECE_RE.search(serving)
+    if m:
+        per, unit = float(m.group(1)), m.group(2).lower()
+    elif re.match(r"^\s*(?:1|one|a|an)\s+[a-z]", serving, re.I):
+        per, unit = 1.0, re.sub(r"\s*\(.*$", "", serving.split(None, 1)[1]).strip().lower()
+    else:
+        return None
+    if per <= 0:
+        return None
+    f = qty / per
+    unit = unit if qty != 1 else re.sub(r"s$", "", unit)
+    unit = unit if qty == 1 or unit.endswith("s") else unit + "s"
+    g = round(float(r["serving_g"]) * f) if r.get("serving_g") else None
+    out = {**r, "calories": round(float(r["calories"]) * f),
+           **{k: round(float(r.get(k) or 0) * f, 1) for k in ("protein", "carbs", "fats")}}
+    out["serving_g"] = g
+    out["serving_size"] = f"{qty:g} {unit}" + (f" ({g}g)" if g else "") + (f" — label serving {serving}" if f != 1 else "")
+    out["name"] = f"{qty:g} × {r.get('name')}"
+    return out
 
 
 async def saved_foods_in(message: str, country: str = "", limit: int = 3) -> list:

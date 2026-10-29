@@ -391,3 +391,33 @@ def test_menu_items_name_their_restaurant():
     assert FL.chain_in("big mac with bacon", "AU") == "mcdonalds"
     assert FL.chain_in("whopper", "AU") == "hungry jacks" and FL.chain_in("whopper", "US") == "burger king"
     assert FL.chain_in("hungry jacks whopper", "US") == "hungry jacks"
+
+
+# ── "3 weet-bix": the food is looked up once and scaled to the number typed ──
+WEETBIX = {"name": "Sanitarium Weet-Bix", "calories": 105, "protein": 3.6, "carbs": 20.1, "fats": 0.4,
+           "serving_size": "2 biscuits (30 g)", "serving_g": 30.0, "verified": True, "is_ai_estimate": False,
+           "source": "Open Food Facts"}
+
+
+def test_counted_product_scaled_from_label_serving(world):
+    world["found"]["open_food_facts"] = WEETBIX
+    r = run(server.lookup_food("3 weet-bix", "AU"))
+    assert r["calories"] == 158 and r["protein"] == 5.4 and r["serving_g"] == 45
+    assert r["serving_size"] == "3 biscuits (45g) — label serving 2 biscuits (30 g)"
+    assert world["calls"][0][:2] == ("open_food_facts", "weet-bix")       # the count isn't searched
+    n = len(world["calls"])
+    assert run(server.lookup_food("2 Weet-Bix", "AU"))["calories"] == 105  # same saved answer, any amount
+    assert run(server.lookup_food("4 x weetbix", "AU"))["calories"] in (210,)  # "weetbix" spelt as one word
+    assert len(world["calls"]) == n            # "weetbix" = "Weet-Bix": no new search
+
+
+def test_grams_are_not_a_count(world):
+    world["found"]["web"] = {**WEETBIX, "name": "Chobani", "serving_size": "100g"}
+    run(server.lookup_food("200g chobani greek yogurt", "AU"))
+    assert all(c[1] != "g chobani greek yogurt" for c in world["calls"])
+
+
+def test_count_without_piece_info_looks_up_as_typed(world):
+    world["found"]["web"] = {**WEETBIX, "serving_size": "100g", "serving_g": 100}
+    r = run(server.lookup_food("3 mystery cookies", "AU"))
+    assert any(c[1] == "3 mystery cookies" for c in world["calls"]) and r["calories"] == 105
