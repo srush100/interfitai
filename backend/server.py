@@ -7972,6 +7972,9 @@ async def search_foods(query: str, user_id: str, country: str = ""):
         combined_results.insert(0, {**_db, "name": meal_summary(_meal)})
     local_names_lower = {food["name"].lower() for food in local_results}
     
+    # Only results about the food typed, best match first (no 'cheese sauce
+    # mix, dry' for a burrito because both have the word 'sauce')
+    api_results = FoodLookup.relevant_results(api_results, query, country)
     for api_food in api_results:
         if api_food["name"].lower() not in local_names_lower:
             combined_results.append(api_food)
@@ -8101,7 +8104,7 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False, wh
             await db.food_lookups.update_one(
                 {"key": key},
                 {"$set": {"key": key, "alt": alt, "tokens": tokens, "country": cc, "query": query, "kind": kind,
-                          "result": res, "updated_at": datetime.utcnow()}},
+                          "result": res, "updated_at": datetime.utcnow(), "v": FoodLookup.LOOKUP_VERSION}},
                 upsert=True)
             return {**res, "saved": False}
     if saved:   # a re-check found nothing new: the saved answer stands
@@ -8485,6 +8488,54 @@ async def web_food_search(query: str, user_id: str, country: str = ""):
     return await lookup_food(query, country, force_web=True)
 
 
+def _web_serving(data, urls=()):
+    """The web extractor's answer → numbers for ONE serve.
+
+    Restaurant nutrition tables print 'per serve' and 'per 100g' side by side,
+    and the per-100g column used to be shown as one burrito (232 cal for a
+    Zambrero Big Chicken Burrito instead of ~900). Here:
+    - per serve is used when given — unless it is just the per-100g column
+      repeated for a serve that isn't 100 g, then per-100g is scaled to the serve
+    - only per-100g given: scaled to the printed serve weight, else shown per 100 g
+    - the source is the result the figures came from, when it's one of the results."""
+    if not isinstance(data, dict):
+        return data
+    def col(name):
+        c = data.get(name)
+        if not isinstance(c, dict):
+            return None
+        try:
+            v = {k: float(c.get(k) or 0) for k in ("calories", "protein_g", "carbs_g", "fat_g")}
+        except (TypeError, ValueError):
+            return None
+        return v if v["calories"] > 0 else None
+    serve, per100 = col("per_serve"), col("per_100g")
+    try:
+        g = float(data.get("serving_g") or 0) or float(grams_in_text(str(data.get("serving_size") or ""), "") or 0)
+    except (TypeError, ValueError):
+        g = 0
+    out = dict(data)
+    if serve and per100 and g and abs(g - 100) > 15 and abs(serve["calories"] - per100["calories"]) <= 0.03 * per100["calories"]:
+        serve = None                      # the per-100g column copied into per serve
+    if serve:
+        out.update(serve)
+    elif per100 and g:
+        out.update({k: round(v * g / 100, 1) for k, v in per100.items()})
+    elif per100:
+        out.update(per100)
+        out["serving_size"], g = "100g", 100
+    elif not float(data.get("calories") or 0):
+        return out                        # nothing usable (found=false)
+    if g:
+        out["serving_g"] = g
+        size = str(out.get("serving_size") or "")
+        if not re.search(r"\d\s*(g|ml)\b", size, re.I):
+            out["serving_size"] = f"{size} ({g:g}g)".strip() if size else f"{g:g}g"
+    url = str(data.get("source_url") or "")
+    out["source_url"] = url if url and url in urls else ""
+    return out
+
+
 async def _web_lookup(query: str, country: str = ""):
     """Live, web-grounded nutrition: Tavily search -> Haiku extraction. Real,
     sourced macros for branded/restaurant items, for the user's country.
@@ -8531,10 +8582,16 @@ async def _web_lookup(query: str, country: str = ""):
             "provided, extract nutrition for ONE standard serving of the requested food. "
             "Prefer official brand/restaurant figures for the country named (if any). If the food has additions or "
             "changes (e.g. 'with bacon', 'no pickles', 'extra cheese'), include them in the numbers. If results give a specific size/serving "
-            "(e.g. 'large'), use that. Convert kilojoules to calories if needed (1 kcal = 4.184 kJ). "
+            "(e.g. 'large'), use that. Convert kilojoules to calories if needed (1 kcal = 4.184 kJ).\n"
+            "Nutrition tables usually have TWO columns: 'per serve' and 'per 100g'. Copy each column into its own "
+            "field below and NEVER put per-100g numbers in per_serve. serving_g is the weight of one serve in grams "
+            "as printed (null if not printed).\n"
             "Respond with ONLY this JSON:\n"
-            '{"food_name":"<name>","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,'
-            '"serving_size":"<e.g. 1 large / 100g>","found":true}\n'
+            '{"food_name":"<name>","serving_size":"<e.g. 1 burrito (420g)>","serving_g":null,'
+            '"per_serve":{"calories":0,"protein_g":0,"carbs_g":0,"fat_g":0},'
+            '"per_100g":{"calories":0,"protein_g":0,"carbs_g":0,"fat_g":0},'
+            '"source_url":"<the [url] of the result the figures came from>","found":true}\n'
+            "Use null for a column the results don't give. "
             "Set found=false if the results do not contain real nutrition data for this food."
         )
         try:
@@ -8557,6 +8614,9 @@ async def _web_lookup(query: str, country: str = ""):
             logger.warning(f"Haiku extraction failed for '{query}': {e}")
 
     # 3. Build response
+    data = _web_serving(data, [r.get("url", "") for r in (tav.get("results", [])[:5] if search_content else [])])
+    if data and data.get("source_url"):
+        source_url = data["source_url"]
     if data and data.get("found", True) and float(data.get("calories", 0)) > 0:
         # Nutrition-accuracy guard — reconcile calories with macros (Fix 1)
         # and log any physical-plausibility or reference divergences (Fix 2/4).
@@ -8572,9 +8632,9 @@ async def _web_lookup(query: str, country: str = ""):
                                            data.get("food_name", ""))
         sanitize_food_entry(_tmp, portion_g=portion_g)
         data["calories"] = _tmp["calories"]
-        domain = urlparse(source_url).netloc.replace("www.", "") if source_url else "web"
+        domain = FoodLookup.source_label(source_url, query, country)
         serving_size = str(data.get("serving_size") or "")
-        serving_g = grams_in_text(serving_size, data.get("food_name", "")) or None
+        serving_g = data.get("serving_g") or grams_in_text(serving_size, data.get("food_name", "")) or None
         return {
             "name":           data.get("food_name", query.title()),
             "calories":       round(float(data.get("calories", 0))),
