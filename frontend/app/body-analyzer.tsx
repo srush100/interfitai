@@ -31,6 +31,8 @@ interface AnalysisResult {
   recommendations: string[];
   motivation_message: string;
   estimated_progress_score: number;
+  headline?: string;            // the plain result: "The after photo shows more body fat than the before photo."
+  change_direction?: string;
   analysis_confidence?: 'high' | 'medium' | 'low';
 }
 
@@ -651,6 +653,9 @@ export default function BodyAnalyzer() {
                     <Text style={styles.scoreMax}>/10</Text>
                   </View>
                   <Text style={styles.scoreLabel}>Progress Score</Text>
+                  {!!analysis.headline && (
+                    <Text style={styles.headlineText}>{analysis.headline}</Text>
+                  )}
                   {/* Polish B — weight delta badge */}
                   {parseAmount(beforeWeight) > 0 && parseAmount(afterWeight) > 0 && (
                     <View style={styles.weightDeltaBadge}>
@@ -1002,6 +1007,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.textSecondary,
     marginTop: 8,
+  },
+  headlineText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 12,
   },
   scoreLabel: {
     fontSize: 14,

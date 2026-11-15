@@ -9642,9 +9642,32 @@ async def get_progress_photos(user_id: str):
 BODY_DAILY_LIMIT = 3          # body analyses per user per 24 hours (two photos each, fair use)
 
 
-def _clean_body_analysis(d: dict) -> dict:
+_BODY_DIRECTIONS = ("fat_loss", "muscle_gain", "recomposition", "fat_gain", "muscle_and_fat_gain",
+                    "no_clear_change", "unclear_photos")
+_BODY_HEADLINES = {
+    "fat_loss": "The after photo shows less body fat than the before photo.",
+    "muscle_gain": "The after photo shows more muscle than the before photo.",
+    "recomposition": "The after photo shows less body fat and more muscle than the before photo.",
+    "fat_gain": "The after photo shows more body fat than the before photo.",
+    "muscle_and_fat_gain": "The after photo shows more muscle and more body fat than the before photo.",
+    "no_clear_change": "There is no clear change between the two photos.",
+    "unclear_photos": "The photos are too different (angle, lighting or pose) to compare reliably.",
+}
+
+
+def _bf_mid(v) -> float | None:
+    """'Estimate: 22-25%' → 23.5; '18%' → 18; anything else → None."""
+    nums = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", str(v or ""))][:2]
+    nums = [n for n in nums if 2 <= n <= 70]
+    return sum(nums) / len(nums) if nums else None
+
+
+def _clean_body_analysis(d: dict, goal: str = "", weight_delta: float | None = None) -> dict:
     """The AI's answer, checked before it is saved or shown: a whole-number score
-    0-10, a known confidence level, lists of short texts, plain strings."""
+    0-10, a known confidence level, lists of short texts, plain strings — and an
+    honest result. The body-fat estimates and the stated direction must agree:
+    the AI can't call a visible fat gain 'very little change', and a change
+    against the member's goal can't score well."""
     d = d if isinstance(d, dict) else {}
 
     def text(v, default=""):
@@ -9654,17 +9677,56 @@ def _clean_body_analysis(d: dict) -> dict:
         v = v if isinstance(v, list) else ([v] if isinstance(v, str) else [])
         return [x.strip() for x in v if isinstance(x, str) and x.strip()][:6]
 
+    def bf(v):          # the card already says it's an estimate
+        return re.sub(r"^\s*(?:estimate|est\.?)\s*:\s*", "", text(v, "Not estimated"), flags=re.I)
+
     raw = d.get("estimated_progress_score")
     m = re.search(r"-?\d+(?:\.\d+)?", str(raw if raw is not None else ""))
     score = max(0, min(10, round(float(m.group(0))))) if m else 0
     conf = text(d.get("analysis_confidence"), "low").lower()
     conf = next((c for c in ("high", "medium", "low") if c in conf), "low")
+    before_bf, after_bf = bf(d.get("estimated_body_fat_before")), bf(d.get("estimated_body_fat_after"))
+
+    direction = text(d.get("change_direction")).lower().replace(" ", "_").replace("-", "_")
+    direction = direction if direction in _BODY_DIRECTIONS else ""     # "" = not stated
+    b, a = _bf_mid(before_bf), _bf_mid(after_bf)
+    bf_change = (a - b) if a is not None and b is not None else None
+    if bf_change is not None and direction != "unclear_photos":
+        if bf_change >= 2 and direction in ("", "fat_loss", "recomposition", "no_clear_change", "muscle_gain"):
+            direction = "muscle_and_fat_gain" if direction == "muscle_gain" else "fat_gain"
+        elif bf_change <= -2 and direction in ("", "fat_gain", "no_clear_change"):
+            direction = "fat_loss"
+
+    # The score is progress TOWARDS THE GOAL
+    caps = {"no_clear_change": 3, "unclear_photos": 4}
+    if goal == "weight_loss":
+        caps.update({"fat_gain": 1 if (bf_change or 0) >= 3 else 2, "muscle_and_fat_gain": 3, "muscle_gain": 6})
+    elif goal == "muscle_building":
+        caps.update({"fat_gain": 2, "fat_loss": 6})
+    else:
+        caps.update({"fat_gain": 2, "muscle_and_fat_gain": 4})
+    if weight_delta is not None and goal == "weight_loss" and weight_delta >= 2 and direction not in ("recomposition", "muscle_gain"):
+        caps[direction] = min(caps.get(direction, 10), 3)
+    if score > 0:      # 0 = not analysed (under 18 / not a body photo)
+        score = max(1, min(score, caps.get(direction, 10)))
+
+    headline = _BODY_HEADLINES.get(direction, "")
+    assessment = text(d.get("overall_assessment"), "Analysis complete.")
+    if direction in ("fat_gain", "muscle_and_fat_gain", "fat_loss", "recomposition") and \
+            re.search(r"\b(very little|little|no|minimal|not much)\s+(visible\s+)?(change|difference)", assessment, re.I):
+        # the AI's own words contradict its estimates: lead with what changed
+        assessment = f"{headline} {assessment}"
+    improved = items(d.get("areas_improved"))
+    if direction in ("fat_gain", "no_clear_change", "unclear_photos"):
+        improved = []        # nothing to list as improved when nothing improved
     return {
-        "overall_assessment": text(d.get("overall_assessment"), "Analysis complete."),
-        "estimated_body_fat_before": text(d.get("estimated_body_fat_before"), "Not estimated"),
-        "estimated_body_fat_after": text(d.get("estimated_body_fat_after"), "Not estimated"),
+        "overall_assessment": assessment,
+        "headline": headline,
+        "change_direction": direction,
+        "estimated_body_fat_before": before_bf,
+        "estimated_body_fat_after": after_bf,
         "visible_changes": items(d.get("visible_changes")),
-        "areas_improved": items(d.get("areas_improved")),
+        "areas_improved": improved,
         "recommendations": items(d.get("recommendations")),
         "motivation_message": text(d.get("motivation_message")),
         "estimated_progress_score": score,
@@ -9734,6 +9796,9 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
         )
 
     user_context = "\n".join(ctx_lines)
+    _goal = (profile or {}).get("goal", "")
+    _wdelta = (request.after_weight_kg - request.before_weight_kg) \
+        if request.before_weight_kg and request.after_weight_kg else None
 
     body_system_prompt = None
     try:
@@ -9745,21 +9810,45 @@ USER CONTEXT:
 
 PRIMARY GOAL FRAMING: Focus feedback on {goal_framing}.
 
-SCORING RUBRIC (estimated_progress_score, 1-10):
-  10 = near-complete physique transformation — dramatic change aligned with goal
-  8  = clear, significant progress — obvious visible change
-  6  = moderate progress — visible but modest change
-  4  = minor changes — small shifts in composition or tone
-  2  = very little visible change
-  1  = no change or regression
+HONESTY COMES FIRST. Members use this to see what is really happening. Report what the photos
+show, including fat gain or muscle loss. Never soften a visible change into "little change" to be
+kind — that is the one thing you must not do. Be respectful and supportive in HOW you say it, not
+in WHAT you say.
 
-Provide a body fat % ESTIMATE as a range (e.g. "18-21%") for each photo. Prefix with "Estimate: " — do not claim clinical precision. If the photos do not allow confident estimation (bad angle, clothing obscuring, poor lighting), say so honestly in overall_assessment and lower the confidence accordingly.
+HOW TO ANALYSE (in this order):
+1. Look at each photo ON ITS OWN, as if you had not seen the other, and note: face and jawline
+   (fullness, neck), chest, arms, waist width compared with the shoulders, lower stomach (how far
+   it sticks out), sides / love handles. Estimate body fat % for each photo separately from those
+   signs, as a range of 3-4 points (e.g. "22-25%"). Two photos only get the SAME range if they
+   really look the same.
+2. Compare the notes area by area: more fat, less fat, more muscle, less muscle, or the same.
+3. Allow for the camera: a low camera angle or wide lens makes the stomach look bigger; a high
+   mirror selfie, flexing or a pump makes the body look leaner. Mention it if the angles differ, and
+   lower analysis_confidence — but do NOT use it to hide a change that is clear in several areas
+   (e.g. a fuller face AND a wider waist AND a bigger stomach is real fat gain).
+4. Pick change_direction — exactly one of:
+   "fat_loss", "muscle_gain", "recomposition" (less fat and more muscle), "fat_gain",
+   "muscle_and_fat_gain", "no_clear_change", "unclear_photos" (too different to compare at all).
+5. Start overall_assessment with the plain result, e.g. "The after photo shows more body fat than
+   the before photo — the face, chest and waist are fuller." If a weight change is given above,
+   it must agree with what you say.
 
-Be encouraging but HONEST. Do not inflate scores. If there is little change, say so and give specific actionable next steps.
+SCORING (estimated_progress_score, 1-10) = progress TOWARDS THE MEMBER'S GOAL ({goal_framing}):
+  9-10 = dramatic change in the goal's direction
+  7-8  = clear, obvious progress in the goal's direction
+  5-6  = moderate, visible progress in the goal's direction
+  3-4  = small progress, or mixed (some better, some worse)
+  2    = no clear change
+  1    = change AGAINST the goal (e.g. more body fat when the goal is weight loss)
+A change against the goal always scores 1-2, however good the photos look otherwise.
 
-The FIRST image is BEFORE and the SECOND image is AFTER. Compare like with like (same angle,
-lighting, pump/flex); if the photos differ a lot in angle, lighting or clothing, say so and lower
-analysis_confidence.
+areas_improved lists only areas that really improved — an empty list if none did.
+visible_changes lists every clear change, good or bad, in plain words.
+motivation_message: kind and honest — acknowledge the result, then the next step (e.g. "This
+shows a gain, not a loss, and that's useful to know now. Getting back on your calorie target
+this week is the fastest way to turn it around.").
+
+The FIRST image is BEFORE and the SECOND image is AFTER.
 
 RECOMMENDATIONS: practical training, nutrition, sleep and consistency steps. If the user's app
 daily targets are given above, keep nutrition advice in line with them (e.g. "keep hitting your
@@ -9778,9 +9867,10 @@ SAFETY:
 
 Respond with valid JSON only — no markdown fences:
 {{
-    "overall_assessment": "2-3 sentence assessment calibrated to the user's goal and stats",
+    "overall_assessment": "2-3 sentences, starting with the plain result",
+    "change_direction": "fat_loss | muscle_gain | recomposition | fat_gain | muscle_and_fat_gain | no_clear_change | unclear_photos",
     "estimated_body_fat_before": "e.g. 18-21%",
-    "estimated_body_fat_after":  "e.g. 14-17%",
+    "estimated_body_fat_after":  "e.g. 21-24%",
     "visible_changes": ["Specific change 1", "Specific change 2", "Specific change 3"],
     "areas_improved": ["Specific muscle group or region 1", "Area 2"],
     "recommendations": ["Actionable recommendation 1", "Recommendation 2", "Recommendation 3"],
@@ -9790,8 +9880,8 @@ Respond with valid JSON only — no markdown fences:
 }}"""),
             user_message=f"Image 1 is BEFORE, image 2 is AFTER" + (f", taken {period} apart" if period else
                          " (time between them not given)") + ". Analyse them and return the full JSON response per the system prompt.",
-            max_tokens=1200,
-            temperature=0.3,   # consistent scores for the same photos
+            max_tokens=1400,
+            temperature=0.0,   # the same photos get the same answer
             image_base64=request.before_image_base64,
             image_base64_2=request.after_image_base64
         )
@@ -9812,7 +9902,7 @@ Respond with valid JSON only — no markdown fences:
             content = "\n".join(json_lines)
         content = content.strip()
 
-        analysis_data = _clean_body_analysis(json.loads(content))
+        analysis_data = _clean_body_analysis(json.loads(content), _goal, _wdelta)
 
         analysis_record = {
             "id": str(uuid.uuid4()),
@@ -9830,8 +9920,8 @@ Respond with valid JSON only — no markdown fences:
         try:
             retry_content = await call_claude_sonnet(
                 system_message=(body_system_prompt or "") + "\n\nYou MUST respond with valid JSON only — no markdown, no prose.",
-                temperature=0.3,
-                user_message=f"Image 1 is BEFORE, image 2 is AFTER. Re-analyse these photos and return ONLY the JSON object with fields: overall_assessment, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). " + (f"Taken over {period}." if period else "Time between photos not given."),
+                temperature=0.0,
+                user_message=f"Image 1 is BEFORE, image 2 is AFTER. Re-analyse these photos and return ONLY the JSON object with fields: overall_assessment, change_direction, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). " + (f"Taken over {period}." if period else "Time between photos not given."),
                 max_tokens=1000,
                 image_base64=request.before_image_base64,
                 image_base64_2=request.after_image_base64
@@ -9842,7 +9932,7 @@ Respond with valid JSON only — no markdown fences:
                 if retry_content.startswith("json"):
                     retry_content = retry_content[4:]
             retry_content = retry_content.strip()
-            analysis_data = _clean_body_analysis(json.loads(retry_content))
+            analysis_data = _clean_body_analysis(json.loads(retry_content), _goal, _wdelta)
 
             analysis_record = {
                 "id": str(uuid.uuid4()),
