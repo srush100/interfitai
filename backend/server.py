@@ -6829,7 +6829,7 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
                 "error": "daily_limit",
                 "message": f"You've used today's {SNAP_DAILY_LIMIT} photo analyses. It resets within 24 hours "
                            "\u2014 you can still search for food or add it manually."})
-        await db.snap_usage.insert_one({"user_id": request.user_id, "created_at": datetime.utcnow()})
+        _snap_id = (await db.snap_usage.insert_one({"user_id": request.user_id, "created_at": datetime.utcnow()})).inserted_id
         
         # The description goes to the AI as a hint about WHAT is in the photo
         # ("no dressing", "grilled not fried", "4 eggs and 3 slices sourdough").
@@ -7287,9 +7287,9 @@ For labels, the `calories/protein/carbs/fats` top-level fields describe ONE labe
             protein=float(_scaled["protein"]),
             carbs=float(_scaled["carbs"]),
             fats=float(_scaled["fats"]),
-            fiber=float(food_data.get("fiber", 0)) * qty,
-            sugar=float(food_data.get("sugar", 0)) * qty,
-            sodium=float(food_data.get("sodium", 0)) * qty,
+            fiber=float(food_data.get("fiber") or 0) * qty,
+            sugar=float(food_data.get("sugar") or 0) * qty,
+            sodium=float(food_data.get("sodium") or 0) * qty,
             meal_type=request.meal_type,
             logged_date=request.logged_date or datetime.now().strftime("%Y-%m-%d"),
             image_base64=request.image_base64[:100] + "..."  # Store truncated for reference
@@ -7321,10 +7321,18 @@ For labels, the `calories/protein/carbs/fats` top-level fields describe ONE labe
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Food analysis error: {e}")
+        logger.exception(f"Food analysis error: {e}")
+        if "_snap_id" in locals():      # our failure: the photo doesn't count towards today's limit
+            try:
+                await db.snap_usage.delete_one({"_id": _snap_id})
+            except Exception:
+                pass
         if "invalid" in str(e).lower() or "image" in str(e).lower():
             raise HTTPException(status_code=400, detail="Invalid image format. Please use a valid JPEG or PNG image.")
-        raise HTTPException(status_code=500, detail=f"Failed to analyze food: {str(e)}")
+        # Members see a plain message, never the program's error text
+        raise HTTPException(status_code=500, detail={
+            "error": "analysis_failed",
+            "message": "Something went wrong reading that photo. Please try again, or search for the food instead."})
 
 async def usda_generic_per_100g(food: str):
     """Per-100g macros for a plain food from USDA's generic tables (Foundation /
@@ -7986,10 +7994,10 @@ async def search_foods(query: str, user_id: str, country: str = ""):
     for _r in combined_results:
         _tmp = {
             "food_name": _r.get("name", ""),
-            "calories": float(_r.get("calories", 0)),
-            "protein":  float(_r.get("protein", 0)),
-            "carbs":    float(_r.get("carbs", 0)),
-            "fats":     float(_r.get("fats", 0)),
+            "calories": float(_r.get("calories") or 0),
+            "protein":  float(_r.get("protein") or 0),
+            "carbs":    float(_r.get("carbs") or 0),
+            "fats":     float(_r.get("fats") or 0),
         }
         _portion = grams_in_text(_r.get("name", ""), _r.get("name", ""))
         # Built-in and USDA values are trusted: food-specific energy factors and
@@ -8417,10 +8425,10 @@ async def _ai_estimate(query: str, country: str = ""):
         return json.loads(content)
 
     def _all_zero(d: dict) -> bool:
-        return (float(d.get("calories", 0)) == 0
-                and float(d.get("protein_g", 0)) == 0
-                and float(d.get("carbs_g", 0)) == 0
-                and float(d.get("fat_g", 0)) == 0)
+        return (float(d.get("calories") or 0) == 0
+                and float(d.get("protein_g") or 0) == 0
+                and float(d.get("carbs_g") or 0) == 0
+                and float(d.get("fat_g") or 0) == 0)
 
     data = None
     for attempt in range(2):
@@ -8447,10 +8455,10 @@ async def _ai_estimate(query: str, country: str = ""):
         # log any physical-plausibility or reference-table divergences (Fix 2/4).
         _tmp = {
             "food_name": data.get("food_name", query),
-            "calories": float(data.get("calories", 0)),
-            "protein_g": float(data.get("protein_g", 0)),
-            "carbs_g":   float(data.get("carbs_g", 0)),
-            "fat_g":     float(data.get("fat_g", 0)),
+            "calories": float(data.get("calories") or 0),
+            "protein_g": float(data.get("protein_g") or 0),
+            "carbs_g":   float(data.get("carbs_g") or 0),
+            "fat_g":     float(data.get("fat_g") or 0),
         }
         portion_g = grams_in_text(data.get("serving_size", ""),
                                            data.get("food_name", ""))
@@ -8461,10 +8469,10 @@ async def _ai_estimate(query: str, country: str = ""):
     serving_g = grams_in_text(serving_size, data.get("food_name", "")) or None
     return {
         "name":           data.get("food_name", query.title()),
-        "calories":       round(float(data.get("calories", 0))),
-        "protein":        round(float(data.get("protein_g", 0)), 1),
-        "carbs":          round(float(data.get("carbs_g", 0)), 1),
-        "fats":           round(float(data.get("fat_g", 0)), 1),
+        "calories":       round(float(data.get("calories") or 0)),
+        "protein":        round(float(data.get("protein_g") or 0), 1),
+        "carbs":          round(float(data.get("carbs_g") or 0), 1),
+        "fats":           round(float(data.get("fat_g") or 0), 1),
         "serving_size":   serving_size,
         "serving_g":      serving_g,
         "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
@@ -8617,15 +8625,15 @@ async def _web_lookup(query: str, country: str = ""):
     data = _web_serving(data, [r.get("url", "") for r in (tav.get("results", [])[:5] if search_content else [])])
     if data and data.get("source_url"):
         source_url = data["source_url"]
-    if data and data.get("found", True) and float(data.get("calories", 0)) > 0:
+    if data and data.get("found", True) and float(data.get("calories") or 0) > 0:
         # Nutrition-accuracy guard — reconcile calories with macros (Fix 1)
         # and log any physical-plausibility or reference divergences (Fix 2/4).
         _tmp = {
             "food_name": data.get("food_name", query),
-            "calories": float(data.get("calories", 0)),
-            "protein_g": float(data.get("protein_g", 0)),
-            "carbs_g":   float(data.get("carbs_g", 0)),
-            "fat_g":     float(data.get("fat_g", 0)),
+            "calories": float(data.get("calories") or 0),
+            "protein_g": float(data.get("protein_g") or 0),
+            "carbs_g":   float(data.get("carbs_g") or 0),
+            "fat_g":     float(data.get("fat_g") or 0),
             "fiber_g":   float(data.get("fiber_g", 0) or 0),
         }
         portion_g = grams_in_text(data.get("serving_size", ""),
@@ -8637,10 +8645,10 @@ async def _web_lookup(query: str, country: str = ""):
         serving_g = data.get("serving_g") or grams_in_text(serving_size, data.get("food_name", "")) or None
         return {
             "name":           data.get("food_name", query.title()),
-            "calories":       round(float(data.get("calories", 0))),
-            "protein":        round(float(data.get("protein_g", 0)), 1),
-            "carbs":          round(float(data.get("carbs_g", 0)), 1),
-            "fats":           round(float(data.get("fat_g", 0)), 1),
+            "calories":       round(float(data.get("calories") or 0)),
+            "protein":        round(float(data.get("protein_g") or 0), 1),
+            "carbs":          round(float(data.get("carbs_g") or 0), 1),
+            "fats":           round(float(data.get("fat_g") or 0), 1),
             "serving_size":   serving_size,
             "serving_g":      serving_g,
             "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
