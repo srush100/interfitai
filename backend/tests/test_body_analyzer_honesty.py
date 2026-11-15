@@ -67,3 +67,16 @@ def test_prompt_is_honesty_first():
     src = inspect.getsource(server.analyze_body_progress)
     assert "HONESTY COMES FIRST" in src and "ON ITS OWN" in src and "change_direction" in src
     assert "Be encouraging but HONEST" not in src and "temperature=0.0" in src
+
+
+def test_maintained_is_not_improved():
+    r = C({"change_direction": "fat_loss", "estimated_progress_score": 6,
+           "areas_improved": ["Muscle mass appears maintained (no visible loss of lean tissue)", "Waist is slimmer"]},
+          "weight_loss")
+    assert r["areas_improved"] == ["Waist is slimmer"]
+
+
+def test_screen_uses_neutral_bullets_and_hides_empty_improved():
+    src = open("../frontend/app/body-analyzer.tsx").read()
+    assert 'name="checkmark-circle" size={18} color={colors.success}' not in src
+    assert "analysis.areas_improved.length > 0" in src

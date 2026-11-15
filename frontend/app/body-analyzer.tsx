@@ -402,7 +402,7 @@ export default function BodyAnalyzer() {
                       <Text style={styles.sectionTitle}>Visible Changes</Text>
                       {selectedHistoryItem.analysis.visible_changes.map((c: string, i: number) => (
                         <View key={i} style={styles.listItem}>
-                          <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                          <Ionicons name="ellipse" size={8} color={colors.textSecondary} style={{ marginTop: 7 }} />
                           <Text style={styles.listText}>{c}</Text>
                         </View>
                       ))}
@@ -706,23 +706,28 @@ export default function BodyAnalyzer() {
               <Text style={styles.sectionTitle}>Visible Changes</Text>
               {analysis.visible_changes.map((change, idx) => (
                 <View key={idx} style={styles.listItem}>
-                  <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                  <Ionicons name="ellipse" size={8} color={colors.textSecondary} style={{ marginTop: 7 }} />
                   <Text style={styles.listText}>{change}</Text>
                 </View>
               ))}
 
               <View style={styles.divider} />
 
-              <Text style={styles.sectionTitle}>Areas Improved</Text>
-              <View style={styles.tagsContainer}>
-                {analysis.areas_improved.map((area, idx) => (
-                  <View key={idx} style={styles.tag}>
-                    <Text style={styles.tagText}>{area}</Text>
+              {/* Only when something really improved */}
+              {analysis.areas_improved.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>Areas Improved</Text>
+                  <View style={styles.tagsContainer}>
+                    {analysis.areas_improved.map((area, idx) => (
+                      <View key={idx} style={styles.tag}>
+                        <Text style={styles.tagText}>{area}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
 
-              <View style={styles.divider} />
+                  <View style={styles.divider} />
+                </>
+              )}
 
               <Text style={styles.sectionTitle}>Recommendations</Text>
               {analysis.recommendations.map((rec, idx) => (

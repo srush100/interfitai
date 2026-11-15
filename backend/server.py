@@ -9716,7 +9716,9 @@ def _clean_body_analysis(d: dict, goal: str = "", weight_delta: float | None = N
             re.search(r"\b(very little|little|no|minimal|not much)\s+(visible\s+)?(change|difference)", assessment, re.I):
         # the AI's own words contradict its estimates: lead with what changed
         assessment = f"{headline} {assessment}"
-    improved = items(d.get("areas_improved"))
+    # "muscle maintained", "no visible loss", "unchanged" aren't improvements
+    improved = [x for x in items(d.get("areas_improved"))
+                if not re.search(r"\b(maintain\w*|retain\w*|preserv\w*|unchanged|similar|same|stable|no (visible |noticeable )?(loss|change))\b", x, re.I)]
     if direction in ("fat_gain", "no_clear_change", "unclear_photos"):
         improved = []        # nothing to list as improved when nothing improved
     return {
