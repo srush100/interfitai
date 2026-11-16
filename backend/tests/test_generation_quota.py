@@ -3,7 +3,7 @@ Tests for Spec 2 — Monthly program generation quota.
 
 Covers:
   - Under-limit: generation succeeds and event is recorded
-  - At-limit: 4th generation returns 403 generation_limit
+  - At-limit: 6th generation returns 403 generation_limit (limit: 5 a month)
   - Admin bypass: admin email is never blocked
   - Exercise edits don't consume quota (PATCH /workout/{id}/exercise)
   - GET /workouts/generation-quota/{user_id} returns correct counts
@@ -14,6 +14,7 @@ import uuid
 from datetime import datetime
 
 BASE_URL = "http://localhost:8001/api"
+LIMIT = 5   # server.PROGRAM_MONTHLY_LIMIT
 ADMIN_EMAIL = "sebastianrush5@gmail.com"
 
 GENERATE_PAYLOAD = {
@@ -52,11 +53,11 @@ async def generate(client, user_id):
     )
 
 
-# ── Under-limit: first 3 generations succeed ─────────────────────────────────
+# ── Under-limit: first 5 generations succeed ─────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_under_limit_success():
-    """First generation for a new user succeeds (used=0, limit=3)."""
+    """First generation for a new user succeeds (used=0, limit=5)."""
     async with httpx.AsyncClient(timeout=120) as client:
         uid, email = new_user()
         await create_profile(client, uid, email)
@@ -69,37 +70,37 @@ async def test_under_limit_success():
         assert q.status_code == 200
         data = q.json()
         assert data["used"] == 1
-        assert data["limit"] == 3
-        assert data["remaining"] == 2
+        assert data["limit"] == LIMIT
+        assert data["remaining"] == LIMIT - 1
         assert data["is_admin"] is False
 
 
 @pytest.mark.asyncio
 async def test_three_generations_allowed():
-    """Three generations all succeed."""
+    """Five generations all succeed."""
     async with httpx.AsyncClient(timeout=360) as client:
         uid, email = new_user()
         await create_profile(client, uid, email)
 
-        for i in range(3):
+        for i in range(LIMIT):
             r = await generate(client, uid)
             assert r.status_code == 200, f"Generation {i+1} failed: {r.text}"
 
         q = await client.get(f"{BASE_URL}/workouts/generation-quota/{uid}")
-        assert q.json()["used"] == 3
+        assert q.json()["used"] == LIMIT
         assert q.json()["remaining"] == 0
 
 
-# ── At-limit: 4th generation is blocked ───────────────────────────────────────
+# ── At-limit: 6th generation is blocked ───────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_at_limit_returns_403():
-    """4th generation returns 403 with generation_limit error."""
+    """6th generation returns 403 with generation_limit error."""
     async with httpx.AsyncClient(timeout=480) as client:
         uid, email = new_user()
         await create_profile(client, uid, email)
 
-        for _ in range(3):
+        for _ in range(LIMIT):
             r = await generate(client, uid)
             assert r.status_code == 200
 
@@ -108,8 +109,8 @@ async def test_at_limit_returns_403():
         detail = r4.json().get("detail", {})
         assert detail.get("error") == "generation_limit"
         assert "reset_date" in detail
-        assert detail.get("used") == 3
-        assert detail.get("limit") == 3
+        assert detail.get("used") == LIMIT
+        assert detail.get("limit") == LIMIT
         assert "consistency beats" in detail.get("message", "").lower() or "reset" in detail.get("message", "").lower()
 
 
@@ -168,7 +169,7 @@ async def test_exercise_edit_does_not_consume_quota():
 
 @pytest.mark.asyncio
 async def test_quota_endpoint_fresh_user():
-    """New user has used=0, remaining=3."""
+    """New user has used=0, remaining=5."""
     async with httpx.AsyncClient(timeout=30) as client:
         uid, email = new_user()
         await create_profile(client, uid, email)
@@ -177,6 +178,6 @@ async def test_quota_endpoint_fresh_user():
         assert q.status_code == 200
         data = q.json()
         assert data["used"] == 0
-        assert data["remaining"] == 3
+        assert data["remaining"] == LIMIT
         assert data["is_admin"] is False
         assert "reset_date" in data

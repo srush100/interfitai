@@ -3735,6 +3735,8 @@ class FoodLogRequest(BaseModel):
     # "saved". Only AI estimates (or older apps that don't say) are corrected.
     source: Optional[str] = None
 
+PROGRAM_MONTHLY_LIMIT = 5       # workout programs per member per calendar month (admins: no limit)
+MEAL_PLAN_LIMIT_PER_MONTH = 5   # meal plans per member per calendar month (admins: no limit)
 SNAP_DAILY_LIMIT = 15          # photo analyses per user per 24 hours (fair use)
 
 
@@ -4216,7 +4218,7 @@ async def generate_workout(request: WorkoutGenerateRequest):
             "user_id": request.user_id,
             "created_at": {"$gte": month_start},
         })
-        if used >= 3:
+        if used >= PROGRAM_MONTHLY_LIMIT:
             # First day of next month
             if now.month == 12:
                 reset_dt = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -4228,13 +4230,13 @@ async def generate_workout(request: WorkoutGenerateRequest):
                 detail={
                     "error": "generation_limit",
                     "message": (
-                        f"You've used your 3 program generations this month. "
+                        f"You've used your {PROGRAM_MONTHLY_LIMIT} program generations this month. "
                         f"They reset on {reset_date}. "
                         "Stick with your current program — consistency beats the perfect program."
                     ),
                     "reset_date": reset_date,
                     "used": used,
-                    "limit": 3,
+                    "limit": PROGRAM_MONTHLY_LIMIT,
                 },
             )
 
@@ -4551,7 +4553,7 @@ async def get_generation_quota(user_id: str):
         "user_id": user_id,
         "created_at": {"$gte": month_start},
     })
-    limit = 3
+    limit = PROGRAM_MONTHLY_LIMIT
     return {
         "used": used,
         "limit": limit,
@@ -6078,7 +6080,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         raise HTTPException(status_code=404, detail="User profile with macros not found. Please set up your profile first.")
 
     # ── Monthly generation limit (mirrors workout programs: cost + adherence) ──
-    MEAL_PLAN_MONTHLY_LIMIT = 4
+    MEAL_PLAN_MONTHLY_LIMIT = MEAL_PLAN_LIMIT_PER_MONTH
     if not is_admin(profile.get("email", "")):
         now = datetime.utcnow()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
