@@ -17,6 +17,9 @@ from datetime import datetime, timedelta
 
 REFRESH_AFTER = timedelta(days=365)       # chains change recipes: re-check yearly
 ESTIMATE_RETRY_AFTER = timedelta(days=7)  # an AI estimate is replaced by a real source when one is found
+# Saved web answers from before version 2 may show a per-100g column as one
+# serve: they are looked up again on the next search
+LOOKUP_VERSION = 2
 
 # Typed country words → ISO country code
 COUNTRY_WORDS = {
@@ -122,11 +125,22 @@ _PRODUCT_CHAINS = {"big mac": "mcdonalds", "mcflurry": "mcdonalds", "mcchicken":
                    "mcmuffin": "mcdonalds", "zinger": "kfc"}
 
 
+# "chipotle sauce", "with chipotle" is a flavour, not the Chipotle restaurant
+_FLAVOUR_CHIPOTLE = re.compile(
+    r"\b(?:(?:with|and|in|of|plus)\s+(?:a\s+|some\s+|extra\s+)?chipotle\b(?!\s+(?:mexican|restaurant|grill))"
+    r"|chipotle\s+(?=(?:sauce|mayo|mayonnaise|aioli|dressing|pepper|peppers|seasoning|salsa|paste|powder|"
+    r"marinade|ranch|glaze|dip|spice|flavou?r|chilli|chili|lime|bbq|barbecue|southwest)\b))")
+
+
+def _no_flavour_chipotle(q: str) -> str:
+    return _FLAVOUR_CHIPOTLE.sub(" ", q)
+
+
 def chain_in(query: str, country: str = "") -> str:
     """The restaurant chain named in the text, as typed ('hungry jacks'), or the
     one a menu item belongs to ('big mac' → 'mcdonalds'; a Whopper is Hungry
     Jack's in Australia, Burger King elsewhere). '' if none."""
-    q = _plain(query).replace("'", "")
+    q = _no_flavour_chipotle(_plain(query).replace("'", ""))
     for product, chain in _PRODUCT_CHAINS.items():
         if re.search(rf"\b{product}", q) and not any(c.replace("'", "") in q for c in CHAINS[:40]
                                                        if c not in _PRODUCT_CHAINS and c != "whopper"):
@@ -142,14 +156,16 @@ def chain_in(query: str, country: str = "") -> str:
 
 
 def is_chain(query: str) -> bool:
-    q = _plain(query)
-    return any(c.replace("'", "") in q.replace("'", "") for c in CHAINS)
+    q = _no_flavour_chipotle(_plain(query).replace("'", ""))
+    return any(c.replace("'", "") in q for c in CHAINS)
 
 
 def is_fresh(saved: dict, now: datetime = None) -> bool:
     """A saved web / product answer is good for a year; an AI estimate for a week
     (then a real source is tried again)."""
     now = now or datetime.utcnow()
+    if saved.get("kind") == "web" and (saved.get("v") or 1) < LOOKUP_VERSION:
+        return False
     age = now - (saved.get("updated_at") or now)
     return age < (ESTIMATE_RETRY_AFTER if saved.get("kind") == "ai_estimate" else REFRESH_AFTER)
 
@@ -225,3 +241,78 @@ def off_result(product: dict) -> dict:
         "source": "Open Food Facts",
         "source_url": f"https://world.openfoodfacts.org/product/{product.get('code')}" if product.get("code") else "",
     }
+
+
+# ── Keyword search results (USDA list) ─────────────────────────────────────
+_AMOUNT_WORDS = {"g", "gram", "kg", "ml", "l", "oz", "lb", "cup", "tbsp", "tsp", "tablespoon", "teaspoon",
+                 "slice", "piece", "serve", "serving", "portion", "x", "half", "bowl", "plate", "handful"}
+
+
+def _food_words(query: str, country: str = "") -> tuple:
+    """(food words typed, chain words typed) — country and filler words removed."""
+    _, rest = country_from(query, country)
+    chain = chain_in(rest, country)
+    chain_words = set(food_tokens(chain)) if chain else set()
+    words = [w for w in food_tokens(rest) if w not in chain_words and w not in SIZE_WORDS
+             and w not in _AMOUNT_WORDS and not re.fullmatch(r"[\d.%]+[a-z]{0,2}", w)]
+    return words, chain_words
+
+
+def relevant_results(results: list, query: str, country: str = "") -> list:
+    """Keyword results that are about the food typed, best match first.
+
+    - A result must share most of the words typed: 'big chicken burrito with
+      chipotle sauce' never lists 'Fast foods, chicken tenders' or 'Cheese
+      sauce mix, dry' just because one word is the same.
+    - When a restaurant is named, other restaurants' and generic items are
+      dropped unless they have every word typed — the restaurant's own item is
+      found by the exact-match lookup instead.
+    - If the filter would leave almost nothing for an everyday food, the list
+      is kept (re-ordered) so a food written differently in the database isn't lost."""
+    words, chain_words = _food_words(query, country)
+    if not words or not results:
+        return results
+    need = len(words) if len(words) <= 2 else max(2, -(-len(words) * 6 // 10))   # 60%, rounded up
+
+    def score(r):
+        have = set(food_tokens(r.get("name", "")))
+        names_chain = bool(chain_words) and bool(chain_words & have)
+        return sum(1 for w in words if w in have), names_chain
+
+    scored = [(score(r), i, r) for i, r in enumerate(results)]
+    scored.sort(key=lambda t: (-t[0][0], t[1]))
+    if chain_words:
+        return [r for (n, named), _, r in scored if n == len(words) or (named and n >= max(1, len(words) - 1))]
+    kept = [r for (n, _), _, r in scored if n >= need]
+    return kept if len(kept) >= 3 else [r for _, _, r in scored]
+
+
+# File hosts that say nothing about where the figures come from
+_FILE_HOSTS = ("cloudfront.net", "amazonaws.com", "googleusercontent.com", "ctfassets.net", "azureedge.net",
+               "akamaized.net", "blob.core.windows.net", "storage.googleapis.com", "squarespace-cdn.com",
+               "shopify.com", "wp-content", "prismic.io", "contentful.com")
+
+
+_CHAIN_NAMES = {"mcdonald": "McDonald's", "maccas": "McDonald's", "kfc": "KFC", "subway": "Subway",
+                "hungry jack": "Hungry Jack's", "burger king": "Burger King", "domino": "Domino's",
+                "red rooster": "Red Rooster", "nando": "Nando's", "guzman": "Guzman y Gomez",
+                "starbucks": "Starbucks", "grill": "Grill'd", "oporto": "Oporto", "zambrero": "Zambrero",
+                "taco bell": "Taco Bell", "wendy": "Wendy's", "chipotle": "Chipotle", "pizza hut": "Pizza Hut",
+                "boost juice": "Boost Juice", "mad mex": "Mad Mex", "schnitz": "Schnitz", "greggs": "Greggs",
+                "five guys": "Five Guys", "krispy kreme": "Krispy Kreme", "tim hortons": "Tim Hortons"}
+
+
+def source_label(url: str, query: str = "", country: str = "") -> str:
+    """A readable source name: the website ('mcdonalds.com.au'), or the
+    restaurant's name for a document on a file host ('Zambrero nutrition
+    document' instead of 'dph95f73vdxmz.cloudfront.net')."""
+    from urllib.parse import urlparse
+    if not url:
+        return "web"
+    host = urlparse(url).netloc.lower().replace("www.", "")
+    if not any(h in url.lower() for h in _FILE_HOSTS):
+        return host or "web"
+    chain = chain_in(query, country)
+    name = next((v for k, v in _CHAIN_NAMES.items() if chain.startswith(k)), "") if chain else ""
+    name = name or " ".join(w.capitalize() for w in chain.split())
+    return f"{name} nutrition document" if name else "Nutrition document"

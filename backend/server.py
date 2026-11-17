@@ -3735,6 +3735,8 @@ class FoodLogRequest(BaseModel):
     # "saved". Only AI estimates (or older apps that don't say) are corrected.
     source: Optional[str] = None
 
+PROGRAM_MONTHLY_LIMIT = 5       # workout programs per member per calendar month (admins: no limit)
+MEAL_PLAN_LIMIT_PER_MONTH = 5   # meal plans per member per calendar month (admins: no limit)
 SNAP_DAILY_LIMIT = 15          # photo analyses per user per 24 hours (fair use)
 
 
@@ -4216,7 +4218,7 @@ async def generate_workout(request: WorkoutGenerateRequest):
             "user_id": request.user_id,
             "created_at": {"$gte": month_start},
         })
-        if used >= 3:
+        if used >= PROGRAM_MONTHLY_LIMIT:
             # First day of next month
             if now.month == 12:
                 reset_dt = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -4228,13 +4230,13 @@ async def generate_workout(request: WorkoutGenerateRequest):
                 detail={
                     "error": "generation_limit",
                     "message": (
-                        f"You've used your 3 program generations this month. "
+                        f"You've used your {PROGRAM_MONTHLY_LIMIT} program generations this month. "
                         f"They reset on {reset_date}. "
                         "Stick with your current program — consistency beats the perfect program."
                     ),
                     "reset_date": reset_date,
                     "used": used,
-                    "limit": 3,
+                    "limit": PROGRAM_MONTHLY_LIMIT,
                 },
             )
 
@@ -4551,7 +4553,7 @@ async def get_generation_quota(user_id: str):
         "user_id": user_id,
         "created_at": {"$gte": month_start},
     })
-    limit = 3
+    limit = PROGRAM_MONTHLY_LIMIT
     return {
         "used": used,
         "limit": limit,
@@ -6078,7 +6080,7 @@ async def generate_meal_plan(request: MealPlanGenerateRequest):
         raise HTTPException(status_code=404, detail="User profile with macros not found. Please set up your profile first.")
 
     # ── Monthly generation limit (mirrors workout programs: cost + adherence) ──
-    MEAL_PLAN_MONTHLY_LIMIT = 4
+    MEAL_PLAN_MONTHLY_LIMIT = MEAL_PLAN_LIMIT_PER_MONTH
     if not is_admin(profile.get("email", "")):
         now = datetime.utcnow()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -6829,7 +6831,7 @@ async def analyze_food_image(request: FoodImageAnalyzeRequest):
                 "error": "daily_limit",
                 "message": f"You've used today's {SNAP_DAILY_LIMIT} photo analyses. It resets within 24 hours "
                            "\u2014 you can still search for food or add it manually."})
-        await db.snap_usage.insert_one({"user_id": request.user_id, "created_at": datetime.utcnow()})
+        _snap_id = (await db.snap_usage.insert_one({"user_id": request.user_id, "created_at": datetime.utcnow()})).inserted_id
         
         # The description goes to the AI as a hint about WHAT is in the photo
         # ("no dressing", "grilled not fried", "4 eggs and 3 slices sourdough").
@@ -7287,9 +7289,9 @@ For labels, the `calories/protein/carbs/fats` top-level fields describe ONE labe
             protein=float(_scaled["protein"]),
             carbs=float(_scaled["carbs"]),
             fats=float(_scaled["fats"]),
-            fiber=float(food_data.get("fiber", 0)) * qty,
-            sugar=float(food_data.get("sugar", 0)) * qty,
-            sodium=float(food_data.get("sodium", 0)) * qty,
+            fiber=float(food_data.get("fiber") or 0) * qty,
+            sugar=float(food_data.get("sugar") or 0) * qty,
+            sodium=float(food_data.get("sodium") or 0) * qty,
             meal_type=request.meal_type,
             logged_date=request.logged_date or datetime.now().strftime("%Y-%m-%d"),
             image_base64=request.image_base64[:100] + "..."  # Store truncated for reference
@@ -7321,10 +7323,18 @@ For labels, the `calories/protein/carbs/fats` top-level fields describe ONE labe
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Food analysis error: {e}")
+        logger.exception(f"Food analysis error: {e}")
+        if "_snap_id" in locals():      # our failure: the photo doesn't count towards today's limit
+            try:
+                await db.snap_usage.delete_one({"_id": _snap_id})
+            except Exception:
+                pass
         if "invalid" in str(e).lower() or "image" in str(e).lower():
             raise HTTPException(status_code=400, detail="Invalid image format. Please use a valid JPEG or PNG image.")
-        raise HTTPException(status_code=500, detail=f"Failed to analyze food: {str(e)}")
+        # Members see a plain message, never the program's error text
+        raise HTTPException(status_code=500, detail={
+            "error": "analysis_failed",
+            "message": "Something went wrong reading that photo. Please try again, or search for the food instead."})
 
 async def usda_generic_per_100g(food: str):
     """Per-100g macros for a plain food from USDA's generic tables (Foundation /
@@ -7972,6 +7982,9 @@ async def search_foods(query: str, user_id: str, country: str = ""):
         combined_results.insert(0, {**_db, "name": meal_summary(_meal)})
     local_names_lower = {food["name"].lower() for food in local_results}
     
+    # Only results about the food typed, best match first (no 'cheese sauce
+    # mix, dry' for a burrito because both have the word 'sauce')
+    api_results = FoodLookup.relevant_results(api_results, query, country)
     for api_food in api_results:
         if api_food["name"].lower() not in local_names_lower:
             combined_results.append(api_food)
@@ -7983,10 +7996,10 @@ async def search_foods(query: str, user_id: str, country: str = ""):
     for _r in combined_results:
         _tmp = {
             "food_name": _r.get("name", ""),
-            "calories": float(_r.get("calories", 0)),
-            "protein":  float(_r.get("protein", 0)),
-            "carbs":    float(_r.get("carbs", 0)),
-            "fats":     float(_r.get("fats", 0)),
+            "calories": float(_r.get("calories") or 0),
+            "protein":  float(_r.get("protein") or 0),
+            "carbs":    float(_r.get("carbs") or 0),
+            "fats":     float(_r.get("fats") or 0),
         }
         _portion = grams_in_text(_r.get("name", ""), _r.get("name", ""))
         # Built-in and USDA values are trusted: food-specific energy factors and
@@ -8101,7 +8114,7 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False, wh
             await db.food_lookups.update_one(
                 {"key": key},
                 {"$set": {"key": key, "alt": alt, "tokens": tokens, "country": cc, "query": query, "kind": kind,
-                          "result": res, "updated_at": datetime.utcnow()}},
+                          "result": res, "updated_at": datetime.utcnow(), "v": FoodLookup.LOOKUP_VERSION}},
                 upsert=True)
             return {**res, "saved": False}
     if saved:   # a re-check found nothing new: the saved answer stands
@@ -8414,10 +8427,10 @@ async def _ai_estimate(query: str, country: str = ""):
         return json.loads(content)
 
     def _all_zero(d: dict) -> bool:
-        return (float(d.get("calories", 0)) == 0
-                and float(d.get("protein_g", 0)) == 0
-                and float(d.get("carbs_g", 0)) == 0
-                and float(d.get("fat_g", 0)) == 0)
+        return (float(d.get("calories") or 0) == 0
+                and float(d.get("protein_g") or 0) == 0
+                and float(d.get("carbs_g") or 0) == 0
+                and float(d.get("fat_g") or 0) == 0)
 
     data = None
     for attempt in range(2):
@@ -8444,10 +8457,10 @@ async def _ai_estimate(query: str, country: str = ""):
         # log any physical-plausibility or reference-table divergences (Fix 2/4).
         _tmp = {
             "food_name": data.get("food_name", query),
-            "calories": float(data.get("calories", 0)),
-            "protein_g": float(data.get("protein_g", 0)),
-            "carbs_g":   float(data.get("carbs_g", 0)),
-            "fat_g":     float(data.get("fat_g", 0)),
+            "calories": float(data.get("calories") or 0),
+            "protein_g": float(data.get("protein_g") or 0),
+            "carbs_g":   float(data.get("carbs_g") or 0),
+            "fat_g":     float(data.get("fat_g") or 0),
         }
         portion_g = grams_in_text(data.get("serving_size", ""),
                                            data.get("food_name", ""))
@@ -8458,10 +8471,10 @@ async def _ai_estimate(query: str, country: str = ""):
     serving_g = grams_in_text(serving_size, data.get("food_name", "")) or None
     return {
         "name":           data.get("food_name", query.title()),
-        "calories":       round(float(data.get("calories", 0))),
-        "protein":        round(float(data.get("protein_g", 0)), 1),
-        "carbs":          round(float(data.get("carbs_g", 0)), 1),
-        "fats":           round(float(data.get("fat_g", 0)), 1),
+        "calories":       round(float(data.get("calories") or 0)),
+        "protein":        round(float(data.get("protein_g") or 0), 1),
+        "carbs":          round(float(data.get("carbs_g") or 0), 1),
+        "fats":           round(float(data.get("fat_g") or 0), 1),
         "serving_size":   serving_size,
         "serving_g":      serving_g,
         "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
@@ -8483,6 +8496,54 @@ async def web_food_search(query: str, user_id: str, country: str = ""):
         raise HTTPException(status_code=403, detail={"error": "premium_required", "feature": "Nutrition Tracking",
                                                      "message": "Nutrition tracking is a premium feature. Subscribe to unlock food search, logging, and photo analysis."})
     return await lookup_food(query, country, force_web=True)
+
+
+def _web_serving(data, urls=()):
+    """The web extractor's answer → numbers for ONE serve.
+
+    Restaurant nutrition tables print 'per serve' and 'per 100g' side by side,
+    and the per-100g column used to be shown as one burrito (232 cal for a
+    Zambrero Big Chicken Burrito instead of ~900). Here:
+    - per serve is used when given — unless it is just the per-100g column
+      repeated for a serve that isn't 100 g, then per-100g is scaled to the serve
+    - only per-100g given: scaled to the printed serve weight, else shown per 100 g
+    - the source is the result the figures came from, when it's one of the results."""
+    if not isinstance(data, dict):
+        return data
+    def col(name):
+        c = data.get(name)
+        if not isinstance(c, dict):
+            return None
+        try:
+            v = {k: float(c.get(k) or 0) for k in ("calories", "protein_g", "carbs_g", "fat_g")}
+        except (TypeError, ValueError):
+            return None
+        return v if v["calories"] > 0 else None
+    serve, per100 = col("per_serve"), col("per_100g")
+    try:
+        g = float(data.get("serving_g") or 0) or float(grams_in_text(str(data.get("serving_size") or ""), "") or 0)
+    except (TypeError, ValueError):
+        g = 0
+    out = dict(data)
+    if serve and per100 and g and abs(g - 100) > 15 and abs(serve["calories"] - per100["calories"]) <= 0.03 * per100["calories"]:
+        serve = None                      # the per-100g column copied into per serve
+    if serve:
+        out.update(serve)
+    elif per100 and g:
+        out.update({k: round(v * g / 100, 1) for k, v in per100.items()})
+    elif per100:
+        out.update(per100)
+        out["serving_size"], g = "100g", 100
+    elif not float(data.get("calories") or 0):
+        return out                        # nothing usable (found=false)
+    if g:
+        out["serving_g"] = g
+        size = str(out.get("serving_size") or "")
+        if not re.search(r"\d\s*(g|ml)\b", size, re.I):
+            out["serving_size"] = f"{size} ({g:g}g)".strip() if size else f"{g:g}g"
+    url = str(data.get("source_url") or "")
+    out["source_url"] = url if url and url in urls else ""
+    return out
 
 
 async def _web_lookup(query: str, country: str = ""):
@@ -8531,10 +8592,16 @@ async def _web_lookup(query: str, country: str = ""):
             "provided, extract nutrition for ONE standard serving of the requested food. "
             "Prefer official brand/restaurant figures for the country named (if any). If the food has additions or "
             "changes (e.g. 'with bacon', 'no pickles', 'extra cheese'), include them in the numbers. If results give a specific size/serving "
-            "(e.g. 'large'), use that. Convert kilojoules to calories if needed (1 kcal = 4.184 kJ). "
+            "(e.g. 'large'), use that. Convert kilojoules to calories if needed (1 kcal = 4.184 kJ).\n"
+            "Nutrition tables usually have TWO columns: 'per serve' and 'per 100g'. Copy each column into its own "
+            "field below and NEVER put per-100g numbers in per_serve. serving_g is the weight of one serve in grams "
+            "as printed (null if not printed).\n"
             "Respond with ONLY this JSON:\n"
-            '{"food_name":"<name>","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,'
-            '"serving_size":"<e.g. 1 large / 100g>","found":true}\n'
+            '{"food_name":"<name>","serving_size":"<e.g. 1 burrito (420g)>","serving_g":null,'
+            '"per_serve":{"calories":0,"protein_g":0,"carbs_g":0,"fat_g":0},'
+            '"per_100g":{"calories":0,"protein_g":0,"carbs_g":0,"fat_g":0},'
+            '"source_url":"<the [url] of the result the figures came from>","found":true}\n'
+            "Use null for a column the results don't give. "
             "Set found=false if the results do not contain real nutrition data for this food."
         )
         try:
@@ -8557,30 +8624,33 @@ async def _web_lookup(query: str, country: str = ""):
             logger.warning(f"Haiku extraction failed for '{query}': {e}")
 
     # 3. Build response
-    if data and data.get("found", True) and float(data.get("calories", 0)) > 0:
+    data = _web_serving(data, [r.get("url", "") for r in (tav.get("results", [])[:5] if search_content else [])])
+    if data and data.get("source_url"):
+        source_url = data["source_url"]
+    if data and data.get("found", True) and float(data.get("calories") or 0) > 0:
         # Nutrition-accuracy guard — reconcile calories with macros (Fix 1)
         # and log any physical-plausibility or reference divergences (Fix 2/4).
         _tmp = {
             "food_name": data.get("food_name", query),
-            "calories": float(data.get("calories", 0)),
-            "protein_g": float(data.get("protein_g", 0)),
-            "carbs_g":   float(data.get("carbs_g", 0)),
-            "fat_g":     float(data.get("fat_g", 0)),
+            "calories": float(data.get("calories") or 0),
+            "protein_g": float(data.get("protein_g") or 0),
+            "carbs_g":   float(data.get("carbs_g") or 0),
+            "fat_g":     float(data.get("fat_g") or 0),
             "fiber_g":   float(data.get("fiber_g", 0) or 0),
         }
         portion_g = grams_in_text(data.get("serving_size", ""),
                                            data.get("food_name", ""))
         sanitize_food_entry(_tmp, portion_g=portion_g)
         data["calories"] = _tmp["calories"]
-        domain = urlparse(source_url).netloc.replace("www.", "") if source_url else "web"
+        domain = FoodLookup.source_label(source_url, query, country)
         serving_size = str(data.get("serving_size") or "")
-        serving_g = grams_in_text(serving_size, data.get("food_name", "")) or None
+        serving_g = data.get("serving_g") or grams_in_text(serving_size, data.get("food_name", "")) or None
         return {
             "name":           data.get("food_name", query.title()),
-            "calories":       round(float(data.get("calories", 0))),
-            "protein":        round(float(data.get("protein_g", 0)), 1),
-            "carbs":          round(float(data.get("carbs_g", 0)), 1),
-            "fats":           round(float(data.get("fat_g", 0)), 1),
+            "calories":       round(float(data.get("calories") or 0)),
+            "protein":        round(float(data.get("protein_g") or 0), 1),
+            "carbs":          round(float(data.get("carbs_g") or 0), 1),
+            "fats":           round(float(data.get("fat_g") or 0), 1),
             "serving_size":   serving_size,
             "serving_g":      serving_g,
             "serving_unit":   "ml" if serving_g and re.search(r"\d\s*ml\b", serving_size, re.I) else "g",
@@ -9574,9 +9644,32 @@ async def get_progress_photos(user_id: str):
 BODY_DAILY_LIMIT = 3          # body analyses per user per 24 hours (two photos each, fair use)
 
 
-def _clean_body_analysis(d: dict) -> dict:
+_BODY_DIRECTIONS = ("fat_loss", "muscle_gain", "recomposition", "fat_gain", "muscle_and_fat_gain",
+                    "no_clear_change", "unclear_photos")
+_BODY_HEADLINES = {
+    "fat_loss": "The after photo shows less body fat than the before photo.",
+    "muscle_gain": "The after photo shows more muscle than the before photo.",
+    "recomposition": "The after photo shows less body fat and more muscle than the before photo.",
+    "fat_gain": "The after photo shows more body fat than the before photo.",
+    "muscle_and_fat_gain": "The after photo shows more muscle and more body fat than the before photo.",
+    "no_clear_change": "There is no clear change between the two photos.",
+    "unclear_photos": "The photos are too different (angle, lighting or pose) to compare reliably.",
+}
+
+
+def _bf_mid(v) -> float | None:
+    """'Estimate: 22-25%' → 23.5; '18%' → 18; anything else → None."""
+    nums = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", str(v or ""))][:2]
+    nums = [n for n in nums if 2 <= n <= 70]
+    return sum(nums) / len(nums) if nums else None
+
+
+def _clean_body_analysis(d: dict, goal: str = "", weight_delta: float | None = None) -> dict:
     """The AI's answer, checked before it is saved or shown: a whole-number score
-    0-10, a known confidence level, lists of short texts, plain strings."""
+    0-10, a known confidence level, lists of short texts, plain strings — and an
+    honest result. The body-fat estimates and the stated direction must agree:
+    the AI can't call a visible fat gain 'very little change', and a change
+    against the member's goal can't score well."""
     d = d if isinstance(d, dict) else {}
 
     def text(v, default=""):
@@ -9586,17 +9679,58 @@ def _clean_body_analysis(d: dict) -> dict:
         v = v if isinstance(v, list) else ([v] if isinstance(v, str) else [])
         return [x.strip() for x in v if isinstance(x, str) and x.strip()][:6]
 
+    def bf(v):          # the card already says it's an estimate
+        return re.sub(r"^\s*(?:estimate|est\.?)\s*:\s*", "", text(v, "Not estimated"), flags=re.I)
+
     raw = d.get("estimated_progress_score")
     m = re.search(r"-?\d+(?:\.\d+)?", str(raw if raw is not None else ""))
     score = max(0, min(10, round(float(m.group(0))))) if m else 0
     conf = text(d.get("analysis_confidence"), "low").lower()
     conf = next((c for c in ("high", "medium", "low") if c in conf), "low")
+    before_bf, after_bf = bf(d.get("estimated_body_fat_before")), bf(d.get("estimated_body_fat_after"))
+
+    direction = text(d.get("change_direction")).lower().replace(" ", "_").replace("-", "_")
+    direction = direction if direction in _BODY_DIRECTIONS else ""     # "" = not stated
+    b, a = _bf_mid(before_bf), _bf_mid(after_bf)
+    bf_change = (a - b) if a is not None and b is not None else None
+    if bf_change is not None and direction != "unclear_photos":
+        if bf_change >= 2 and direction in ("", "fat_loss", "recomposition", "no_clear_change", "muscle_gain"):
+            direction = "muscle_and_fat_gain" if direction == "muscle_gain" else "fat_gain"
+        elif bf_change <= -2 and direction in ("", "fat_gain", "no_clear_change"):
+            direction = "fat_loss"
+
+    # The score is progress TOWARDS THE GOAL
+    caps = {"no_clear_change": 3, "unclear_photos": 4}
+    if goal == "weight_loss":
+        caps.update({"fat_gain": 1 if (bf_change or 0) >= 3 else 2, "muscle_and_fat_gain": 3, "muscle_gain": 6})
+    elif goal == "muscle_building":
+        caps.update({"fat_gain": 2, "fat_loss": 6})
+    else:
+        caps.update({"fat_gain": 2, "muscle_and_fat_gain": 4})
+    if weight_delta is not None and goal == "weight_loss" and weight_delta >= 2 and direction not in ("recomposition", "muscle_gain"):
+        caps[direction] = min(caps.get(direction, 10), 3)
+    if score > 0:      # 0 = not analysed (under 18 / not a body photo)
+        score = max(1, min(score, caps.get(direction, 10)))
+
+    headline = _BODY_HEADLINES.get(direction, "")
+    assessment = text(d.get("overall_assessment"), "Analysis complete.")
+    if direction in ("fat_gain", "muscle_and_fat_gain", "fat_loss", "recomposition") and \
+            re.search(r"\b(very little|little|no|minimal|not much)\s+(visible\s+)?(change|difference)", assessment, re.I):
+        # the AI's own words contradict its estimates: lead with what changed
+        assessment = f"{headline} {assessment}"
+    # "muscle maintained", "no visible loss", "unchanged" aren't improvements
+    improved = [x for x in items(d.get("areas_improved"))
+                if not re.search(r"\b(maintain\w*|retain\w*|preserv\w*|unchanged|similar|same|stable|no (visible |noticeable )?(loss|change))\b", x, re.I)]
+    if direction in ("fat_gain", "no_clear_change", "unclear_photos"):
+        improved = []        # nothing to list as improved when nothing improved
     return {
-        "overall_assessment": text(d.get("overall_assessment"), "Analysis complete."),
-        "estimated_body_fat_before": text(d.get("estimated_body_fat_before"), "Not estimated"),
-        "estimated_body_fat_after": text(d.get("estimated_body_fat_after"), "Not estimated"),
+        "overall_assessment": assessment,
+        "headline": headline,
+        "change_direction": direction,
+        "estimated_body_fat_before": before_bf,
+        "estimated_body_fat_after": after_bf,
         "visible_changes": items(d.get("visible_changes")),
-        "areas_improved": items(d.get("areas_improved")),
+        "areas_improved": improved,
         "recommendations": items(d.get("recommendations")),
         "motivation_message": text(d.get("motivation_message")),
         "estimated_progress_score": score,
@@ -9666,6 +9800,9 @@ async def analyze_body_progress(request: BodyAnalysisRequest):
         )
 
     user_context = "\n".join(ctx_lines)
+    _goal = (profile or {}).get("goal", "")
+    _wdelta = (request.after_weight_kg - request.before_weight_kg) \
+        if request.before_weight_kg and request.after_weight_kg else None
 
     body_system_prompt = None
     try:
@@ -9677,21 +9814,45 @@ USER CONTEXT:
 
 PRIMARY GOAL FRAMING: Focus feedback on {goal_framing}.
 
-SCORING RUBRIC (estimated_progress_score, 1-10):
-  10 = near-complete physique transformation — dramatic change aligned with goal
-  8  = clear, significant progress — obvious visible change
-  6  = moderate progress — visible but modest change
-  4  = minor changes — small shifts in composition or tone
-  2  = very little visible change
-  1  = no change or regression
+HONESTY COMES FIRST. Members use this to see what is really happening. Report what the photos
+show, including fat gain or muscle loss. Never soften a visible change into "little change" to be
+kind — that is the one thing you must not do. Be respectful and supportive in HOW you say it, not
+in WHAT you say.
 
-Provide a body fat % ESTIMATE as a range (e.g. "18-21%") for each photo. Prefix with "Estimate: " — do not claim clinical precision. If the photos do not allow confident estimation (bad angle, clothing obscuring, poor lighting), say so honestly in overall_assessment and lower the confidence accordingly.
+HOW TO ANALYSE (in this order):
+1. Look at each photo ON ITS OWN, as if you had not seen the other, and note: face and jawline
+   (fullness, neck), chest, arms, waist width compared with the shoulders, lower stomach (how far
+   it sticks out), sides / love handles. Estimate body fat % for each photo separately from those
+   signs, as a range of 3-4 points (e.g. "22-25%"). Two photos only get the SAME range if they
+   really look the same.
+2. Compare the notes area by area: more fat, less fat, more muscle, less muscle, or the same.
+3. Allow for the camera: a low camera angle or wide lens makes the stomach look bigger; a high
+   mirror selfie, flexing or a pump makes the body look leaner. Mention it if the angles differ, and
+   lower analysis_confidence — but do NOT use it to hide a change that is clear in several areas
+   (e.g. a fuller face AND a wider waist AND a bigger stomach is real fat gain).
+4. Pick change_direction — exactly one of:
+   "fat_loss", "muscle_gain", "recomposition" (less fat and more muscle), "fat_gain",
+   "muscle_and_fat_gain", "no_clear_change", "unclear_photos" (too different to compare at all).
+5. Start overall_assessment with the plain result, e.g. "The after photo shows more body fat than
+   the before photo — the face, chest and waist are fuller." If a weight change is given above,
+   it must agree with what you say.
 
-Be encouraging but HONEST. Do not inflate scores. If there is little change, say so and give specific actionable next steps.
+SCORING (estimated_progress_score, 1-10) = progress TOWARDS THE MEMBER'S GOAL ({goal_framing}):
+  9-10 = dramatic change in the goal's direction
+  7-8  = clear, obvious progress in the goal's direction
+  5-6  = moderate, visible progress in the goal's direction
+  3-4  = small progress, or mixed (some better, some worse)
+  2    = no clear change
+  1    = change AGAINST the goal (e.g. more body fat when the goal is weight loss)
+A change against the goal always scores 1-2, however good the photos look otherwise.
 
-The FIRST image is BEFORE and the SECOND image is AFTER. Compare like with like (same angle,
-lighting, pump/flex); if the photos differ a lot in angle, lighting or clothing, say so and lower
-analysis_confidence.
+areas_improved lists only areas that really improved — an empty list if none did.
+visible_changes lists every clear change, good or bad, in plain words.
+motivation_message: kind and honest — acknowledge the result, then the next step (e.g. "This
+shows a gain, not a loss, and that's useful to know now. Getting back on your calorie target
+this week is the fastest way to turn it around.").
+
+The FIRST image is BEFORE and the SECOND image is AFTER.
 
 RECOMMENDATIONS: practical training, nutrition, sleep and consistency steps. If the user's app
 daily targets are given above, keep nutrition advice in line with them (e.g. "keep hitting your
@@ -9710,9 +9871,10 @@ SAFETY:
 
 Respond with valid JSON only — no markdown fences:
 {{
-    "overall_assessment": "2-3 sentence assessment calibrated to the user's goal and stats",
+    "overall_assessment": "2-3 sentences, starting with the plain result",
+    "change_direction": "fat_loss | muscle_gain | recomposition | fat_gain | muscle_and_fat_gain | no_clear_change | unclear_photos",
     "estimated_body_fat_before": "e.g. 18-21%",
-    "estimated_body_fat_after":  "e.g. 14-17%",
+    "estimated_body_fat_after":  "e.g. 21-24%",
     "visible_changes": ["Specific change 1", "Specific change 2", "Specific change 3"],
     "areas_improved": ["Specific muscle group or region 1", "Area 2"],
     "recommendations": ["Actionable recommendation 1", "Recommendation 2", "Recommendation 3"],
@@ -9722,8 +9884,8 @@ Respond with valid JSON only — no markdown fences:
 }}"""),
             user_message=f"Image 1 is BEFORE, image 2 is AFTER" + (f", taken {period} apart" if period else
                          " (time between them not given)") + ". Analyse them and return the full JSON response per the system prompt.",
-            max_tokens=1200,
-            temperature=0.3,   # consistent scores for the same photos
+            max_tokens=1400,
+            temperature=0.0,   # the same photos get the same answer
             image_base64=request.before_image_base64,
             image_base64_2=request.after_image_base64
         )
@@ -9744,7 +9906,7 @@ Respond with valid JSON only — no markdown fences:
             content = "\n".join(json_lines)
         content = content.strip()
 
-        analysis_data = _clean_body_analysis(json.loads(content))
+        analysis_data = _clean_body_analysis(json.loads(content), _goal, _wdelta)
 
         analysis_record = {
             "id": str(uuid.uuid4()),
@@ -9762,8 +9924,8 @@ Respond with valid JSON only — no markdown fences:
         try:
             retry_content = await call_claude_sonnet(
                 system_message=(body_system_prompt or "") + "\n\nYou MUST respond with valid JSON only — no markdown, no prose.",
-                temperature=0.3,
-                user_message=f"Image 1 is BEFORE, image 2 is AFTER. Re-analyse these photos and return ONLY the JSON object with fields: overall_assessment, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). " + (f"Taken over {period}." if period else "Time between photos not given."),
+                temperature=0.0,
+                user_message=f"Image 1 is BEFORE, image 2 is AFTER. Re-analyse these photos and return ONLY the JSON object with fields: overall_assessment, change_direction, estimated_body_fat_before, estimated_body_fat_after, visible_changes (array), areas_improved (array), recommendations (array), motivation_message, estimated_progress_score (1-10 integer), analysis_confidence (high|medium|low). " + (f"Taken over {period}." if period else "Time between photos not given."),
                 max_tokens=1000,
                 image_base64=request.before_image_base64,
                 image_base64_2=request.after_image_base64
@@ -9774,7 +9936,7 @@ Respond with valid JSON only — no markdown fences:
                 if retry_content.startswith("json"):
                     retry_content = retry_content[4:]
             retry_content = retry_content.strip()
-            analysis_data = _clean_body_analysis(json.loads(retry_content))
+            analysis_data = _clean_body_analysis(json.loads(retry_content), _goal, _wdelta)
 
             analysis_record = {
                 "id": str(uuid.uuid4()),

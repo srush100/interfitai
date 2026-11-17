@@ -442,7 +442,7 @@ def test_body_analysis_prompt_and_retry_keep_context(db, monkeypatch):
     assert "2107 kcal, 176g protein" in first["system_message"]          # target incl. adjustment
     assert "under 18" in first["system_message"]
     assert retry["system_message"].startswith(first["system_message"])   # retry keeps all context
-    assert first["temperature"] == retry["temperature"] == 0.3
+    assert first["temperature"] == retry["temperature"] == 0.0   # the same photos get the same answer
 
 
 # ── Ask AI chat ──────────────────────────────────────────────────────────

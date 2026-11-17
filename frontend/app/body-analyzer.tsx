@@ -31,6 +31,8 @@ interface AnalysisResult {
   recommendations: string[];
   motivation_message: string;
   estimated_progress_score: number;
+  headline?: string;            // the plain result: "The after photo shows more body fat than the before photo."
+  change_direction?: string;
   analysis_confidence?: 'high' | 'medium' | 'low';
 }
 
@@ -400,7 +402,7 @@ export default function BodyAnalyzer() {
                       <Text style={styles.sectionTitle}>Visible Changes</Text>
                       {selectedHistoryItem.analysis.visible_changes.map((c: string, i: number) => (
                         <View key={i} style={styles.listItem}>
-                          <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                          <Ionicons name="ellipse" size={8} color={colors.textSecondary} style={{ marginTop: 7 }} />
                           <Text style={styles.listText}>{c}</Text>
                         </View>
                       ))}
@@ -651,6 +653,9 @@ export default function BodyAnalyzer() {
                     <Text style={styles.scoreMax}>/10</Text>
                   </View>
                   <Text style={styles.scoreLabel}>Progress Score</Text>
+                  {!!analysis.headline && (
+                    <Text style={styles.headlineText}>{analysis.headline}</Text>
+                  )}
                   {/* Polish B — weight delta badge */}
                   {parseAmount(beforeWeight) > 0 && parseAmount(afterWeight) > 0 && (
                     <View style={styles.weightDeltaBadge}>
@@ -701,23 +706,28 @@ export default function BodyAnalyzer() {
               <Text style={styles.sectionTitle}>Visible Changes</Text>
               {analysis.visible_changes.map((change, idx) => (
                 <View key={idx} style={styles.listItem}>
-                  <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                  <Ionicons name="ellipse" size={8} color={colors.textSecondary} style={{ marginTop: 7 }} />
                   <Text style={styles.listText}>{change}</Text>
                 </View>
               ))}
 
               <View style={styles.divider} />
 
-              <Text style={styles.sectionTitle}>Areas Improved</Text>
-              <View style={styles.tagsContainer}>
-                {analysis.areas_improved.map((area, idx) => (
-                  <View key={idx} style={styles.tag}>
-                    <Text style={styles.tagText}>{area}</Text>
+              {/* Only when something really improved */}
+              {analysis.areas_improved.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>Areas Improved</Text>
+                  <View style={styles.tagsContainer}>
+                    {analysis.areas_improved.map((area, idx) => (
+                      <View key={idx} style={styles.tag}>
+                        <Text style={styles.tagText}>{area}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
 
-              <View style={styles.divider} />
+                  <View style={styles.divider} />
+                </>
+              )}
 
               <Text style={styles.sectionTitle}>Recommendations</Text>
               {analysis.recommendations.map((rec, idx) => (
@@ -1002,6 +1012,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.textSecondary,
     marginTop: 8,
+  },
+  headlineText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 12,
   },
   scoreLabel: {
     fontSize: 14,
