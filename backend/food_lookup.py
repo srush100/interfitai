@@ -51,7 +51,7 @@ CHAINS = ("mcdonald", "maccas", "kfc", "subway", "hungry jack", "burger king", "
           "nando", "guzman", "starbucks", "grill'd", "grilld", "oporto", "zambrero", "taco bell", "wendy",
           "chipotle", "pizza hut", "dunkin", "krispy kreme", "chick-fil-a", "five guys", "in-n-out", "boost juice",
           "gloria jean", "mad mex", "schnitz", "sushi hub", "costa", "pret", "greggs", "tim hortons",
-          "big mac", "whopper", "mcflurry", "mcchicken", "mcmuffin", "zinger")
+          "big mac", "whopper", "mcflurry", "mcchicken", "mcmuffin", "zinger", "footlong", "foot long")
 
 
 def _plain(text: str) -> str:
@@ -122,7 +122,7 @@ def lookup_key(query: str, phone_country: str = "") -> tuple:
 
 # Menu items that name their restaurant ("a big mac" is McDonald's)
 _PRODUCT_CHAINS = {"big mac": "mcdonalds", "mcflurry": "mcdonalds", "mcchicken": "mcdonalds",
-                   "mcmuffin": "mcdonalds", "zinger": "kfc"}
+                   "mcmuffin": "mcdonalds", "zinger": "kfc", "footlong": "subway", "foot long": "subway"}
 
 
 # "chipotle sauce", "with chipotle" is a flavour, not the Chipotle restaurant
@@ -150,7 +150,7 @@ def chain_in(query: str, country: str = "") -> str:
     for c in CHAINS:
         c2 = c.replace("'", "")
         m = re.search(rf"\b{re.escape(c2)}\w*", q)
-        if m and c2 not in ("big mac", "whopper", "mcflurry", "mcchicken", "mcmuffin", "zinger"):
+        if m and c2 not in ("big mac", "whopper", "mcflurry", "mcchicken", "mcmuffin", "zinger", "footlong", "foot long"):
             return m.group(0)
     return ""
 

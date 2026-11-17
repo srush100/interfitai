@@ -8140,8 +8140,30 @@ _ORDER_PROMPT = (
     "- Add-ons and extras ('extra chicken', 'add bacon', 'double patty', 'extra cheese') are their own "
     "item, named with the restaurant (\"oporto extra chicken\"); the menu item stays as on the menu "
     "(\"Oporto Pulled Chicken Bowl\").\n"
-    "- Keep the user's words. Never add anything they didn't mention."
+    "- Keep the user's words. Never add anything they didn't mention – except the bread: a sub always has "
+    "bread, so if no bread is named, add the restaurant's standard white bread at the sub's size "
+    "(\"subway footlong white bread\")."
 )
+
+# A sub without its bread would be counted 300-500 calories short
+_BREAD_WORDS = re.compile(r"\b(bread|roll|wrap|flatbread|bowl|salad|wholemeal|white|multigrain|italian|herbs?|"
+                          r"honey oat|rye|sourdough|gluten|wheat|lavash|tortilla|protein pocket)\b", re.I)
+
+
+def _add_sub_bread(order: list, chain: str) -> list:
+    """Subway: a build-your-own sub with no bread named gets the standard white
+    bread at the sub's size (footlong / 6 inch), so the total isn't short."""
+    if not chain.startswith("subway"):
+        return order
+    out = []
+    for it in order:
+        parts = list(it.get("parts") or [])
+        text = " ".join([it.get("item", "")] + parts)
+        if parts and not any(_BREAD_WORDS.search(p) for p in parts) and not re.search(r"\b(wrap|bowl|salad)\b", text, re.I):
+            size = "footlong" if re.search(r"foot ?long", text, re.I) else "6 inch"
+            parts = [f"subway {size} white bread"] + parts
+        out.append({**it, "parts": parts})
+    return out
 
 # "… with extra chicken", "add bacon", "double patty": the add-on is its own item.
 # "extra large / extra crispy …" is a size or style, not an add-on.
@@ -8248,7 +8270,7 @@ async def _lookup_order(query: str, country: str, force_web: bool):
     if order is None:   # can't read it: split on and / , / + (never 'with': "whopper with cheese")
         order = [{"item": x.strip(), "qty": 1, "parts": []}
                  for x in re.split(r"\s*(?:,|;|\+|&|\band\b|\bplus\b)\s*", query) if x.strip()]
-    order = _split_addons(order)
+    order = _add_sub_bread(_split_addons(order), chain)
     if len(order) == 1 and not order[0]["parts"] and order[0]["qty"] == 1:
         return None
 
