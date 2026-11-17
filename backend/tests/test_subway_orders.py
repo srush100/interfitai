@@ -33,3 +33,44 @@ def test_other_restaurants_and_plain_items_untouched():
     assert server._add_sub_bread(order, "guzman") == order
     plain = [{"item": "subway cookie", "qty": 1, "parts": []}]
     assert server._add_sub_bread(plain, "subway") == plain
+
+
+def test_addon_without_with_or_and_is_its_own_item():
+    import asyncio, json
+    q = "zambreros big burrito chipotle sauce extra chicken"
+    looked = []
+
+    async def web(qq, c):
+        looked.append(qq)
+        return {"name": qq, "calories": 100, "protein": 5, "carbs": 10, "fats": 2, "serving_size": "1",
+                "verified": True, "source": "zambrero.com.au", "source_url": "https://www.zambrero.com.au"}
+
+    async def none(qq, c):
+        return None
+
+    async def haiku(*a, **k):          # the reader fails → the code's own split is used
+        raise RuntimeError("unavailable")
+
+    class Coll:
+        async def find_one(s, *a, **k): return None
+        async def create_index(s, *a, **k): pass
+        async def update_one(s, *a, **k): pass
+
+    class DB:
+        food_lookups = Coll()
+
+    old = (server._off_lookup, server._web_lookup, server.call_claude_haiku, server.db)
+    server._off_lookup, server._web_lookup, server.call_claude_haiku, server.db = none, web, haiku, DB()
+    try:
+        r = asyncio.run(server.lookup_food(q, "AU"))
+    finally:
+        server._off_lookup, server._web_lookup, server.call_claude_haiku, server.db = old
+    assert looked == ["zambreros big burrito chipotle sauce", "zambreros extra chicken"]
+    assert r["calories"] == 200
+
+
+def test_double_menu_items_stay_whole():
+    for t in ("mcdonalds double cheeseburger", "hungry jacks double whopper", "kfc double down"):
+        assert [i["item"] for i in server._split_addons([{"item": t, "qty": 1, "parts": []}])] == [t]
+    assert [i["item"] for i in server._split_addons([{"item": "big mac with double patty", "qty": 1, "parts": []}])] \
+        == ["big mac", "double patty"]

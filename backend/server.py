@@ -8066,7 +8066,8 @@ async def lookup_food(query: str, country: str = "", force_web: bool = False, wh
         return database_meal_result(query, calc)
     if not whole:
         if FoodLookup.is_chain(query):
-            if re.search(r",|;|\+|&|\band\b|\bplus\b|\bwith\b|\bon\b|^\d", query):
+            # an order: several items, or add-ons ("… extra chicken", "add bacon", "side of chips")
+            if re.search(r",|;|\+|&|\band\b|\bplus\b|\bwith\b|\bon\b|^\d|\bextra\b|\badd\b|\bside of\b", query):
                 order = await _lookup_order(query, country, force_web)
                 if order:
                     return order
@@ -8169,7 +8170,9 @@ def _add_sub_bread(order: list, chain: str) -> list:
 # "extra large / extra crispy …" is a size or style, not an add-on.
 _NOT_ADDON = r"(?!(?:large|small|hot|spicy|crispy|crunchy|thick|thin|well|light|lean)\b)"
 _ADDON_RE = re.compile(
-    r"\s*(?:\b(?:but\s+)?with\s+)?\b((?:extra|add|added|double|plus extra)\s+" + _NOT_ADDON +
+    # "double" is an add-on only after "with" ("with double chicken"); on its own it is
+    # part of a menu name (Double Cheeseburger, Double Whopper, Double Down)
+    r"\s*(?:\b(?:but\s+)?with\s+)?\b((?:extra|add|added|plus extra|(?<=with )double)\s+" + _NOT_ADDON +
     r"[a-z][a-z ]*?|(?<=but with )[a-z][a-z ]*?)\s*(?=$|,|\band\b|\bwith\b)", re.I)
 _BUT_WITH_RE = re.compile(r"\s*\bbut\s+with\s+([a-z][a-z ]*?)\s*(?=$|,|\band\b)", re.I)
 _SIDE_RE = re.compile(r"\s*\b(?:with\s+)?(?:a\s+)?side\s+of\s+([a-z][a-z ]*?)\s*(?=$|,|\band\b|\bwith\b)", re.I)
