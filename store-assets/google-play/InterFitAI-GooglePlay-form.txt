@@ -1,0 +1,113 @@
+InterFitAI – Google Play Console information
+==============================================
+
+CERTIFICATE INFORMATION (KEYSTORE)
+- Alias: interfitai
+- Password: create a strong password yourself (16+ characters). Do NOT send it by chat, email or spreadsheet.
+  Store it in a password manager. Sebastian must have a copy, not only the developer.
+- Validity (years): 50
+- First and Last name: Sebastian Rush
+- Organizational Unit: Development
+- Organization: [your business name as registered – or "Sebastian Rush" if you trade under your own name]
+- City or Locality: [your suburb/city]
+- State or Province: [your state – e.g. Australian Capital Territory]
+- Country Code: AU   (2 letters. "2900" is a postcode, not a country code)
+IMPORTANT: turn on "Play App Signing" in Play Console. Google then keeps the app's signing key safe, and this
+keystore is only an upload key – if it is ever lost, Google can reset it. Without Play App Signing, a lost
+keystore means the app can never be updated again.
+
+STORE LISTING
+- Name (Title): InterFitAI: AI Fitness Coach   (28/30)
+- Name on the Android home screen: InterFitAI
+- Short description (76/80):
+AI personal trainer: workouts, meal plans, macros & food tracking in one app
+- Long description (2489/4000): see below
+- Screenshots: 8 images, 1080 x 2160 PNG, upload in order 01–08 (InterFitAI-GooglePlay files)
+- High-resolution icon: InterFitAI-icon-512.png (512 x 512 PNG, under 1 MB)
+  (If the developer has the original 1024 x 1024 app icon used for iOS, a 512 x 512 copy of that is also fine – it must match the app's own icon.)
+- Feature graphic: InterFitAI-feature-graphic-1024x500.png
+- Promotional graphic (optional): InterFitAI-promo-graphic-180x120.png
+- Promo video: leave empty
+- Application type: Application
+- Category: Health & Fitness
+
+PRICING
+- The app is FREE to download, with in-app subscriptions (choose "Free" – not "Paid").
+- Subscriptions (set up in Play Console → Monetise → Subscriptions):
+    Monthly: US$14.99 per month
+    Yearly:  US$99.99 per year
+    Offer: 7-day free trial (to match the App Store)
+- Please check these match the iPhone prices.
+
+COUNTRIES
+- All countries is fine. Prices in other currencies are set automatically from the US price.
+
+PRIVACY POLICY URL
+- [the live web address of the InterFitAI privacy policy – must open in a browser and mention photos, health/fitness data and AI]
+
+CONTENT RATING
+- Fill in the questionnaire in Play Console (Policy → App content → Content rating). For InterFitAI the answers are
+  all "No" (no violence, sexual content, gambling, drugs, etc.). The app shares no location and has no chat between users.
+  Expected rating: Everyone / PEGI 3 (the body analyser shows shirtless photos the user uploads themselves – answer the
+  "user-generated content" question as: users upload their own photos, which only they can see).
+
+ALSO REQUIRED IN PLAY CONSOLE (Policy → App content)
+- Data safety form: data collected = name, email, photos (food & body), health & fitness info (weight, workouts, food),
+  purchase history. Encrypted in transit. Users can request deletion.
+- Health apps declaration: fitness & nutrition app, not a medical device.
+- AI-generated content: Google requires apps with AI chat/AI results to let users REPORT offensive or wrong AI content
+  inside the app (e.g. a "Report" button on Ask InterFitAI answers). Please confirm the app has this before submitting.
+- Account deletion: a web link where users can request account deletion (as well as in the app).
+- Test account: a login with premium access for Google's reviewers (Policy → App access).
+
+----------------------------------------------
+LONG DESCRIPTION (copy everything below)
+----------------------------------------------
+Your personal trainer, nutrition coach and food tracker in one app, powered by AI.
+
+InterFitAI builds your workouts, sets your macros, plans your meals and logs your food, all around your body and your goal. No guesswork. Just a plan that works, and the tools to stick to it.
+
+• Workouts built around you
+• Macros made for your body
+• Meal plans that hit your targets
+• Snap a photo to log your food
+• An AI coach that knows your plan
+• Honest progress tracking
+
+━━━━━━━━━━━━━━━
+
+WORKOUTS BUILT AROUND YOU
+Tell InterFitAI your goal, level, schedule and equipment, and it builds a complete program:
+• Proven splits: Push/Pull/Legs, Upper/Lower, Full Body, Bro Split, or let the AI choose
+• Sets, reps and rest for every exercise, in the right order: heavy lifts first, finishers last
+• Injuries or exercises to avoid? Just say so ("no deadlifts or squats") and your plan works around them
+• Exercise demos, workout logging, volume tracking, personal records and streaks
+
+MACROS MADE FOR YOUR BODY
+Your daily calories, protein, carbs and fat, calculated from your body, activity and goal. Protein is based on your estimated lean mass, so your targets stay realistic at any size.
+
+MEAL PLANS THAT HIT YOUR TARGETS
+Full meal plans built to your calories and macros, for any eating style. Allergies and foods you dislike are always left out. Swap any meal and the rest of the day re-balances to stay on target. Includes a grocery list and saved meals.
+
+FOOD LOGGING IN SECONDS
+• Snap a photo of your plate or a nutrition label and see every ingredient
+• Search everyday foods, packaged products and restaurant meals
+• Restaurant and brand figures for your own country
+• Type a whole meal ("3 eggs on 2 slices of rye") and get one accurate total
+• Build-your-own orders and extras counted part by part
+
+ASK INTERFITAI
+Your coach, 24/7. Ask about training, nutrition, exercise swaps or your plan and get answers based on your own targets.
+
+BODY ANALYSER
+Compare before and after photos for an honest read on your progress: estimated body fat, visible changes and clear next steps.
+
+TRACK EVERY WIN
+Your weight trend and 7-day average, personal records, workout volume and streaks, all in one place.
+
+━━━━━━━━━━━━━━━
+
+START FREE
+Try InterFitAI free for 7 days with full access to every feature.
+
+InterFitAI provides general fitness and nutrition guidance. Calorie, macro and body-fat figures are estimates, not medical advice. Check with your doctor before starting a new exercise or diet program.

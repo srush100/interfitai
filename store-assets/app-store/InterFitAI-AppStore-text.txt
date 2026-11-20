@@ -1,0 +1,81 @@
+InterFitAI – App Store text (rebrand)
+Copy each field into App Store Connect exactly as written.
+
+===== App Name (28/30 characters) =====
+InterFitAI: AI Fitness Coach
+
+===== Subtitle (29/30 characters) =====
+Workouts, Meal Plans & Macros
+
+===== Promotional text (157/170 characters) =====
+NEW: the all-new InterFitAI. Workouts built for you, meal plans that hit your macros, snap-to-log food tracking and an AI coach 24/7. Try it free for 7 days.
+
+===== Keywords (100/100 characters) =====
+gym,calorie,counter,diet,protein,weight loss,tracker,nutrition,food log,lifting,body fat,trainer,cut
+
+===== Description (2489/4000 characters) =====
+Your personal trainer, nutrition coach and food tracker in one app, powered by AI.
+
+InterFitAI builds your workouts, sets your macros, plans your meals and logs your food, all around your body and your goal. No guesswork. Just a plan that works, and the tools to stick to it.
+
+• Workouts built around you
+• Macros made for your body
+• Meal plans that hit your targets
+• Snap a photo to log your food
+• An AI coach that knows your plan
+• Honest progress tracking
+
+━━━━━━━━━━━━━━━
+
+WORKOUTS BUILT AROUND YOU
+Tell InterFitAI your goal, level, schedule and equipment, and it builds a complete program:
+• Proven splits: Push/Pull/Legs, Upper/Lower, Full Body, Bro Split, or let the AI choose
+• Sets, reps and rest for every exercise, in the right order: heavy lifts first, finishers last
+• Injuries or exercises to avoid? Just say so ("no deadlifts or squats") and your plan works around them
+• Exercise demos, workout logging, volume tracking, personal records and streaks
+
+MACROS MADE FOR YOUR BODY
+Your daily calories, protein, carbs and fat, calculated from your body, activity and goal. Protein is based on your estimated lean mass, so your targets stay realistic at any size.
+
+MEAL PLANS THAT HIT YOUR TARGETS
+Full meal plans built to your calories and macros, for any eating style. Allergies and foods you dislike are always left out. Swap any meal and the rest of the day re-balances to stay on target. Includes a grocery list and saved meals.
+
+FOOD LOGGING IN SECONDS
+• Snap a photo of your plate or a nutrition label and see every ingredient
+• Search everyday foods, packaged products and restaurant meals
+• Restaurant and brand figures for your own country
+• Type a whole meal ("3 eggs on 2 slices of rye") and get one accurate total
+• Build-your-own orders and extras counted part by part
+
+ASK INTERFITAI
+Your coach, 24/7. Ask about training, nutrition, exercise swaps or your plan and get answers based on your own targets.
+
+BODY ANALYSER
+Compare before and after photos for an honest read on your progress: estimated body fat, visible changes and clear next steps.
+
+TRACK EVERY WIN
+Your weight trend and 7-day average, personal records, workout volume and streaks, all in one place.
+
+━━━━━━━━━━━━━━━
+
+START FREE
+Try InterFitAI free for 7 days with full access to every feature.
+
+InterFitAI provides general fitness and nutrition guidance. Calorie, macro and body-fat figures are estimates, not medical advice. Check with your doctor before starting a new exercise or diet program.
+
+===== What's New (774/4000 characters) =====
+Welcome to the all-new InterFitAI.
+
+We've rebuilt InterFitAI from the ground up, with a brand-new look and far more features:
+
+• Brand-new design: faster, cleaner, easier to use
+• Smarter workout programs with proven splits and injury-aware plans
+• Macros based on your lean mass for more accurate protein targets
+• Meal plans that stay on target when you swap a meal
+• All-new food log: foods, brands and restaurants for your country
+• Snap: log food from a photo of your plate or a nutrition label
+• Ask InterFitAI: your AI coach, 24/7
+• Body Analyser: honest progress checks from before and after photos
+• Progress tracking: weight trend, personal records and streaks
+
+Thanks for being part of InterFitAI. Enjoying the new app? A quick review helps us more than you know.
