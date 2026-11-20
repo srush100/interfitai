@@ -6765,6 +6765,60 @@ def detect_hallucination(per_100g: dict, food_name: str) -> tuple[bool, dict | N
     max_div = max(divs)
     return (max_div > 1.0), ref, max_div
 
+def _printed_kcal(e) -> float:
+    """{'value': 208, 'unit': 'kJ'} → 49.7 calories; {'value': 50, 'unit': 'Cal'} → 50."""
+    if not isinstance(e, dict):
+        return 0.0
+    try:
+        v = float(e.get("value") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    unit = str(e.get("unit") or "").strip().lower()
+    if v <= 0:
+        return 0.0
+    if unit in ("kj", "kilojoule", "kilojoules"):
+        return v / 4.184
+    if unit in ("kcal", "cal", "calorie", "calories", "kilocalorie", "kilocalories"):
+        return v
+    return 0.0
+
+
+def _label_energy_fix(per_100g, food_data: dict, serving_g, food_name: str = ""):
+    """Label calories the code can trust:
+    1. the printed energy (kJ converted ÷ 4.184 here, never by the AI) replaces
+       the AI's own calorie number, per 100 g and per serving;
+    2. if the calories still don't fit the label's protein / carbs / fat (more
+       than 30% off), they were misread: work them out from the macros
+       (4 / 4 / 9, fibre 2) instead of logging a wrong number."""
+    food_data = dict(food_data or {})
+    kcal100 = _printed_kcal(food_data.get("energy_100g_printed"))
+    kcal_serv = _printed_kcal(food_data.get("energy_serving_printed"))
+    if kcal_serv > 0:
+        food_data["calories"] = round(kcal_serv, 1)
+    if isinstance(per_100g, dict):
+        per_100g = dict(per_100g)
+        if kcal100 > 0:
+            if abs(float(per_100g.get("calories") or 0) - kcal100) > 2:
+                logger.warning(f"[label-energy] food='{food_name}' AI calories {per_100g.get('calories')}/100g → "
+                               f"printed {food_data.get('energy_100g_printed')} = {kcal100:.0f} cal")
+            per_100g["calories"] = round(kcal100, 1)
+        elif kcal_serv > 0 and serving_g and float(serving_g) > 0:
+            per_100g["calories"] = round(kcal_serv * 100 / float(serving_g), 1)
+        ok, why = _is_physically_plausible_per_100g(per_100g)
+        if not ok and why.startswith("cal_atwater_mismatch"):
+            try:
+                p, c, f = (float(per_100g.get(k) or 0) for k in ("protein", "carbs", "fats"))
+                fib = float(per_100g.get("fiber") or per_100g.get("fibre") or 0)
+            except (TypeError, ValueError):
+                return per_100g, food_data
+            derived = round(p * 4 + c * 4 + f * 9 + fib * 2, 1)
+            if derived > 0:
+                logger.warning(f"[label-energy] food='{food_name}' calories {per_100g.get('calories')}/100g don't fit "
+                               f"the macros ({why}) → {derived} from protein/carbs/fat")
+                per_100g["calories"] = derived
+    return per_100g, food_data
+
+
 def _round_portion(g: float):
     g = round(float(g), 1)
     return int(g) if g.is_integer() else g
@@ -6863,7 +6917,7 @@ C. Row mapping is exact:
    • carbs    ← ONLY the "Carbohydrate" / "Total carbohydrate" row (NEVER "Saturated", "Sugars", "Fibre", "Sodium", or any fat row)
    • fats     ← ONLY the "Fat, total" row (never "Saturated" or "Trans" alone)
    • "<1.0g"  ← record as 1.0 or lower, never blank
-D. ENERGY IS TRANSCRIBED, NEVER DERIVED. Copy the printed kJ or Cal value (convert kJ ÷ 4.184 if needed) and set `energy_source: "label"`. Do NOT compute calories from P*4 + C*4 + F*9 when a label energy row exists — AU/EU labels use food-specific Atwater factors and exclude fibre from carbs.
+D. ENERGY IS TRANSCRIBED, NEVER DERIVED. Copy the printed energy number AND its unit exactly as printed into `energy_100g_printed` ({"value": 208, "unit": "kJ"}) and `energy_serving_printed` ({"value": 520, "unit": "kJ"}) – do NOT convert, the app converts kJ to calories itself. Also fill `per_100g.calories` as best you can and set `energy_source: "label"`. Do NOT compute calories from P*4 + C*4 + F*9 when a label energy row exists — AU/EU labels use food-specific Atwater factors and exclude fibre from carbs.
 E. If a per-100g energy row is illegible, set `energy_source: "derived"`.
 
 F. PORTION REFERENCE POINTS — you MUST also return these three fields so the app can convert any portion the user states into grams:
@@ -6904,6 +6958,7 @@ Respond with ONLY valid JSON, no other text. Exact schema:
   "per_100g": {"calories": 143, "protein": 12.2, "carbs": 1.3, "fats": 9.9},
   "calories": 149, "protein": 12.7, "carbs": 1.4, "fats": 10.3,
   "fiber": 0, "sugar": 0.4, "sodium": 140,
+  "energy_100g_printed": {"value": 598, "unit": "kJ"}, "energy_serving_printed": {"value": 622, "unit": "kJ"},
   "energy_source": "label",
   "servings_per_package": 6,
   "package_size_g": 624,
@@ -7078,6 +7133,10 @@ For labels, the `calories/protein/carbs/fats` top-level fields describe ONE labe
             if derived:
                 _per_100g = derived
                 _per_100g_source = "derived_from_serving"
+
+        # Energy: the printed number and unit, converted here (an AI once turned
+        # 208 kJ into 83 cal, ÷2.5 instead of ÷4.184: 383 cal logged instead of 230)
+        _per_100g, food_data = _label_energy_fix(_per_100g, food_data, _model_serving_g, food_name_raw)
 
         # Hallucination check on per_100g against reference table.
         #
